@@ -58,7 +58,7 @@ describe('rpc link-token bootstrap', () => {
     window.history.replaceState(null, '', '/control/sessions')
   })
 
-  it('uses a URL token over stale browser storage before initial connect', () => {
+  it('uses a URL token over stale browser storage before initial connect', async () => {
     localStorage.setItem('opensquilla.wsUrl', 'ws://old.example/ws')
     localStorage.setItem('opensquilla.chat.draft:agent:main:webchat:old', 'stale draft')
     localStorage.setItem('opensquilla.chat.runMode', 'full')
@@ -70,7 +70,7 @@ describe('rpc link-token bootstrap', () => {
     window.history.replaceState(null, '', '/control/?token=new-token')
 
     const store = useRpcStore()
-    store.init()
+    await store.init()
 
     expect(connectCalls).toEqual([{ url: 'ws://localhost:3000/ws', token: 'new-token' }])
     expect(localStorage.getItem('opensquilla.wsUrl')).toBe('ws://localhost:3000/ws')
@@ -86,7 +86,7 @@ describe('rpc link-token bootstrap', () => {
 
   it('delegates an aborted wait even when the reactive store is connected', async () => {
     const store = useRpcStore()
-    store.init()
+    await store.init()
     const controller = new AbortController()
     controller.abort()
     const abortError = new Error('aborted')
@@ -102,14 +102,14 @@ describe('rpc link-token bootstrap', () => {
     )
   })
 
-  it('reconnects with a URL token when an already-loaded app navigates to a token link', () => {
+  it('reconnects with a URL token when an already-loaded app navigates to a token link', async () => {
     localStorage.setItem('opensquilla.wsUrl', 'ws://localhost:3000/ws')
     localStorage.setItem('opensquilla.chat.draft:agent:main:webchat:old', 'stale draft')
     sessionStorage.setItem('opensquilla.wsToken', 'old-token')
     sessionStorage.setItem('opensquilla.cachedAuth', 'stale-auth')
 
     const store = useRpcStore()
-    store.init()
+    await store.init()
     expect(connectCalls).toEqual([{ url: 'ws://localhost:3000/ws', token: 'old-token' }])
 
     window.history.replaceState(null, '', '/control/sessions?token=new-token')
@@ -125,9 +125,9 @@ describe('rpc link-token bootstrap', () => {
     expect(window.location.href).toBe('http://localhost:3000/control/sessions')
   })
 
-  it('clears stale identity state before reconnecting with a URL token', () => {
+  it('clears stale identity state before reconnecting with a URL token', async () => {
     const store = useRpcStore()
-    store.init()
+    await store.init()
     clients[0].emit('_hello', {
       policy: { allowedRunModes: ['full'] },
       auth: { principal: { isOwner: true } },
@@ -152,9 +152,9 @@ describe('rpc link-token bootstrap', () => {
     })
   })
 
-  it('treats missing or malformed Hello methods as unsupported', () => {
+  it('treats missing or malformed Hello methods as unsupported', async () => {
     const store = useRpcStore()
-    store.init()
+    await store.init()
 
     clients[0].emit('_hello', { features: { methods: ['usage.status', 42, null] } })
 
@@ -166,9 +166,9 @@ describe('rpc link-token bootstrap', () => {
     expect(store.methods).toEqual([])
   })
 
-  it('derives project capabilities from the current Hello owner and methods', () => {
+  it('derives project capabilities from the current Hello owner and methods', async () => {
     const store = useRpcStore()
-    store.init()
+    await store.init()
 
     clients[0].emit('_hello', {
       auth: { principal: { isOwner: true } },

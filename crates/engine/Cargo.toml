@@ -1,0 +1,39 @@
+[package]
+name = "opensquilla-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+opensquilla-provider = { path = "../provider", optional = true }
+opensquilla-tools = { path = "../tools", optional = true }
+opensquilla-session = { path = "../session", optional = true }
+opensquilla-safety = { path = "../safety", optional = true }
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+dashmap.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+parking_lot.workspace = true
+
+[features]
+default = []
+# Enable the LLM provider abstraction for sub-agent provider cloning.
+provider = ["dep:opensquilla-provider"]
+# Enable integration with the built-in tool system.
+tools = ["dep:opensquilla-tools"]
+# Enable integration with the session persistence layer.
+session = ["dep:opensquilla-session"]
+# Enable prompt-injection detection for the input stage.
+safety = ["dep:opensquilla-safety"]

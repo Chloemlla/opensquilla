@@ -1,0 +1,23 @@
+{
+  "version": "0.5.2",
+  "notes": "OpenSquilla 0.5.2",
+  "pub_date": "2026-08-05T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "REPLACE_WITH_WINDOWS_X64_SIGNATURE",
+      "url": "https://github.com/opensquilla/opensquilla/releases/latest/download/OpenSquilla_0.5.2_x64-setup.exe"
+    },
+    "darwin-x86_64": {
+      "signature": "REPLACE_WITH_DARWIN_X86_64_SIGNATURE",
+      "url": "https://github.com/opensquilla/opensquilla/releases/latest/download/OpenSquilla_0.5.2_x64.app.tar.gz"
+    },
+    "darwin-aarch64": {
+      "signature": "REPLACE_WITH_DARWIN_AARCH64_SIGNATURE",
+      "url": "https://github.com/opensquilla/opensquilla/releases/latest/download/OpenSquilla_0.5.2_aarch64.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "REPLACE_WITH_LINUX_X86_64_SIGNATURE",
+      "url": "https://github.com/opensquilla/opensquilla/releases/latest/download/opensquilla_0.5.2_amd64.AppImage.tar.gz"
+    }
+  }
+}

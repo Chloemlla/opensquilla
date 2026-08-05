@@ -1,0 +1,79 @@
+[package]
+name = "opensquilla-tools"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+opensquilla-memory = { path = "../memory" }
+opensquilla-session = { path = "../session" }
+opensquilla-channels = { path = "../channels" }
+opensquilla-scheduler = { path = "../scheduler" }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+
+# HTTP
+reqwest = { workspace = true, features = ["json", "stream", "gzip", "brotli"] }
+http = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Common utilities
+chrono = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+regex = { workspace = true }
+url = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+mime = { workspace = true }
+mime_guess = { workspace = true }
+bytes = { workspace = true }
+
+# File system
+walkdir = { workspace = true }
+
+# Image
+image = { workspace = true }
+
+# PDF
+lopdf = { workspace = true }
+pdf-extract = { workspace = true }
+
+# HTML
+scraper = { workspace = true }
+
+# Excel
+calamine = { workspace = true }
+rust_xlsxwriter = "0.65"
+
+# PDF authoring
+printpdf = "0.8"
+
+# DNS
+trust-dns-resolver = { workspace = true }
+
+# JSON Schema
+jsonschema = { workspace = true }
+
+# Async trait
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lib]
+path = "src/lib.rs"

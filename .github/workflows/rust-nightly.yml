@@ -1,0 +1,14 @@
+name: Rust Nightly
+
+"on":
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: Full nightly build
+    uses: ./.github/workflows/rust-ci.yml

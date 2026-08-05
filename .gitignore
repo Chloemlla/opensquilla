@@ -88,6 +88,11 @@ opensquilla-webui/node_modules/
 opensquilla-webui/dist/
 src/opensquilla/gateway/static/dist/
 
+# Rust build artifacts
+target/
+crates/**/target/
+**/*.rs.bk
+
 # Local-only release-hygiene tests that reference legacy artifact names
 # kept off the public tree.
 /tests/_private/
@@ -121,3 +126,4 @@ opensquilla-webui/public/music/**/*.ogg
 opensquilla-webui/public/music/**/*.flac
 opensquilla-webui/public/music/**/*.wav
 opensquilla-webui/public/music/playlist.local.json
+Install-CodexClaudeTrellis.ps1

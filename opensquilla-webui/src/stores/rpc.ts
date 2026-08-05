@@ -1,10 +1,11 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import {
-  RpcClient,
-  type RpcCallOptions,
-  type RpcConnectionWaitOptions,
-  type RpcEventHandler,
+import { isTauri } from '@/tauri/invoke'
+import type {
+  RpcCallOptions,
+  RpcClientLike,
+  RpcConnectionWaitOptions,
+  RpcEventHandler,
 } from '@/lib/rpc'
 
 const WS_URL_KEY = 'opensquilla.wsUrl'
@@ -76,13 +77,24 @@ function saveConnectionSettings(url: string, token: string): void {
 }
 
 export const useRpcStore = defineStore('rpc', () => {
-  const client = ref<RpcClient | null>(null)
+  const client = ref<RpcClientLike | null>(null)
   const state = ref<'disconnected' | 'connecting' | 'connected'>('disconnected')
   const policy = ref<Record<string, unknown> | null>(null)
   const auth = ref<Record<string, unknown> | null>(null)
   const methods = ref<string[]>([])
   const unavailableMethods = ref<Set<string>>(new Set())
   const error = ref<string | null>(null)
+
+  // `init()` is async (it lazy-loads the transport module), so a component that
+  // mounts before the client exists would otherwise lose its `rpc.on`
+  // subscriptions. Queue them here and flush them once the client is created.
+  interface QueuedSubscription {
+    event: string
+    handler: RpcEventHandler
+    unsub: (() => void) | null
+  }
+  const queuedSubscriptions: QueuedSubscription[] = []
+  let initPromise: Promise<void> | null = null
 
   const isConnected = computed(() => state.value === 'connected')
   const isConnecting = computed(() => state.value === 'connecting')
@@ -102,46 +114,62 @@ export const useRpcStore = defineStore('rpc', () => {
     canManageProjectWorkspaces.value
     && supportsMethod('workspaces.open'))
 
-  function init() {
-    const rpc = new RpcClient()
-    client.value = rpc
+  async function init() {
+    if (client.value) return
+    if (initPromise) return initPromise
+    initPromise = (async () => {
+      // Lazy-load the transport module so the WebSocket client stays out of the
+      // Tauri production bundle; the store only needs the class it constructs.
+      const { RpcClient, TauriRpcClient } = await import('@/lib/rpc')
+      const rpc: RpcClientLike = isTauri() ? new TauriRpcClient() : new RpcClient()
+      client.value = rpc
 
-    rpc.on('_state', (s: 'disconnected' | 'connecting' | 'connected') => {
-      state.value = s
-      if (s !== 'connected') {
-        policy.value = null
-        auth.value = null
-        methods.value = []
+      rpc.on('_state', (s: 'disconnected' | 'connecting' | 'connected') => {
+        state.value = s
+        if (s !== 'connected') {
+          policy.value = null
+          auth.value = null
+          methods.value = []
+          unavailableMethods.value = new Set()
+        }
+      })
+
+      rpc.on('_hello', (data: {
+        policy?: Record<string, unknown>
+        auth?: Record<string, unknown>
+        features?: { methods?: unknown }
+      }) => {
+        policy.value = data.policy || null
+        auth.value = data.auth || null
+        methods.value = Array.isArray(data.features?.methods)
+          ? data.features.methods.filter((method): method is string => typeof method === 'string')
+          : []
         unavailableMethods.value = new Set()
+      })
+
+      rpc.on('_gap', (detail: unknown) => {
+        console.warn('[RPC] Sequence gap detected:', detail)
+      })
+
+      // Flush subscriptions that were queued before the transport existed.
+      for (const queued of queuedSubscriptions.splice(0)) {
+        queued.unsub = rpc.on(queued.event, queued.handler)
       }
-    })
 
-    rpc.on('_hello', (data: {
-      policy?: Record<string, unknown>
-      auth?: Record<string, unknown>
-      features?: { methods?: unknown }
-    }) => {
-      policy.value = data.policy || null
-      auth.value = data.auth || null
-      methods.value = Array.isArray(data.features?.methods)
-        ? data.features.methods.filter((method): method is string => typeof method === 'string')
-        : []
-      unavailableMethods.value = new Set()
+      // Auto-connect on init. Desktop shells use the local gateway serving this UI.
+      consumeLinkTokenFromUrl()
+      const { url, token } = loadConnectionSettings()
+      if (rpc.state === 'disconnected') {
+        rpc.connect(url, token || undefined)
+      }
+    })().finally(() => {
+      initPromise = null
     })
-
-    rpc.on('_gap', (detail: unknown) => {
-      console.warn('[RPC] Sequence gap detected:', detail)
-    })
-
-    // Auto-connect on init. Desktop shells use the local gateway serving this UI.
-    consumeLinkTokenFromUrl()
-    const { url, token } = loadConnectionSettings()
-    if (rpc.state === 'disconnected') {
-      rpc.connect(url, token || undefined)
-    }
+    return initPromise
   }
 
   async function connect(url: string, token?: string) {
+    if (!client.value) await init()
     if (!client.value) throw new Error('RPC client not initialized')
     error.value = null
     saveConnectionSettings(url, token || '')
@@ -186,6 +214,7 @@ export const useRpcStore = defineStore('rpc', () => {
     params?: Record<string, unknown>,
     options?: RpcCallOptions,
   ): Promise<T> {
+    if (!client.value) await init()
     if (!client.value) throw new Error('RPC client not initialized')
     if (state.value !== 'connected') {
       throw new Error(`Cannot call ${method}: not connected (state: ${state.value})`)
@@ -198,19 +227,26 @@ export const useRpcStore = defineStore('rpc', () => {
   }
 
   function on(event: string, handler: RpcEventHandler): () => void {
-    if (!client.value) {
-      console.warn(`[RPC] No client for event subscription: ${event}`)
-      return () => {}
+    if (client.value) return client.value.on(event, handler)
+    // The transport is still being initialized; queue until it exists.
+    const queued: QueuedSubscription = { event, handler, unsub: null }
+    queuedSubscriptions.push(queued)
+    return () => {
+      if (queued.unsub) queued.unsub()
+      else {
+        const index = queuedSubscriptions.indexOf(queued)
+        if (index !== -1) queuedSubscriptions.splice(index, 1)
+      }
     }
-    return client.value.on(event, handler)
   }
 
-  function waitForConnection(
+  async function waitForConnection(
     timeoutMs?: number,
     signal?: AbortSignal,
     actions?: RpcConnectionWaitOptions,
   ): Promise<void> {
-    if (!client.value) return Promise.reject(new Error('RPC client not initialized'))
+    if (!client.value) await init()
+    if (!client.value) throw new Error('RPC client not initialized')
     return client.value.waitForConnection(timeoutMs, signal, actions)
   }
 

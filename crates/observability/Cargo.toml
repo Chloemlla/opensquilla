@@ -1,0 +1,25 @@
+[package]
+name = "opensquilla-observability"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["json", "env-filter"] }
+tracing-appender = { workspace = true }
+opentelemetry = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+axum = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

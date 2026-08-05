@@ -1,0 +1,36 @@
+[package]
+name = "opensquilla-provider"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+opensquilla-sandbox = { path = "../sandbox" }
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+reqwest = { workspace = true, features = ["json", "stream", "gzip", "brotli", "multipart"] }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+regex.workspace = true
+eventsource-stream.workspace = true
+dashmap.workspace = true
+async-trait = "0.1"
+pin-project = "1"
+base64.workspace = true
+bytes.workspace = true
+rand.workspace = true
+
+# Optional: accurate token estimation via tiktoken. Enable with `--features tiktoken`.
+tiktoken-rs = { workspace = true, optional = true }
+
+[features]
+default = []
+# Enable tiktoken-backed token estimation in request_proof.
+tiktoken = ["dep:tiktoken-rs"]

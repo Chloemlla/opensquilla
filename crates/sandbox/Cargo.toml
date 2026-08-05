@@ -1,0 +1,40 @@
+[package]
+name = "opensquilla-sandbox"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+nix = { workspace = true, features = ["memfd", "mount", "resource", "sched"] }
+windows = { workspace = true, features = [
+    "Win32_NetworkManagement_NetFw",
+    "Win32_Networking_WindowsFilteringPlatform",
+    "Win32_Security_Authorization",
+    "Win32_System_Com",
+    "Win32_System_JobObjects",
+] }
+regex.workspace = true
+trust-dns-resolver.workspace = true
+dashmap.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+seccompiler = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

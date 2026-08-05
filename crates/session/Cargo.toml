@@ -1,0 +1,23 @@
+[package]
+name = "opensquilla-session"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+rusqlite = { workspace = true, features = ["bundled", "vtab"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+dashmap = { workspace = true }
+async-trait = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

@@ -1,0 +1,224 @@
+name: Rust CI
+
+"on":
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - 'clippy.toml'
+      - 'crates/**/*.rs'
+      - 'crates/**/Cargo.toml'
+      - 'src-tauri/**'
+      - 'opensquilla-webui/**'
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - 'clippy.toml'
+      - 'crates/**/*.rs'
+      - 'crates/**/Cargo.toml'
+      - 'src-tauri/**'
+      - 'opensquilla-webui/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job 1: Check formatting with rustfmt
+  fmt:
+    name: Formatting (rustfmt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  # Job 2: Run clippy static analysis
+  clippy:
+    name: Clippy static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Check clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Job 3: Check that the project compiles (with Tauri dependencies)
+  check:
+    name: Cargo check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Run cargo check
+        run: cargo check --all-targets --all-features
+
+  # Job 4: Audit dependencies for security vulnerabilities
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run audit
+        run: cargo audit
+
+  # Job 5: Check for unused dependencies
+  udeps:
+    name: Unused dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-udeps
+        run: cargo install cargo-udeps --locked
+      - uses: Swatinem/rust-cache@v2
+      - name: Check unused deps
+        run: cargo +nightly udeps --all-targets --all-features
+
+  # Job 6: Check API documentation compiles
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Check docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --all-features --no-deps
+
+  # Job 7: Verify MSRV (minimum supported Rust version)
+  msrv:
+    name: MSRV verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-msrv
+        run: cargo install cargo-msrv --locked
+      - name: Verify MSRV
+        run: cargo msrv verify
+
+  # Job 8: Check for outdated dependencies
+  outdated:
+    name: Outdated dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check outdated
+        run: cargo outdated --exit-code 1 || echo "WARNING: outdated dependencies found (non-blocking)"
+
+  # Job 9: Build all crates to verify compilation (with Tauri deps)
+  build:
+    name: Build all crates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Build all targets
+        run: cargo build --all-targets --all-features
+
+  # Job 10: Cross-platform check (Windows)
+  check-windows:
+    name: Check (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run cargo check
+        run: cargo check --all-targets --all-features
+
+  # Job 11: Cross-platform check (macOS)
+  check-macos:
+    name: Check (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run cargo check
+        run: cargo check --all-targets --all-features
+
+  # Job 12: Result aggregator
+  result:
+    name: Rust CI result
+    needs:
+      - fmt
+      - clippy
+      - check
+      - audit
+      - doc
+      - build
+      - check-windows
+      - check-macos
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check all required jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=()
+          for job in fmt clippy check audit doc build check-windows check-macos; do
+            status=$(gh run view ${{ github.run_id }} --job $job --json conclusion --jq .conclusion 2>/dev/null || echo "unknown")
+            if [[ "$status" != "success" ]]; then
+              failed+=("$job=$status")
+            fi
+          done
+          if [[ ${#failed[@]} -gt 0 ]]; then
+            echo "ERROR: Failed jobs: ${failed[*]}" >&2
+            exit 1
+          fi
+          echo "All Rust CI jobs passed!"

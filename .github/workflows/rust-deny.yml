@@ -1,0 +1,31 @@
+name: Rust Deny Check
+
+"on":
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'crates/**/Cargo.toml'
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'crates/**/Cargo.toml'
+  schedule:
+    - cron: '0 12 * * 1'  # Weekly on Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deny:
+    name: License and dependency check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Run cargo-deny
+        run: cargo deny check

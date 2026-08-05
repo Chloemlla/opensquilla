@@ -1,0 +1,141 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenSquilla",
+  "version": "0.5.2",
+  "identifier": "com.opensquilla.desktop",
+  "build": {
+    "frontendDist": "../opensquilla-webui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "node ../scripts/build-frontend.mjs --dev && npm --prefix ../opensquilla-webui run dev",
+    "beforeBuildCommand": "node ../scripts/build-frontend.mjs --build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "OpenSquilla",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "focus": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:5173 http://localhost:5173 http://127.0.0.1:18790 ws://127.0.0.1:18790 https://api.github.com; font-src 'self' data:; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
+      "devCsp": null,
+      "freezePrototype": false,
+      "dangerousDisableAssetCspModification": false,
+      "dangerousUseHttpScheme": true,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$RESOURCE/**",
+          "$APPDATA/**",
+          "$APPCONFIG/**",
+          "$DOCUMENT/**",
+          "$DOWNLOAD/**",
+          "$HOME/**"
+        ]
+      }
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": false,
+      "tooltip": "OpenSquilla"
+    },
+    "macOSPrivateApi": false,
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "msi", "nsis", "app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": "© 2026 OpenSquilla Contributors",
+    "category": "DeveloperTool",
+    "shortDescription": "OpenSquilla desktop agent runtime",
+    "longDescription": "OpenSquilla is a single-binary desktop agent runtime with a Vue 3 control UI, replacing the legacy Electron shell. Bundles the agent engine, LLM provider adapters, tool system, session and memory stores, channel adapters, skills, scheduler, and sandbox into one native binary.",
+    "publisher": "OpenSquilla",
+    "homepage": "https://github.com/opensquilla/opensquilla",
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "entitlements": null,
+      "signingProperties": {
+        "hardenedRuntime": true,
+        "gatekeeperAssess": false
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign-windows.ps1 \"%1\"",
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perMachine",
+        "languages": ["English", "SimplifiedChinese", "Japanese"],
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "headerImage": "icons/nsis-header.bmp",
+        "template": null,
+        "displayLanguageSelector": true
+      },
+      "wix": null
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-bin"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PLACEHOLDER_REPLACE_WITH_OPENSQUILLA_UPDATER_PUBKEY_DO_NOT_SHIP",
+      "endpoints": [
+        "https://github.com/opensquilla/opensquilla/releases/latest/download/latest.json"
+      ],
+      "dialog": true
+    },
+    "shell": {
+      "scope": [
+        {
+          "name": "opensquilla-gateway",
+          "command": "osq",
+          "args": ["gateway", "status"]
+        },
+        {
+          "name": "open-external",
+          "command": "open",
+          "args": [{ "validator": ".*" }]
+        }
+      ]
+    }
+  }
+}

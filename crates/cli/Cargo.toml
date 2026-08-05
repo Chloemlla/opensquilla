@@ -1,0 +1,56 @@
+[package]
+name = "opensquilla-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+opensquilla-core = { path = "../core" }
+opensquilla-engine = { path = "../engine" }
+opensquilla-provider = { path = "../provider" }
+opensquilla-session = { path = "../session" }
+opensquilla-memory = { path = "../memory" }
+opensquilla-channels = { path = "../channels" }
+opensquilla-sandbox = { path = "../sandbox" }
+opensquilla-skills = { path = "../skills" }
+opensquilla-scheduler = { path = "../scheduler" }
+opensquilla-gateway = { path = "../gateway" }
+opensquilla-tools = { path = "../tools" }
+opensquilla-search = { path = "../search" }
+opensquilla-safety = { path = "../safety" }
+opensquilla-mcp = { path = "../mcp" }
+opensquilla-observability = { path = "../observability" }
+opensquilla-onboarding = { path = "../onboarding" }
+opensquilla-recovery = { path = "../recovery" }
+opensquilla-eval = { path = "../eval" }
+tokio = { workspace = true, features = ["full"] }
+clap = { workspace = true, features = ["derive"] }
+ratatui = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["json", "env-filter"] }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
+toml = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
+reqwest = { workspace = true }
+crossterm = "0.28"
+rustyline = "14"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "osq"
+path = "src/main.rs"
+
+[[bin]]
+name = "osq-tui"
+path = "src/tui.rs"
