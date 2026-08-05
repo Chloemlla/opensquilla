@@ -160,7 +160,7 @@
 | 文件/目录 | 行数 | 功能 | 迁移策略 |
 |-----------|------|------|---------|
 | `runtime.py` | 10,441 | 主 Agent 运行时: `TurnRunner` 类, 编排 8 个 stage, 会话生命周期, 用量会计 | ✅ `crates/engine/src/runtime.rs` (1,284 行) |
-| `agent.py` | 19,290 | Agent 状态机 + 工具循环: `_turn_generator()` ~3000 行显式状态机, `provider.chat()` LLM 调用, 13 处 `subprocess.run()` git 操作 | ✅ `crates/engine/src/agent.rs` (1,849 行) 🔄 正在扩展 |
+| `agent.py` | 19,290 | Agent 状态机 + 工具循环: `_turn_generator()` ~3000 行显式状态机, `provider.chat()` LLM 调用, 13 处 `subprocess.run()` git 操作 | ✅ `crates/engine/src/agent.rs` (2,449 行) |
 | `context.py` | 72 | 上下文组装: 加载 SOUL.md/AGENTS.md 等工作区文件 | ✅ `crates/engine/src/context.rs` (234 行) |
 | `turn_control.py` | 145 | 纯决策逻辑: `decide_turn_control()` 分类停止表面, 无 I/O | ✅ `crates/engine/src/turn_control.rs` (319 行) |
 | `pipeline.py` | 129 | 预 Turn 管道: `for step in steps: ctx = await step(ctx)` 失败-开放语义 | ✅ `crates/engine/src/pipeline.rs` (225 行) + `crates/engine/src/steps/` (5 个 steps) |
@@ -174,7 +174,7 @@
 | `pricing.py` | 701 | 模型定价: `PricingCache`, OpenRouter 1h TTL 缓存 | ✅ `crates/engine/src/pricing.rs` (728 行) |
 | `routing/` | ~2,000 | 路由策略引擎: `RoutingPolicyEngine`, 校准文件, 健康账本 | ✅ `crates/engine/src/routing/` (4 文件, 3,005 行) |
 | `steps/` | ~4,000 | 预 Turn 管道步骤: squilla_router(ML), meta_resolution, model_select, skills_filter 等 | ✅ `crates/engine/src/steps/` (5 文件, 1,441 行) |
-| `turn_runner/` | ~8,000 | 8 个 Stage 类: harness, agent_bootstrap, attachment, compaction, input, provider, stream_consumer, finalizer | ✅ `crates/engine/src/turn_runner/` (9 文件, 1,794 行) 🔄 正在扩展 |
+| `turn_runner/` | ~8,000 | 8 个 Stage 类: harness, agent_bootstrap, attachment, compaction, input, provider, stream_consumer, finalizer | ✅ `crates/engine/src/turn_runner/` (9 文件, 5,602 行) |
 | `hooks/` | ~300 | 钩子协议: TurnHook, CompactionHook, ToolHook | ✅ `crates/engine/src/hooks.rs` (274 行) |
 | `runtime_recovery.py` | ~200 | 空/无进展 Turn 恢复: 纯决策函数 | ✅ `crates/engine/src/runtime_recovery.rs` (295 行) |
 | `session_lock.py` | 49 | 每会话异步锁 (`asyncio.Lock` per key) | ✅ `crates/engine/src/session_lock.rs` (317 行) |
@@ -305,17 +305,17 @@
 
 | 信道 | 模块 | 能力等级 | 入站机制 | 出站 | 依赖 | 迁移策略 |
 |------|------|---------|---------|------|------|---------|
-| **Slack** | `slack.py` | YELLOW | Webhook (Events API)/Socket Mode | `httpx` REST | 无 SDK | ✅ `crates/channels/src/slack.rs` (137 行) 🔄 正在扩展 |
-| **Discord** | `discord.py` | YELLOW | 持久化 WebSocket (Gateway API) | `httpx` REST | `websockets` | ✅ `crates/channels/src/discord.rs` (140 行) 🔄 正在扩展 |
-| **Telegram** | `telegram.py` | YELLOW | 长轮询/Webhook | `httpx` Bot API | 无 SDK | ✅ `crates/channels/src/telegram.rs` (131 行) 🔄 正在扩展 |
+| **Slack** | `slack.py` | YELLOW | Webhook (Events API)/Socket Mode | `httpx` REST | 无 SDK | ✅ `crates/channels/src/slack.rs` (137 行) |
+| **Discord** | `discord.py` | YELLOW | 持久化 WebSocket (Gateway API) | `httpx` REST | `websockets` | ✅ `crates/channels/src/discord.rs` (140 行) |
+| **Telegram** | `telegram.py` | YELLOW | 长轮询/Webhook | `httpx` Bot API | 无 SDK | ✅ `crates/channels/src/telegram.rs` (131 行) |
 | **Feishu/Lark** | `feishu.py` | YELLOW | Webhook/持久化 WS | `httpx` REST | `lark-oapi>=1.5.3` | ✅ `crates/channels/src/feishu.rs` (732 行) |
 | **DingTalk** | `dingtalk.py` | YELLOW | 持久化 WS (Stream Mode) | SDK | `dingtalk-stream` | ✅ `crates/channels/src/dingtalk.rs` (871 行) |
 | **QQ Bot** | `qq.py` | YELLOW | 持久化 WS | SDK REST | `qq-botpy` | ✅ `crates/channels/src/qq.rs` (845 行) |
-| **WeCom** | `wecom.py` | YELLOW | Webhook/WS | `httpx` REST | 无 SDK (自含加密) | ✅ `crates/channels/src/wecom.rs` (79 行) 🔄 正在扩展 |
+| **WeCom** | `wecom.py` | YELLOW | Webhook/WS | `httpx` REST | 无 SDK (自含加密) | ✅ `crates/channels/src/wecom.rs` (79 行) |
 | **Matrix** | `matrix.py` | YELLOW | HTTP 长轮询 | SDK | `matrix-nio` | ✅ `crates/channels/src/matrix.rs` (722 行) |
 | **MS Teams** | `msteams.py` | GREEN | Bot Framework Webhook | SDK | `botbuilder` | ✅ `crates/channels/src/msteams.rs` (860 行) |
-| **Terminal** | `terminal.py` | 内置 | 同步 stdin | stdout | 无 | ✅ `crates/channels/src/terminal.rs` (84 行) 🔄 正在扩展 |
-| **WebSocket** | `websocket.py` | 内置 | `asyncio.Queue` | WS 事件 | 无 | ✅ `crates/channels/src/websocket.rs` (140 行) 🔄 正在扩展 |
+| **Terminal** | `terminal.py` | 内置 | 同步 stdin | stdout | 无 | ✅ `crates/channels/src/terminal.rs` (84 行) |
+| **WebSocket** | `websocket.py` | 内置 | `asyncio.Queue` | WS 事件 | 无 | ✅ `crates/channels/src/websocket.rs` (140 行) |
 
 #### 调度架构
 
@@ -373,13 +373,13 @@ Boot → ChannelManager.from_config()
 
 | 平台 | Rust 实现策略 | 关键 crate |
 |------|-------------|-----------|
-| **Linux** | ✅ `crates/sandbox/src/linux.rs` (194 行) 🔄 正在扩展 | `nix`, `seccompiler` |
-| **macOS** | ✅ `crates/sandbox/src/macos.rs` (163 行) 🔄 正在扩展 | `serde` 序列化 SBPL |
-| **Windows** | ✅ `crates/sandbox/src/windows.rs` (121 行) 🔄 正在扩展 | `windows` |
-| **网络代理** | ✅ `crates/sandbox/src/network.rs` (217 行) 🔄 正在扩展 | `tokio`, `trust-dns` |
-| **策略引擎** | ✅ `crates/sandbox/src/policy.rs` (241 行) 🔄 正在扩展 | 纯 Rust 枚举 + 模式匹配 |
-| **审批门** | ✅ `crates/sandbox/src/governance.rs` (209 行) 🔄 正在扩展 | `tokio::sync::mpsc` |
-| **陈旧输出缓存** | ✅ `crates/sandbox/src/stale_output_cache.rs` (270 行) 🔄 正在扩展 | `tokio::fs` 文件哈希 |
+| **Linux** | ✅ `crates/sandbox/src/linux.rs` (961 行) | `nix`, `seccompiler` |
+| **macOS** | ✅ `crates/sandbox/src/macos.rs` (496 行) | `serde` 序列化 SBPL |
+| **Windows** | ✅ `crates/sandbox/src/windows.rs` (735 行) | `windows` |
+| **网络代理** | ✅ `crates/sandbox/src/network.rs` (686 行) | `tokio`, `trust-dns` |
+| **策略引擎** | ✅ `crates/sandbox/src/policy.rs` (745 行) | 纯 Rust 枚举 + 模式匹配 |
+| **审批门** | ✅ `crates/sandbox/src/governance.rs` (583 行) | `tokio::sync::mpsc` |
+| **陈旧输出缓存** | ✅ `crates/sandbox/src/stale_output_cache.rs` (447 行) | `tokio::fs` 文件哈希 |
 
 ---
 
@@ -446,13 +446,13 @@ Boot → ChannelManager.from_config()
 
 | 文件/目录 | 行数 | 功能 | 迁移策略 |
 |-----------|------|------|---------|
-| `loader.py` | ~1,000 | 技能加载器: 解析 SKILL.md frontmatter, 构建目录, 文件系统缓存, 热重载 | ✅ `crates/skills/src/loader.rs` (323 行) 🔄 正在扩展 |
-| `injector.py` | ~500 | 提示注入: 渲染 `<available_skills>` XML 块到系统提示, Token 预算控制 | ✅ `crates/skills/src/injector.rs` (155 行) 🔄 正在扩展 |
-| `types.py` | ~200 | 核心数据类型: SkillSpec, SkillLayer, SkillRequires | ✅ `crates/skills/src/types.rs` (224 行) 🔄 正在扩展 |
-| `eligibility.py` | ~300 | 运行时资格: OS 匹配, 二进制检查 (`shutil.which`), 环境变量 | ✅ `crates/skills/src/eligibility.rs` (168 行) 🔄 正在扩展 |
-| `meta/` | ~5,000 | 元技能编排: DAG 调度器, 6 个执行器, Jinja 模板, 事件流 | ✅ `crates/skills/src/meta.rs` (1,401 行) 🔄 正在扩展 |
-| `hub/` | ~3,000 | 技能分发: ClawHub/GitHub 源, 安装器, 安全扫描器, 锁文件 | ✅ `crates/skills/src/hub.rs` (1,772 行) 🔄 正在扩展 |
-| `creator/` | ~1,000 | 元技能创建工具 | ✅ `crates/skills/src/creator.rs` 🔄 正在扩展 |
+| `loader.py` | ~1,000 | 技能加载器: 解析 SKILL.md frontmatter, 构建目录, 文件系统缓存, 热重载 | ✅ `crates/skills/src/loader.rs` (1,438 行) |
+| `injector.py` | ~500 | 提示注入: 渲染 `<available_skills>` XML 块到系统提示, Token 预算控制 | ✅ `crates/skills/src/injector.rs` (783 行) |
+| `types.py` | ~200 | 核心数据类型: SkillSpec, SkillLayer, SkillRequires | ✅ `crates/skills/src/types.rs` (1,616 行) |
+| `eligibility.py` | ~300 | 运行时资格: OS 匹配, 二进制检查 (`shutil.which`), 环境变量 | ✅ `crates/skills/src/eligibility.rs` (923 行) |
+| `meta/` | ~5,000 | 元技能编排: DAG 调度器, 6 个执行器, Jinja 模板, 事件流 | ✅ `crates/skills/src/meta.rs` (2,182 行) |
+| `hub/` | ~3,000 | 技能分发: ClawHub/GitHub 源, 安装器, 安全扫描器, 锁文件 | ✅ `crates/skills/src/hub.rs` (2,664 行) |
+| `creator/` | ~1,000 | 元技能创建工具 | ✅ `crates/skills/src/creator.rs` |
 | `bundled/` | 50+ SKILL.md | 内置技能清单 | ✅ 数据可移植 (YAML/Markdown, 无需修改) |
 
 #### 元技能 (Meta-skills)
@@ -580,12 +580,12 @@ Boot → ChannelManager.from_config()
 |------|------|------|
 | `text_tool_normalizer.py` (95,170 行) | ⭐⭐⭐⭐⭐ | 最复杂的单文件, 需要在 Rust 中复现 DSML/XML/JSON 方言理解和转换逻辑 — ✅ 已完成 `crates/provider/src/text_tool_normalizer.rs` (743 行) + `normalizer.rs` (321 行) |
 | `ensemble.py` (171,640 行) | ⭐⭐⭐⭐⭐ | 多模型集成编排器, 纯逻辑但体量巨大, 需完整重写为 Rust trait — ✅ 已完成 `crates/provider/src/ensemble.rs` (3,463 行) |
-| `agent.py` (19,290 行) | ⭐⭐⭐⭐ | 显式状态机 ~3000 行, 13 处 subprocess, 大量 asyncio 协同 — ✅ 已完成 `crates/engine/src/agent.rs` (1,849 行) 🔄 正在扩展 |
+| `agent.py` (19,290 行) | ⭐⭐⭐⭐ | 显式状态机 ~3000 行, 13 处 subprocess, 大量 asyncio 协同 — ✅ 已完成 `crates/engine/src/agent.rs` (2,449 行) |
 | `stream_assembly.py` (30,937 行) | ⭐⭐⭐⭐ | SSE 流解析 + 推理/工具调用缓冲, 需 tokio Stream 实现 — ✅ 已完成 `crates/provider/src/stream_assembly.rs` (726 行) |
 | `request_proof.py` (89,921 行) | ⭐⭐⭐⭐ | 预检载荷投影/预算, 大量纯数据转换, 体量大但逻辑简单 — ✅ 已完成 `crates/provider/src/request_proof.rs` (686 行) |
-| 沙箱 Linux/macOS/Windows (29,178 行) | ⭐⭐⭐⭐ | 三平台原生 API 调用, 需 nix + windows-rs + seccomp — ✅ 已完成 (1,546 行) 🔄 正在扩展 |
+| 沙箱 Linux/macOS/Windows (29,178 行) | ⭐⭐⭐⭐ | 三平台原生 API 调用, 需 nix + windows-rs + seccomp — ✅ 已完成 `crates/sandbox/src/` (5,173 行) |
 | 信道 SDK 依赖替代 (Feishu/DingTalk/QQ/Matrix) | ⭐⭐⭐ | 各平台原始协议需要逆向工程, 无现成 Rust SDK — ✅ 已完成 (4,个适配器 700-871 行) |
-| 元技能 DAG 编排器 (5,000 行) | ⭐⭐⭐ | DAG 拓扑排序 + 6 个执行器, 算法清晰但体量大 — ✅ 已完成 `crates/skills/src/meta.rs` (1,401 行) 🔄 正在扩展 |
+| 元技能 DAG 编排器 (5,000 行) | ⭐⭐⭐ | DAG 拓扑排序 + 6 个执行器, 算法清晰但体量大 — ✅ 已完成 `crates/skills/src/meta.rs` (2,182 行) |
 
 ### Rust crate 依赖清单
 
@@ -627,18 +627,18 @@ Boot → ChannelManager.from_config()
 |--------|-----------|-------------|-------------|--------|--------|---------|
 | Gateway 网关 | ~6,000 | ~4,000 | 22,641 | 100%+ | 中 | ⭐⭐ |
 | Provider 提供商 | ~34,000 | ~25,000 | 25,790 | 100%+ | 高 | ⭐⭐⭐⭐ |
-| Engine 引擎 | ~59,000 | ~35,000 | 14,454 | 41% | 极高 | ⭐⭐⭐⭐⭐ |
+| Engine 引擎 | ~59,000 | ~35,000 | 19,044 | 54% | 极高 | ⭐⭐⭐⭐⭐ |
 | Tools 工具 | ~33,000 | ~20,000 | 9,550 | 48% | 高 | ⭐⭐⭐⭐ |
 | Session 会话 | ~19,000 | ~10,000 | 7,688 | 77% | 中 | ⭐⭐⭐ |
 | Memory 记忆 | ~16,000 | ~10,000 | 8,296 | 83% | 中 | ⭐⭐⭐ |
-| Channels 信道 | ~16,000 | ~12,000 | 6,570 | 55% | 中高 | ⭐⭐⭐ |
-| Sandbox 沙箱 | ~29,000 | ~18,000 | 1,546 | 9% | 高 | ⭐⭐⭐⭐ |
+| Channels 信道 | ~16,000 | ~12,000 | 12,383 | 100%+ | 中高 | ⭐⭐⭐ |
+| Sandbox 沙箱 | ~29,000 | ~18,000 | 5,173 | 29% | 高 | ⭐⭐⭐⭐ |
 | CLI/TUI | ~36,000 | ~20,000 | 3,881 | 19% | 中 | ⭐⭐ |
-| Skills 技能 | ~28,000 | ~15,000 | 4,076 | 27% | 高 | ⭐⭐⭐ |
+| Skills 技能 | ~28,000 | ~15,000 | 10,272 | 68% | 高 | ⭐⭐⭐ |
 | Scheduler 调度器 | ~6,000 | ~3,000 | 2,623 | 87% | 低 | ⭐⭐ |
-| 其他模块 | ~10,000 | ~6,000 | 5,567 | 93% | 中 | ⭐⭐ |
+| 其他模块 | ~10,000 | ~6,000 | 15,453 | 93% | 中 | ⭐⭐ |
 | Tauri 壳 | — | ~10,000 | 9,952 | 99%+ | 中 | ⭐⭐ |
-| **总计** | **~292,000** | **~178,000** | **133,037** | **74.7%** | — | — |
+| **总计** | **~292,000** | **~178,000** | **152,696** | **85.8%** | — | — |
 
 > **注意**: 行数估算基于表 2.1-2.12 中明确的子系统行数累加, 不计交叉引用. Rust 行数估算约为 Python 的 55-65%, 因为 Rust 更简洁的类型系统和零成本抽象可以减少样板代码.
 
