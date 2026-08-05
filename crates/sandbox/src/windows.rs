@@ -33,26 +33,36 @@ mod backend {
     use std::process::Stdio;
     use tokio::process::Command;
     use tracing::warn;
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE};
-    use windows::Win32::Security::Authorization::{
-        CreateRestrictedToken, CreateWellKnownSid, OpenProcessToken, SetTokenInformation,
-        TOKEN_ACCESS_MASK, TOKEN_FLAGS, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL,
-        SID_AND_ATTRIBUTES,
+    use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, STILL_ACTIVE};
+    use windows::Win32::Security::{
+        CreateRestrictedToken, CreateWellKnownSid, SetTokenInformation,
+        CREATE_RESTRICTED_TOKEN_FLAGS, PSID, SECURITY_ATTRIBUTES, SID, SID_AND_ATTRIBUTES,
+        TOKEN_ACCESS_MASK, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, WELL_KNOWN_SID_TYPE,
     };
-    use windows::Win32::Security::SID;
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
         JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME, JOBOBJECTINFOCLASS,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     };
+    use windows::Win32::System::Pipes::CreatePipe;
     use windows::Win32::System::Threading::{
-        CreatePipe, CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess,
-        ResumeThread, TerminateProcess, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED,
-        CREATE_UNICODE_ENVIRONMENT, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STILL_ACTIVE,
-        STARTUP_INFO_FLAGS, STARTUPINFOW, PWSTR,
+        CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, ResumeThread,
+        TerminateProcess, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+        PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW, STARTUPINFOW_FLAGS,
     };
+
+    /// `CLSID_NetFwPolicy2` (`{E2B3C97F-6AE1-41AC-817A-F6F92166D7DD}`). The `windows` crate
+    /// 0.58 does not expose this constant, so the class GUID is passed to `CoCreateInstance`
+    /// directly.
+    const CLSID_NET_FW_POLICY2: windows::core::GUID =
+        windows::core::GUID::from_u128(0xE2B3C97F_6AE1_41AC_817A_F6F92166D7DD);
+    /// `CLSID_NetFwRule` (`{2C5BC43E-3369-4C33-AB0C-BE9469677AF4}`). The `windows` crate
+    /// 0.58 does not expose this constant, so the class GUID is passed to `CoCreateInstance`
+    /// directly.
+    const CLSID_NET_FW_RULE: windows::core::GUID =
+        windows::core::GUID::from_u128(0x2C5BC43E_3369_4C33_AB0C_BE9469677AF4);
 
     pub struct WindowsBackend;
 
@@ -280,13 +290,10 @@ mod backend {
             let mut restricted: HANDLE = HANDLE(std::ptr::null_mut());
             CreateRestrictedToken(
                 process_token,
-                TOKEN_FLAGS::DISABLE_MAX_PRIVILEGE,
-                0,
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
+                CREATE_RESTRICTED_TOKEN_FLAGS::DISABLE_MAX_PRIVILEGE,
+                None,
+                None,
+                None,
                 &mut restricted,
             )
             .map_err(|e| format!("CreateRestrictedToken: {e}"))?;
@@ -296,16 +303,16 @@ mod backend {
             let sid_ptr = sid_buf.as_mut_ptr() as *mut SID;
             let mut sid_size = sid_buf.len() as u32;
             CreateWellKnownSid(
-                windows::Win32::Security::Authorization::WELL_KNOWN_SID_TYPE::WinLowLabelSid,
+                WELL_KNOWN_SID_TYPE::WinLowLabelSid,
                 None,
-                sid_ptr,
+                PSID(sid_ptr as *mut c_void),
                 &mut sid_size,
             )
             .map_err(|e| format!("CreateWellKnownSid: {e}"))?;
 
             let label = TOKEN_MANDATORY_LABEL {
                 Label: SID_AND_ATTRIBUTES {
-                    Sid: sid_ptr,
+                    Sid: PSID(sid_ptr as *mut c_void),
                     // SE_GROUP_INTEGRITY
                     Attributes: 0x20,
                 },
@@ -342,10 +349,8 @@ mod backend {
         job: HANDLE,
     ) -> Result<RestrictedProcess, String> {
         unsafe {
-            let mut sa = windows::Win32::System::Threading::SECURITY_ATTRIBUTES {
-                nLength: std::mem::size_of::<
-                    windows::Win32::System::Threading::SECURITY_ATTRIBUTES,
-                >() as u32,
+            let mut sa = SECURITY_ATTRIBUTES {
+                nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
                 lpSecurityDescriptor: std::ptr::null_mut(),
                 bInheritHandle: BOOL(1),
             };
@@ -372,7 +377,7 @@ mod backend {
 
             let mut si = STARTUPINFOW {
                 cb: std::mem::size_of::<STARTUPINFOW>() as u32,
-                dwFlags: STARTUP_INFO_FLAGS::STARTF_USESTDHANDLES,
+                dwFlags: STARTUPINFOW_FLAGS::STARTF_USESTDHANDLES,
                 hStdInput: HANDLE(std::ptr::null_mut()),
                 hStdOutput: out_write,
                 hStdError: err_write,
@@ -454,7 +459,7 @@ mod backend {
                 let _ = GetExitCodeProcess(proc.process, &mut code);
                 code
             };
-            if code != STILL_ACTIVE {
+            if code != STILL_ACTIVE.0 as u32 {
                 exit_code = code as i32;
                 break;
             }
@@ -529,35 +534,36 @@ mod backend {
         direction: windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_RULE_DIRECTION,
         action: windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_ACTION,
     ) -> Result<String, String> {
-        use windows::core::HSTRING;
+        use windows::core::BSTR;
+        use windows::Win32::Foundation::VARIANT_TRUE;
         use windows::Win32::NetworkManagement::WindowsFirewall::{
-            INetFwPolicy2, INetFwRule, CLSID_NetFwPolicy2, CLSID_NetFwRule, NET_FW_PROFILE2_ALL,
+            INetFwPolicy2, INetFwRule, NET_FW_PROFILE2_ALL,
         };
         use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            let policy2: INetFwPolicy2 = CoCreateInstance(&CLSID_NetFwPolicy2, None, CLSCTX_ALL)
+            let policy2: INetFwPolicy2 = CoCreateInstance(&CLSID_NET_FW_POLICY2, None, CLSCTX_ALL)
                 .map_err(|e| format!("CoCreateInstance(NetFwPolicy2): {e}"))?;
             let rules = policy2
                 .Rules()
                 .map_err(|e| format!("INetFwPolicy2::Rules: {e}"))?;
 
-            let rule: INetFwRule = CoCreateInstance(&CLSID_NetFwRule, None, CLSCTX_ALL)
+            let rule: INetFwRule = CoCreateInstance(&CLSID_NET_FW_RULE, None, CLSCTX_ALL)
                 .map_err(|e| format!("CoCreateInstance(NetFwRule): {e}"))?;
-            rule.set_Name(&HSTRING::from(name))
+            rule.SetName(&BSTR::from(name))
                 .map_err(|e| format!("INetFwRule::Name: {e}"))?;
-            rule.set_Program(&HSTRING::from(program))
-                .map_err(|e| format!("INetFwRule::Program: {e}"))?;
-            rule.set_Direction(direction)
+            rule.SetApplicationName(&BSTR::from(program))
+                .map_err(|e| format!("INetFwRule::ApplicationName: {e}"))?;
+            rule.SetDirection(direction)
                 .map_err(|e| format!("INetFwRule::Direction: {e}"))?;
-            rule.set_Action(action)
+            rule.SetAction(action)
                 .map_err(|e| format!("INetFwRule::Action: {e}"))?;
-            rule.set_Enabled(BOOL(1))
+            rule.SetEnabled(VARIANT_TRUE)
                 .map_err(|e| format!("INetFwRule::Enabled: {e}"))?;
-            rule.set_Profiles(NET_FW_PROFILE2_ALL)
+            rule.SetProfiles(NET_FW_PROFILE2_ALL.0)
                 .map_err(|e| format!("INetFwRule::Profiles: {e}"))?;
-            rule.set_InterfaceTypes(&HSTRING::from("All")).ok();
+            rule.SetInterfaceTypes(&BSTR::from("All")).ok();
 
             rules.Add(&rule)
                 .map_err(|e| format!("INetFwRules::Add: {e}"))?;
@@ -567,17 +573,17 @@ mod backend {
 
     /// Remove a Windows Firewall rule by name.
     fn remove_firewall_rule(name: &str) -> Result<(), String> {
-        use windows::core::HSTRING;
-        use windows::Win32::NetworkManagement::WindowsFirewall::{INetFwPolicy2, CLSID_NetFwPolicy2};
+        use windows::core::BSTR;
+        use windows::Win32::NetworkManagement::WindowsFirewall::INetFwPolicy2;
         use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
         unsafe {
-            let policy2: INetFwPolicy2 = CoCreateInstance(&CLSID_NetFwPolicy2, None, CLSCTX_ALL)
+            let policy2: INetFwPolicy2 = CoCreateInstance(&CLSID_NET_FW_POLICY2, None, CLSCTX_ALL)
                 .map_err(|e| format!("CoCreateInstance(NetFwPolicy2): {e}"))?;
             let rules = policy2
                 .Rules()
                 .map_err(|e| format!("INetFwPolicy2::Rules: {e}"))?;
-            rules.Remove(&HSTRING::from(name))
+            rules.Remove(&BSTR::from(name))
                 .map_err(|e| format!("INetFwRules::Remove: {e}"))?;
             Ok(())
         }

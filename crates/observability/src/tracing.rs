@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use opensquilla_core::config::Config;
 
@@ -27,7 +27,7 @@ impl TraceSpan {
     fn new(name: &str, trace_id: &str, parent_span_id: Option<String>) -> Self {
         Self {
             trace_id: trace_id.to_string(),
-            span_id: SpanId::from_u64(rand_span_id()).to_string(),
+            span_id: SpanId::from(rand_span_id()).to_string(),
             parent_span_id,
             name: name.to_string(),
             start_time: Utc::now(),
@@ -56,6 +56,35 @@ pub enum SpanStatus {
     Unset,
     Ok,
     Error,
+}
+
+/// A serializable OpenTelemetry-compatible span record.
+///
+/// The `SpanData` type lives in the `opentelemetry_sdk` crate, which is not a
+/// dependency of this crate, so this type mirrors the minimal span fields
+/// needed when exporting recorded spans.
+#[derive(Debug, Clone)]
+pub struct OtelSpanData {
+    /// The span context.
+    pub span_context: SpanContext,
+    /// The parent span ID, or [`SpanId::INVALID`] if the span has no parent.
+    pub parent_span_id: SpanId,
+    /// The kind of span.
+    pub span_kind: opentelemetry::trace::SpanKind,
+    /// Span name.
+    pub name: String,
+    /// Start time.
+    pub start_time: DateTime<Utc>,
+    /// End time.
+    pub end_time: DateTime<Utc>,
+    /// Attributes.
+    pub attributes: Vec<opentelemetry::KeyValue>,
+    /// Events.
+    pub events: Vec<opentelemetry::trace::Event>,
+    /// Links.
+    pub links: Vec<opentelemetry::trace::Link>,
+    /// Status.
+    pub status: opentelemetry::trace::Status,
 }
 
 /// A distributed tracer for tracking requests across services.
@@ -156,7 +185,7 @@ impl Tracer {
     }
 
     /// Export spans to OpenTelemetry-compatible format.
-    pub async fn export_spans(&self) -> Vec<opentelemetry::trace::SpanData> {
+    pub async fn export_spans(&self) -> Vec<OtelSpanData> {
         let spans = self.spans.read().await;
         let mut otel_spans = Vec::new();
 
@@ -166,7 +195,7 @@ impl Tracer {
             let parent_span_id = span
                 .parent_span_id
                 .as_ref()
-                .and_then(|id| SpanId::from_hex(id))
+                .and_then(|id| SpanId::from_hex(id).ok())
                 .unwrap_or(SpanId::INVALID);
 
             let span_context = SpanContext::new(
@@ -180,10 +209,7 @@ impl Tracer {
             // Build attributes
             let mut attributes = Vec::new();
             for (key, value) in &span.attributes {
-                attributes.push(opentelemetry::KeyValue::new(
-                    key.clone(),
-                    value.clone(),
-                ));
+                attributes.push(opentelemetry::KeyValue::new(key.clone(), value.clone()));
             }
 
             let status = match span.status {
@@ -199,20 +225,19 @@ impl Tracer {
                 SpanStatus::Unset => opentelemetry::trace::Status::Unset,
             };
 
-            // Create a minimal SpanData representation
-            let span_data = opentelemetry::trace::SpanData::new(
+            // Create a minimal OpenTelemetry-compatible span representation.
+            otel_spans.push(OtelSpanData {
                 span_context,
                 parent_span_id,
-                0, // span kind
-                span.name.clone(),
-                span.start_time.into(),
-                span.end_time.unwrap_or_else(Utc::now).into(),
+                span_kind: opentelemetry::trace::SpanKind::Internal,
+                name: span.name.clone(),
+                start_time: span.start_time.clone(),
+                end_time: span.end_time.clone().unwrap_or_else(Utc::now),
                 attributes,
-                Vec::new(), // events
-                Vec::new(), // links
+                events: Vec::new(), // events
+                links: Vec::new(), // links
                 status,
-            );
-            otel_spans.push(span_data);
+            });
         }
 
         otel_spans

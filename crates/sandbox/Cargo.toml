@@ -15,10 +15,13 @@ tracing.workspace = true
 thiserror.workspace = true
 nix = { workspace = true, features = ["fs", "mount", "resource", "sched"] }
 windows = { workspace = true, features = [
+    "Win32_Foundation",
     "Win32_NetworkManagement_WindowsFirewall",
-    "Win32_Security_Authorization",
+    "Win32_Security",
     "Win32_System_Com",
     "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
 ] }
 regex.workspace = true
 trust-dns-resolver.workspace = true

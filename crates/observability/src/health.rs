@@ -123,7 +123,7 @@ pub struct HealthReport {
 
 /// A subsystem health check.
 #[async_trait]
-pub trait HealthCheck: Send + Sync {
+pub trait HealthCheck: Send + Sync + std::fmt::Debug {
     /// The name of this component, reported in the health output.
     fn name(&self) -> &'static str;
     /// Run the check and return the component health.
@@ -304,6 +304,7 @@ fn http_status_for(status: HealthStatus) -> axum::http::StatusCode {
 mod tests {
     use super::*;
 
+    #[derive(Debug)]
     struct OkCheck;
 
     #[async_trait]
@@ -316,6 +317,7 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct BadCheck;
 
     #[async_trait]
@@ -328,6 +330,7 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct WarnCheck;
 
     #[async_trait]
