@@ -90,12 +90,3 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [[bin]]
 name = "opensquilla"
 path = "src/main.rs"
-
-# Release binary profile: optimize for size, full LTO, panic-abort. Matches the
-# workspace-level profile so CI and local release builds are identical.
-[profile.release]
-opt-level = "s"
-lto = true
-codegen-units = 1
-strip = true
-panic = "abort"

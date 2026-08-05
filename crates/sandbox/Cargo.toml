@@ -13,9 +13,9 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
-nix = { workspace = true, features = ["memfd", "mount", "resource", "sched"] }
+nix = { workspace = true, features = ["fs", "mount", "resource", "sched"] }
 windows = { workspace = true, features = [
-    "Win32_NetworkManagement_NetFw",
+    "Win32_NetworkManagement_WindowsFirewall",
     "Win32_Security_Authorization",
     "Win32_System_Com",
     "Win32_System_JobObjects",

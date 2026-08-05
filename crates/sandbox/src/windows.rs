@@ -93,8 +93,8 @@ mod backend {
                     match upsert_firewall_rule(
                         &format!("OpenSquilla Sandbox Block {}", uuid::Uuid::new_v4()),
                         &program,
-                        windows::Win32::NetworkManagement::NetFw::NET_FW_RULE_DIRECTION::NET_FW_RULE_DIR_OUT,
-                        windows::Win32::NetworkManagement::NetFw::NET_FW_ACTION::NET_FW_ACTION_BLOCK,
+                        windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_RULE_DIRECTION::NET_FW_RULE_DIR_OUT,
+                        windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_ACTION::NET_FW_ACTION_BLOCK,
                     ) {
                         Ok(name) => firewall_rule = Some(name),
                         Err(e) => warn!("network isolation rule unavailable: {e}"),
@@ -526,11 +526,11 @@ mod backend {
     fn upsert_firewall_rule(
         name: &str,
         program: &str,
-        direction: windows::Win32::NetworkManagement::NetFw::NET_FW_RULE_DIRECTION,
-        action: windows::Win32::NetworkManagement::NetFw::NET_FW_ACTION,
+        direction: windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_RULE_DIRECTION,
+        action: windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_ACTION,
     ) -> Result<String, String> {
         use windows::core::HSTRING;
-        use windows::Win32::NetworkManagement::NetFw::{
+        use windows::Win32::NetworkManagement::WindowsFirewall::{
             INetFwPolicy2, INetFwRule, CLSID_NetFwPolicy2, CLSID_NetFwRule, NET_FW_PROFILE2_ALL,
         };
         use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
@@ -568,7 +568,7 @@ mod backend {
     /// Remove a Windows Firewall rule by name.
     fn remove_firewall_rule(name: &str) -> Result<(), String> {
         use windows::core::HSTRING;
-        use windows::Win32::NetworkManagement::NetFw::{INetFwPolicy2, CLSID_NetFwPolicy2};
+        use windows::Win32::NetworkManagement::WindowsFirewall::{INetFwPolicy2, CLSID_NetFwPolicy2};
         use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
         unsafe {
