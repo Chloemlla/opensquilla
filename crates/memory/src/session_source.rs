@@ -432,7 +432,7 @@ impl SessionMemorySource {
             let text = msg.text_content();
             for sentence in split_sentences(&text) {
                 if let Some(fact) = extract_fact_sentence(&sentence) {
-                    let confidence = estimate_sentence_confidence(&sentence, msg.role);
+                    let confidence = estimate_sentence_confidence(&sentence, msg.role.clone());
                     facts.push(ExtractedFact {
                         content: fact,
                         fact_type: FactType::Knowledge,
@@ -455,7 +455,7 @@ impl SessionMemorySource {
             let text = msg.text_content();
             for sentence in split_sentences(&text) {
                 if let Some(pref) = extract_preference_sentence(&sentence) {
-                    let confidence = estimate_sentence_confidence(&sentence, msg.role);
+                    let confidence = estimate_sentence_confidence(&sentence, msg.role.clone());
                     facts.push(ExtractedFact {
                         content: pref,
                         fact_type: FactType::Preference,

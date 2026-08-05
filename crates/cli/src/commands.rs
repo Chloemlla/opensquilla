@@ -1,22 +1,39 @@
 use clap::{Parser, Subcommand};
 
+use crate::agent::AgentAction;
+use crate::cost::CostAction;
+use crate::init::InitAction;
+use crate::onboard::OnboardAction;
+use crate::router::RouterAction;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "opensquilla",
     version,
-    about = "OpenSquilla - Open-source AI assistant platform"
+    about = "OpenSquilla - Open-source AI assistant platform",
+    long_about = "OpenSquilla is an open-source AI assistant platform with a Rust/Tauri v2 backend.\n\
+                  This CLI provides access to chat, agents, sessions, providers, models, memory,\n\
+                  skills, sandbox, channels, scheduling, routing, and cost management."
 )]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// Enable verbose logging
+    /// Enable verbose (debug) logging
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
     /// Path to config file
     #[arg(short, long, global = true)]
     pub config: Option<String>,
+
+    /// Output format: plain, json, or table
+    #[arg(long, global = true, default_value = "plain")]
+    pub output: String,
+
+    /// Disable color output
+    #[arg(long, global = true)]
+    pub no_color: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -41,6 +58,16 @@ pub enum Command {
         /// Run with the engine directly instead of the gateway RPC path
         #[arg(long)]
         standalone: bool,
+
+        /// Attach a file to the message (repeatable)
+        #[arg(short = 'f', long = "file")]
+        attach: Vec<String>,
+    },
+
+    /// Run an autonomous agent task
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
     },
 
     /// Manage configuration
@@ -102,12 +129,40 @@ pub enum Command {
         /// Check a single subsystem (e.g. config, filesystem, network)
         #[arg(long)]
         subsystem: Option<String>,
+
+        /// Output JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
     },
 
     /// Manage gateway lifecycle
     Gateway {
         #[command(subcommand)]
         action: GatewayAction,
+    },
+
+    /// Show cost and usage analytics
+    Cost {
+        #[command(subcommand)]
+        action: CostAction,
+    },
+
+    /// Run the onboarding wizard
+    Onboard {
+        #[command(subcommand)]
+        action: Option<OnboardAction>,
+    },
+
+    /// Manage model routing and calibration
+    Router {
+        #[command(subcommand)]
+        action: RouterAction,
+    },
+
+    /// Initialize a new OpenSquilla project
+    Init {
+        #[command(subcommand)]
+        action: Option<InitAction>,
     },
 
     /// Launch terminal UI
@@ -132,6 +187,10 @@ pub enum ConfigAction {
     Import { path: String },
     /// Export config to a TOML or JSON file
     Export { path: String },
+    /// Validate the configuration file
+    Validate,
+    /// Show the default configuration
+    Defaults,
 }
 
 #[derive(Subcommand, Debug)]
@@ -142,12 +201,34 @@ pub enum ProviderAction {
     Status { name: Option<String> },
     /// Test a provider connection
     Test { name: Option<String> },
+    /// Add a new provider interactively
+    Add {
+        name: String,
+        provider_type: String,
+        #[arg(long)]
+        api_key: Option<String>,
+        #[arg(long)]
+        base_url: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Remove a provider
+    Remove { name: String },
+    /// Set the default provider
+    Default { name: String },
 }
 
 #[derive(Subcommand, Debug)]
 pub enum SessionAction {
     /// List all sessions
-    List,
+    List {
+        /// Filter by status
+        #[arg(long)]
+        status: Option<String>,
+        /// Limit number of results
+        #[arg(long, default_value = "50")]
+        limit: u64,
+    },
     /// Show session details
     Show { id: String },
     /// Delete a session
@@ -155,19 +236,60 @@ pub enum SessionAction {
     /// Archive a session
     Archive { id: String },
     /// Export session data
-    Export { id: String, output: Option<String> },
+    Export {
+        id: String,
+        output: Option<String>,
+    },
     /// Create a new session
-    Create { name: Option<String> },
+    Create {
+        name: Option<String>,
+        /// Session mode: chat, plan, agent, batch
+        #[arg(long)]
+        mode: Option<String>,
+    },
     /// Show the full transcript of a session
-    Messages { id: String },
+    Messages {
+        id: String,
+        /// Maximum number of messages to show
+        #[arg(long)]
+        limit: Option<u64>,
+    },
+    /// Fork a session into a new session
+    Fork { id: String },
+    /// Kill a session (force stop)
+    Kill { id: String },
+    /// Pause a session
+    Pause { id: String },
+    /// Resume a paused session
+    Resume { id: String },
+    /// Compact a session's context window
+    Compact { id: String },
+    /// Search sessions by name or content
+    Search {
+        query: String,
+        #[arg(long, default_value = "20")]
+        limit: u64,
+    },
 }
 
 #[derive(Subcommand, Debug)]
 pub enum ModelAction {
     /// List available models
-    List { provider: Option<String> },
+    List {
+        provider: Option<String>,
+        /// Show only models that support tools
+        #[arg(long)]
+        tools: bool,
+        /// Show only models that support vision
+        #[arg(long)]
+        vision: bool,
+    },
     /// Show model details
     Show { name: String },
+    /// Compare two or more models side by side
+    Compare {
+        models: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -177,6 +299,12 @@ pub enum MemoryAction {
         /// Optional session filter
         #[arg(short, long)]
         session: Option<String>,
+        /// Filter by memory type
+        #[arg(long)]
+        kind: Option<String>,
+        /// Limit number of results
+        #[arg(long, default_value = "100")]
+        limit: u64,
     },
     /// Show memory entry
     Show { id: String },
@@ -185,11 +313,31 @@ pub enum MemoryAction {
     /// Clear all memory
     Clear,
     /// Search memory entries
-    Search { query: String },
+    Search {
+        query: String,
+        #[arg(long, default_value = "20")]
+        limit: u64,
+    },
     /// Run a memory consistency check
     Check,
     /// Trigger dream consolidation
     Dream,
+    /// Add a memory entry manually
+    Add {
+        content: String,
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        importance: Option<f64>,
+        #[arg(long)]
+        tag: Vec<String>,
+    },
+    /// Export memory entries to JSON
+    Export {
+        output: String,
+        #[arg(long)]
+        kind: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -199,11 +347,33 @@ pub enum SkillAction {
     /// Show skill details
     Show { name: String },
     /// Install a skill (path:, github:, or a hub identifier)
-    Install { path: String },
+    Install {
+        source: String,
+        /// Skip security scan
+        #[arg(long)]
+        no_scan: bool,
+    },
     /// Uninstall a skill
     Uninstall { name: String },
     /// Search the skill hub
-    Search { query: String },
+    Search {
+        query: String,
+        #[arg(long)]
+        limit: Option<u64>,
+    },
+    /// Enable a skill
+    Enable { name: String },
+    /// Disable a skill
+    Disable { name: String },
+    /// Update an installed skill
+    Update { name: String },
+    /// Show skill metadata and trust level
+    Info { name: String },
+    /// Run a skill
+    Run {
+        name: String,
+        input: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -213,7 +383,22 @@ pub enum SandboxAction {
     /// Show the effective sandbox policy
     Policy,
     /// Execute a command in the sandbox
-    Exec { command: Vec<String> },
+    Exec {
+        command: Vec<String>,
+        /// Working directory
+        #[arg(long)]
+        workdir: Option<String>,
+        /// Set environment variable (KEY=VALUE)
+        #[arg(long = "env")]
+        envs: Vec<String>,
+    },
+    /// Show sandbox audit log
+    Audit {
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+    /// Validate the sandbox policy
+    Validate,
 }
 
 #[derive(Subcommand, Debug)]
@@ -228,6 +413,15 @@ pub enum ChannelAction {
     Connect { kind: String },
     /// Disconnect a channel
     Disconnect { id: String },
+    /// Send a test message to a channel
+    Send {
+        name: String,
+        message: String,
+    },
+    /// Start all enabled channels
+    Start,
+    /// Stop all channels
+    Stop,
 }
 
 #[derive(Subcommand, Debug)]
@@ -242,6 +436,12 @@ pub enum SchedulerAction {
         schedule: String,
         #[arg(long)]
         handler: Option<String>,
+        /// Agent to associate with the task
+        #[arg(long)]
+        agent: Option<String>,
+        /// JSON payload for the task
+        #[arg(long)]
+        payload: Option<String>,
     },
     /// Cancel/remove a scheduled task
     Cancel { id: String },
@@ -251,16 +451,41 @@ pub enum SchedulerAction {
     Pause { id: String },
     /// Resume a scheduled task
     Resume { id: String },
+    /// Show execution history for a task
+    History {
+        id: String,
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+    /// Show scheduler statistics
+    Stats,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum GatewayAction {
     /// Start the gateway
-    Start,
+    Start {
+        /// Run in background (detach)
+        #[arg(long)]
+        detach: bool,
+    },
     /// Stop the gateway
     Stop,
     /// Show gateway status
     Status,
     /// Restart the gateway
     Restart,
+    /// Show gateway logs
+    Logs {
+        /// Number of lines to show
+        #[arg(long, default_value = "50")]
+        lines: usize,
+        /// Follow log output
+        #[arg(long)]
+        follow: bool,
+    },
+    /// Show gateway metrics
+    Metrics,
+    /// Show gateway configuration
+    Info,
 }

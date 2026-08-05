@@ -158,3 +158,75 @@ fn provider_default_model(config: &Config, provider_name: &str, provider: &dyn P
     }
     util::default_model(config)
 }
+
+/// Add a new provider to the configuration.
+pub async fn add_provider(
+    name: String,
+    provider_type: String,
+    api_key: Option<String>,
+    base_url: Option<String>,
+    model: Option<String>,
+) -> Result<()> {
+    let mut config = Config::load().context("Failed to load configuration")?;
+
+    // Check for duplicates.
+    if config.find_provider(&name).is_some() {
+        anyhow::bail!("Provider '{name}' already exists");
+    }
+
+    let models = match &model {
+        Some(m) => vec![m.clone()],
+        None => ProviderSpecTable::get(&provider_type)
+            .map(|s| s.models.iter().map(|m| m.to_string()).collect())
+            .unwrap_or_default(),
+    };
+    let default_model = model.clone().or_else(|| {
+        ProviderSpecTable::get(&provider_type).map(|s| s.default_model.to_string())
+    });
+
+    let provider_config = opensquilla_core::config::ProviderConfig {
+        name: name.clone(),
+        provider_type: provider_type.clone(),
+        api_key,
+        base_url,
+        models,
+        default_model,
+        ..Default::default()
+    };
+    config.providers.push(provider_config);
+    config.save().context("Failed to save configuration")?;
+
+    println!("{} Added provider: {} ({})", crate::table::ok(), name, provider_type);
+    if let Some(m) = &default_model {
+        println!("  Default model: {m}");
+    }
+    Ok(())
+}
+
+/// Remove a provider from the configuration.
+pub async fn remove_provider(name: String) -> Result<()> {
+    let mut config = Config::load().context("Failed to load configuration")?;
+    let before = config.providers.len();
+    config.providers.retain(|p| p.name != name);
+    if config.providers.len() == before {
+        anyhow::bail!("Provider '{name}' not found");
+    }
+    config.save().context("Failed to save configuration")?;
+    println!("{} Removed provider: {}", crate::table::ok(), name);
+    Ok(())
+}
+
+/// Set the default provider by moving it to the front of the list.
+pub async fn set_default_provider(name: String) -> Result<()> {
+    let mut config = Config::load().context("Failed to load configuration")?;
+    let idx = config
+        .providers
+        .iter()
+        .position(|p| p.name == name)
+        .ok_or_else(|| anyhow::anyhow!("Provider '{name}' not found"))?;
+    let provider = config.providers.remove(idx);
+    config.providers.insert(0, provider);
+    config.save().context("Failed to save configuration")?;
+    println!("{} Default provider set to: {}", crate::table::ok(), name);
+    Ok(())
+}

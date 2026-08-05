@@ -286,16 +286,44 @@ impl NetworkPolicy {
 }
 
 /// Resource limits for the sandboxed process.
+///
+/// Every field is optional: `None` means "inherit the parent's limit". The
+/// [`ResourceLimits::default`] applies conservative caps suitable for an
+/// untrusted subprocess.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResourceLimits {
-    /// Maximum CPU time in seconds
+    /// Maximum CPU time in seconds (RLIMIT_CPU).
     pub cpu_time_secs: Option<u64>,
-    /// Maximum memory in bytes
+    /// Maximum address space in bytes (RLIMIT_AS).
     pub memory_bytes: Option<u64>,
-    /// Maximum number of child processes
+    /// Maximum number of child processes (RLIMIT_NPROC).
     pub max_processes: Option<u64>,
-    /// Maximum file size in bytes
+    /// Maximum file size in bytes (RLIMIT_FSIZE).
     pub file_size_bytes: Option<u64>,
+    /// Maximum number of open file descriptors (RLIMIT_NOFILE).
+    pub open_fds: Option<u64>,
+    /// Maximum wall-clock time in seconds. Enforced by the backend with a
+    /// timeout-and-kill, not by `setrlimit`.
+    pub wall_time_secs: Option<u64>,
+    /// Maximum resident set size in bytes (RLIMIT_RSS). Best-effort on most
+    /// kernels; prefer `memory_bytes` for hard enforcement.
+    pub rss_bytes: Option<u64>,
+    /// Maximum number of threads (Linux: via `RLIMIT_NPROC` since threads
+    /// count as processes; surfaced separately for clarity).
+    pub max_threads: Option<u64>,
+    /// Maximum core dump size in bytes (RLIMIT_CORE). Defaults to 0 in
+    /// sandboxed executions to avoid leaking memory to disk.
+    pub core_size_bytes: Option<u64>,
+    /// CPU quota as a fraction of one core in [0.0, N.0]. Enforced via cgroup
+    /// CPU bandwidth control on Linux (`cpu.cfs_quota_us`) where available;
+    /// ignored on platforms without cgroup support.
+    pub cpu_quota_cores: Option<f64>,
+    /// Maximum total file locks (RLIMIT_LOCKS). Linux only.
+    pub max_file_locks: Option<u64>,
+    /// Maximum number of pending signals (RLIMIT_SIGPENDING). Linux only.
+    pub max_pending_signals: Option<u64>,
+    /// Maximum message queue bytes (RLIMIT_MSGQUEUE). Linux only.
+    pub max_msgqueue_bytes: Option<u64>,
 }
 
 impl Default for ResourceLimits {
@@ -305,11 +333,67 @@ impl Default for ResourceLimits {
             memory_bytes: Some(512 * 1024 * 1024),
             max_processes: Some(50),
             file_size_bytes: Some(100 * 1024 * 1024),
+            open_fds: Some(256),
+            wall_time_secs: Some(120),
+            rss_bytes: Some(512 * 1024 * 1024),
+            max_threads: Some(50),
+            core_size_bytes: Some(0),
+            cpu_quota_cores: Some(1.0),
+            max_file_locks: Some(32),
+            max_pending_signals: Some(64),
+            max_msgqueue_bytes: Some(8192),
         }
     }
 }
 
 impl ResourceLimits {
+    /// Conservative limits for an untrusted code-execution sandbox.
+    pub fn strict() -> Self {
+        Self {
+            cpu_time_secs: Some(30),
+            memory_bytes: Some(256 * 1024 * 1024),
+            max_processes: Some(20),
+            file_size_bytes: Some(50 * 1024 * 1024),
+            open_fds: Some(128),
+            wall_time_secs: Some(60),
+            rss_bytes: Some(256 * 1024 * 1024),
+            max_threads: Some(20),
+            core_size_bytes: Some(0),
+            cpu_quota_cores: Some(0.5),
+            max_file_locks: Some(16),
+            max_pending_signals: Some(32),
+            max_msgqueue_bytes: Some(4096),
+        }
+    }
+
+    /// Maximum-isolation limits.
+    pub fn locked() -> Self {
+        Self {
+            cpu_time_secs: Some(10),
+            memory_bytes: Some(128 * 1024 * 1024),
+            max_processes: Some(10),
+            file_size_bytes: Some(10 * 1024 * 1024),
+            open_fds: Some(64),
+            wall_time_secs: Some(20),
+            rss_bytes: Some(128 * 1024 * 1024),
+            max_threads: Some(10),
+            core_size_bytes: Some(0),
+            cpu_quota_cores: Some(0.25),
+            max_file_locks: Some(8),
+            max_pending_signals: Some(16),
+            max_msgqueue_bytes: Some(2048),
+        }
+    }
+
+    /// Limits for a specific level.
+    pub fn for_level(level: SandboxLevel) -> Self {
+        match level {
+            SandboxLevel::Standard => Self::default(),
+            SandboxLevel::Strict => Self::strict(),
+            SandboxLevel::Locked => Self::locked(),
+        }
+    }
+
     /// Merge with another limit set. A non-`None` value in `other` wins;
     /// otherwise the base value is kept.
     fn merge(&self, other: &ResourceLimits) -> ResourceLimits {
@@ -318,6 +402,15 @@ impl ResourceLimits {
             memory_bytes: other.memory_bytes.or(self.memory_bytes),
             max_processes: other.max_processes.or(self.max_processes),
             file_size_bytes: other.file_size_bytes.or(self.file_size_bytes),
+            open_fds: other.open_fds.or(self.open_fds),
+            wall_time_secs: other.wall_time_secs.or(self.wall_time_secs),
+            rss_bytes: other.rss_bytes.or(self.rss_bytes),
+            max_threads: other.max_threads.or(self.max_threads),
+            core_size_bytes: other.core_size_bytes.or(self.core_size_bytes),
+            cpu_quota_cores: other.cpu_quota_cores.or(self.cpu_quota_cores),
+            max_file_locks: other.max_file_locks.or(self.max_file_locks),
+            max_pending_signals: other.max_pending_signals.or(self.max_pending_signals),
+            max_msgqueue_bytes: other.max_msgqueue_bytes.or(self.max_msgqueue_bytes),
         }
     }
 
@@ -344,7 +437,98 @@ impl ResourceLimits {
                 });
             }
         }
+        if let Some(fds) = self.open_fds {
+            if fds == 0 {
+                return Err(PolicyValidationError::InvalidResourceLimit {
+                    message: "open_fds must be non-zero".to_string(),
+                });
+            }
+        }
+        if let Some(wall) = self.wall_time_secs {
+            if wall == 0 {
+                return Err(PolicyValidationError::InvalidResourceLimit {
+                    message: "wall_time_secs must be non-zero".to_string(),
+                });
+            }
+        }
+        if let Some(threads) = self.max_threads {
+            if threads == 0 {
+                return Err(PolicyValidationError::InvalidResourceLimit {
+                    message: "max_threads must be non-zero".to_string(),
+                });
+            }
+        }
+        if let Some(quota) = self.cpu_quota_cores {
+            if quota < 0.0 || !quota.is_finite() {
+                return Err(PolicyValidationError::InvalidResourceLimit {
+                    message: "cpu_quota_cores must be non-negative and finite".to_string(),
+                });
+            }
+        }
+        // Wall time should be >= CPU time (a process cannot use more CPU than
+        // wall time).
+        if let (Some(cpu), Some(wall)) = (self.cpu_time_secs, self.wall_time_secs) {
+            if cpu > wall {
+                return Err(PolicyValidationError::InvalidResourceLimit {
+                    message: format!(
+                        "cpu_time_secs ({cpu}) must not exceed wall_time_secs ({wall})"
+                    ),
+                });
+            }
+        }
         Ok(())
+    }
+
+    /// The effective wall-clock timeout, falling back to the CPU time when no
+    /// explicit wall time is set.
+    pub fn effective_timeout_secs(&self) -> u64 {
+        self.wall_time_secs
+            .or(self.cpu_time_secs)
+            .unwrap_or(300)
+            .max(1)
+    }
+
+    /// Human-readable summary for audit logs.
+    pub fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(cpu) = self.cpu_time_secs {
+            parts.push(format!("cpu={cpu}s"));
+        }
+        if let Some(wall) = self.wall_time_secs {
+            parts.push(format!("wall={wall}s"));
+        }
+        if let Some(mem) = self.memory_bytes {
+            parts.push(format!("mem={}", format_bytes(mem)));
+        }
+        if let Some(nproc) = self.max_processes {
+            parts.push(format!("nproc={nproc}"));
+        }
+        if let Some(fds) = self.open_fds {
+            parts.push(format!("fds={fds}"));
+        }
+        if let Some(fsize) = self.file_size_bytes {
+            parts.push(format!("fsize={}", format_bytes(fsize)));
+        }
+        if let Some(quota) = self.cpu_quota_cores {
+            parts.push(format!("quota={quota}c"));
+        }
+        parts.join(", ")
+    }
+}
+
+/// Format a byte count as a human-readable string.
+pub fn format_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{} {}", bytes, UNITS[0])
+    } else {
+        format!("{:.1} {}", value, UNITS[unit])
     }
 }
 
@@ -400,12 +584,7 @@ impl Default for SandboxPolicy {
                 home_readable: true,
             },
             network: NetworkPolicy::ProxyAllowlist(vec![]),
-            resource_limits: ResourceLimits {
-                cpu_time_secs: Some(60),
-                memory_bytes: Some(512 * 1024 * 1024), // 512 MB
-                max_processes: Some(50),
-                file_size_bytes: Some(100 * 1024 * 1024), // 100 MB
-            },
+            resource_limits: ResourceLimits::default(),
             audit_enabled: true,
             env_allowlist: vec![
                 "PATH".to_string(),
@@ -621,12 +800,7 @@ impl SandboxPolicy {
                 home_readable: true,
             },
             network: NetworkPolicy::ProxyAllowlist(vec![]),
-            resource_limits: ResourceLimits {
-                cpu_time_secs: Some(60),
-                memory_bytes: Some(512 * 1024 * 1024),
-                max_processes: Some(50),
-                file_size_bytes: Some(100 * 1024 * 1024),
-            },
+            resource_limits: ResourceLimits::default(),
             audit_enabled: true,
             env_allowlist: vec![
                 "PATH".to_string(),
@@ -655,12 +829,7 @@ impl SandboxPolicy {
                 home_readable: true,
             },
             network: NetworkPolicy::ProxyAllowlist(vec![]),
-            resource_limits: ResourceLimits {
-                cpu_time_secs: Some(30),
-                memory_bytes: Some(256 * 1024 * 1024),
-                max_processes: Some(20),
-                file_size_bytes: Some(50 * 1024 * 1024),
-            },
+            resource_limits: ResourceLimits::strict(),
             audit_enabled: true,
             env_allowlist: vec!["PATH".to_string(), "HOME".to_string(), "TMPDIR".to_string()],
         }
@@ -684,12 +853,7 @@ impl SandboxPolicy {
                 home_readable: false,
             },
             network: NetworkPolicy::None,
-            resource_limits: ResourceLimits {
-                cpu_time_secs: Some(10),
-                memory_bytes: Some(128 * 1024 * 1024),
-                max_processes: Some(10),
-                file_size_bytes: Some(10 * 1024 * 1024),
-            },
+            resource_limits: ResourceLimits::locked(),
             audit_enabled: true,
             env_allowlist: vec!["PATH".to_string()],
         }
@@ -729,4 +893,352 @@ pub enum PolicyValidationError {
     LevelNetworkConflict { level: SandboxLevel },
     #[error("invalid domain in network allowlist: '{domain}'")]
     InvalidAllowedDomain { domain: String },
+    #[error("invalid environment variable name: '{name}'")]
+    InvalidEnvVar { name: String },
+}
+
+/// Environment-variable filtering policy.
+///
+/// Controls which environment variables are passed to the sandboxed process.
+/// The default behaviour is an allowlist: only variables listed in
+/// `allowlist` (plus any in `set`) are inherited from the parent, and `set`
+/// injects explicit values. Variables in `denylist` are always stripped,
+/// even if they appear in the allowlist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvironmentPolicy {
+    /// Variables allowed to be inherited from the parent process.
+    pub allowlist: Vec<String>,
+    /// Variables to explicitly strip (always wins over allowlist).
+    pub denylist: Vec<String>,
+    /// Variables to set to explicit values.
+    pub set: std::collections::HashMap<String, String>,
+    /// Whether to clear the entire environment before applying the allowlist.
+    /// When `true`, only `set` plus the allowlisted-and-present variables
+    /// survive.
+    pub clear: bool,
+}
+
+impl Default for EnvironmentPolicy {
+    fn default() -> Self {
+        Self {
+            allowlist: vec![
+                "PATH".to_string(),
+                "HOME".to_string(),
+                "USER".to_string(),
+                "LANG".to_string(),
+                "LC_ALL".to_string(),
+                "TMPDIR".to_string(),
+            ],
+            denylist: vec![
+                // Never leak secrets into the sandbox.
+                "AWS_SECRET_ACCESS_KEY".to_string(),
+                "GITHUB_TOKEN".to_string(),
+                "OPENAI_API_KEY".to_string(),
+                "ANTHROPIC_API_KEY".to_string(),
+                "DATABASE_URL".to_string(),
+                "SECRET".to_string(),
+                "TOKEN".to_string(),
+            ],
+            set: std::collections::HashMap::new(),
+            clear: false,
+        }
+    }
+}
+
+impl EnvironmentPolicy {
+    /// Create an empty policy (nothing inherited).
+    pub fn empty() -> Self {
+        Self {
+            allowlist: Vec::new(),
+            denylist: Vec::new(),
+            set: std::collections::HashMap::new(),
+            clear: true,
+        }
+    }
+
+    /// Builder: add an allowed variable.
+    pub fn allow(mut self, var: impl Into<String>) -> Self {
+        let v = var.into();
+        if !self.allowlist.contains(&v) {
+            self.allowlist.push(v);
+        }
+        self
+    }
+
+    /// Builder: add a denied variable.
+    pub fn deny(mut self, var: impl Into<String>) -> Self {
+        let v = var.into();
+        if !self.denylist.contains(&v) {
+            self.denylist.push(v);
+        }
+        self
+    }
+
+    /// Builder: set an explicit variable.
+    pub fn set(mut self, var: impl Into<String>, value: impl Into<String>) -> Self {
+        self.set.insert(var.into(), value.into());
+        self
+    }
+
+    /// Filter a supplied environment map through this policy.
+    ///
+    /// `supplied` is the environment the caller wants to pass; the parent
+    /// process's environment is consulted for allowlisted variables that are
+    /// not in `supplied`.
+    pub fn filter(&self, supplied: &std::collections::HashMap<String, String>) -> std::collections::HashMap<String, String> {
+        let mut out = std::collections::HashMap::new();
+        if !self.clear {
+            // Inherit allowlisted variables from the parent when not supplied.
+            for var in &self.allowlist {
+                if !supplied.contains_key(var) {
+                    if let Ok(v) = std::env::var(var) {
+                        out.insert(var.clone(), v);
+                    }
+                }
+            }
+        }
+        // Apply supplied values for allowlisted variables.
+        for (k, v) in supplied {
+            if self.denylist.iter().any(|d| d == k) {
+                continue;
+            }
+            if self.allowlist.iter().any(|a| a == k) || self.set.contains_key(k) {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+        // Apply explicit sets (always win).
+        for (k, v) in &self.set {
+            if !self.denylist.iter().any(|d| d == k) {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+        // Strip denylist as a final guard.
+        for d in &self.denylist {
+            out.remove(d);
+        }
+        out
+    }
+
+    /// Validate that variable names are well-formed (alphanumeric + underscore,
+    /// not starting with a digit).
+    pub fn validate(&self) -> Result<(), PolicyValidationError> {
+        let check = |name: &str| -> Result<(), PolicyValidationError> {
+            if name.is_empty() {
+                return Err(PolicyValidationError::InvalidEnvVar {
+                    name: name.to_string(),
+                });
+            }
+            let mut chars = name.chars();
+            let first = chars.next().unwrap();
+            if !(first.is_ascii_alphabetic() || first == '_') {
+                return Err(PolicyValidationError::InvalidEnvVar {
+                    name: name.to_string(),
+                });
+            }
+            if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return Err(PolicyValidationError::InvalidEnvVar {
+                    name: name.to_string(),
+                });
+            }
+            Ok(())
+        };
+        for v in &self.allowlist {
+            check(v)?;
+        }
+        for v in &self.set {
+            check(v.0)?;
+        }
+        Ok(())
+    }
+}
+
+/// Build the default SSRF-prevention CIDR block list.
+///
+/// Returns the standard private / link-local / loopback ranges that a sandbox
+/// proxy should refuse to connect to.
+pub fn default_blocked_cidrs() -> Vec<String> {
+    vec![
+        "0.0.0.0/8".to_string(),
+        "10.0.0.0/8".to_string(),
+        "100.64.0.0/10".to_string(),
+        "127.0.0.0/8".to_string(),
+        "169.254.0.0/16".to_string(),
+        "172.16.0.0/12".to_string(),
+        "192.0.0.0/24".to_string(),
+        "192.0.2.0/24".to_string(),
+        "192.168.0.0/16".to_string(),
+        "198.18.0.0/15".to_string(),
+        "198.51.100.0/24".to_string(),
+        "203.0.113.0/24".to_string(),
+        "224.0.0.0/4".to_string(),
+        "240.0.0.0/4".to_string(),
+        "::1/128".to_string(),
+        "fc00::/7".to_string(),
+        "fe80::/10".to_string(),
+        "::ffff:0:0/96".to_string(),
+    ]
+}
+
+/// A network access rule combining a domain pattern and a port range.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkRule {
+    /// Domain pattern (`"example.com"`, `"*.example.com"`).
+    pub domain: String,
+    /// Allowed ports. Empty means all ports.
+    pub ports: Vec<u16>,
+}
+
+impl NetworkRule {
+    /// Create a rule allowing all ports for a domain.
+    pub fn new(domain: impl Into<String>) -> Self {
+        Self {
+            domain: domain.into(),
+            ports: Vec::new(),
+        }
+    }
+
+    /// Create a rule allowing specific ports.
+    pub fn with_ports(domain: impl Into<String>, ports: Vec<u16>) -> Self {
+        Self {
+            domain: domain.into(),
+            ports,
+        }
+    }
+
+    /// Does this rule match a given host and port?
+    pub fn matches(&self, host: &str, port: u16) -> bool {
+        let h = host.to_lowercase();
+        let d = self.domain.to_lowercase();
+        let domain_ok = if let Some(suffix) = d.strip_prefix("*.") {
+            h == suffix || h.ends_with(&format!(".{suffix}"))
+        } else {
+            h == d
+        };
+        if !domain_ok {
+            return false;
+        }
+        if self.ports.is_empty() {
+            return true;
+        }
+        self.ports.contains(&port)
+    }
+}
+
+/// Derive the effective resource limits for a level merged with overrides.
+pub fn derive_resource_limits(
+    level: SandboxLevel,
+    overrides: Option<&ResourceLimits>,
+) -> ResourceLimits {
+    let base = ResourceLimits::for_level(level);
+    match overrides {
+        Some(o) => base.merge(o),
+        None => base,
+    }
+}
+
+/// A human-readable one-line summary of a policy, for audit logs.
+pub fn policy_summary(policy: &SandboxPolicy) -> String {
+    format!(
+        "level={:?} net={} fs(read={} write={} deny={}) limits[{}] env={}",
+        policy.level,
+        match &policy.network {
+            NetworkPolicy::None => "none".to_string(),
+            NetworkPolicy::Host => "host".to_string(),
+            NetworkPolicy::ProxyAllowlist(d) => format!("proxy({})", d.len()),
+        },
+        policy.filesystem.read_allowed.len(),
+        policy.filesystem.write_allowed.len(),
+        policy.filesystem.denied.len(),
+        policy.resource_limits.summary(),
+        policy.env_allowlist.len(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resource_limits_default_validates() {
+        ResourceLimits::default().validate().unwrap();
+        ResourceLimits::strict().validate().unwrap();
+        ResourceLimits::locked().validate().unwrap();
+    }
+
+    #[test]
+    fn resource_limits_for_level() {
+        assert!(ResourceLimits::for_level(SandboxLevel::Locked).cpu_time_secs.unwrap() < ResourceLimits::for_level(SandboxLevel::Standard).cpu_time_secs.unwrap());
+    }
+
+    #[test]
+    fn effective_timeout_falls_back_to_cpu() {
+        let mut l = ResourceLimits::default();
+        l.wall_time_secs = None;
+        assert_eq!(l.effective_timeout_secs(), l.cpu_time_secs.unwrap());
+    }
+
+    #[test]
+    fn environment_policy_filters() {
+        let policy = EnvironmentPolicy::default()
+            .allow("FOO")
+            .deny("SECRET")
+            .set("BAR", "baz");
+        let mut supplied = std::collections::HashMap::new();
+        supplied.insert("FOO".to_string(), "foo_val".to_string());
+        supplied.insert("SECRET".to_string(), "leak".to_string());
+        let filtered = policy.filter(&supplied);
+        assert_eq!(filtered.get("FOO"), Some(&"foo_val".to_string()));
+        assert_eq!(filtered.get("BAR"), Some(&"baz".to_string()));
+        assert!(!filtered.contains_key("SECRET"));
+    }
+
+    #[test]
+    fn environment_policy_validates_names() {
+        let policy = EnvironmentPolicy::default().allow("1INVALID");
+        assert!(policy.validate().is_err());
+        let policy = EnvironmentPolicy::default().allow("VALID_NAME");
+        assert!(policy.validate().is_ok());
+    }
+
+    #[test]
+    fn default_blocked_cidrs_includes_loopback() {
+        let cidrs = default_blocked_cidrs();
+        assert!(cidrs.contains(&"127.0.0.0/8".to_string()));
+        assert!(cidrs.contains(&"169.254.0.0/16".to_string()));
+    }
+
+    #[test]
+    fn network_rule_matches() {
+        let rule = NetworkRule::with_ports("*.example.com", vec![443]);
+        assert!(rule.matches("api.example.com", 443));
+        assert!(!rule.matches("api.example.com", 80));
+        assert!(!rule.matches("example.org", 443));
+    }
+
+    #[test]
+    fn format_bytes_human_readable() {
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1024), "1.0 KiB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MiB");
+    }
+
+    #[test]
+    fn policy_summary_nonempty() {
+        let policy = SandboxPolicy::default();
+        let s = policy_summary(&policy);
+        assert!(s.contains("level="));
+        assert!(s.contains("net="));
+    }
+
+    #[test]
+    fn build_policy_for_each_level_validates() {
+        for level in [
+            SandboxLevel::Standard,
+            SandboxLevel::Strict,
+            SandboxLevel::Locked,
+        ] {
+            let policy = SandboxPolicy::build_policy(level, None);
+            policy.validate().unwrap();
+        }
+    }
 }

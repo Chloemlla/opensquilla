@@ -501,7 +501,7 @@ impl ResponsesToolType {
     }
 
     /// Parse a tool type from its wire name.
-    pub const fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "function" => Some(Self::Function),
             "computer_use" => Some(Self::ComputerUse),

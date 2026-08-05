@@ -479,7 +479,7 @@ impl TurnCapture {
         for msg in messages {
             let text = msg.text_content();
             if !text.is_empty() {
-                transcript_parts.push(format!("{}: {}", role_label(msg.role), text));
+                transcript_parts.push(format!("{}: {}", role_label(&msg.role), text));
             }
 
             match msg.role {

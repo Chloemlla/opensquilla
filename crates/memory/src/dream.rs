@@ -909,7 +909,7 @@ fn detect_conflict(a: &str, b: &str) -> f64 {
             conflicts += 1.0;
         }
     }
-    (conflicts * 0.4).min(1.0)
+    (conflicts * 0.4_f64).min(1.0_f64)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

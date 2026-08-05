@@ -28,6 +28,8 @@ pub mod types;
 pub mod eligibility;
 pub mod meta;
 pub mod hub;
+pub mod manifest;
+pub mod template;
 
 /// Bundled built-in skills, defined as Rust data structures in code.
 #[path = "../bundled/mod.rs"]
@@ -75,6 +77,25 @@ pub use hub::{
     ClawHubSource, GitHubSource, InstallOptions, InstallResult, LocalDirSource, LockEntry, LockFile,
     ScanFinding, ScanResult, ScanStrategy, SecurityScanner, SecurityWarning, Severity, SkillBundle,
     SkillHub, SkillInstaller, SkillMeta, SkillSearchIndex, SkillSource, TrustLevel,
+};
+
+// --- manifest --------------------------------------------------------------
+
+pub use manifest::{
+    extract_author, extract_layer, extract_license, extract_metadata, extract_requires,
+    extract_visibility, manifest_from_json, manifest_from_yaml, manifest_summary,
+    manifest_to_json, manifest_to_spec_public, manifest_to_yaml, merge_manifests, meta_manifest,
+    minimal_manifest, upgrade_manifest, collect_tags, collect_tool_names, ManifestError,
+    ManifestSchema, ManifestSummary, ManifestValidator, ManifestValidatorConfig, ValidationIssue,
+    ValidationReport, MANIFEST_SCHEMA_VERSION,
+};
+
+// --- template --------------------------------------------------------------
+
+pub use template::{
+    builtin_templates, extract_variables, render_template_str, render_with_map,
+    validate_template, BilingualPrompt, PromptTemplate, TemplateError as TemplateRenderError,
+    TemplateRegistry,
 };
 
 // --- bundled --------------------------------------------------------------

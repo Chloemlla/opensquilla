@@ -312,7 +312,8 @@ pub fn calibration_path() -> PathBuf {
 /// Load the calibration state; a missing or corrupt file yields a neutral
 /// state. Never returns an error.
 pub fn load_calibration(path: Option<&Path>) -> CalibrationState {
-    let path = path.unwrap_or(&calibration_path());
+    let default_path = calibration_path();
+    let path = path.unwrap_or(&default_path);
     let Ok(raw) = std::fs::read_to_string(path) else {
         return CalibrationState::neutral();
     };

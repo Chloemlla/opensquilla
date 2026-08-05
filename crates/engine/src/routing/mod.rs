@@ -1263,7 +1263,7 @@ pub fn apply_budget_gate(
             );
         }
     }
-    if let Some(extra) = extra {
+    if let Some(ref mut extra) = extra {
         record_budget_gate_trail(extra, result);
     }
 
@@ -1281,7 +1281,7 @@ pub fn apply_budget_gate(
             .map(|t| t.model.clone())
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| decision.model.clone());
-        if let Some(extra) = extra {
+        if let Some(ref mut extra) = extra {
             extra.insert("final_tier".to_string(), Value::String(result.tier.clone()));
             extra.insert(
                 "final_route_class".to_string(),

@@ -60,11 +60,23 @@ fn mode_str(mode: &SessionMode) -> &'static str {
 
 /// List all sessions for the default agent with status and usage.
 pub async fn list_sessions() -> Result<()> {
+    list_sessions_filtered(None, 50).await
+}
+
+/// List sessions with optional status filter and limit.
+pub async fn list_sessions_filtered(status: Option<String>, limit: u64) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = util::build_session_manager(&config)?;
-    let sessions = manager
-        .list_sessions(&util::default_agent_id(), 100, 0)
+    let mut sessions = manager
+        .list_sessions(&util::default_agent_id(), limit, 0)
         .map_err(|e| anyhow::anyhow!("Failed to list sessions: {e}"))?;
+
+    // Apply status filter.
+    if let Some(ref status_filter) = status {
+        sessions.retain(|s| {
+            status_str(&s.status).eq_ignore_ascii_case(status_filter)
+        });
+    }
 
     if sessions.is_empty() {
         println!("No sessions found.");
@@ -214,14 +226,25 @@ pub async fn export_session(id: String, output: Option<String>) -> Result<()> {
 
 /// Create a new empty session with an optional name.
 pub async fn create_session(name: Option<String>) -> Result<()> {
+    create_session(name, None).await
+}
+
+/// Create a new session with optional name and mode.
+pub async fn create_session(name: Option<String>, mode: Option<String>) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = util::build_session_manager(&config)?;
+    let session_mode = match mode.as_deref() {
+        Some("plan") => SessionMode::Plan,
+        Some("agent") => SessionMode::Agent,
+        Some("batch") => SessionMode::Batch,
+        _ => SessionMode::Chat,
+    };
     let session = manager
         .create_session(
             util::default_agent_id(),
             name.unwrap_or_else(|| "New Session".to_string()),
             String::new(),
-            SessionMode::Chat,
+            session_mode,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create session: {e}"))?;
     println!("Created session {} ({})", session.id, session.name);
@@ -230,12 +253,18 @@ pub async fn create_session(name: Option<String>) -> Result<()> {
 
 /// Print the full transcript for a session.
 pub async fn show_messages(id: String) -> Result<()> {
+    show_messages(id, None).await
+}
+
+/// Print the transcript for a session with an optional limit.
+pub async fn show_messages(id: String, limit: Option<u64>) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = util::build_session_manager(&config)?;
     let session = load_session(&manager, &id)?;
 
+    let max = limit.unwrap_or(10000);
     let messages = manager
-        .get_transcript(&session.id, 10000, 0)
+        .get_transcript(&session.id, max, 0)
         .map_err(|e| anyhow::anyhow!("Failed to load transcript: {e}"))?;
     if messages.is_empty() {
         println!("No messages in session {id}.");
@@ -245,6 +274,143 @@ pub async fn show_messages(id: String) -> Result<()> {
         let ts = entry.created_at.format("%Y-%m-%d %H:%M:%S");
         println!("[{ts}] {:>9}: {}", entry.role, entry.content);
         println!();
+    }
+    Ok(())
+}
+
+/// Fork a session into a new session.
+pub async fn fork_session(id: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let uid = parse_id(&id)?;
+    let original = manager
+        .get_session(&uid)
+        .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
+
+    let forked = manager
+        .fork_session(&uid, &format!("Fork of {}", original.name))
+        .map_err(|e| anyhow::anyhow!("Failed to fork session: {e}"))?;
+    println!("Forked session {} -> {}", original.id, forked.id);
+    println!("  Name: {}", forked.name);
+    Ok(())
+}
+
+/// Kill a session (force stop).
+pub async fn kill_session(id: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let uid = parse_id(&id)?;
+    let mut session = manager
+        .get_session(&uid)
+        .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
+
+    session.status = SessionStatus::Killed;
+    session.updated_at = Utc::now();
+    manager
+        .storage()
+        .update_session(&session)
+        .map_err(|e| anyhow::anyhow!("Failed to kill session: {e}"))?;
+    println!("Killed session {id}.");
+    Ok(())
+}
+
+/// Pause a session.
+pub async fn pause_session(id: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let uid = parse_id(&id)?;
+    let mut session = manager
+        .get_session(&uid)
+        .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
+
+    session.status = SessionStatus::Paused;
+    session.updated_at = Utc::now();
+    manager
+        .storage()
+        .update_session(&session)
+        .map_err(|e| anyhow::anyhow!("Failed to pause session: {e}"))?;
+    println!("Paused session {id}.");
+    Ok(())
+}
+
+/// Resume a paused session.
+pub async fn resume_session(id: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let uid = parse_id(&id)?;
+    let mut session = manager
+        .get_session(&uid)
+        .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
+
+    session.status = SessionStatus::Active;
+    session.updated_at = Utc::now();
+    manager
+        .storage()
+        .update_session(&session)
+        .map_err(|e| anyhow::anyhow!("Failed to resume session: {e}"))?;
+    println!("Resumed session {id}.");
+    Ok(())
+}
+
+/// Compact a session's context window.
+pub async fn compact_session_cmd(id: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let uid = parse_id(&id)?;
+    let session = manager
+        .get_session(&uid)
+        .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
+
+    let entries = manager
+        .get_transcript(&uid, 500, 0)
+        .map_err(|e| anyhow::anyhow!("Failed to load transcript: {e}"))?;
+    let summary = format!(
+        "Compacted session with {} messages, {} tokens.",
+        entries.len(),
+        entries.iter().map(|e| e.token_count).sum::<u64>()
+    );
+    let tokens = entries.iter().map(|e| e.token_count).sum::<u64>();
+    manager
+        .compact_session(&uid, &summary, tokens)
+        .map_err(|e| anyhow::anyhow!("Failed to compact session: {e}"))?;
+    println!("Compacted session {id}: {summary}");
+    Ok(())
+}
+
+/// Search sessions by name or content.
+pub async fn search_sessions(query: String, limit: u64) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let sessions = manager
+        .list_sessions(&util::default_agent_id(), 1000, 0)
+        .map_err(|e| anyhow::anyhow!("Failed to list sessions: {e}"))?;
+
+    let needle = query.to_lowercase();
+    let matches: Vec<_> = sessions
+        .into_iter()
+        .filter(|s| {
+            s.name.to_lowercase().contains(&needle)
+                || s.system_prompt.to_lowercase().contains(&needle)
+        })
+        .take(limit as usize)
+        .collect();
+
+    if matches.is_empty() {
+        println!("No sessions matching '{query}'.");
+        return Ok(());
+    }
+
+    println!("Sessions matching '{query}' ({}):", matches.len());
+    for s in &matches {
+        println!(
+            "  {} {} ({} messages, {} tokens)",
+            s.id, s.name, s.message_count, s.total_tokens
+        );
     }
     Ok(())
 }

@@ -848,7 +848,7 @@ mod tests {
         let revised = m
             .revise_plan(
                 &plan.id,
-                "- revised approach\n- extra step",
+                "- revised approach\n- extra step".to_string(),
                 Some("scope change"),
             )
             .unwrap();

@@ -14,10 +14,15 @@ pub mod error;
 pub mod governance;
 pub mod linux;
 pub mod macos;
+pub mod metrics;
 pub mod network;
 pub mod noop;
 pub mod policy;
+pub mod profile;
+pub mod seatbelt;
+pub mod seccomp;
 pub mod stale_output_cache;
+pub mod whitelist;
 pub mod windows;
 
 pub use error::{SandboxError, SandboxErrorKind};
@@ -27,6 +32,9 @@ pub use governance::{
 };
 pub use linux::LinuxSandbox;
 pub use macos::MacOsSandbox;
+pub use metrics::{
+    AggregateMetrics, ExecutionMetrics, MetricsCollector, Rusage, SyscallClass, SyscallCounter,
+};
 pub use network::{
     IpRange, NetworkConfig, NetworkMode, NetworkProxy, ProxyAuditEntry, ProxyHandle,
 };
@@ -35,7 +43,10 @@ pub use policy::{
     AuditEntry, FilesystemPolicy, NetworkPolicy, OperationClass, PolicyValidationError,
     ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult, classify_operation,
 };
+pub use profile::{ProfileNotes, ProfileRegistry, SandboxProfile};
+pub use seatbelt::{SeatbeltCategory, SeatbeltOperation, SeatbeltProfile};
 pub use stale_output_cache::{CacheEntry, NullStaleOutputCache, StaleOutputCache};
+pub use whitelist::{AccessIntent, AccessMode, AccessVerdict, PathRule, PathWhitelist};
 pub use windows::WindowsSandbox;
 
 use std::collections::HashMap;

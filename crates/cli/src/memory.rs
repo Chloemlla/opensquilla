@@ -26,18 +26,25 @@ fn open_store() -> Result<MemoryStore> {
 
 /// List memory entries, optionally filtered by session.
 pub async fn list_memory(session: Option<String>) -> Result<()> {
+    list_memory_filtered(session, None, 100).await
+}
+
+/// List memory entries with session, type, and limit filters.
+pub async fn list_memory_filtered(
+    session: Option<String>,
+    kind: Option<String>,
+    limit: u64,
+) -> Result<()> {
     let store = open_store()?;
     let agent_id = util::default_agent_id();
 
     let entries = if let Some(sid) = session {
-        // Memories do not carry a session column; filter via metadata when the
-        // id is provided as an exact match.
         store
-            .search_fts(&sid, 100, 0)
+            .search_fts(&sid, limit, 0)
             .map_err(|e| anyhow::anyhow!("Failed to search memory: {e}"))?
     } else {
         store
-            .list_memories(&agent_id, None, 100, 0)
+            .list_memories(&agent_id, kind.as_deref(), limit, 0)
             .map_err(|e| anyhow::anyhow!("Failed to list memory: {e}"))?
     };
 
@@ -210,4 +217,89 @@ fn load_entry(store: &MemoryStore, id: &str) -> Result<MemoryEntry> {
         .get_memory(&memory_id)
         .map_err(|e| anyhow::anyhow!("Failed to load memory: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Memory entry '{id}' not found"))
+}
+
+/// Full-text search across memory entries with a configurable limit.
+pub async fn search_memory_limited(query: String, limit: u64) -> Result<()> {
+    let store = open_store()?;
+    let results = store
+        .search_fts(&query, limit, 0)
+        .map_err(|e| anyhow::anyhow!("Search failed: {e}"))?;
+
+    if results.is_empty() {
+        println!("No memory entries matched '{query}'.");
+        return Ok(());
+    }
+
+    println!("Search results for '{query}':");
+    println!("{:-<90}", "");
+    for entry in &results {
+        let snippet: String = entry.content.chars().take(80).collect();
+        println!("  [{}] {}  ({:.2})", entry.id.0, snippet, entry.importance);
+    }
+    println!("{:-<90}", "");
+    println!("{} result(s)", results.len());
+    Ok(())
+}
+
+/// Add a memory entry manually.
+pub async fn add_memory(
+    content: String,
+    kind: Option<String>,
+    importance: Option<f64>,
+    tags: Vec<String>,
+) -> Result<()> {
+    let store = open_store()?;
+    let agent_id = util::default_agent_id();
+    let memory_id = MemoryId::new();
+    let memory_type = kind.unwrap_or_else(|| "note".to_string());
+    let importance = importance.unwrap_or(0.5);
+
+    let entry = MemoryEntry::new(
+        memory_id,
+        agent_id,
+        content.clone(),
+        "cli".to_string(),
+        &memory_type,
+        importance,
+        serde_json::Value::Null,
+    );
+    let mut entry = entry.with_tags(tags);
+
+    store
+        .update_memory(&entry)
+        .map_err(|e| anyhow::anyhow!("Failed to add memory: {e}"))?;
+
+    println!("{} Added memory entry: {}", crate::table::ok(), entry.id.0);
+    println!("  Type:       {memory_type}");
+    println!("  Importance: {importance:.2}");
+    println!("  Content:    {}", content.chars().take(80).collect::<String>());
+    Ok(())
+}
+
+/// Export memory entries to a JSON file.
+pub async fn export_memory(output: String, kind: Option<String>) -> Result<()> {
+    let store = open_store()?;
+    let agent_id = util::default_agent_id();
+    let entries = store
+        .list_memories(&agent_id, kind.as_deref(), u64::MAX, 0)
+        .map_err(|e| anyhow::anyhow!("Failed to list memory: {e}"))?;
+
+    let export = serde_json::json!({
+        "agent_id": agent_id.to_string(),
+        "exported_at": chrono::Utc::now().to_rfc3339(),
+        "count": entries.len(),
+        "entries": entries,
+    });
+
+    let json = serde_json::to_string_pretty(&export)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize: {e}"))?;
+
+    if let Some(dir) = std::path::Path::new(&output).parent() {
+        std::fs::create_dir_all(dir).ok();
+    }
+    std::fs::write(&output, json)
+        .with_context(|| format!("Failed to write {output}"))?;
+    println!("Exported {} memory entries to {output}", entries.len());
+    Ok(())
 }

@@ -107,7 +107,9 @@ impl Tool for GitTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "git",
-                "Execute Git operations including clone, status, diff, add, commit, push, and log. "
+                "Execute Git operations including clone, status, diff, add, commit, push, log, "
+                    + "branch, checkout, init, merge, rebase, stash, tag, blame, remote, fetch, "
+                    + "reset, revert, cherry-pick, show, and config. "
                     + "All operations are scoped to the allowed working directory.",
                 HashMap::from([
                     (
@@ -124,6 +126,19 @@ impl Tool for GitTool {
                                 "pull".to_string(),
                                 "branch".to_string(),
                                 "checkout".to_string(),
+                                "init".to_string(),
+                                "merge".to_string(),
+                                "rebase".to_string(),
+                                "stash".to_string(),
+                                "tag".to_string(),
+                                "blame".to_string(),
+                                "remote".to_string(),
+                                "fetch".to_string(),
+                                "reset".to_string(),
+                                "revert".to_string(),
+                                "cherry-pick".to_string(),
+                                "show".to_string(),
+                                "config".to_string(),
                             ]),
                     ),
                     (
@@ -161,6 +176,75 @@ impl Tool for GitTool {
                     (
                         "working_dir".to_string(),
                         ParameterDefinition::string("Working directory for the operation"),
+                    ),
+                    (
+                        "depth".to_string(),
+                        ParameterDefinition::integer(
+                            "Shallow clone depth (for clone/fetch, creates a shallow history)",
+                        ),
+                    ),
+                    (
+                        "bare".to_string(),
+                        ParameterDefinition::boolean("Create a bare repository (for init)"),
+                    ),
+                    (
+                        "no_ff".to_string(),
+                        ParameterDefinition::boolean("Force no fast-forward merge (for merge)"),
+                    ),
+                    (
+                        "stash_op".to_string(),
+                        ParameterDefinition::string("Stash operation: push, pop, list, drop")
+                            .default(serde_json::json!("push")),
+                    ),
+                    (
+                        "stash_index".to_string(),
+                        ParameterDefinition::integer("Stash index (for stash drop)"),
+                    ),
+                    (
+                        "tag".to_string(),
+                        ParameterDefinition::string("Tag name (for tag operation)"),
+                    ),
+                    (
+                        "file".to_string(),
+                        ParameterDefinition::string("File path (for blame)"),
+                    ),
+                    (
+                        "remote_op".to_string(),
+                        ParameterDefinition::string("Remote operation: list, add, remove, set-url")
+                            .default(serde_json::json!("list")),
+                    ),
+                    (
+                        "remote".to_string(),
+                        ParameterDefinition::string("Remote name (for fetch)"),
+                    ),
+                    (
+                        "name".to_string(),
+                        ParameterDefinition::string("Remote name (for remote add/remove/set-url)"),
+                    ),
+                    (
+                        "target".to_string(),
+                        ParameterDefinition::string("Reset target (commit/branch, for reset)"),
+                    ),
+                    (
+                        "mode".to_string(),
+                        ParameterDefinition::string("Reset mode: soft, mixed, hard")
+                            .default(serde_json::json!("mixed")),
+                    ),
+                    (
+                        "commit".to_string(),
+                        ParameterDefinition::string("Commit hash (for revert, cherry-pick, show)"),
+                    ),
+                    (
+                        "no_commit".to_string(),
+                        ParameterDefinition::boolean("No commit (for revert)"),
+                    ),
+                    (
+                        "key".to_string(),
+                        ParameterDefinition::string("Config key (for config)"),
+                    ),
+                    (
+                        "value".to_string(),
+                        ParameterDefinition::string("Config value (for config)"),
                     ),
                 ]),
             )
@@ -255,6 +339,191 @@ impl Tool for GitTool {
                     .as_str()
                     .ok_or_else(|| ToolError::invalid_args("Missing 'branch' for checkout"))?;
                 let args = vec!["checkout".to_string(), branch.to_string()];
+                self.run_git(&args, working_dir).await
+            }
+            "init" => {
+                let bare = params["bare"].as_bool().unwrap_or(false);
+                let mut args = vec!["init".to_string()];
+                if bare {
+                    args.push("--bare".to_string());
+                }
+                self.run_git(&args, working_dir).await
+            }
+            "merge" => {
+                let branch = params["branch"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'branch' for merge"))?;
+                let no_ff = params["no_ff"].as_bool().unwrap_or(false);
+                let mut args = vec!["merge".to_string()];
+                if no_ff {
+                    args.push("--no-ff".to_string());
+                }
+                args.push(branch.to_string());
+                self.run_git(&args, working_dir).await
+            }
+            "rebase" => {
+                let branch = params["branch"].as_str();
+                let mut args = vec!["rebase".to_string()];
+                if let Some(b) = branch {
+                    args.push(b.to_string());
+                }
+                self.run_git(&args, working_dir).await
+            }
+            "stash" => {
+                let stash_op = params["stash_op"].as_str().unwrap_or("push");
+                let mut args = vec!["stash".to_string()];
+                match stash_op {
+                    "push" => {
+                        if let Some(msg) = params["message"].as_str() {
+                            args.push("push".to_string());
+                            args.push("-m".to_string());
+                            args.push(msg.to_string());
+                        }
+                    }
+                    "pop" => args.push("pop".to_string()),
+                    "list" => args.push("list".to_string()),
+                    "drop" => {
+                        args.push("drop".to_string());
+                        if let Some(idx) = params["stash_index"].as_i64() {
+                            args.push(format!("stash@{{{}}}", idx));
+                        }
+                    }
+                    other => {
+                        return Err(ToolError::invalid_args(format!(
+                            "Unknown stash operation: {}",
+                            other
+                        )))
+                    }
+                }
+                self.run_git(&args, working_dir).await
+            }
+            "tag" => {
+                let tag_name = params["tag"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'tag' for tag operation"))?;
+                let message = params["message"].as_str();
+                let mut args = vec!["tag".to_string()];
+                if let Some(msg) = message {
+                    args.push("-a".to_string());
+                    args.push(tag_name.to_string());
+                    args.push("-m".to_string());
+                    args.push(msg.to_string());
+                } else {
+                    args.push(tag_name.to_string());
+                }
+                self.run_git(&args, working_dir).await
+            }
+            "blame" => {
+                let file = params["file"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'file' for blame"))?;
+                let args = vec!["blame".to_string(), file.to_string()];
+                self.run_git(&args, working_dir).await
+            }
+            "remote" => {
+                let remote_op = params["remote_op"].as_str().unwrap_or("list");
+                let mut args = vec!["remote".to_string()];
+                match remote_op {
+                    "list" => {}
+                    "add" => {
+                        let name = params["name"]
+                            .as_str()
+                            .ok_or_else(|| ToolError::invalid_args("Missing 'name' for remote add"))?;
+                        let url = params["repo_url"]
+                            .as_str()
+                            .ok_or_else(|| ToolError::invalid_args("Missing 'repo_url' for remote add"))?;
+                        args.push("add".to_string());
+                        args.push(name.to_string());
+                        args.push(url.to_string());
+                    }
+                    "remove" => {
+                        let name = params["name"]
+                            .as_str()
+                            .ok_or_else(|| ToolError::invalid_args("Missing 'name' for remote remove"))?;
+                        args.push("remove".to_string());
+                        args.push(name.to_string());
+                    }
+                    "set-url" => {
+                        let name = params["name"]
+                            .as_str()
+                            .ok_or_else(|| ToolError::invalid_args("Missing 'name' for remote set-url"))?;
+                        let url = params["repo_url"]
+                            .as_str()
+                            .ok_or_else(|| ToolError::invalid_args("Missing 'repo_url' for remote set-url"))?;
+                        args.push("set-url".to_string());
+                        args.push(name.to_string());
+                        args.push(url.to_string());
+                    }
+                    other => {
+                        return Err(ToolError::invalid_args(format!(
+                            "Unknown remote operation: {}",
+                            other
+                        )))
+                    }
+                }
+                self.run_git(&args, working_dir).await
+            }
+            "fetch" => {
+                let remote = params["remote"].as_str().unwrap_or("origin");
+                let mut args = vec!["fetch".to_string(), remote.to_string()];
+                if let Some(branch) = params["branch"].as_str() {
+                    args.push(branch.to_string());
+                }
+                if let Some(depth) = params["depth"].as_i64() {
+                    args.push(format!("--depth={}", depth));
+                }
+                self.run_git(&args, working_dir).await
+            }
+            "reset" => {
+                let target = params["target"].as_str().unwrap_or("HEAD");
+                let mode = params["mode"].as_str().unwrap_or("mixed");
+                let mut args = vec!["reset".to_string()];
+                match mode {
+                    "soft" => args.push("--soft".to_string()),
+                    "mixed" => args.push("--mixed".to_string()),
+                    "hard" => args.push("--hard".to_string()),
+                    _ => {}
+                }
+                args.push(target.to_string());
+                self.run_git(&args, working_dir).await
+            }
+            "revert" => {
+                let commit = params["commit"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'commit' for revert"))?;
+                let no_commit = params["no_commit"].as_bool().unwrap_or(false);
+                let mut args = vec!["revert".to_string()];
+                if no_commit {
+                    args.push("--no-commit".to_string());
+                }
+                args.push(commit.to_string());
+                self.run_git(&args, working_dir).await
+            }
+            "cherry-pick" => {
+                let commit = params["commit"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'commit' for cherry-pick"))?;
+                let args = vec!["cherry-pick".to_string(), commit.to_string()];
+                self.run_git(&args, working_dir).await
+            }
+            "show" => {
+                let commit = params["commit"].as_str().unwrap_or("HEAD");
+                let args = vec!["show".to_string(), commit.to_string()];
+                self.run_git(&args, working_dir).await
+            }
+            "config" => {
+                let key = params["key"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'key' for config"))?;
+                let value = params["value"].as_str();
+                let mut args = vec!["config".to_string()];
+                if let Some(v) = value {
+                    args.push(key.to_string());
+                    args.push(v.to_string());
+                } else {
+                    args.push("--get".to_string());
+                    args.push(key.to_string());
+                }
                 self.run_git(&args, working_dir).await
             }
             other => Err(ToolError::invalid_args(format!(

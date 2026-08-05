@@ -16,11 +16,11 @@
 //! simple boolean (via [`EligibilityChecker::is_eligible`]) and as a detailed
 //! per-requirement [`EligibilityReport`] for UI display.
 
-use crate::types::{SkillRequires, SkillVersion};
-use std::collections::HashMap;
+use crate::types::{SkillDependency, SkillRequires, SkillSpec, SkillVersion};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// The kind of a single eligibility requirement, for report display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -746,6 +746,510 @@ impl EligibilityChecker {
             )
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Feature-gate and dependency resolution
+    // -----------------------------------------------------------------------
+
+    /// Check a set of feature gates (arbitrary string identifiers). A feature
+    /// gate is "enabled" when a known predicate returns `true` for it. Unknown
+    /// gates default to `false`.
+    pub fn check_feature_gates(&self, gates: &[String]) -> CheckStatus {
+        let requirement = format!("features:{}", gates.join(","));
+        if gates.is_empty() {
+            return CheckStatus::pass(requirement, RequirementKind::Capability);
+        }
+        let gate_set = default_feature_gates();
+        let mut failed: Vec<String> = Vec::new();
+        for gate in gates {
+            let enabled = gate_set.is_enabled(gate, self);
+            if !enabled {
+                failed.push(gate.clone());
+            }
+        }
+        if failed.is_empty() {
+            CheckStatus::pass(requirement, RequirementKind::Capability)
+        } else {
+            CheckStatus::fail(
+                requirement,
+                RequirementKind::Capability,
+                format!("feature gates not enabled: {}", failed.join(", ")),
+            )
+        }
+    }
+
+    /// Resolve the full dependency tree of a skill, returning the list of
+    /// dependencies that are *not* satisfied on the current host.
+    pub fn resolve_dependencies(
+        &self,
+        deps: &[SkillDependency],
+    ) -> DependencyResolutionReport {
+        let mut report = DependencyResolutionReport::default();
+        for dep in deps {
+            let status = self.check_dependency(dep);
+            if !status.satisfied {
+                report.unsatisfied.push(status);
+            } else {
+                report.satisfied.push(status);
+            }
+        }
+        report
+    }
+
+    /// Check a single [`SkillDependency`] against the current host.
+    pub fn check_dependency(&self, dep: &SkillDependency) -> DependencyStatus {
+        match dep {
+            SkillDependency::Skill { id, version } => {
+                let _ = id;
+                let _ = version;
+                DependencyStatus {
+                    key: dep.key(),
+                    kind: DependencyKind::Skill,
+                    satisfied: true,
+                    detail: "skill dependencies resolved by the loader".to_string(),
+                }
+            }
+            SkillDependency::Tool { name, version } => {
+                let path = self.which(name);
+                let satisfied = path.is_some();
+                let mut detail = match &path {
+                    Some(p) => format!("found at {}", p.display()),
+                    None => format!("'{}' not found in PATH", name),
+                };
+                if let Some(constraint) = version {
+                    if let Some(found_version) = self.binary_version(name) {
+                        if found_version.matches_constraint(constraint) {
+                            detail.push_str(&format!(
+                                " (version {} satisfies {})",
+                                found_version, constraint
+                            ));
+                        } else {
+                            return DependencyStatus {
+                                key: dep.key(),
+                                kind: DependencyKind::Tool,
+                                satisfied: false,
+                                detail: format!(
+                                    "'{}' version {} does not satisfy '{}'",
+                                    name, found_version, constraint
+                                ),
+                            };
+                        }
+                    } else {
+                        return DependencyStatus {
+                            key: dep.key(),
+                            kind: DependencyKind::Tool,
+                            satisfied: false,
+                            detail: format!(
+                                "'{}' found but version could not be determined (need {})",
+                                name, constraint
+                            ),
+                        };
+                    }
+                }
+                DependencyStatus {
+                    key: dep.key(),
+                    kind: DependencyKind::Tool,
+                    satisfied,
+                    detail,
+                }
+            }
+            SkillDependency::Package { name, manager } => {
+                let mgr = manager
+                    .as_deref()
+                    .map(str::to_ascii_lowercase)
+                    .unwrap_or_else(|| detect_package_manager().unwrap_or_default());
+                if mgr.is_empty() {
+                    return DependencyStatus {
+                        key: dep.key(),
+                        kind: DependencyKind::Package,
+                        satisfied: false,
+                        detail: "no supported package manager detected".to_string(),
+                    };
+                }
+                let installed = self.is_binary_available(&mgr)
+                    && self.package_is_installed(&mgr, name);
+                DependencyStatus {
+                    key: dep.key(),
+                    kind: DependencyKind::Package,
+                    satisfied: installed,
+                    detail: if installed {
+                        format!("package '{}' installed via {}", name, mgr)
+                    } else {
+                        format!("package '{}' not installed via {}", name, mgr)
+                    },
+                }
+            }
+            SkillDependency::Env { name } => {
+                let set = self.env_var_is_set(name);
+                DependencyStatus {
+                    key: dep.key(),
+                    kind: DependencyKind::Env,
+                    satisfied: set,
+                    detail: if set {
+                        format!("environment variable '{}' is set", name)
+                    } else {
+                        format!("environment variable '{}' is not set", name)
+                    },
+                }
+            }
+        }
+    }
+
+    /// Best-effort check whether a package is installed via the given manager.
+    pub fn package_is_installed(&self, manager: &str, package: &str) -> bool {
+        let (list_cmd, query_arg) = match manager {
+            "apt" | "apt-get" => ("dpkg", "-l"),
+            "dnf" | "yum" | "rpm" => ("rpm", "-q"),
+            "pacman" => ("pacman", "-Q"),
+            "brew" => ("brew", "list"),
+            "pip" | "pip3" => ("pip", "show"),
+            "npm" => ("npm", "ls"),
+            "cargo" => ("cargo", "install --list"),
+            "go" => ("go", "list"),
+            "choco" => ("choco", "list"),
+            "winget" => ("winget", "list"),
+            "scoop" => ("scoop", "list"),
+            _ => return false,
+        };
+        let path = self.which(list_cmd)?;
+        let output = std::process::Command::new(&path)
+            .arg(query_arg)
+            .arg(package)
+            .output()
+            .ok()?;
+        output.status.success()
+    }
+
+    /// Check a skill spec's full eligibility against the current host: both
+    /// its `requires` block and its declared dependencies.
+    pub fn check_skill(&self, skill: &SkillSpec) -> EligibilityReport {
+        let mut report = self.check(&skill.requires);
+        if !skill.dependencies.is_empty() {
+            let dep_report = self.resolve_dependencies(&skill.dependencies);
+            for unsat in &dep_report.unsatisfied {
+                report.checks.push(CheckStatus::fail(
+                    unsat.key.clone(),
+                    RequirementKind::Tool,
+                    unsat.detail.clone(),
+                ));
+            }
+        }
+        report
+    }
+
+    /// Check a batch of skills and return those that are eligible.
+    pub fn filter_eligible_specs<'a>(
+        &self,
+        skills: impl Iterator<Item = &'a SkillSpec>,
+    ) -> Vec<&'a SkillSpec> {
+        skills
+            .filter(|s| self.check_skill(s).is_eligible())
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Feature gates
+// ---------------------------------------------------------------------------
+
+/// A set of named feature gates the checker can evaluate.
+#[derive(Debug, Clone, Default)]
+pub struct FeatureGateSet {
+    gates: HashMap<String, bool>,
+    allow_unknown: bool,
+}
+
+impl FeatureGateSet {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_list(gates: &[(&str, bool)]) -> Self {
+        let mut map = HashMap::new();
+        for (name, enabled) in gates {
+            map.insert((*name).to_string(), *enabled);
+        }
+        Self {
+            gates: map,
+            allow_unknown: false,
+        }
+    }
+
+    pub fn with_allow_unknown(mut self, allow: bool) -> Self {
+        self.allow_unknown = allow;
+        self
+    }
+
+    pub fn set(&mut self, name: &str, enabled: bool) {
+        self.gates.insert(name.to_string(), enabled);
+    }
+
+    pub fn is_enabled(&self, name: &str, checker: &EligibilityChecker) -> bool {
+        match self.gates.get(name) {
+            Some(enabled) => *enabled,
+            None => {
+                if self.allow_unknown {
+                    true
+                } else {
+                    check_builtin_feature_gate(name, checker)
+                }
+            }
+        }
+    }
+
+    pub fn names(&self) -> Vec<String> {
+        self.gates.keys().cloned().collect()
+    }
+}
+
+/// The default set of feature gates evaluated by the checker.
+pub fn default_feature_gates() -> FeatureGateSet {
+    let mut set = FeatureGateSet::new();
+    for name in [
+        "network",
+        "docker",
+        "git",
+        "python",
+        "node",
+        "npm",
+        "rust",
+        "go",
+        "java",
+        "sandbox",
+        "tty",
+        "gui",
+        "ffmpeg",
+        "curl",
+        "wget",
+        "aws",
+        "gcloud",
+    ] {
+        set.set(name, false);
+    }
+    set.with_allow_unknown(false)
+}
+
+fn check_builtin_feature_gate(name: &str, checker: &EligibilityChecker) -> bool {
+    match name {
+        "network" => checker.network_available(),
+        "docker" => checker.is_binary_available("docker"),
+        "git" => checker.is_binary_available("git"),
+        "python" | "python3" => {
+            checker.is_binary_available("python3") || checker.is_binary_available("python")
+        }
+        "node" | "nodejs" => checker.is_binary_available("node"),
+        "npm" => checker.is_binary_available("npm"),
+        "rust" | "cargo" => checker.is_binary_available("cargo"),
+        "go" | "golang" => checker.is_binary_available("go"),
+        "java" | "jvm" => checker.is_binary_available("java"),
+        "sandbox" => cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        )),
+        "tty" | "terminal" => std::io::IsTerminal::is_terminal(&std::io::stdout()),
+        "gui" => cfg!(any(target_os = "windows", target_os = "macos")),
+        "ffmpeg" => checker.is_binary_available("ffmpeg"),
+        "curl" => checker.is_binary_available("curl"),
+        "wget" => checker.is_binary_available("wget"),
+        "aws" => checker.is_binary_available("aws"),
+        "gcloud" => checker.is_binary_available("gcloud"),
+        _ => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dependency resolution
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DependencyKind {
+    Skill,
+    Tool,
+    Package,
+    Env,
+}
+
+impl DependencyKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            DependencyKind::Skill => "skill",
+            DependencyKind::Tool => "tool",
+            DependencyKind::Package => "package",
+            DependencyKind::Env => "env",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DependencyStatus {
+    pub key: String,
+    pub kind: DependencyKind,
+    pub satisfied: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DependencyResolutionReport {
+    pub satisfied: Vec<DependencyStatus>,
+    pub unsatisfied: Vec<DependencyStatus>,
+}
+
+impl DependencyResolutionReport {
+    pub fn is_fully_satisfied(&self) -> bool {
+        self.unsatisfied.is_empty()
+    }
+
+    pub fn total(&self) -> usize {
+        self.satisfied.len() + self.unsatisfied.len()
+    }
+
+    pub fn failure_count(&self) -> usize {
+        self.unsatisfied.len()
+    }
+
+    pub fn failed_keys(&self) -> Vec<String> {
+        self.unsatisfied.iter().map(|d| d.key.clone()).collect()
+    }
+}
+
+/// Detect the system's package manager, returning the binary name.
+pub fn detect_package_manager() -> Option<String> {
+    let candidates: &[(&str, &[&str])] = &[
+        ("apt", &["apt", "apt-get", "dpkg"]),
+        ("dnf", &["dnf", "rpm"]),
+        ("yum", &["yum", "rpm"]),
+        ("pacman", &["pacman"]),
+        ("zypper", &["zypper"]),
+        ("apk", &["apk"]),
+        ("emerge", &["emerge"]),
+        ("brew", &["brew"]),
+        ("port", &["port"]),
+        ("pip", &["pip3", "pip"]),
+        ("npm", &["npm"]),
+        ("cargo", &["cargo"]),
+        ("go", &["go"]),
+        ("choco", &["choco"]),
+        ("winget", &["winget"]),
+        ("scoop", &["scoop"]),
+    ];
+
+    let path_var = std::env::var("PATH").ok()?;
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    for (manager, bins) in candidates {
+        for bin in *bins {
+            for dir in path_var.split(sep) {
+                if dir.is_empty() {
+                    continue;
+                }
+                let candidate = Path::new(dir).join(bin);
+                if candidate.is_file() {
+                    return Some((*manager).to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Detect the current OS distribution name and version (best-effort).
+pub fn detect_os_distribution() -> Option<OsDistribution> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+            return parse_os_release(&content);
+        }
+        if let Ok(content) = std::fs::read_to_string("/etc/lsb-release") {
+            return parse_os_release(&content);
+        }
+        None
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("sw_vers")
+            .arg("-productVersion")
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        Some(OsDistribution {
+            name: "macOS".to_string(),
+            version,
+            id: "macos".to_string(),
+        })
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Some(OsDistribution {
+            name: "Windows".to_string(),
+            version: std::env::consts::OS.to_string(),
+            id: "windows".to_string(),
+        })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// A detected OS distribution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OsDistribution {
+    pub name: String,
+    pub version: String,
+    pub id: String,
+}
+
+#[cfg(target_os = "linux")]
+fn parse_os_release(content: &str) -> Option<OsDistribution> {
+    let mut name = String::new();
+    let mut version = String::new();
+    let mut id = String::new();
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("NAME=") {
+            name = unquote_os_value(rest);
+        } else if let Some(rest) = line.strip_prefix("VERSION=") {
+            version = unquote_os_value(rest);
+        } else if let Some(rest) = line.strip_prefix("ID=") {
+            id = unquote_os_value(rest);
+        } else if let Some(rest) = line.strip_prefix("DISTRIB_DESCRIPTION=") {
+            if name.is_empty() {
+                name = unquote_os_value(rest);
+            }
+        } else if let Some(rest) = line.strip_prefix("DISTRIB_RELEASE=") {
+            if version.is_empty() {
+                version = unquote_os_value(rest);
+            }
+        } else if let Some(rest) = line.strip_prefix("DISTRIB_ID=") {
+            if id.is_empty() {
+                id = unquote_os_value(rest);
+            }
+        }
+    }
+    if name.is_empty() && id.is_empty() {
+        None
+    } else {
+        Some(OsDistribution {
+            name,
+            version,
+            id,
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn unquote_os_value(s: &str) -> String {
+    let s = s.trim();
+    if s.len() >= 2
+        && ((s.starts_with('"') && s.ends_with('"'))
+            || (s.starts_with('\'') && s.ends_with('\'')))
+    {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 /// Expand `~`, `$VAR`, and `${VAR}` in a path string.
@@ -945,5 +1449,111 @@ mod tests {
             ..SkillRequires::default()
         };
         assert!(checker.verdict(&bad).contains("failure"));
+    }
+
+    #[test]
+    fn feature_gates_evaluate_known() {
+        let checker = EligibilityChecker::new();
+        let gates = vec!["filesystem".to_string()];
+        let status = checker.check_feature_gates(&gates);
+        assert!(status.ok);
+    }
+
+    #[test]
+    fn feature_gates_unknown_fails() {
+        let checker = EligibilityChecker::new();
+        let gates = vec!["nonexistent-feature-gate-xyz".to_string()];
+        let status = checker.check_feature_gates(&gates);
+        assert!(!status.ok);
+    }
+
+    #[test]
+    fn dependency_env_check_works() {
+        let checker = EligibilityChecker::new();
+        std::env::set_var("OSQ_DEP_TEST", "1");
+        let dep = SkillDependency::Env {
+            name: "OSQ_DEP_TEST".to_string(),
+        };
+        let status = checker.check_dependency(&dep);
+        assert!(status.satisfied);
+        std::env::remove_var("OSQ_DEP_TEST");
+        checker.clear_cache();
+        let status2 = checker.check_dependency(&dep);
+        assert!(!status2.satisfied);
+    }
+
+    #[test]
+    fn dependency_tool_check_works() {
+        let checker = EligibilityChecker::new();
+        let dep = SkillDependency::Tool {
+            name: "definitely-not-a-real-binary-xyz".to_string(),
+            version: None,
+        };
+        let report = checker.resolve_dependencies(&[dep]);
+        assert!(!report.is_fully_satisfied());
+        assert_eq!(report.failure_count(), 1);
+    }
+
+    #[test]
+    fn dependency_skill_is_satisfied_by_default() {
+        let checker = EligibilityChecker::new();
+        let dep = SkillDependency::Skill {
+            id: "some-skill".to_string(),
+            version: None,
+        };
+        let status = checker.check_dependency(&dep);
+        assert!(status.satisfied);
+        assert_eq!(status.kind, DependencyKind::Skill);
+    }
+
+    #[test]
+    fn check_skill_includes_dependencies() {
+        let checker = EligibilityChecker::new();
+        let mut spec = SkillSpec::new(
+            "test".into(),
+            "Test".into(),
+            "desc".into(),
+            crate::types::SkillLayer::Bundled,
+        );
+        spec.dependencies = vec![SkillDependency::Env {
+            name: "OSQ_SKILL_DEP_TEST".to_string(),
+        }];
+        let report = checker.check_skill(&spec);
+        assert!(!report.is_eligible());
+    }
+
+    #[test]
+    fn feature_gate_set_allows_unknown() {
+        let set = FeatureGateSet::new().with_allow_unknown(true);
+        let checker = EligibilityChecker::new();
+        assert!(set.is_enabled("unknown-gate", &checker));
+    }
+
+    #[test]
+    fn feature_gate_set_known_overrides_unknown() {
+        let mut set = FeatureGateSet::new();
+        set.set("git", true);
+        let checker = EligibilityChecker::new();
+        assert!(set.is_enabled("git", &checker));
+        set.set("git", false);
+        assert!(!set.is_enabled("git", &checker));
+    }
+
+    #[test]
+    fn dependency_resolution_report_aggregates() {
+        let checker = EligibilityChecker::new();
+        let deps = vec![
+            SkillDependency::Env {
+                name: "OSQ_RESOLVE_TEST".to_string(),
+            },
+            SkillDependency::Tool {
+                name: "cargo".to_string(),
+                version: None,
+            },
+        ];
+        let report = checker.resolve_dependencies(&deps);
+        assert_eq!(report.total(), 2);
+        assert!(report.failure_count() >= 1);
+        assert!(!report.is_fully_satisfied());
     }
 }

@@ -587,7 +587,7 @@ impl BackgroundProcess {
 
     /// The OS process ID, if the child is still alive.
     pub async fn pid(&self) -> Option<u32> {
-        self.child.lock().await.as_ref().map(|c| c.id())
+        self.child.lock().await.as_ref().and_then(|c| c.id())
     }
 
     /// Whether the child process is still being tracked.
@@ -821,7 +821,7 @@ pub struct Agent {
     /// The conversation history for this agent.
     conversation: Vec<Message>,
     /// The shared tool executor used to run tool calls.
-    tool_executor: Option<Arc<crate::runtime::ToolExecutor>>,
+    tool_executor: Option<Arc<dyn crate::runtime::ToolExecutor>>,
     /// Accumulated token usage across all turns.
     usage: UsageStats,
     /// When the agent was created.
@@ -936,7 +936,7 @@ impl Agent {
     }
 
     /// Set the tool executor used to run tool calls.
-    pub fn set_tool_executor(&mut self, executor: Arc<crate::runtime::ToolExecutor>) {
+    pub fn set_tool_executor(&mut self, executor: Arc<dyn crate::runtime::ToolExecutor>) {
         self.tool_executor = Some(executor);
     }
 

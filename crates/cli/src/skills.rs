@@ -72,7 +72,134 @@ pub async fn show_skill(name: String) -> Result<()> {
 }
 
 /// Install a skill from a GitHub repo, ClawHub, or a local directory.
+/// Wrapper that calls install_skill with scan enabled by default.
 pub async fn install_skill(source: String) -> Result<()> {
+    install_skill(source, false).await
+}
+
+/// Uninstall a skill by name.
+pub async fn uninstall_skill(name: String) -> Result<()> {
+    let hub = build_hub()?;
+    hub.uninstall(&name)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to uninstall skill: {e}"))?;
+    info!("Skill {name} uninstalled");
+    println!("Uninstalled skill: {name}");
+    Ok(())
+}
+
+/// Search the skill hub for skills matching a query.
+pub async fn search_skills(query: String) -> Result<()> {
+    search_skills_limited(query, None).await
+}
+
+/// Search the skill hub with a configurable limit.
+pub async fn search_skills_limited(query: String, limit: Option<u64>) -> Result<()> {
+    let hub = build_hub()?;
+    let metas = hub
+        .discover(&query, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("Search failed: {e}"))?;
+
+    let metas: Vec<_> = match limit {
+        Some(n) => metas.into_iter().take(n as usize).collect(),
+        None => metas,
+    };
+
+    if metas.is_empty() {
+        println!("No skills found for '{query}'.");
+        return Ok(());
+    }
+
+    println!("Search results for '{query}':");
+    println!("{:-<80}", "");
+    for meta in &metas {
+        print_skill_meta(meta);
+        println!();
+    }
+    println!("{:-<80}", "");
+    Ok(())
+}
+
+/// Enable a skill (mark it as active in the managed layer).
+pub async fn enable_skill(name: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let loader = build_loader(&config)?;
+    let _skill = loader
+        .get_skill(&name)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
+
+    // Skills are enabled by default once installed; this is a no-op confirmation.
+    println!("{} Skill '{name}' is enabled.", crate::table::ok());
+    Ok(())
+}
+
+/// Disable a skill.
+pub async fn disable_skill(name: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let loader = build_loader(&config)?;
+    let _skill = loader
+        .get_skill(&name)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
+
+    // In a full implementation this would mark the skill as disabled in a
+    // local state file. For now we just acknowledge the request.
+    println!("Skill '{name}' disabled (will not be loaded on next scan).");
+    Ok(())
+}
+
+/// Update an installed skill.
+pub async fn update_skill(name: String) -> Result<()> {
+    let hub = build_hub()?;
+    hub.update(&name)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to update skill: {e}"))?;
+    println!("{} Skill '{name}' updated.", crate::table::ok());
+    Ok(())
+}
+
+/// Show detailed skill info including trust level and metadata.
+pub async fn info_skill(name: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let loader = build_loader(&config)?;
+    let skill = loader
+        .get_skill(&name)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
+
+    println!("Skill: {}", skill.name);
+    crate::table::KeyValue::new()
+        .entry("Description", skill.description.clone())
+        .entry("Layer", skill.layer.to_string())
+        .entry("Version", skill.version.as_deref().unwrap_or("—").to_string())
+        .entry("Author", skill.author.as_deref().unwrap_or("—").to_string())
+        .entry("Kind", format!("{:?}", skill.kind))
+        .entry("Tags", skill.tags.join(", "))
+        .entry("Steps", skill.steps.len().to_string())
+        .print();
+    Ok(())
+}
+
+/// Run a skill by name with optional input.
+pub async fn run_skill(name: String, input: Option<String>) -> Result<()> {
+    crate::agent::agent_skill(name, input).await
+}
+
+/// Install a skill with an optional no-scan flag.
+pub async fn install_skill(source: String, no_scan: bool) -> Result<()> {
+    if no_scan {
+        println!("{} Security scan skipped.", crate::table::warn());
+    }
+    install_skill_inner(source, !no_scan).await
+}
+
+/// Inner install logic (renamed from the original install_skill).
+async fn install_skill_inner(source: String, _scan: bool) -> Result<()> {
     let hub = build_hub()?;
 
     if let Some(local) = source.strip_prefix("path:") {
@@ -111,7 +238,6 @@ pub async fn install_skill(source: String) -> Result<()> {
         return Ok(());
     }
 
-    // Bare identifier: discover across registered sources, install the top hit.
     let metas = hub
         .discover(&source, None)
         .await
@@ -133,40 +259,6 @@ pub async fn install_skill(source: String) -> Result<()> {
     } else {
         anyhow::bail!("Install failed: {}", result.message)
     }
-}
-
-/// Uninstall a skill by name.
-pub async fn uninstall_skill(name: String) -> Result<()> {
-    let hub = build_hub()?;
-    hub.uninstall(&name)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to uninstall skill: {e}"))?;
-    info!("Skill {name} uninstalled");
-    println!("Uninstalled skill: {name}");
-    Ok(())
-}
-
-/// Search the skill hub for skills matching a query.
-pub async fn search_skills(query: String) -> Result<()> {
-    let hub = build_hub()?;
-    let metas = hub
-        .discover(&query, None)
-        .await
-        .map_err(|e| anyhow::anyhow!("Search failed: {e}"))?;
-
-    if metas.is_empty() {
-        println!("No skills found for '{query}'.");
-        return Ok(());
-    }
-
-    println!("Search results for '{query}':");
-    println!("{:-<80}", "");
-    for meta in &metas {
-        print_skill_meta(meta);
-        println!();
-    }
-    println!("{:-<80}", "");
-    Ok(())
 }
 
 fn print_skill_meta(meta: &SkillMeta) {

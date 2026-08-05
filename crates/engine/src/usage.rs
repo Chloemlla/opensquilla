@@ -341,7 +341,7 @@ impl ProviderCallAccountant {
 
 /// Per-model usage aggregation, tracking input/output tokens and call counts
 /// broken down by model id.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct PerModelUsageTracker {
     inner: std::sync::Mutex<HashMap<String, ModelUsage>>,
 }

@@ -156,3 +156,52 @@ pub async fn export_config(path: String) -> Result<()> {
     println!("Exported configuration to {path}");
     Ok(())
 }
+
+/// Validate the configuration file and report any issues.
+pub async fn validate_config() -> Result<()> {
+    let config_path = Config::discover_path().context("No config file found")?;
+    println!("Validating: {}", config_path.display());
+
+    match Config::load() {
+        Ok(config) => {
+            println!("{} Configuration is valid.", crate::table::ok());
+            println!();
+            println!("Summary:");
+            println!("  Gateway:    {}:{}", config.gateway.host, config.gateway.port);
+            println!("  Providers:  {}", config.providers.len());
+            println!("  Channels:   {}", config.channels.len());
+
+            // Warn about missing API keys.
+            for p in &config.providers {
+                if crate::util::provider_api_key(&config, p).is_none() {
+                    println!(
+                        "  {} Provider '{}' has no API key",
+                        crate::table::warn(),
+                        p.name
+                    );
+                }
+            }
+
+            // Warn about no providers.
+            if config.providers.is_empty() {
+                println!("  {} No providers configured", crate::table::warn());
+            }
+
+            Ok(())
+        }
+        Err(e) => {
+            println!("{} Configuration is invalid: {e}", crate::table::fail());
+            anyhow::bail!("Config validation failed: {e}");
+        }
+    }
+}
+
+/// Show the default configuration values.
+pub async fn show_defaults() -> Result<()> {
+    let config = Config::default();
+    println!("Default configuration:");
+    println!("{:-<50}", "");
+    let toml = toml::to_string_pretty(&config).context("Failed to serialize defaults")?;
+    println!("{toml}");
+    Ok(())
+}
