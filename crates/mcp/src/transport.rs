@@ -5,9 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use opensquilla_core::config::Config;
-use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::types::{McpRequest, McpResponse};
 
@@ -59,11 +57,11 @@ impl Transport {
             }
             Transport::Sse { endpoint, port } => {
                 info!("Starting MCP transport: SSE on port {port}");
-                run_sse(handler, endpoint, port).await
+                run_sse(handler, endpoint, *port).await
             }
             Transport::StreamableHttp { endpoint, port } => {
                 info!("Starting MCP transport: Streamable HTTP on port {port}");
-                run_streamable_http(handler, endpoint, port).await
+                run_streamable_http(handler, endpoint, *port).await
             }
         }
     }
@@ -166,7 +164,7 @@ struct AppState {
 }
 
 async fn sse_handler(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
 ) -> axum::response::Sse<impl futures::stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
 {
     use axum::response::sse::Event;

@@ -29,7 +29,6 @@ use std::collections::HashMap;
 mod backend {
     use super::*;
     use std::ffi::c_void;
-    use std::os::windows::io::AsRawHandle;
     use std::process::Stdio;
     use tokio::process::Command;
     use tracing::warn;
@@ -37,20 +36,29 @@ mod backend {
     use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, STILL_ACTIVE};
     use windows::Win32::Security::{
         CreateRestrictedToken, CreateWellKnownSid, SetTokenInformation,
-        CREATE_RESTRICTED_TOKEN_FLAGS, PSID, SECURITY_ATTRIBUTES, SID, SID_AND_ATTRIBUTES,
-        TOKEN_ACCESS_MASK, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, WELL_KNOWN_SID_TYPE,
+        DISABLE_MAX_PRIVILEGE, PSID, SECURITY_ATTRIBUTES, SID, SID_AND_ATTRIBUTES,
+        TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
+        TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TokenIntegrityLevel, WinLowLabelSid,
     };
+
+    /// `HANDLE` is `*mut c_void` which is not `Send`/`Sync`, but Windows
+    /// handles are just pointer-sized integers and are safe to transfer
+    /// between threads.  This wrapper provides the missing impls.
+    #[derive(Clone, Copy)]
+    struct SendHandle(HANDLE);
+    unsafe impl Send for SendHandle {}
+    unsafe impl Sync for SendHandle {}
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
         JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME, JOBOBJECTINFOCLASS,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME,
+        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     };
     use windows::Win32::System::Pipes::CreatePipe;
     use windows::Win32::System::Threading::{
         CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, ResumeThread,
         TerminateProcess, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
-        PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW, STARTUPINFOW_FLAGS,
+        PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW, STARTF_USESTDHANDLES,
     };
 
     /// `CLSID_NetFwPolicy2` (`{E2B3C97F-6AE1-41AC-817A-F6F92166D7DD}`). The `windows` crate
@@ -75,7 +83,7 @@ mod backend {
             // Job Objects are available on every supported Windows version.
             match create_job_object(&crate::policy::ResourceLimits::default()) {
                 Ok(job) => {
-                    let _ = unsafe { CloseHandle(job) };
+                    let _ = unsafe { CloseHandle(job.0) };
                     true
                 }
                 Err(_) => false,
@@ -103,8 +111,8 @@ mod backend {
                     match upsert_firewall_rule(
                         &format!("OpenSquilla Sandbox Block {}", uuid::Uuid::new_v4()),
                         &program,
-                        windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_RULE_DIRECTION::NET_FW_RULE_DIR_OUT,
-                        windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_ACTION::NET_FW_ACTION_BLOCK,
+                        windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_RULE_DIR_OUT,
+                        windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_ACTION_BLOCK,
                     ) {
                         Ok(name) => firewall_rule = Some(name),
                         Err(e) => warn!("network isolation rule unavailable: {e}"),
@@ -126,7 +134,7 @@ mod backend {
                             warn!("restricted-token spawn failed ({e}); using job-object sandbox");
                         }
                     }
-                    let _ = unsafe { CloseHandle(token) };
+                    let _ = unsafe { CloseHandle(token.0) };
                 }
                 Err(e) => {
                     warn!("restricted token unavailable ({e}); using job-object sandbox");
@@ -148,7 +156,7 @@ mod backend {
                 }
             }
 
-            let _ = unsafe { CloseHandle(job) };
+            let _ = unsafe { CloseHandle(job.0) };
 
             let (exit_code, stdout, stderr) = match outcome {
                 Some(Ok(t)) => t,
@@ -174,7 +182,7 @@ mod backend {
             env: &HashMap<String, String>,
             working_dir: Option<&str>,
             policy: &SandboxPolicy,
-            job: HANDLE,
+            job: SendHandle,
         ) -> Result<(i32, Vec<u8>, Vec<u8>), String> {
             let flags = (CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT).0 as u32;
             let mut cmd = Command::new(command);
@@ -189,12 +197,13 @@ mod backend {
                 cmd.current_dir(cwd);
             }
 
-            let mut child = cmd
+            let child = cmd
                 .spawn()
                 .map_err(|e| format!("failed to spawn process: {e}"))?;
+            let child_handle = SendHandle(HANDLE(child.raw_handle().unwrap()));
 
             unsafe {
-                AssignProcessToJobObject(job, HANDLE(child.as_raw_handle()))
+                AssignProcessToJobObject(job.0, child_handle.0)
                     .map_err(|e| format!("AssignProcessToJobObject: {e}"))?;
             }
 
@@ -208,7 +217,7 @@ mod backend {
                 )),
                 Ok(Err(e)) => Err(format!("process wait: {e}")),
                 Err(_) => {
-                    let _ = child.kill().await;
+                    let _ = unsafe { TerminateProcess(child_handle.0, 1) };
                     Ok((
                         -1,
                         Vec::new(),
@@ -239,14 +248,15 @@ mod backend {
 
     /// Create a Job Object with limits derived from the policy and
     /// `KILL_ON_JOB_CLOSE` so no sandboxed process outlives the job.
-    fn create_job_object(limits: &crate::policy::ResourceLimits) -> Result<HANDLE, String> {
+    fn create_job_object(limits: &crate::policy::ResourceLimits) -> Result<SendHandle, String> {
         unsafe {
             let job = CreateJobObjectW(None, PCWSTR::null())
                 .map_err(|e| format!("CreateJobObjectW: {e}"))?;
+            let job = SendHandle(job);
             let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
             let mut flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             if let Some(mem) = limits.memory_bytes {
-                info.BasicLimitInformation.ProcessMemoryLimit = mem as usize;
+                info.ProcessMemoryLimit = mem as usize;
                 flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
             }
             if let Some(cpu) = limits.cpu_time_secs {
@@ -262,8 +272,8 @@ mod backend {
             info.BasicLimitInformation.LimitFlags = flags;
 
             SetInformationJobObject(
-                job,
-                JOBOBJECTINFOCLASS::JobObjectExtendedLimitInformation,
+                job.0,
+                JobObjectExtendedLimitInformation,
                 &info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION as *const c_void,
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             )
@@ -274,15 +284,15 @@ mod backend {
 
     /// Create a restricted token from the current process token: all
     /// privileges disabled (`DISABLE_MAX_PRIVILEGE`) and low integrity.
-    fn create_restricted_token() -> Result<HANDLE, String> {
+    fn create_restricted_token() -> Result<SendHandle, String> {
         unsafe {
             let mut process_token: HANDLE = HANDLE(std::ptr::null_mut());
             OpenProcessToken(
                 GetCurrentProcess(),
-                TOKEN_ACCESS_MASK::TOKEN_ASSIGN_PRIMARY
-                    | TOKEN_ACCESS_MASK::TOKEN_DUPLICATE
-                    | TOKEN_ACCESS_MASK::TOKEN_QUERY
-                    | TOKEN_ACCESS_MASK::TOKEN_ADJUST_DEFAULT,
+                TOKEN_ASSIGN_PRIMARY
+                    | TOKEN_DUPLICATE
+                    | TOKEN_QUERY
+                    | TOKEN_ADJUST_DEFAULT,
                 &mut process_token,
             )
             .map_err(|e| format!("OpenProcessToken: {e}"))?;
@@ -290,7 +300,7 @@ mod backend {
             let mut restricted: HANDLE = HANDLE(std::ptr::null_mut());
             CreateRestrictedToken(
                 process_token,
-                CREATE_RESTRICTED_TOKEN_FLAGS::DISABLE_MAX_PRIVILEGE,
+                DISABLE_MAX_PRIVILEGE,
                 None,
                 None,
                 None,
@@ -303,7 +313,7 @@ mod backend {
             let sid_ptr = sid_buf.as_mut_ptr() as *mut SID;
             let mut sid_size = sid_buf.len() as u32;
             CreateWellKnownSid(
-                WELL_KNOWN_SID_TYPE::WinLowLabelSid,
+                WinLowLabelSid,
                 None,
                 PSID(sid_ptr as *mut c_void),
                 &mut sid_size,
@@ -319,14 +329,14 @@ mod backend {
             };
             SetTokenInformation(
                 restricted,
-                TOKEN_INFORMATION_CLASS::TokenIntegrityLevel,
+                TokenIntegrityLevel,
                 &label as *const TOKEN_MANDATORY_LABEL as *const c_void,
                 std::mem::size_of::<TOKEN_MANDATORY_LABEL>() as u32,
             )
             .map_err(|e| format!("SetTokenInformation(low integrity): {e}"))?;
 
             let _ = CloseHandle(process_token);
-            Ok(restricted)
+            Ok(SendHandle(restricted))
         }
     }
 
@@ -337,6 +347,8 @@ mod backend {
         stdout_read: HANDLE,
         stderr_read: HANDLE,
     }
+    unsafe impl Send for RestrictedProcess {}
+    unsafe impl Sync for RestrictedProcess {}
 
     /// Spawn a process using the restricted token. Creates pipes for stdout /
     /// stderr, launches suspended, assigns to the Job Object, then resumes.
@@ -345,16 +357,17 @@ mod backend {
         args: &[&str],
         env: &HashMap<String, String>,
         working_dir: Option<&str>,
-        token: HANDLE,
-        job: HANDLE,
+        token: SendHandle,
+        job: SendHandle,
     ) -> Result<RestrictedProcess, String> {
+        let token = token.0;
+        let job = job.0;
         unsafe {
-            let mut sa = SECURITY_ATTRIBUTES {
+            let sa = SECURITY_ATTRIBUTES {
                 nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
                 lpSecurityDescriptor: std::ptr::null_mut(),
                 bInheritHandle: BOOL(1),
             };
-
             let mut out_read: HANDLE = HANDLE(std::ptr::null_mut());
             let mut out_write: HANDLE = HANDLE(std::ptr::null_mut());
             let mut err_read: HANDLE = HANDLE(std::ptr::null_mut());
@@ -375,9 +388,9 @@ mod backend {
                 .map(|v| PCWSTR::from_raw(v.as_ptr()))
                 .unwrap_or(PCWSTR::null());
 
-            let mut si = STARTUPINFOW {
+            let si = STARTUPINFOW {
                 cb: std::mem::size_of::<STARTUPINFOW>() as u32,
-                dwFlags: STARTUPINFOW_FLAGS::STARTF_USESTDHANDLES,
+                dwFlags: STARTF_USESTDHANDLES,
                 hStdInput: HANDLE(std::ptr::null_mut()),
                 hStdOutput: out_write,
                 hStdError: err_write,
@@ -408,11 +421,7 @@ mod backend {
                 let _ = CloseHandle(pi.hThread);
                 return Err(format!("AssignProcessToJobObject: {e}"));
             }
-            if let Err(e) = ResumeThread(pi.hThread) {
-                let _ = CloseHandle(pi.hProcess);
-                let _ = CloseHandle(pi.hThread);
-                return Err(format!("ResumeThread: {e}"));
-            }
+            ResumeThread(pi.hThread);
 
             // The parent does not need the write ends.
             let _ = CloseHandle(out_write);
@@ -433,6 +442,7 @@ mod backend {
         proc: RestrictedProcess,
         cpu_time_secs: Option<u64>,
     ) -> Result<(i32, Vec<u8>, Vec<u8>), String> {
+        use std::os::windows::io::FromRawHandle;
         let out_file = unsafe { std::fs::File::from_raw_handle(proc.stdout_read.0) };
         let err_file = unsafe { std::fs::File::from_raw_handle(proc.stderr_read.0) };
         let mut out_reader = tokio::fs::File::from_std(out_file);
@@ -452,7 +462,7 @@ mod backend {
         let timeout_dur =
             std::time::Duration::from_secs(cpu_time_secs.unwrap_or(300).max(1));
         let start = std::time::Instant::now();
-        let mut exit_code: i32 = -1;
+        let mut exit_code: i32;
         loop {
             let code = unsafe {
                 let mut code: u32 = 0;

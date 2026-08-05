@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use opensquilla_core::types::Usage;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

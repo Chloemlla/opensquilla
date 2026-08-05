@@ -296,6 +296,7 @@ impl McpServer {
             .get("arguments")
             .and_then(|v| v.as_object())
             .cloned()
+            .map(|map| map.into_iter().collect())
             .unwrap_or_default();
         let call = McpToolCall {
             name: name.to_string(),

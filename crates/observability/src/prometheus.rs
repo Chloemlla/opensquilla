@@ -120,12 +120,13 @@ struct HistogramState {
 
 impl Histogram {
     fn new(name: &'static str, help: &'static str, buckets: Vec<f64>) -> Self {
+        let bucket_count = buckets.len();
         Self {
             name,
             help,
             buckets: Arc::new(buckets),
             state: Arc::new(Mutex::new(HistogramState {
-                counts: vec![0; buckets.len()],
+                counts: vec![0; bucket_count],
                 ..Default::default()
             })),
         }

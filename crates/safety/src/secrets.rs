@@ -1,4 +1,5 @@
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 /// Redacts sensitive information such as API keys and tokens from strings.
@@ -109,7 +110,7 @@ impl SecretRedactor {
             // Generic API key headers
             SecretPattern {
                 name: "api_key_header".to_string(),
-                pattern: Regex::new(r"(?i)((?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token)\s*[:=]\s*['\"]?)([A-Za-z0-9\-._~+/]{16,})['\"]?")
+                pattern: Regex::new(r#"(?i)((?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token)\s*[:=]\s*['"]?)([A-Za-z0-9\-._~+/]{16,})['"]?"#)
                     .unwrap(),
                 group_to_redact: 2,
             },
@@ -335,13 +336,13 @@ impl SecretSanitizer {
             },
             SecretPattern {
                 name: "api_key_header".to_string(),
-                pattern: Regex::new(r"(?i)((?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token)\s*[:=]\s*['\"]?)([A-Za-z0-9\-._~+/]{16,})['\"]?")
+                pattern: Regex::new(r#"(?i)((?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token)\s*[:=]\s*['"]?)([A-Za-z0-9\-._~+/]{16,})['"]?"#)
                     .unwrap(),
                 group_to_redact: 2,
             },
             SecretPattern {
                 name: "password".to_string(),
-                pattern: Regex::new(r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"]?([^\s'\";&]+)")
+                pattern: Regex::new(r#"(?i)(password|passwd|pwd)\s*[:=]\s*['"]?([^\s'";&]+)"#)
                     .unwrap(),
                 group_to_redact: 2,
             },

@@ -695,19 +695,19 @@ mod backend {
     /// The memfd intentionally lacks `MFD_CLOEXEC` so it survives the `exec`
     /// into bwrap; it is dropped once bwrap has read it.
     fn create_seccomp_fd(prog: &seccompiler::BpfProgram) -> Result<OwnedFd, String> {
-        use nix::sys::memfd::MemFdCreateFlag;
-        use nix::unistd::{lseek, memfd_create, write, SeekWhence};
+        use nix::sys::memfd::{memfd_create, MemFdCreateFlag};
+        use nix::unistd::{lseek, write, Whence};
 
         let serialized = serialize_sock_fprog(prog);
         let fd = memfd_create(c"osq-seccomp", MemFdCreateFlag::empty())
             .map_err(|e| format!("memfd_create: {e}"))?;
         let mut written = 0usize;
         while written < serialized.len() {
-            let n = write(fd.as_raw_fd(), &serialized[written..])
+            let n = write(&fd, &serialized[written..])
                 .map_err(|e| format!("memfd write: {e}"))?;
             written += n;
         }
-        lseek(fd.as_raw_fd(), 0, SeekWhence::SeekSet).map_err(|e| format!("memfd seek: {e}"))?;
+        lseek(&fd, 0, Whence::SeekSet).map_err(|e| format!("memfd seek: {e}"))?;
         Ok(fd)
     }
 

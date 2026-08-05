@@ -158,6 +158,10 @@ impl InjectionGuard {
             return InjectionResult {
                 detected: false,
                 matches: Vec::new(),
+                severity: InjectionSeverity::Low,
+                pattern: None,
+                location: None,
+                suggestion: None,
             };
         }
 

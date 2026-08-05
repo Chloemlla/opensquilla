@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use opensquilla_core::config::Config;
 
@@ -136,7 +136,8 @@ impl Telemetry {
 
         // Trim events if too many
         if events.len() > 10_000 {
-            events.drain(0..events.len() - 10_000);
+            let len = events.len();
+            events.drain(0..len - 10_000);
         }
     }
 
