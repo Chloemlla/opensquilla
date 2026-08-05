@@ -151,7 +151,9 @@ pub fn check_status(status: reqwest::StatusCode, text: &str, action: &str) -> Pr
         return Err(ProviderError::Auth(format!("{action} auth failed: {body}")));
     }
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        return Err(ProviderError::RateLimited(format!("{action} rate limited: {body}")));
+        return Err(ProviderError::RateLimited(format!(
+            "{action} rate limited: {body}"
+        )));
     }
     Err(ProviderError::Provider(format!("HTTP {status}: {body}")))
 }
@@ -282,7 +284,10 @@ mod tests {
         // With jitter, ensure the multiplier grows: attempt 4 >= attempt 2.
         let d2 = cfg.delay_for_attempt(2).as_millis() as u64;
         let d4 = cfg.delay_for_attempt(4).as_millis() as u64;
-        assert!(d4 > d2, "expected attempt 4 delay {d4} > attempt 2 delay {d2}");
+        assert!(
+            d4 > d2,
+            "expected attempt 4 delay {d4} > attempt 2 delay {d2}"
+        );
     }
 
     #[test]
@@ -298,11 +303,19 @@ mod tests {
     #[test]
     fn retryable_classification() {
         assert!(is_retryable_error(&ProviderError::Timeout("slow".into())));
-        assert!(is_retryable_error(&ProviderError::RateLimited("429".into())));
-        assert!(is_retryable_error(&ProviderError::Provider("HTTP 503: busy".into())));
+        assert!(is_retryable_error(&ProviderError::RateLimited(
+            "429".into()
+        )));
+        assert!(is_retryable_error(&ProviderError::Provider(
+            "HTTP 503: busy".into()
+        )));
         assert!(!is_retryable_error(&ProviderError::Auth("bad key".into())));
-        assert!(!is_retryable_error(&ProviderError::Config("misconfig".into())));
-        assert!(!is_retryable_error(&ProviderError::Provider("HTTP 400: bad".into())));
+        assert!(!is_retryable_error(&ProviderError::Config(
+            "misconfig".into()
+        )));
+        assert!(!is_retryable_error(&ProviderError::Provider(
+            "HTTP 400: bad".into()
+        )));
     }
 
     #[test]

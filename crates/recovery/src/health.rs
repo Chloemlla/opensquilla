@@ -103,7 +103,10 @@ impl HealthCheck {
             }
         }
 
-        let overall_status = if issues.iter().any(|i| matches!(i.severity, IssueSeverity::Critical)) {
+        let overall_status = if issues
+            .iter()
+            .any(|i| matches!(i.severity, IssueSeverity::Critical))
+        {
             HealthStatus::Unhealthy
         } else if !issues.is_empty() {
             HealthStatus::Degraded
@@ -111,9 +114,7 @@ impl HealthCheck {
             HealthStatus::Healthy
         };
 
-        let uptime = (Utc::now() - self.start_time)
-            .num_seconds()
-            .max(0) as u64;
+        let uptime = (Utc::now() - self.start_time).num_seconds().max(0) as u64;
 
         let result = HealthCheckResult {
             status: overall_status,
@@ -134,17 +135,21 @@ impl HealthCheck {
 
         components.push(self.check_config().await);
 
-        let overall_status = if components.iter().any(|c| c.status == HealthStatus::Unhealthy) {
+        let overall_status = if components
+            .iter()
+            .any(|c| c.status == HealthStatus::Unhealthy)
+        {
             HealthStatus::Unhealthy
-        } else if components.iter().any(|c| c.status == HealthStatus::Degraded) {
+        } else if components
+            .iter()
+            .any(|c| c.status == HealthStatus::Degraded)
+        {
             HealthStatus::Degraded
         } else {
             HealthStatus::Healthy
         };
 
-        let uptime = (Utc::now() - self.start_time)
-            .num_seconds()
-            .max(0) as u64;
+        let uptime = (Utc::now() - self.start_time).num_seconds().max(0) as u64;
 
         HealthCheckResult {
             status: overall_status,
@@ -182,9 +187,15 @@ impl HealthCheck {
         let latency = start.elapsed().as_millis() as u64;
 
         let (status, description) = if !has_provider {
-            (HealthStatus::Degraded, "No default provider configured".to_string())
+            (
+                HealthStatus::Degraded,
+                "No default provider configured".to_string(),
+            )
         } else if !has_model {
-            (HealthStatus::Degraded, "No default model configured".to_string())
+            (
+                HealthStatus::Degraded,
+                "No default model configured".to_string(),
+            )
         } else {
             (HealthStatus::Healthy, "Configuration is valid".to_string())
         };
@@ -228,7 +239,10 @@ impl HealthCheck {
         let latency = start.elapsed().as_millis() as u64;
 
         let (status, description) = if config_writable {
-            (HealthStatus::Healthy, "File system is accessible".to_string())
+            (
+                HealthStatus::Healthy,
+                "File system is accessible".to_string(),
+            )
         } else {
             (
                 HealthStatus::Degraded,
@@ -258,7 +272,10 @@ impl HealthCheck {
         let latency = start.elapsed().as_millis() as u64;
 
         let (status, description) = if dns_ok {
-            (HealthStatus::Healthy, "Network connectivity is working".to_string())
+            (
+                HealthStatus::Healthy,
+                "Network connectivity is working".to_string(),
+            )
         } else {
             (
                 HealthStatus::Degraded,
@@ -354,10 +371,7 @@ impl HealthVerifier {
             checks,
             timestamp: Utc::now(),
         };
-        self.verifications
-            .write()
-            .await
-            .push(verification.clone());
+        self.verifications.write().await.push(verification.clone());
         verification
     }
 

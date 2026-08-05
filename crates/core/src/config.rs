@@ -39,9 +39,8 @@ impl Config {
                 e
             ))
         })?;
-        toml::from_str(&contents).map_err(|e| {
-            crate::error::Error::Config(format!("Failed to parse config: {}", e))
-        })
+        toml::from_str(&contents)
+            .map_err(|e| crate::error::Error::Config(format!("Failed to parse config: {}", e)))
     }
 
     /// Load the configuration from a YAML file at the given path.
@@ -54,9 +53,8 @@ impl Config {
                 e
             ))
         })?;
-        serde_yaml::from_str(&contents).map_err(|e| {
-            crate::error::Error::Config(format!("Failed to parse YAML config: {}", e))
-        })
+        serde_yaml::from_str(&contents)
+            .map_err(|e| crate::error::Error::Config(format!("Failed to parse YAML config: {}", e)))
     }
 
     /// Find a provider configuration by name.
@@ -87,9 +85,7 @@ impl Config {
 
         // 3. Platform config directory
         if let Some(config_dir) = dirs::config_dir() {
-            let path = config_dir
-                .join("opensquilla")
-                .join("opensquilla.toml");
+            let path = config_dir.join("opensquilla").join("opensquilla.toml");
             if path.exists() {
                 return Ok(path);
             }
@@ -189,11 +185,7 @@ impl Config {
             crate::error::Error::Config(format!("Failed to serialize config: {}", e))
         })?;
         std::fs::write(path, contents).map_err(|e| {
-            crate::error::Error::Config(format!(
-                "Failed to write config {}: {}",
-                path.display(),
-                e
-            ))
+            crate::error::Error::Config(format!("Failed to write config {}: {}", path.display(), e))
         })?;
         Ok(())
     }
@@ -215,7 +207,10 @@ impl Config {
     }
 
     /// Rebuild the config from a serde_json object after mutation.
-    fn from_value_map(&mut self, value_map: &serde_json::Map<String, serde_json::Value>) -> crate::error::Result<()> {
+    fn from_value_map(
+        &mut self,
+        value_map: &serde_json::Map<String, serde_json::Value>,
+    ) -> crate::error::Result<()> {
         let value = serde_json::Value::Object(value_map.clone());
         let new_config: Self = serde_json::from_value(value).map_err(|e| {
             crate::error::Error::Config(format!("Failed to rebuild config after mutation: {}", e))

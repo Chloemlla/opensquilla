@@ -181,10 +181,7 @@ mod tests {
             context_window_tokens: 128_000,
             ..Default::default()
         };
-        assert_eq!(
-            decide_compaction(&input),
-            CompactionDecision::NoCompaction
-        );
+        assert_eq!(decide_compaction(&input), CompactionDecision::NoCompaction);
     }
 
     #[test]
@@ -225,10 +222,7 @@ mod tests {
             ..Default::default()
         };
         // Token threshold hit but too few messages: no compaction.
-        assert_eq!(
-            decide_compaction(&input),
-            CompactionDecision::NoCompaction
-        );
+        assert_eq!(decide_compaction(&input), CompactionDecision::NoCompaction);
     }
 
     #[test]

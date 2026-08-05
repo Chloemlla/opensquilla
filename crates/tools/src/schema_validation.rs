@@ -99,11 +99,7 @@ impl SchemaValidator {
                     } else {
                         err.instance_path.to_string()
                     };
-                    messages.push(format!(
-                        "at {}: {}",
-                        location,
-                        err
-                    ));
+                    messages.push(format!("at {}: {}", location, err));
                 }
                 let detail = if messages.len() == 1 {
                     messages.pop().unwrap_or_default()
@@ -137,10 +133,7 @@ impl SchemaValidator {
 /// cached) validator, and validates the arguments. Returns the same
 /// `Result<(), ToolError>` shape that `Tool::validate_args` uses, so it can
 /// be dropped in as a replacement for the default implementation.
-pub fn validate_tool_args(
-    tool: &dyn crate::registry::Tool,
-    args: &Value,
-) -> Result<(), ToolError> {
+pub fn validate_tool_args(tool: &dyn crate::registry::Tool, args: &Value) -> Result<(), ToolError> {
     let def = tool.definition();
     let validator = SchemaValidator::from_definition(def)?;
     validator.validate_args(args)
@@ -165,7 +158,10 @@ mod tests {
             },
             "required": ["name"]
         }));
-        assert!(v.validate_args(&json!({"name": "alice", "count": 3})).is_ok());
+        assert!(
+            v.validate_args(&json!({"name": "alice", "count": 3}))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -236,6 +232,10 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().message;
         // Should mention the missing required field and the wrong type.
-        assert!(msg.contains("b"), "message should mention missing 'b': {}", msg);
+        assert!(
+            msg.contains("b"),
+            "message should mention missing 'b': {}",
+            msg
+        );
     }
 }

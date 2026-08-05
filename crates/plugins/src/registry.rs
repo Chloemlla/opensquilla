@@ -22,10 +22,7 @@ impl PluginRegistry {
     /// Load a plugin into the registry.
     pub fn register(&self, plugin: Arc<dyn Plugin>) -> crate::Result<()> {
         let id = plugin.id().to_string();
-        let mut plugins = self
-            .plugins
-            .write()
-            .map_err(|_| crate::Error::Poisoned)?;
+        let mut plugins = self.plugins.write().map_err(|_| crate::Error::Poisoned)?;
         if plugins.contains_key(&id) {
             return Err(crate::Error::AlreadyLoaded(id));
         }
@@ -36,10 +33,7 @@ impl PluginRegistry {
 
     /// Unload a plugin by id.
     pub fn unregister(&self, id: &str) -> crate::Result<()> {
-        let mut plugins = self
-            .plugins
-            .write()
-            .map_err(|_| crate::Error::Poisoned)?;
+        let mut plugins = self.plugins.write().map_err(|_| crate::Error::Poisoned)?;
         let plugin = plugins
             .remove(id)
             .ok_or_else(|| crate::Error::NotFound(id.to_string()))?;
@@ -72,6 +66,9 @@ impl PluginRegistry {
 
     /// Whether a plugin with the given id is loaded.
     pub fn contains(&self, id: &str) -> bool {
-        self.plugins.read().map(|p| p.contains_key(id)).unwrap_or(false)
+        self.plugins
+            .read()
+            .map(|p| p.contains_key(id))
+            .unwrap_or(false)
     }
 }

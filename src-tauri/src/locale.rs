@@ -272,8 +272,14 @@ mod tests {
     #[test]
     fn parses_canonical_tags() {
         assert_eq!(DesktopLocale::from_tag("en"), Some(DesktopLocale::En));
-        assert_eq!(DesktopLocale::from_tag("zh-Hans"), Some(DesktopLocale::ZhHans));
-        assert_eq!(DesktopLocale::from_tag("zh_Hans"), Some(DesktopLocale::ZhHans));
+        assert_eq!(
+            DesktopLocale::from_tag("zh-Hans"),
+            Some(DesktopLocale::ZhHans)
+        );
+        assert_eq!(
+            DesktopLocale::from_tag("zh_Hans"),
+            Some(DesktopLocale::ZhHans)
+        );
         assert_eq!(DesktopLocale::from_tag("zh"), Some(DesktopLocale::ZhHans));
         assert_eq!(DesktopLocale::from_tag("ja"), Some(DesktopLocale::Ja));
         assert_eq!(DesktopLocale::from_tag("unknown"), None);

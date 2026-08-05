@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::types::MemoryEntry;
 use crate::MemoryStore;
+use crate::types::MemoryEntry;
 
 /// A parsed external config file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,7 +148,10 @@ pub fn detect_config_type(path: &str) -> ConfigType {
         .unwrap_or("")
         .to_lowercase();
 
-    if lower.contains(".claude") || lower.contains("claude_desktop") || lower.contains("claude-code") {
+    if lower.contains(".claude")
+        || lower.contains("claude_desktop")
+        || lower.contains("claude-code")
+    {
         return ConfigType::Claude;
     }
     if lower.contains(".openclaw") || lower.contains("openclaw") {
@@ -191,8 +194,7 @@ impl ProfileDetector {
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
         let appdata = std::env::var("APPDATA").unwrap_or_default();
-        let xdg = std::env::var("XDG_CONFIG_HOME")
-            .unwrap_or_else(|_| format!("{}/.config", home));
+        let xdg = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| format!("{}/.config", home));
 
         let mut paths = Vec::new();
         // Claude Code
@@ -209,12 +211,16 @@ impl ProfileDetector {
         paths.push(format!("{}/.hermes/config.toml", home));
         // Generic
         paths.push(format!("{}/opensus/config.toml", xdg));
-        Self { search_paths: paths }
+        Self {
+            search_paths: paths,
+        }
     }
 
     /// Override the candidate search paths.
     pub fn with_search_paths(paths: Vec<String>) -> Self {
-        Self { search_paths: paths }
+        Self {
+            search_paths: paths,
+        }
     }
 
     /// Return the config files that actually exist on disk.
@@ -332,21 +338,23 @@ impl ProfileImporter {
 
     /// Parse a config file into an [`ImportSource`].
     pub fn parse_file(&self, path: &str) -> CoreResult<ImportSource> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
         let kind = detect_kind(path);
         let parsed = match kind.as_str() {
-            "json" => serde_json::from_str(&content)
-                .map_err(|e| opensquilla_core::error::CoreError::Config(format!(
+            "json" => serde_json::from_str(&content).map_err(|e| {
+                opensquilla_core::error::CoreError::Config(format!(
                     "Invalid JSON in {}: {}",
                     path, e
-                )))?,
+                ))
+            })?,
             "yaml" => {
-                let value: serde_yaml::Value = serde_yaml::from_str(&content)
-                    .map_err(|e| opensquilla_core::error::CoreError::Config(format!(
+                let value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+                    opensquilla_core::error::CoreError::Config(format!(
                         "Invalid YAML in {}: {}",
                         path, e
-                    )))?;
+                    ))
+                })?;
                 serde_json::to_value(value).map_err(|e| {
                     opensquilla_core::error::CoreError::Config(format!(
                         "YAML not serializable to JSON in {}: {}",
@@ -355,11 +363,12 @@ impl ProfileImporter {
                 })?
             }
             "toml" => {
-                let value: toml::Value = toml::from_str(&content)
-                    .map_err(|e| opensquilla_core::error::CoreError::Config(format!(
+                let value: toml::Value = toml::from_str(&content).map_err(|e| {
+                    opensquilla_core::error::CoreError::Config(format!(
                         "Invalid TOML in {}: {}",
                         path, e
-                    )))?;
+                    ))
+                })?;
                 serde_json::to_value(value).map_err(|e| {
                     opensquilla_core::error::CoreError::Config(format!(
                         "TOML not serializable to JSON in {}: {}",
@@ -371,7 +380,7 @@ impl ProfileImporter {
                 return Err(opensquilla_core::error::CoreError::InvalidInput(format!(
                     "Unsupported config file kind '{}' for {}",
                     other, path
-                )))
+                )));
             }
         };
 
@@ -390,16 +399,16 @@ impl ProfileImporter {
         for mem in extracted {
             ids.push(self.store_extracted(agent_id, &source, mem)?);
         }
-        info!(
-            "Imported {} memories from {}",
-            ids.len(),
-            path
-        );
+        info!("Imported {} memories from {}", ids.len(), path);
         Ok(ids)
     }
 
     /// Import all supported config files in a directory (non-recursive).
-    pub async fn import_from_directory(&self, agent_id: Uuid, dir: &str) -> CoreResult<ImportSummary> {
+    pub async fn import_from_directory(
+        &self,
+        agent_id: Uuid,
+        dir: &str,
+    ) -> CoreResult<ImportSummary> {
         let mut summary = ImportSummary {
             agent_id,
             files_processed: 0,
@@ -407,8 +416,8 @@ impl ProfileImporter {
             failed_files: Vec::new(),
         };
 
-        let entries = std::fs::read_dir(dir)
-            .map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
+        let entries =
+            std::fs::read_dir(dir).map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -443,7 +452,11 @@ impl ProfileImporter {
     ///
     /// Files are routed through the config-family-aware importers when their
     /// type is detected; directories are scanned non-recursively.
-    pub async fn import_from_path(&self, agent_id: Uuid, path: &str) -> CoreResult<Vec<ImportResult>> {
+    pub async fn import_from_path(
+        &self,
+        agent_id: Uuid,
+        path: &str,
+    ) -> CoreResult<Vec<ImportResult>> {
         let p = std::path::Path::new(path);
         if p.is_dir() {
             let summary = self.import_from_directory(agent_id, path).await?;
@@ -455,7 +468,10 @@ impl ProfileImporter {
                 error: if summary.failed_files.is_empty() {
                     None
                 } else {
-                    Some(format!("{} files failed to import", summary.failed_files.len()))
+                    Some(format!(
+                        "{} files failed to import",
+                        summary.failed_files.len()
+                    ))
                 },
             }]);
         }
@@ -495,17 +511,24 @@ impl ProfileImporter {
 
     /// Import a Claude Code config (`.claude/settings.json`, ...).
     pub async fn import_from_claude(&self, agent_id: Uuid, path: &str) -> CoreResult<ImportResult> {
-        self.import_specialized(agent_id, path, ConfigType::Claude, "claude").await
+        self.import_specialized(agent_id, path, ConfigType::Claude, "claude")
+            .await
     }
 
     /// Import an OpenClaw config (`.openclaw/config.*`, ...).
-    pub async fn import_from_openclaw(&self, agent_id: Uuid, path: &str) -> CoreResult<ImportResult> {
-        self.import_specialized(agent_id, path, ConfigType::OpenClaw, "openclaw").await
+    pub async fn import_from_openclaw(
+        &self,
+        agent_id: Uuid,
+        path: &str,
+    ) -> CoreResult<ImportResult> {
+        self.import_specialized(agent_id, path, ConfigType::OpenClaw, "openclaw")
+            .await
     }
 
     /// Import a Hermes config (`.hermes/config.*`, ...).
     pub async fn import_from_hermes(&self, agent_id: Uuid, path: &str) -> CoreResult<ImportResult> {
-        self.import_specialized(agent_id, path, ConfigType::Hermes, "hermes").await
+        self.import_specialized(agent_id, path, ConfigType::Hermes, "hermes")
+            .await
     }
 
     /// Produce a dry-run import plan without persisting anything.
@@ -513,8 +536,8 @@ impl ProfileImporter {
         let p = std::path::Path::new(path);
         let mut paths: Vec<String> = Vec::new();
         if p.is_dir() {
-            let entries = std::fs::read_dir(p)
-                .map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
+            let entries =
+                std::fs::read_dir(p).map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
             for entry in entries.flatten() {
                 let p2 = entry.path();
                 if p2.is_file() && is_supported(&p2.to_string_lossy()) {
@@ -693,7 +716,10 @@ fn extract_claude_memories(parsed: &serde_json::Value) -> Vec<ExtractedMemory> {
                         out.push(ExtractedMemory {
                             content: format!(
                                 "Claude Code environment variables: {}",
-                                vars.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                                vars.iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
                             ),
                             memory_type: "claude".to_string(),
                             importance: 0.4,
@@ -710,7 +736,11 @@ fn extract_claude_memories(parsed: &serde_json::Value) -> Vec<ExtractedMemory> {
                         out.push(ExtractedMemory {
                             content: format!(
                                 "Claude Code hooks configured: {}",
-                                names.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                                names
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
                             ),
                             memory_type: "claude".to_string(),
                             importance: 0.5,
@@ -914,9 +944,7 @@ fn collect_scalars(
 /// Convert a scalar value into a sentence describing the key-value pair.
 fn scalar_to_content(key: &str, value: &serde_json::Value) -> Option<String> {
     match value {
-        serde_json::Value::String(s) if !s.trim().is_empty() => {
-            Some(format!("{}: {}", key, s))
-        }
+        serde_json::Value::String(s) if !s.trim().is_empty() => Some(format!("{}: {}", key, s)),
         serde_json::Value::Bool(b) => Some(format!("{}: {}", key, b)),
         serde_json::Value::Number(n) => Some(format!("{}: {}", key, n)),
         _ => None,
@@ -952,11 +980,26 @@ mod tests {
 
     #[test]
     fn test_detect_config_type() {
-        assert_eq!(detect_config_type("/home/user/.claude/settings.json"), ConfigType::Claude);
-        assert_eq!(detect_config_type("/home/user/.claude.json"), ConfigType::Claude);
-        assert_eq!(detect_config_type("/home/user/.openclaw/config.yaml"), ConfigType::OpenClaw);
-        assert_eq!(detect_config_type("/home/user/.hermes/config.toml"), ConfigType::Hermes);
-        assert_eq!(detect_config_type("/tmp/settings.json"), ConfigType::Generic);
+        assert_eq!(
+            detect_config_type("/home/user/.claude/settings.json"),
+            ConfigType::Claude
+        );
+        assert_eq!(
+            detect_config_type("/home/user/.claude.json"),
+            ConfigType::Claude
+        );
+        assert_eq!(
+            detect_config_type("/home/user/.openclaw/config.yaml"),
+            ConfigType::OpenClaw
+        );
+        assert_eq!(
+            detect_config_type("/home/user/.hermes/config.toml"),
+            ConfigType::Hermes
+        );
+        assert_eq!(
+            detect_config_type("/tmp/settings.json"),
+            ConfigType::Generic
+        );
         assert_eq!(detect_config_type("/tmp/notes.txt"), ConfigType::Unknown);
     }
 
@@ -1008,7 +1051,10 @@ mod tests {
 
         let dir = temp_dir("dir");
         write(&dir.join("a.json"), r#"{"preferred_model": "gpt-4o"}"#);
-        write(&dir.join("b.toml"), "theme = \"dark\"\nprovider = \"openai\"\n");
+        write(
+            &dir.join("b.toml"),
+            "theme = \"dark\"\nprovider = \"openai\"\n",
+        );
         std::fs::File::create(dir.join("notes.txt")).unwrap(); // ignored
 
         let agent = Uuid::new_v4();
@@ -1140,7 +1186,10 @@ mod tests {
         let path = dir.join("settings.json");
         write(&path, r#"{"model": "gpt-4o", "theme": "dark"}"#);
         let agent = Uuid::new_v4();
-        let plan = importer.plan_import(agent, path.to_str().unwrap()).await.unwrap();
+        let plan = importer
+            .plan_import(agent, path.to_str().unwrap())
+            .await
+            .unwrap();
         assert_eq!(plan.agent_id, agent);
         assert_eq!(plan.items.len(), 1);
         assert!(plan.items[0].estimated_memories >= 2);

@@ -5,15 +5,15 @@
 //! module exposes the wizard as a stateless RPC over a shared wizard store,
 //! allowing the frontend to drive the wizard step by step.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
 use opensquilla_onboarding::flow::SetupState;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// The wizard state machine view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +68,9 @@ impl WizardSession {
             .position(|s| *s == self.current_state)
             .ok_or_else(|| AppError::internal("Invalid wizard state"))?;
         if idx + 1 >= states.len() {
-            return Err(AppError::bad_request("Wizard is already at the final state"));
+            return Err(AppError::bad_request(
+                "Wizard is already at the final state",
+            ));
         }
         self.completed.push(self.current_state);
         self.current_state = states[idx + 1];
@@ -143,7 +145,9 @@ impl WizardStore {
     /// Start a new wizard session, returning the session id.
     pub fn start(&self) -> String {
         let id = uuid::Uuid::new_v4().to_string();
-        self.sessions.lock().insert(id.clone(), WizardSession::new());
+        self.sessions
+            .lock()
+            .insert(id.clone(), WizardSession::new());
         id
     }
 
@@ -153,7 +157,11 @@ impl WizardStore {
     }
 
     /// Run a closure with mutable access to a session.
-    fn with_session<R>(&self, id: &str, f: impl FnOnce(&mut WizardSession) -> R) -> Result<R, AppError> {
+    fn with_session<R>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&mut WizardSession) -> R,
+    ) -> Result<R, AppError> {
         let mut sessions = self.sessions.lock();
         let session = sessions
             .get_mut(id)
@@ -366,7 +374,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_wizard_handlers(&mut registry, store);
 
-        let r = registry.dispatch("wizard.start", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("wizard.start", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         let session_id = resp["session_id"].as_str().unwrap().to_string();
         assert_eq!(resp["state"]["current_state"], "Welcome");
@@ -374,13 +384,19 @@ mod tests {
         // Advance through several steps
         for _ in 0..6 {
             let r = registry
-                .dispatch("wizard.advance", serde_json::json!({"session_id": session_id}))
+                .dispatch(
+                    "wizard.advance",
+                    serde_json::json!({"session_id": session_id}),
+                )
                 .await;
             assert!(r.unwrap().is_ok());
         }
 
         let r = registry
-            .dispatch("wizard.state", serde_json::json!({"session_id": session_id}))
+            .dispatch(
+                "wizard.state",
+                serde_json::json!({"session_id": session_id}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["state"]["current_state"], "Complete");
@@ -392,7 +408,11 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_wizard_handlers(&mut registry, store);
 
-        let resp = registry.dispatch("wizard.start", serde_json::Value::Null).await.unwrap().unwrap();
+        let resp = registry
+            .dispatch("wizard.start", serde_json::Value::Null)
+            .await
+            .unwrap()
+            .unwrap();
         let session_id = resp["session_id"].as_str().unwrap().to_string();
 
         let r = registry
@@ -404,7 +424,10 @@ mod tests {
         assert!(r.unwrap().is_ok());
 
         let r = registry
-            .dispatch("wizard.advance", serde_json::json!({"session_id": session_id}))
+            .dispatch(
+                "wizard.advance",
+                serde_json::json!({"session_id": session_id}),
+            )
             .await;
         assert!(r.unwrap().is_ok());
 
@@ -420,11 +443,18 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_wizard_handlers(&mut registry, store);
 
-        let resp = registry.dispatch("wizard.start", serde_json::Value::Null).await.unwrap().unwrap();
+        let resp = registry
+            .dispatch("wizard.start", serde_json::Value::Null)
+            .await
+            .unwrap()
+            .unwrap();
         let session_id = resp["session_id"].as_str().unwrap().to_string();
 
         let r = registry
-            .dispatch("wizard.cancel", serde_json::json!({"session_id": session_id}))
+            .dispatch(
+                "wizard.cancel",
+                serde_json::json!({"session_id": session_id}),
+            )
             .await;
         assert!(r.unwrap().is_ok());
     }

@@ -42,8 +42,8 @@ use opensquilla_gateway::Gateway;
 
 // Re-export the primary types for convenience.
 pub use commands::{
-    app_info, ping, reload_config, check_updates, delete_secret, export_session, get_locale,
-    get_secret, import_session, install_update, list_secrets, open_external, pick_directory,
+    app_info, check_updates, delete_secret, export_session, get_locale, get_secret, import_session,
+    install_update, list_secrets, open_external, pick_directory, ping, reload_config,
     rotate_secret_key, save_secret, set_locale, zoom_in, zoom_out, zoom_reset,
 };
 pub use deep_link::{DeepLinkAction, DeepLinkError, parse_deep_link};
@@ -56,7 +56,7 @@ pub use locale::{BUNDLED_LOCALES, DesktopLocale, detect_system_locale, resolve_l
 pub use runtime::{DesktopRuntime, RuntimeState};
 pub use state::AppState;
 pub use storage::{SecretStorageBackend, SecretStoragePolicyInput, SharedSecretStore};
-pub use tray::{TrayIconState, TrayEvent, build_tray_menu, rebuild_menu};
+pub use tray::{TrayEvent, TrayIconState, build_tray_menu, rebuild_menu};
 pub use updater::{UpdateState, UpdateStateHandle};
 
 /// Top-level error type for the desktop shell (legacy, used by runtime module).

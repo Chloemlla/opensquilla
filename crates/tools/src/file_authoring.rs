@@ -16,17 +16,18 @@
 //! via [`tokio::task::spawn_blocking`], and return a [`ToolOutput`] carrying
 //! the absolute file path plus metadata.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// MIME type for generated PDF files.
 pub const MIME_PDF: &str = "application/pdf";
 /// MIME type for generated XLSX workbooks.
-pub const MIME_XLSX: &str =
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+pub const MIME_XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 /// MIME type for generated CSV documents.
 pub const MIME_CSV: &str = "text/csv";
 /// MIME type for generated JSON documents.
@@ -107,9 +108,9 @@ fn escape_csv_field(field: &str) -> String {
 
 /// Build a CSV document (RFC 4180) from an array of row arrays.
 fn build_csv(rows: &Value, headers: Option<&[String]>) -> ToolResult<String> {
-    let array = rows.as_array().ok_or_else(|| {
-        ToolError::invalid_args("'rows' must be a non-empty array of row arrays")
-    })?;
+    let array = rows
+        .as_array()
+        .ok_or_else(|| ToolError::invalid_args("'rows' must be a non-empty array of row arrays"))?;
     if array.is_empty() {
         return Err(ToolError::invalid_args("'rows' must not be empty"));
     }
@@ -213,9 +214,9 @@ impl FileAuthoringBase {
             ));
         }
         if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {e}")))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to create directory: {e}"))
+            })?;
         }
 
         let path_for_task = path.clone();
@@ -237,7 +238,12 @@ impl FileAuthoringBase {
         }))
     }
 
-    async fn write_text(&self, path: PathBuf, text: String, kind: &str) -> ToolResult<serde_json::Value> {
+    async fn write_text(
+        &self,
+        path: PathBuf,
+        text: String,
+        kind: &str,
+    ) -> ToolResult<serde_json::Value> {
         self.write_bytes(path, text.into_bytes(), kind).await
     }
 }
@@ -300,7 +306,9 @@ fn build_pdf(
                 }
                 current_layer
                     .use_text(heading, 14.0, Mm(20.0), Mm(y_mm), &bold_font)
-                    .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to render heading: {e}")))?;
+                    .map_err(|e| {
+                        ToolError::new("PDF_ERROR", format!("Failed to render heading: {e}"))
+                    })?;
                 y_mm -= 8.0;
 
                 for line in section_body.lines() {
@@ -312,7 +320,9 @@ fn build_pdf(
                     }
                     current_layer
                         .use_text(line, 10.0, Mm(22.0), Mm(y_mm), &base_font)
-                        .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to render body: {e}")))?;
+                        .map_err(|e| {
+                            ToolError::new("PDF_ERROR", format!("Failed to render body: {e}"))
+                        })?;
                     y_mm -= 5.0;
                 }
             }
@@ -326,7 +336,9 @@ fn build_pdf(
                 }
                 current_layer
                     .use_text(line, 10.0, Mm(20.0), Mm(y_mm), &base_font)
-                    .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to render body: {e}")))?;
+                    .map_err(|e| {
+                        ToolError::new("PDF_ERROR", format!("Failed to render body: {e}"))
+                    })?;
                 y_mm -= 5.0;
             }
         }
@@ -351,9 +363,9 @@ fn build_xlsx(sheets: &Value) -> ToolResult<Vec<u8>> {
 
     let mut workbook = Workbook::new();
     for (idx, sheet_value) in sheet_array.iter().enumerate() {
-        let obj = sheet_value.as_object().ok_or_else(|| {
-            ToolError::invalid_args(format!("sheets[{idx}] must be an object"))
-        })?;
+        let obj = sheet_value
+            .as_object()
+            .ok_or_else(|| ToolError::invalid_args(format!("sheets[{idx}] must be an object")))?;
         let title = obj
             .get("name")
             .and_then(|v| v.as_str())
@@ -362,31 +374,30 @@ fn build_xlsx(sheets: &Value) -> ToolResult<Vec<u8>> {
         let rows = obj
             .get("rows")
             .ok_or_else(|| ToolError::invalid_args(format!("sheets[{idx}].rows is required")))?;
-        let rows = rows
-            .as_array()
-            .ok_or_else(|| ToolError::invalid_args(format!("sheets[{idx}].rows must be an array")))?;
+        let rows = rows.as_array().ok_or_else(|| {
+            ToolError::invalid_args(format!("sheets[{idx}].rows must be an array"))
+        })?;
 
         let worksheet = workbook.add_worksheet();
         let _ = worksheet.set_name(&title);
         for (r, row) in rows.iter().enumerate() {
             let cells = row.as_array().ok_or_else(|| {
-                ToolError::invalid_args(format!("sheets[{idx}].rows[{r}] must be an array of cells"))
+                ToolError::invalid_args(format!(
+                    "sheets[{idx}].rows[{r}] must be an array of cells"
+                ))
             })?;
             for (c, cell) in cells.iter().enumerate() {
                 write_xlsx_cell(worksheet, r as u32, c as u16, cell).map_err(|e| {
-                    ToolError::new(
-                        "XLSX_ERROR",
-                        format!("Failed to write cell ({r},{c}): {e}"),
-                    )
+                    ToolError::new("XLSX_ERROR", format!("Failed to write cell ({r},{c}): {e}"))
                 })?;
             }
         }
     }
 
     let mut buf = Vec::new();
-    workbook
-        .save_to_buffer(&mut buf)
-        .map_err(|e: XlsxError| ToolError::new("XLSX_ERROR", format!("Failed to save workbook: {e}")))?;
+    workbook.save_to_buffer(&mut buf).map_err(|e: XlsxError| {
+        ToolError::new("XLSX_ERROR", format!("Failed to save workbook: {e}"))
+    })?;
     Ok(buf)
 }
 
@@ -466,7 +477,10 @@ impl Tool for GeneratePdfTool {
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing 'title' parameter"))?;
         let sections = params.get("sections").cloned().unwrap_or(Value::Null);
-        let body = params.get("body").and_then(|v| v.as_str()).map(String::from);
+        let body = params
+            .get("body")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let font_path = params
             .get("font_path")
             .and_then(|v| v.as_str())
@@ -478,7 +492,12 @@ impl Tool for GeneratePdfTool {
         let title_for_task = title.to_string();
         let font_path_for_task = font_path;
         let bytes = tokio::task::spawn_blocking(move || {
-            Self::build_pdf_impl(&title_for_task, &sections, body.as_deref(), font_path_for_task.as_deref())
+            Self::build_pdf_impl(
+                &title_for_task,
+                &sections,
+                body.as_deref(),
+                font_path_for_task.as_deref(),
+            )
         })
         .await
         .map_err(|e| ToolError::new("PDF_ERROR", format!("PDF generation task failed: {e}")))??;
@@ -574,7 +593,9 @@ impl Tool for GenerateXlsxTool {
 
         let bytes = tokio::task::spawn_blocking(move || Self::build_xlsx_impl(&sheets))
             .await
-            .map_err(|e| ToolError::new("XLSX_ERROR", format!("XLSX generation task failed: {e}")))??;
+            .map_err(|e| {
+                ToolError::new("XLSX_ERROR", format!("XLSX generation task failed: {e}"))
+            })??;
 
         let data = self.base.write_bytes(path, bytes, "XLSX workbook").await?;
         let size = data["size_bytes"].as_u64().unwrap_or(0);
@@ -666,10 +687,8 @@ impl Tool for GenerateCsvTool {
             .get("rows")
             .cloned()
             .ok_or_else(|| ToolError::invalid_args("Missing 'rows' parameter"))?;
-        let headers: Option<Vec<String>> = params
-            .get("headers")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
+        let headers: Option<Vec<String>> =
+            params.get("headers").and_then(|v| v.as_array()).map(|arr| {
                 arr.iter()
                     .map(|h| h.as_str().unwrap_or("").to_string())
                     .collect()
@@ -757,22 +776,30 @@ impl Tool for GenerateJsonTool {
         let content = params["content"]
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing 'content' parameter"))?;
-        let pretty = params.get("pretty").and_then(|v| v.as_bool()).unwrap_or(true);
+        let pretty = params
+            .get("pretty")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
 
         let parsed: Value = serde_json::from_str(content)
             .map_err(|e| ToolError::invalid_args(format!("Invalid JSON content: {e}")))?;
         let serialized = if pretty {
-            serde_json::to_string_pretty(&parsed)
-                .map_err(|e| ToolError::new("JSON_ERROR", format!("Failed to serialize JSON: {e}")))?
+            serde_json::to_string_pretty(&parsed).map_err(|e| {
+                ToolError::new("JSON_ERROR", format!("Failed to serialize JSON: {e}"))
+            })?
         } else {
-            serde_json::to_string(&parsed)
-                .map_err(|e| ToolError::new("JSON_ERROR", format!("Failed to serialize JSON: {e}")))?
+            serde_json::to_string(&parsed).map_err(|e| {
+                ToolError::new("JSON_ERROR", format!("Failed to serialize JSON: {e}"))
+            })?
         };
         let serialized = format!("{serialized}\n");
 
         let file_name = ensure_extension(filename, ".json");
         let path = self.base.resolve(&file_name)?;
-        let data = self.base.write_text(path, serialized, "JSON document").await?;
+        let data = self
+            .base
+            .write_text(path, serialized, "JSON document")
+            .await?;
         let size = data["size_bytes"].as_u64().unwrap_or(0);
         Ok(ToolOutput::success(format!(
             "Generated JSON file '{}' ({} bytes)",
@@ -842,7 +869,10 @@ impl Tool for GenerateMarkdownTool {
 
         let file_name = ensure_extension(filename, ".md");
         let path = self.base.resolve(&file_name)?;
-        let data = self.base.write_text(path, content.to_string(), "Markdown document").await?;
+        let data = self
+            .base
+            .write_text(path, content.to_string(), "Markdown document")
+            .await?;
         let size = data["size_bytes"].as_u64().unwrap_or(0);
         Ok(ToolOutput::success(format!(
             "Generated Markdown file '{}' ({} bytes)",
@@ -965,8 +995,7 @@ mod tests {
         assert!(result.is_ok());
 
         let path = dir.path().join("book.xlsx");
-        let mut workbook =
-            calamine::open_workbook::<_, calamine::Xlsx<_>>(&path).unwrap();
+        let mut workbook = calamine::open_workbook::<_, calamine::Xlsx<_>>(&path).unwrap();
         let range = workbook
             .worksheet_range("People")
             .unwrap_or_else(|_| panic!("missing sheet"));

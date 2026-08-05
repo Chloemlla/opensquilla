@@ -157,7 +157,11 @@ impl SetupFlow {
         };
 
         // Mark current step as completed
-        if let Some(step) = self.steps.iter_mut().find(|s| s.state == self.current_state) {
+        if let Some(step) = self
+            .steps
+            .iter_mut()
+            .find(|s| s.state == self.current_state)
+        {
             step.completed = true;
         }
 
@@ -184,7 +188,11 @@ impl SetupFlow {
 
     /// Skip the current step.
     pub fn skip(&mut self) {
-        if let Some(step) = self.steps.iter_mut().find(|s| s.state == self.current_state) {
+        if let Some(step) = self
+            .steps
+            .iter_mut()
+            .find(|s| s.state == self.current_state)
+        {
             step.skipped = true;
         }
         let _ = self.advance();
@@ -257,7 +265,11 @@ impl SetupFlow {
         }
 
         // Mark review as complete
-        if let Some(step) = self.steps.iter_mut().find(|s| s.state == self.current_state) {
+        if let Some(step) = self
+            .steps
+            .iter_mut()
+            .find(|s| s.state == self.current_state)
+        {
             step.completed = true;
         }
 

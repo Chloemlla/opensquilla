@@ -32,11 +32,11 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// The WebSocket stream type used by the QQ Gateway connection.
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -241,7 +241,10 @@ impl QQChannel {
             .await
             .map_err(|e| format!("QQ Bot send request: {}", e))?;
         let status = resp.status();
-        let body: Value = resp.json().await.map_err(|e| format!("QQ Bot send parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("QQ Bot send parse: {}", e))?;
         if status.is_success() {
             Ok(())
         } else {
@@ -254,7 +257,11 @@ impl QQChannel {
     }
 
     /// Send a markdown message (`msg_type: 2`).
-    pub async fn send_markdown_message(&self, channel_id: &str, content: &str) -> Result<(), String> {
+    pub async fn send_markdown_message(
+        &self,
+        channel_id: &str,
+        content: &str,
+    ) -> Result<(), String> {
         let payload = json!({"content": content, "msg_type": 2});
         let url = format!("{}/channels/{}/messages", self.api_base, channel_id);
         let resp = self
@@ -319,7 +326,12 @@ impl QQChannel {
     }
 
     /// Reply to an existing message in a guild channel.
-    pub async fn reply_to_message(&self, channel_id: &str, message_id: &str, text: &str) -> Result<(), String> {
+    pub async fn reply_to_message(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        text: &str,
+    ) -> Result<(), String> {
         let payload = json!({
             "content": text,
             "msg_type": 0,
@@ -379,7 +391,10 @@ async fn get_gateway_url(
         .send()
         .await
         .map_err(|e| format!("QQ gateway request: {}", e))?;
-    let body: Value = resp.json().await.map_err(|e| format!("QQ gateway parse: {}", e))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("QQ gateway parse: {}", e))?;
     body["url"]
         .as_str()
         .map(String::from)
@@ -395,7 +410,11 @@ fn ws_url_for_shard(api_base: &str) -> String {
 fn build_send_url(api_base: &str, message: &OutgoingMessage) -> String {
     if let Some(openid) = message.metadata.get("user_openid").and_then(|v| v.as_str()) {
         format!("{}/v2/users/{}/messages", api_base, openid)
-    } else if let Some(group_openid) = message.metadata.get("group_openid").and_then(|v| v.as_str()) {
+    } else if let Some(group_openid) = message
+        .metadata
+        .get("group_openid")
+        .and_then(|v| v.as_str())
+    {
         format!("{}/v2/groups/{}/messages", api_base, group_openid)
     } else {
         format!("{}/channels/{}/messages", api_base, message.channel_id)
@@ -417,7 +436,8 @@ async fn run_gateway_cycle(
             return;
         }
     };
-    let (mut sink, mut read): (SplitSink<WsStream, Message>, SplitStream<WsStream>) = ws_stream.split();
+    let (mut sink, mut read): (SplitSink<WsStream, Message>, SplitStream<WsStream>) =
+        ws_stream.split();
     info!("QQ Bot WS connected");
 
     let identify = json!({
@@ -521,7 +541,11 @@ fn spawn_qq_heartbeat(
             }
             let seq = { *last_seq.lock().await };
             let payload = json!({"op": 1, "d": seq});
-            if sink.send(Message::Text(payload.to_string().into())).await.is_err() {
+            if sink
+                .send(Message::Text(payload.to_string().into()))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -535,7 +559,10 @@ fn qq_reconnect_delay(attempt: u32) -> Duration {
 }
 
 /// Parse a dispatch event into an [`IncomingMessage`] when it is a message.
-fn parse_gateway_event(envelope: &QQGatewayEnvelope, channel_type: ChannelType) -> Option<IncomingMessage> {
+fn parse_gateway_event(
+    envelope: &QQGatewayEnvelope,
+    channel_type: ChannelType,
+) -> Option<IncomingMessage> {
     let event_type = envelope.t.as_deref()?;
     let d = envelope.d.as_ref()?;
     match event_type {
@@ -565,7 +592,11 @@ fn parse_channel_message(d: &Value, channel_type: ChannelType) -> Option<Incomin
         .and_then(|a| a.get("username"))
         .and_then(|v| v.as_str())
         .map(String::from);
-    let text = d.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let text = d
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let thread_id = d
         .get("msg_id")
         .and_then(|v| v.as_str())
@@ -602,16 +633,28 @@ fn parse_group_message(d: &Value, channel_type: ChannelType) -> Option<IncomingM
     let user_id = author
         .and_then(|a| a.get("member_openid"))
         .and_then(|v| v.as_str())
-        .or_else(|| author.and_then(|a| a.get("user_openid")).and_then(|v| v.as_str()))
+        .or_else(|| {
+            author
+                .and_then(|a| a.get("user_openid"))
+                .and_then(|v| v.as_str())
+        })
         .or_else(|| d.get("author_id").and_then(|v| v.as_str()))
         .unwrap_or("")
         .to_string();
     let user_name = author
         .and_then(|a| a.get("member").and_then(|m| m.get("name")))
         .and_then(|v| v.as_str())
-        .or_else(|| author.and_then(|a| a.get("nickname")).and_then(|v| v.as_str()))
+        .or_else(|| {
+            author
+                .and_then(|a| a.get("nickname"))
+                .and_then(|v| v.as_str())
+        })
         .map(String::from);
-    let text = d.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let text = d
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let thread_id = d.get("msg_id").and_then(|v| v.as_str()).map(String::from);
     let timestamp = d
         .get("timestamp")
@@ -645,9 +688,17 @@ fn parse_c2c_message(d: &Value, channel_type: ChannelType) -> Option<IncomingMes
         .get("author")
         .and_then(|a| a.get("member").and_then(|m| m.get("nickname")))
         .and_then(|v| v.as_str())
-        .or_else(|| d.get("author").and_then(|a| a.get("nickname")).and_then(|v| v.as_str()))
+        .or_else(|| {
+            d.get("author")
+                .and_then(|a| a.get("nickname"))
+                .and_then(|v| v.as_str())
+        })
         .map(String::from);
-    let text = d.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let text = d
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let thread_id = d.get("msg_id").and_then(|v| v.as_str()).map(String::from);
     let timestamp = d
         .get("timestamp")

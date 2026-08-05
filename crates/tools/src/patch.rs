@@ -4,8 +4,11 @@
 //! Supports standard unified diff format with hunk headers, context lines,
 //! additions, and deletions.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -130,10 +133,7 @@ fn parse_hunk_header(header: &str) -> Option<(usize, usize, usize, usize)> {
     }
 
     // Extract the content between @@ markers.
-    let content = header
-        .strip_prefix("@@")?
-        .strip_suffix("@@")?
-        .trim();
+    let content = header.strip_prefix("@@")?.strip_suffix("@@")?.trim();
 
     // Split into old and new parts.
     let parts: Vec<&str> = content.split_whitespace().collect();
@@ -249,7 +249,10 @@ impl ApplyPatchTool {
             path
         };
         let canonical = resolved.canonicalize().map_err(|e| {
-            ToolError::new("PATH_INVALID", format!("Cannot access path '{}': {}", path_str, e))
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
         })?;
         if !canonical.starts_with(&self.allowed_base) {
             return Err(ToolError::new(
@@ -297,7 +300,8 @@ impl Tool for ApplyPatchTool {
         if diffs.is_empty() {
             return Err(ToolError::new(
                 "INVALID_PATCH",
-                "No valid hunks found in the patch. Patch must be in unified diff format.".to_string(),
+                "No valid hunks found in the patch. Patch must be in unified diff format."
+                    .to_string(),
             ));
         }
 
@@ -322,16 +326,21 @@ impl Tool for ApplyPatchTool {
 
             // Read the current file content.
             let content = tokio::fs::read_to_string(&file_path).await.map_err(|e| {
-                ToolError::new("IO_ERROR", format!("Failed to read file '{}': {}", file_path.display(), e))
+                ToolError::new(
+                    "IO_ERROR",
+                    format!("Failed to read file '{}': {}", file_path.display(), e),
+                )
             })?;
 
             // Apply the diff.
             let new_content = apply_diff(&content, &diff.hunks)?;
 
             // Write the patched content back.
-            tokio::fs::write(&file_path, &new_content).await.map_err(|e| {
-                ToolError::new("IO_ERROR", format!("Failed to write patched file: {}", e))
-            })?;
+            tokio::fs::write(&file_path, &new_content)
+                .await
+                .map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to write patched file: {}", e))
+                })?;
 
             results.push(serde_json::json!({
                 "file": file_path.to_string_lossy(),
@@ -349,6 +358,848 @@ impl Tool for ApplyPatchTool {
             results.len()
         ))
         .with_data(data))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Patch reversal
+// ---------------------------------------------------------------------------
+
+/// Reverse a parsed diff so that additions become removals and vice versa.
+///
+/// Reversing a patch lets you "undo" a change: applying the reversed patch to
+/// the new content reproduces the original content. Context lines are kept
+/// unchanged; hunk line counts are swapped so the reversed header is valid.
+fn reverse_diff(diffs: Vec<ParsedDiff>) -> Vec<ParsedDiff> {
+    diffs
+        .into_iter()
+        .map(|mut diff| {
+            // Swap file paths.
+            std::mem::swap(&mut diff.old_path, &mut diff.new_path);
+            for hunk in &mut diff.hunks {
+                std::mem::swap(&mut hunk.old_start, &mut hunk.new_start);
+                std::mem::swap(&mut hunk.old_count, &mut hunk.new_count);
+                for line in &mut hunk.lines {
+                    match line {
+                        HunkLine::Addition(text) => *line = HunkLine::Removal(text.clone()),
+                        HunkLine::Removal(text) => *line = HunkLine::Addition(text.clone()),
+                        HunkLine::Context(_) => {}
+                    }
+                }
+                // Reorder so context/removal/addition ordering is preserved as
+                // much as possible: the parser expects removals before additions
+                // in the original; after swapping we should keep removals first
+                // so the re-application of the reversed patch matches correctly.
+                hunk.lines.sort_by_key(|l| match l {
+                    HunkLine::Context(_) => 0,
+                    HunkLine::Removal(_) => 1,
+                    HunkLine::Addition(_) => 2,
+                });
+            }
+            diff
+        })
+        .collect()
+}
+
+/// Render a parsed diff back into unified-diff text.
+fn render_diff(diffs: &[ParsedDiff]) -> String {
+    let mut out = String::new();
+    for diff in diffs {
+        out.push_str("--- ");
+        out.push_str(&diff.old_path);
+        out.push('\n');
+        out.push_str("+++ ");
+        out.push_str(&diff.new_path);
+        out.push('\n');
+        for hunk in &diff.hunks {
+            out.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                hunk.old_start, hunk.old_count, hunk.new_start, hunk.new_count
+            ));
+            for line in &hunk.lines {
+                match line {
+                    HunkLine::Context(text) => {
+                        out.push(' ');
+                        out.push_str(text);
+                    }
+                    HunkLine::Addition(text) => {
+                        out.push('+');
+                        out.push_str(text);
+                    }
+                    HunkLine::Removal(text) => {
+                        out.push('-');
+                        out.push_str(text);
+                    }
+                }
+                out.push('\n');
+            }
+        }
+    }
+    out
+}
+
+/// Tool for reversing a unified-diff patch.
+///
+/// Reversing swaps the old/new sides of each hunk, turning an "apply" patch
+/// into an "undo" patch. The reversed patch can then be applied to the
+/// post-patch content to recover the pre-patch content.
+pub struct ReversePatchTool {
+    allowed_base: PathBuf,
+}
+
+impl ReversePatchTool {
+    /// Create a new reverse-patch tool.
+    pub fn new(allowed_base: PathBuf) -> Self {
+        Self { allowed_base }
+    }
+
+    fn resolve_path(&self, path_str: &str) -> ToolResult<PathBuf> {
+        let path = PathBuf::from(path_str);
+        let resolved = if path.is_relative() {
+            self.allowed_base.join(&path)
+        } else {
+            path
+        };
+        let canonical = resolved.canonicalize().map_err(|e| {
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
+        })?;
+        if !canonical.starts_with(&self.allowed_base) {
+            return Err(ToolError::new(
+                "PATH_TRAVERSAL",
+                format!("Path '{}' is outside the allowed base", path_str),
+            ));
+        }
+        Ok(canonical)
+    }
+}
+
+#[async_trait]
+impl Tool for ReversePatchTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
+            ToolDefinition::new(
+                "reverse_patch",
+                "Reverse a unified-diff patch. The reversed patch, when applied to the "
+                    + "post-patch content, recovers the original pre-patch content. "
+                    + "Optionally writes the reversed patch to a file.",
+                HashMap::from([
+                    (
+                        "patch".to_string(),
+                        ParameterDefinition::required_string("The unified diff text to reverse"),
+                    ),
+                    (
+                        "output_path".to_string(),
+                        ParameterDefinition::string(
+                            "Optional path to write the reversed patch. If omitted, the reversed patch is returned in the output.",
+                        ),
+                    ),
+                ]),
+            )
+            .category("filesystem")
+            .risk_level(2)
+        });
+        &DEF
+    }
+
+    async fn execute(&self, params: Value) -> ToolResult {
+        let patch_text = params["patch"]
+            .as_str()
+            .ok_or_else(|| ToolError::invalid_args("Missing 'patch' parameter"))?;
+
+        let diffs = parse_diff(patch_text)?;
+        if diffs.is_empty() {
+            return Err(ToolError::new(
+                "INVALID_PATCH",
+                "No valid hunks found in the patch.".to_string(),
+            ));
+        }
+
+        let reversed = reverse_diff(diffs);
+        let reversed_text = render_diff(&reversed);
+
+        let hunk_count: usize = reversed.iter().map(|d| d.hunks.len()).sum();
+        let file_count = reversed.len();
+
+        let data = if let Some(output_path) = params["output_path"].as_str() {
+            let path = self.resolve_path(output_path)?;
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+                })?;
+            }
+            tokio::fs::write(&path, &reversed_text).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to write reversed patch: {}", e))
+            })?;
+            serde_json::json!({
+                "files": file_count,
+                "hunks": hunk_count,
+                "written_to": path.to_string_lossy(),
+            })
+        } else {
+            serde_json::json!({
+                "files": file_count,
+                "hunks": hunk_count,
+            })
+        };
+
+        Ok(ToolOutput::success(reversed_text).with_data(data))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3-way merge
+// ---------------------------------------------------------------------------
+
+/// The origin of a line in a 3-way merge region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MergeSide {
+    /// Line present in both ours and theirs (or base).
+    Common,
+    /// Line only in ours.
+    Ours,
+    /// Line only in theirs.
+    Theirs,
+}
+
+/// A line in a 3-way merge with its origin.
+#[derive(Debug, Clone)]
+struct MergeLine {
+    text: String,
+    side: MergeSide,
+}
+
+/// Compute the longest common subsequence table for two slice of strings.
+///
+/// Returns a 2D vector of LCS lengths where `table[i][j]` is the LCS length
+/// between `a[..i]` and `b[..j]`.
+fn lcs_table(a: &[String], b: &[String]) -> Vec<Vec<usize>> {
+    let m = a.len();
+    let n = b.len();
+    let mut table = vec![vec![0usize; n + 1]; m + 1];
+    for i in 1..=m {
+        for j in 1..=n {
+            if a[i - 1] == b[j - 1] {
+                table[i][j] = table[i - 1][j - 1] + 1;
+            } else {
+                table[i][j] = table[i - 1][j].max(table[i][j - 1]);
+            }
+        }
+    }
+    table
+}
+
+/// Walk back through the LCS table to produce a list of merge lines that
+/// mark each line as common, ours-only, or theirs-only.
+fn build_merge_lines(base: &[String], ours: &[String], theirs: &[String]) -> Vec<MergeLine> {
+    // Merge base → ours and base → theirs separately, then walk the three
+    // sequences in lockstep using their LCS structure.
+    let table_ours = lcs_table(base, ours);
+    let table_theirs = lcs_table(base, theirs);
+
+    let mut result = Vec::new();
+    let mut bi = base.len();
+    let mut oi = ours.len();
+    let mut ti = theirs.len();
+
+    // We reconstruct from the end; collect then reverse at the end.
+    let mut reversed = Vec::new();
+
+    while bi > 0 || oi > 0 || ti > 0 {
+        let base_line = if bi > 0 { Some(&base[bi - 1]) } else { None };
+        let ours_line = if oi > 0 { Some(&ours[oi - 1]) } else { None };
+        let theirs_line = if ti > 0 { Some(&theirs[ti - 1]) } else { None };
+
+        if bi > 0
+            && oi > 0
+            && base_line == ours_line
+            && table_ours[bi][oi] == table_ours[bi - 1][oi - 1] + 1
+        {
+            // base line matched in ours. Check if it also matches theirs.
+            if ti > 0
+                && base_line == theirs_line
+                && table_theirs[bi][ti] == table_theirs[bi - 1][ti - 1] + 1
+            {
+                reversed.push(MergeLine {
+                    text: base_line.unwrap().clone(),
+                    side: MergeSide::Common,
+                });
+                bi -= 1;
+                oi -= 1;
+                ti -= 1;
+            } else {
+                // ours consumed a base line; theirs diverged here.
+                reversed.push(MergeLine {
+                    text: ours_line.unwrap().clone(),
+                    side: MergeSide::Ours,
+                });
+                oi -= 1;
+            }
+        } else if oi > 0
+            && (bi == 0
+                || table_ours[bi][oi] != table_ours[bi][oi - 1]
+                || table_ours[bi][oi] == table_ours[bi][oi - 1])
+        {
+            // ours-only line (insertion in ours)
+            if bi > 0 && table_ours[bi][oi] == table_ours[bi][oi - 1] {
+                reversed.push(MergeLine {
+                    text: ours_line.unwrap().clone(),
+                    side: MergeSide::Ours,
+                });
+                oi -= 1;
+            } else if ti > 0 && theirs_line == ours_line {
+                // Same insertion in both — treat as common.
+                reversed.push(MergeLine {
+                    text: ours_line.unwrap().clone(),
+                    side: MergeSide::Common,
+                });
+                oi -= 1;
+                ti -= 1;
+            } else {
+                reversed.push(MergeLine {
+                    text: ours_line.unwrap().clone(),
+                    side: MergeSide::Ours,
+                });
+                oi -= 1;
+            }
+        } else if ti > 0 {
+            reversed.push(MergeLine {
+                text: theirs_line.unwrap().clone(),
+                side: MergeSide::Theirs,
+            });
+            ti -= 1;
+        } else if bi > 0 {
+            reversed.push(MergeLine {
+                text: base_line.unwrap().clone(),
+                side: MergeSide::Common,
+            });
+            bi -= 1;
+        } else {
+            break;
+        }
+    }
+
+    reversed.reverse();
+    result = reversed;
+    result
+}
+
+/// Outcome of a 3-way merge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status")]
+pub enum MergeOutcome {
+    /// The merge completed with no conflicts.
+    #[serde(rename = "clean")]
+    Clean {
+        /// The merged content.
+        content: String,
+        /// Number of lines in the result.
+        lines: usize,
+    },
+    /// The merge produced conflicts that need manual resolution.
+    #[serde(rename = "conflict")]
+    Conflict {
+        /// The merged content with conflict markers.
+        content: String,
+        /// Number of conflict regions.
+        conflicts: usize,
+    },
+}
+
+/// Perform a 3-way merge of `ours` and `theirs` against a common `base`.
+///
+/// Uses an LCS-based diff to align the three sequences, then walks them in
+/// lockstep. Regions where only one side diverged from base are taken from
+/// that side; regions where both sides diverged are emitted with standard
+/// `<<<<<<<` / `=======` / `>>>>>>>` conflict markers.
+fn three_way_merge(base: &str, ours: &str, theirs: &str) -> MergeOutcome {
+    let base_lines: Vec<String> = base.lines().map(String::from).collect();
+    let ours_lines: Vec<String> = ours.lines().map(String::from).collect();
+    let theirs_lines: Vec<String> = theirs.lines().map(String::from).collect();
+
+    let merge_lines = build_merge_lines(&base_lines, &ours_lines, &theirs_lines);
+
+    // Now walk the merge lines and coalesce runs of ours-only / theirs-only.
+    let mut output = String::new();
+    let mut conflicts = 0usize;
+    let mut i = 0;
+
+    while i < merge_lines.len() {
+        match merge_lines[i].side {
+            MergeSide::Common => {
+                output.push_str(&merge_lines[i].text);
+                output.push('\n');
+                i += 1;
+            }
+            MergeSide::Ours | MergeSide::Theirs => {
+                // Collect a divergent run: consecutive non-common lines.
+                let mut run: Vec<&MergeLine> = Vec::new();
+                while i < merge_lines.len() && merge_lines[i].side != MergeSide::Common {
+                    run.push(&merge_lines[i]);
+                    i += 1;
+                }
+
+                let ours_run: Vec<&str> = run
+                    .iter()
+                    .filter(|l| l.side == MergeSide::Ours)
+                    .map(|l| l.text.as_str())
+                    .collect();
+                let theirs_run: Vec<&str> = run
+                    .iter()
+                    .filter(|l| l.side == MergeSide::Theirs)
+                    .map(|l| l.text.as_str())
+                    .collect();
+
+                // If only one side has content in this run, take it.
+                if theirs_run.is_empty() {
+                    for line in &ours_run {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                } else if ours_run.is_empty() {
+                    for line in &theirs_run {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                } else if ours_run == theirs_run {
+                    // Same change on both sides.
+                    for line in &ours_run {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                } else {
+                    // Genuine conflict.
+                    conflicts += 1;
+                    output.push_str("<<<<<<< ours\n");
+                    for line in &ours_run {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                    output.push_str("=======\n");
+                    for line in &theirs_run {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                    output.push_str(">>>>>>> theirs\n");
+                }
+            }
+        }
+    }
+
+    let line_count = output.lines().count();
+    if conflicts == 0 {
+        MergeOutcome::Clean {
+            content: output,
+            lines: line_count,
+        }
+    } else {
+        MergeOutcome::Conflict {
+            content: output,
+            conflicts,
+        }
+    }
+}
+
+/// Count the conflict regions in a text containing conflict markers.
+fn count_conflicts(text: &str) -> usize {
+    text.lines().filter(|l| l.starts_with("<<<<<<<")).count()
+}
+
+/// Extract conflict regions from a text with conflict markers.
+///
+/// Returns a list of `(start_line, ours_lines, theirs_lines)` tuples where
+/// `start_line` is 1-based.
+fn extract_conflicts(text: &str) -> Vec<(usize, Vec<String>, Vec<String>)> {
+    let mut regions = Vec::new();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].starts_with("<<<<<<<") {
+            let start = i + 1; // 1-based
+            i += 1;
+            let mut ours = Vec::new();
+            while i < lines.len() && !lines[i].starts_with("=======") {
+                ours.push(lines[i].to_string());
+                i += 1;
+            }
+            i += 1; // skip =======
+            let mut theirs = Vec::new();
+            while i < lines.len() && !lines[i].starts_with(">>>>>>>") {
+                theirs.push(lines[i].to_string());
+                i += 1;
+            }
+            i += 1; // skip >>>>>>>
+            regions.push((start, ours, theirs));
+        } else {
+            i += 1;
+        }
+    }
+    regions
+}
+
+/// Tool for performing a 3-way merge.
+///
+/// Given a base version and two modified versions (ours and theirs), produces
+/// a merged result. If both sides modified the same region differently, the
+/// result contains standard conflict markers.
+pub struct ThreeWayMergeTool {
+    allowed_base: PathBuf,
+}
+
+impl ThreeWayMergeTool {
+    /// Create a new 3-way merge tool.
+    pub fn new(allowed_base: PathBuf) -> Self {
+        Self { allowed_base }
+    }
+
+    fn resolve_path(&self, path_str: &str) -> ToolResult<PathBuf> {
+        let path = PathBuf::from(path_str);
+        let resolved = if path.is_relative() {
+            self.allowed_base.join(&path)
+        } else {
+            path
+        };
+        let canonical = resolved.canonicalize().map_err(|e| {
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
+        })?;
+        if !canonical.starts_with(&self.allowed_base) {
+            return Err(ToolError::new(
+                "PATH_TRAVERSAL",
+                format!("Path '{}' is outside the allowed base", path_str),
+            ));
+        }
+        Ok(canonical)
+    }
+
+    /// Read a file's content, or return an error.
+    async fn read_file(&self, path: &PathBuf) -> ToolResult<String> {
+        tokio::fs::read_to_string(path).await.map_err(|e| {
+            ToolError::new(
+                "IO_ERROR",
+                format!("Failed to read '{}': {}", path.display(), e),
+            )
+        })
+    }
+}
+
+#[async_trait]
+impl Tool for ThreeWayMergeTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
+            ToolDefinition::new(
+                "merge_three_way",
+                "Perform a 3-way merge of two modified versions against a common base. "
+                    + "Accepts file paths or inline text for base, ours, and theirs. "
+                    + "Returns the merged content, with conflict markers if both sides changed the same region.",
+                HashMap::from([
+                    (
+                        "base".to_string(),
+                        ParameterDefinition::string("The base (common ancestor) content. Either this or base_path is required."),
+                    ),
+                    (
+                        "ours".to_string(),
+                        ParameterDefinition::string("Our version of the content. Either this or ours_path is required."),
+                    ),
+                    (
+                        "theirs".to_string(),
+                        ParameterDefinition::string("Their version of the content. Either this or theirs_path is required."),
+                    ),
+                    (
+                        "base_path".to_string(),
+                        ParameterDefinition::string("Path to the base file."),
+                    ),
+                    (
+                        "ours_path".to_string(),
+                        ParameterDefinition::string("Path to our version file."),
+                    ),
+                    (
+                        "theirs_path".to_string(),
+                        ParameterDefinition::string("Path to their version file."),
+                    ),
+                    (
+                        "output_path".to_string(),
+                        ParameterDefinition::string("Optional path to write the merged result."),
+                    ),
+                ]),
+            )
+            .category("filesystem")
+            .risk_level(2)
+        });
+        &DEF
+    }
+
+    async fn execute(&self, params: Value) -> ToolResult {
+        let base = if let Some(s) = params["base"].as_str() {
+            s.to_string()
+        } else if let Some(p) = params["base_path"].as_str() {
+            self.read_file(&self.resolve_path(p)?).await?
+        } else {
+            return Err(ToolError::invalid_args(
+                "Either 'base' or 'base_path' is required",
+            ));
+        };
+
+        let ours = if let Some(s) = params["ours"].as_str() {
+            s.to_string()
+        } else if let Some(p) = params["ours_path"].as_str() {
+            self.read_file(&self.resolve_path(p)?).await?
+        } else {
+            return Err(ToolError::invalid_args(
+                "Either 'ours' or 'ours_path' is required",
+            ));
+        };
+
+        let theirs = if let Some(s) = params["theirs"].as_str() {
+            s.to_string()
+        } else if let Some(p) = params["theirs_path"].as_str() {
+            self.read_file(&self.resolve_path(p)?).await?
+        } else {
+            return Err(ToolError::invalid_args(
+                "Either 'theirs' or 'theirs_path' is required",
+            ));
+        };
+
+        let outcome = three_way_merge(&base, &ours, &theirs);
+
+        let (content, status, conflict_count) = match &outcome {
+            MergeOutcome::Clean { content, .. } => (content.clone(), "clean", 0),
+            MergeOutcome::Conflict { content, conflicts } => {
+                (content.clone(), "conflict", *conflicts)
+            }
+        };
+
+        let written_to = if let Some(output_path) = params["output_path"].as_str() {
+            let path = self.resolve_path(output_path)?;
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+                })?;
+            }
+            tokio::fs::write(&path, &content).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to write merge result: {}", e))
+            })?;
+            Some(path.to_string_lossy().to_string())
+        } else {
+            None
+        };
+
+        let data = serde_json::json!({
+            "status": status,
+            "conflicts": conflict_count,
+            "lines": content.lines().count(),
+            "written_to": written_to,
+        });
+
+        Ok(ToolOutput::success(content).with_data(data))
+    }
+}
+
+/// Tool for resolving conflict markers in a merged file.
+///
+/// Accepts a file (or text) containing `<<<<<<<` / `=======` / `>>>>>>>`
+/// conflict markers and resolves each region by choosing "ours", "theirs",
+/// or a custom resolution.
+pub struct ResolveConflictsTool {
+    allowed_base: PathBuf,
+}
+
+impl ResolveConflictsTool {
+    /// Create a new conflict resolution tool.
+    pub fn new(allowed_base: PathBuf) -> Self {
+        Self { allowed_base }
+    }
+
+    fn resolve_path(&self, path_str: &str) -> ToolResult<PathBuf> {
+        let path = PathBuf::from(path_str);
+        let resolved = if path.is_relative() {
+            self.allowed_base.join(&path)
+        } else {
+            path
+        };
+        let canonical = resolved.canonicalize().map_err(|e| {
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
+        })?;
+        if !canonical.starts_with(&self.allowed_base) {
+            return Err(ToolError::new(
+                "PATH_TRAVERSAL",
+                format!("Path '{}' is outside the allowed base", path_str),
+            ));
+        }
+        Ok(canonical)
+    }
+}
+
+#[async_trait]
+impl Tool for ResolveConflictsTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
+            ToolDefinition::new(
+                "resolve_conflicts",
+                "Resolve conflict markers in a merged file by choosing ours, theirs, or both. "
+                    + "Accepts inline text or a file path containing conflict markers.",
+                HashMap::from([
+                    (
+                        "content".to_string(),
+                        ParameterDefinition::string(
+                            "The text with conflict markers. Either this or path is required.",
+                        ),
+                    ),
+                    (
+                        "path".to_string(),
+                        ParameterDefinition::string("Path to a file with conflict markers."),
+                    ),
+                    (
+                        "strategy".to_string(),
+                        ParameterDefinition::required_string("Resolution strategy").enum_values(
+                            vec![
+                                "ours".to_string(),
+                                "theirs".to_string(),
+                                "both".to_string(),
+                                "union".to_string(),
+                            ],
+                        ),
+                    ),
+                    (
+                        "output_path".to_string(),
+                        ParameterDefinition::string("Optional path to write the resolved content."),
+                    ),
+                ]),
+            )
+            .category("filesystem")
+            .risk_level(2)
+        });
+        &DEF
+    }
+
+    async fn execute(&self, params: Value) -> ToolResult {
+        let content = if let Some(s) = params["content"].as_str() {
+            s.to_string()
+        } else if let Some(p) = params["path"].as_str() {
+            let path = self.resolve_path(p)?;
+            tokio::fs::read_to_string(&path).await.map_err(|e| {
+                ToolError::new(
+                    "IO_ERROR",
+                    format!("Failed to read '{}': {}", path.display(), e),
+                )
+            })?
+        } else {
+            return Err(ToolError::invalid_args(
+                "Either 'content' or 'path' is required",
+            ));
+        };
+
+        let strategy = params["strategy"]
+            .as_str()
+            .ok_or_else(|| ToolError::invalid_args("Missing 'strategy' parameter"))?;
+
+        let regions = extract_conflicts(&content);
+        let conflict_count = regions.len();
+
+        // Rebuild the content, replacing each conflict region per strategy.
+        let lines: Vec<&str> = content.lines().collect();
+        let mut output = String::new();
+        let mut i = 0;
+        let mut resolved = 0;
+
+        while i < lines.len() {
+            if lines[i].starts_with("<<<<<<<") {
+                // Found a conflict region; find its extent.
+                let mut ours = Vec::new();
+                i += 1;
+                while i < lines.len() && !lines[i].starts_with("=======") {
+                    ours.push(lines[i]);
+                    i += 1;
+                }
+                i += 1; // skip =======
+                let mut theirs = Vec::new();
+                while i < lines.len() && !lines[i].starts_with(">>>>>>>") {
+                    theirs.push(lines[i]);
+                    i += 1;
+                }
+                i += 1; // skip >>>>>>>
+
+                match strategy {
+                    "ours" => {
+                        for line in &ours {
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                    }
+                    "theirs" => {
+                        for line in &theirs {
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                    }
+                    "both" => {
+                        for line in &ours {
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                        for line in &theirs {
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                    }
+                    "union" => {
+                        // Union = both, but deduplicate identical lines.
+                        let mut seen = std::collections::HashSet::new();
+                        for line in ours.iter().chain(theirs.iter()) {
+                            if seen.insert(*line) {
+                                output.push_str(line);
+                                output.push('\n');
+                            }
+                        }
+                    }
+                    other => {
+                        return Err(ToolError::invalid_args(format!(
+                            "Unknown strategy: {}",
+                            other
+                        )));
+                    }
+                }
+                resolved += 1;
+            } else {
+                output.push_str(lines[i]);
+                output.push('\n');
+                i += 1;
+            }
+        }
+
+        let written_to = if let Some(output_path) = params["output_path"].as_str() {
+            let path = self.resolve_path(output_path)?;
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+                })?;
+            }
+            tokio::fs::write(&path, &output).await.map_err(|e| {
+                ToolError::new(
+                    "IO_ERROR",
+                    format!("Failed to write resolved content: {}", e),
+                )
+            })?;
+            Some(path.to_string_lossy().to_string())
+        } else {
+            None
+        };
+
+        let data = serde_json::json!({
+            "conflicts_found": conflict_count,
+            "conflicts_resolved": resolved,
+            "strategy": strategy,
+            "written_to": written_to,
+        });
+
+        Ok(ToolOutput::success(output).with_data(data))
     }
 }
 
@@ -391,7 +1242,8 @@ mod tests {
     #[test]
     fn test_apply_diff_context_mismatch() {
         let original = "hello\nsomething\nworld\n";
-        let diff = "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n hello\n-world\n+rust\n goodbye\n";
+        let diff =
+            "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n hello\n-world\n+rust\n goodbye\n";
         let diffs = parse_diff(diff).unwrap();
         let result = apply_diff(original, &diffs[0].hunks);
         assert!(result.is_err());
@@ -402,5 +1254,82 @@ mod tests {
     fn test_parse_invalid_diff() {
         let diffs = parse_diff("this is not a diff").unwrap();
         assert!(diffs.is_empty());
+    }
+
+    #[test]
+    fn test_reverse_diff_swaps_additions_and_removals() {
+        let diff = "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n hello\n-world\n+rust\n+rocks\n goodbye\n";
+        let diffs = parse_diff(diff).unwrap();
+        let reversed = reverse_diff(diffs);
+        let rendered = render_diff(&reversed);
+        // The reversed patch should have the addition as a removal and vice versa.
+        assert!(rendered.contains("-rust"));
+        assert!(rendered.contains("-rocks"));
+        assert!(rendered.contains("+world"));
+    }
+
+    #[test]
+    fn test_reverse_then_apply_recovers_original() {
+        let original = "hello\nworld\ngoodbye\n";
+        let diff = "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n hello\n-world\n+rust\n+rocks\n goodbye\n";
+        let diffs = parse_diff(diff).unwrap();
+        // Apply the patch to get the new content.
+        let new_content = apply_diff(original, &diffs[0].hunks).unwrap();
+        assert_eq!(new_content, "hello\nrust\nrocks\ngoodbye\n");
+
+        // Reverse the patch and apply to the new content to recover original.
+        let reversed = reverse_diff(diffs);
+        let recovered = apply_diff(&new_content, &reversed[0].hunks).unwrap();
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn test_three_way_merge_no_conflict() {
+        // ours adds a line, theirs is unchanged → clean merge.
+        let base = "line1\nline2\nline3\n";
+        let ours = "line1\nline2\nline3\nline4\n";
+        let theirs = "line1\nline2\nline3\n";
+        let outcome = three_way_merge(base, ours, theirs);
+        match outcome {
+            MergeOutcome::Clean { content, .. } => {
+                assert!(content.contains("line4"));
+                assert!(!content.contains("<<<<<<<"));
+            }
+            MergeOutcome::Conflict { .. } => panic!("expected clean merge"),
+        }
+    }
+
+    #[test]
+    fn test_three_way_merge_conflict() {
+        // Both sides change the same line differently.
+        let base = "line1\noriginal\nline3\n";
+        let ours = "line1\nours\nline3\n";
+        let theirs = "line1\ntheirs\nline3\n";
+        let outcome = three_way_merge(base, ours, theirs);
+        match outcome {
+            MergeOutcome::Conflict { content, conflicts } => {
+                assert_eq!(conflicts, 1);
+                assert!(content.contains("<<<<<<< ours"));
+                assert!(content.contains("=======\ntheirs"));
+                assert!(content.contains(">>>>>>> theirs"));
+            }
+            MergeOutcome::Clean { .. } => panic!("expected conflict"),
+        }
+    }
+
+    #[test]
+    fn test_count_conflicts() {
+        let text = "line1\n<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\nline5\n";
+        assert_eq!(count_conflicts(text), 1);
+    }
+
+    #[test]
+    fn test_extract_conflicts() {
+        let text = "line1\n<<<<<<< ours\nours_line\n=======\ntheirs_line\n>>>>>>> theirs\nline5\n";
+        let regions = extract_conflicts(text);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].0, 2); // 1-based start line
+        assert_eq!(regions[0].1, vec!["ours_line"]);
+        assert_eq!(regions[0].2, vec!["theirs_line"]);
     }
 }

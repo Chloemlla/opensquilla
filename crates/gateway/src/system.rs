@@ -4,14 +4,14 @@
 //! a message delegation layer that forwards messages to the appropriate
 //! subsystem based on type.
 
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// Gateway runtime info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,8 +96,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
             let service = service.clone();
             async move {
                 let info = service.info();
-                Ok(serde_json::to_value(info)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(info).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -106,7 +105,10 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
     registry.register(rpc_handler("system.ping", {
         move |params| {
             let timestamp = Utc::now().to_rfc3339();
-            let echoed = params.get("echo").cloned().unwrap_or(serde_json::Value::Null);
+            let echoed = params
+                .get("echo")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             Ok(serde_json::json!({
                 "pong": true,
                 "timestamp": timestamp,
@@ -125,7 +127,10 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
                     .get("type")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'type' parameter"))?;
-                let payload = params.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+                let payload = params
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
 
                 let message = SystemMessage {
                     id: Uuid::new_v4().to_string(),
@@ -134,8 +139,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
                     timestamp: Utc::now(),
                 };
                 service.record(message.clone());
-                Ok(serde_json::to_value(message)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(message).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -216,11 +220,15 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_system_handlers(&mut registry, service);
 
-        let r = registry.dispatch("system.info", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("system.info", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["name"], "opensquilla-gateway");
 
-        let r = registry.dispatch("system.version", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("system.version", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["version"].as_str().is_some());
     }
@@ -238,7 +246,9 @@ mod tests {
         let r = registry.dispatch("system.message", params).await;
         assert!(r.unwrap().is_ok());
 
-        let r = registry.dispatch("system.messages", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("system.messages", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
     }

@@ -64,17 +64,17 @@ pub mod compaction_control;
 /// Model pricing cache and cost calculation.
 pub mod pricing;
 
-/// Re-export the most commonly used types at the crate root for convenience.
-pub use runtime::{AgentRuntime, TurnRunner, TurnRunnerBuilder};
 pub use agent::{
     Agent, AgentConfig, AgentError, AgentRegistry, AgentState, BackgroundProcess, CommandResult,
     GitOperation, GitResult, RecoveryAction, TurnContext, TurnGenerator, TurnOutcome, UsageEvent,
     UsageStats,
 };
-pub use session_lock::{SessionLockGuard, SessionLockSet, with_session_lock};
 pub use compaction_control::{CompactionDecision, CompactionInput, CompactionStrategy};
-pub use pricing::{ModelPricing, ModelPrice, PricingCache, PricingResult};
+pub use pricing::{ModelPrice, ModelPricing, PricingCache, PricingResult};
+/// Re-export the most commonly used types at the crate root for convenience.
+pub use runtime::{AgentRuntime, TurnRunner, TurnRunnerBuilder};
 pub use runtime::{NoopToolExecutor, ToolExecutor};
+pub use session_lock::{SessionLockGuard, SessionLockSet, with_session_lock};
 
 // Pre-turn pipeline steps. The `PipelineStep` trait and `StepAction` live in
 // the `pipeline` module (re-exported above); the concrete step types and the
@@ -91,8 +91,8 @@ pub use steps::{
 pub use turn_runner::{
     AgentBootstrapStage, AgentIdentity, AttachmentCleanupHook, AttachmentConfig,
     AttachmentFileMetadata, AttachmentLoadOutcome, AttachmentStage, BootstrapSettings,
-    BufferedToolCall, CompactionOutcome, CostRollup, FinalizeReport, HarnessConfig,
-    InputConfig, InputMode, InputReport, MultipartField, PipelineConfig, ProviderCallReport,
+    BufferedToolCall, CompactionOutcome, CostRollup, FinalizeReport, HarnessConfig, InputConfig,
+    InputMode, InputReport, MultipartField, PipelineConfig, ProviderCallReport,
     ProviderRetryPolicy, RateLimiter, RoutingConfig, StageMetrics, StreamConfig,
     StreamConsumerStage, StreamConsumerState, TokenBudget, TurnAttachment, TurnRunnerConfig,
 };

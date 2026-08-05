@@ -19,9 +19,7 @@
 //!    verified against the app password; RS256 requires the Bot Framework
 //!    OpenID public keys (deferred — the RSA primitive is not a crate dep).
 
-use crate::types::{
-    Channel, ChannelConfig, ChannelType, MessageAttachment, OutgoingMessage,
-};
+use crate::types::{Channel, ChannelConfig, ChannelType, MessageAttachment, OutgoingMessage};
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -31,7 +29,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -123,7 +121,10 @@ impl MSTeamsChannel {
             .send()
             .await
             .map_err(|e| format!("Teams auth request failed: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("Teams auth parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Teams auth parse: {}", e))?;
         let token = body
             .get("access_token")
             .and_then(|v| v.as_str())
@@ -131,9 +132,14 @@ impl MSTeamsChannel {
             .to_string();
         let expires_in = body["expires_in"].as_i64().unwrap_or(3600);
         let expires_at = Utc::now()
-            .checked_add_signed(chrono::Duration::seconds(expires_in - TOKEN_EXPIRE_MARGIN_SECS))
+            .checked_add_signed(chrono::Duration::seconds(
+                expires_in - TOKEN_EXPIRE_MARGIN_SECS,
+            ))
             .unwrap_or_else(|| Utc::now() + chrono::Duration::hours(1));
-        *guard = Some(CachedToken { token: token.clone(), expires_at });
+        *guard = Some(CachedToken {
+            token: token.clone(),
+            expires_at,
+        });
         Ok(token)
     }
 
@@ -194,7 +200,10 @@ impl MSTeamsChannel {
             .await
             .map_err(|e| format!("Teams send request: {}", e))?;
         let status = resp.status();
-        let body: Value = resp.json().await.map_err(|e| format!("Teams parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Teams parse: {}", e))?;
         if status.is_success() {
             Ok(())
         } else {
@@ -232,7 +241,10 @@ impl MSTeamsChannel {
             .send()
             .await
             .map_err(|e| format!("Teams send activity: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("Teams parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Teams parse: {}", e))?;
         if resp.status().is_success() {
             Ok(body)
         } else {
@@ -244,7 +256,11 @@ impl MSTeamsChannel {
     }
 
     /// Create a new (typically proactive) conversation and store its id.
-    pub async fn create_conversation(&self, members: &[&str], tenant_id: Option<&str>) -> Result<String, String> {
+    pub async fn create_conversation(
+        &self,
+        members: &[&str],
+        tenant_id: Option<&str>,
+    ) -> Result<String, String> {
         let token = self.get_bot_token().await?;
         let service_url = self
             .service_url
@@ -253,7 +269,8 @@ impl MSTeamsChannel {
             .clone()
             .unwrap_or_else(|| self.bot_endpoint.clone());
         let url = format!("{}/v3/conversations", service_url.trim_end_matches('/'));
-        let payload = create_conversation_payload(&self.app_id, &self.config.name, members, tenant_id);
+        let payload =
+            create_conversation_payload(&self.app_id, &self.config.name, members, tenant_id);
         let resp = self
             .client
             .post(&url)
@@ -262,7 +279,10 @@ impl MSTeamsChannel {
             .send()
             .await
             .map_err(|e| format!("Teams create conversation: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("Teams parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Teams parse: {}", e))?;
         let conv_id = body["id"]
             .as_str()
             .ok_or_else(|| format!("No conversation id in response: {}", body))?
@@ -272,7 +292,10 @@ impl MSTeamsChannel {
     }
 
     /// List members of a conversation.
-    pub async fn get_conversation_members(&self, conversation_id: &str) -> Result<Vec<Value>, String> {
+    pub async fn get_conversation_members(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<Value>, String> {
         let token = self.get_bot_token().await?;
         let service_url = self
             .service_url
@@ -292,7 +315,10 @@ impl MSTeamsChannel {
             .send()
             .await
             .map_err(|e| format!("Teams members request: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("Teams parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Teams parse: {}", e))?;
         Ok(body.as_array().cloned().unwrap_or_default())
     }
 
@@ -325,7 +351,11 @@ impl MSTeamsChannel {
     }
 
     async fn handle_message_activity(&self, activity: &Value) -> Result<Value, String> {
-        let text = activity.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let text = activity
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let from_id = activity
             .get("from")
             .and_then(|f| f.get("id"))
@@ -348,7 +378,10 @@ impl MSTeamsChannel {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let reply_to = activity.get("replyToId").and_then(|v| v.as_str()).map(String::from);
+        let reply_to = activity
+            .get("replyToId")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         if !service_url.is_empty() {
             *self.service_url.lock().await = Some(service_url);
@@ -382,7 +415,10 @@ impl MSTeamsChannel {
             .and_then(|m| m.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
-        info!("Teams conversation update: {} added, {} removed", added, removed);
+        info!(
+            "Teams conversation update: {} added, {} removed",
+            added, removed
+        );
         Ok(json!({"status": "ok", "members_added": added, "members_removed": removed}))
     }
 
@@ -413,7 +449,12 @@ impl MSTeamsChannel {
     }
 
     /// Build an AdaptiveCard attachment payload.
-    pub fn build_adaptive_card(&self, title: &str, text: &str, buttons: &[(String, String)]) -> Value {
+    pub fn build_adaptive_card(
+        &self,
+        title: &str,
+        text: &str,
+        buttons: &[(String, String)],
+    ) -> Value {
         let actions: Vec<Value> = buttons
             .iter()
             .map(|(label, value)| {
@@ -495,14 +536,22 @@ impl MSTeamsChannel {
     /// deferred (see module docs).
     pub fn validate_jwt(&self, token: &str) -> Result<Value, String> {
         let parts = decode_jwt(token)?;
-        let aud = parts.payload.get("aud").and_then(|v| v.as_str()).unwrap_or("");
+        let aud = parts
+            .payload
+            .get("aud")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if aud != self.app_id {
             return Err(format!(
                 "JWT audience mismatch: got '{}', expected '{}'",
                 aud, self.app_id
             ));
         }
-        let iss = parts.payload.get("iss").and_then(|v| v.as_str()).unwrap_or("");
+        let iss = parts
+            .payload
+            .get("iss")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if !iss.contains(BOTFRAMEWORK_ISSUER) {
             return Err(format!("JWT from untrusted issuer: {}", iss));
         }
@@ -511,7 +560,11 @@ impl MSTeamsChannel {
                 return Err("JWT is expired".to_string());
             }
         }
-        let alg = parts.header.get("alg").and_then(|v| v.as_str()).unwrap_or("");
+        let alg = parts
+            .header
+            .get("alg")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         match alg {
             "HS256" => self.verify_hs256_signature(&parts)?,
             "RS256" => {
@@ -557,11 +610,19 @@ fn decode_jwt(token: &str) -> Result<JwtParts, String> {
         return Err("JWT has too many segments".to_string());
     }
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let header_bytes = engine.decode(header_b64).map_err(|e| format!("JWT header decode: {}", e))?;
-    let payload_bytes = engine.decode(payload_b64).map_err(|e| format!("JWT payload decode: {}", e))?;
-    let signature = engine.decode(signature_b64).map_err(|e| format!("JWT signature decode: {}", e))?;
-    let header: Value = serde_json::from_slice(&header_bytes).map_err(|e| format!("JWT header JSON: {}", e))?;
-    let payload: Value = serde_json::from_slice(&payload_bytes).map_err(|e| format!("JWT payload JSON: {}", e))?;
+    let header_bytes = engine
+        .decode(header_b64)
+        .map_err(|e| format!("JWT header decode: {}", e))?;
+    let payload_bytes = engine
+        .decode(payload_b64)
+        .map_err(|e| format!("JWT payload decode: {}", e))?;
+    let signature = engine
+        .decode(signature_b64)
+        .map_err(|e| format!("JWT signature decode: {}", e))?;
+    let header: Value =
+        serde_json::from_slice(&header_bytes).map_err(|e| format!("JWT header JSON: {}", e))?;
+    let payload: Value =
+        serde_json::from_slice(&payload_bytes).map_err(|e| format!("JWT payload JSON: {}", e))?;
     Ok(JwtParts {
         header,
         payload,
@@ -571,7 +632,12 @@ fn decode_jwt(token: &str) -> Result<JwtParts, String> {
 }
 
 /// Build the `POST /v3/conversations` request body.
-fn create_conversation_payload(app_id: &str, bot_name: &str, members: &[&str], tenant_id: Option<&str>) -> Value {
+fn create_conversation_payload(
+    app_id: &str,
+    bot_name: &str,
+    members: &[&str],
+    tenant_id: Option<&str>,
+) -> Value {
     let members_json: Vec<Value> = members.iter().map(|m| json!({"id": m})).collect();
     let mut payload = json!({
         "bot": {"id": app_id, "name": bot_name},
@@ -698,7 +764,10 @@ mod tests {
     fn make_hs256_jwt(app_id: &str, secret: &str, iss: &str, exp: i64) -> String {
         let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
         let header = engine.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
-        let payload = engine.encode(format!(r#"{{"aud":"{}","iss":"{}","exp":{}}}"#, app_id, iss, exp));
+        let payload = engine.encode(format!(
+            r#"{{"aud":"{}","iss":"{}","exp":{}}}"#,
+            app_id, iss, exp
+        ));
         let signing_input = format!("{}.{}", header, payload);
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(signing_input.as_bytes());
@@ -733,7 +802,12 @@ mod tests {
     #[test]
     fn test_validate_jwt_wrong_secret() {
         let channel = MSTeamsChannel::new(test_config()).unwrap();
-        let token = make_hs256_jwt(APP_ID, "wrong-secret", ISSUER, Utc::now().timestamp() + 3600);
+        let token = make_hs256_jwt(
+            APP_ID,
+            "wrong-secret",
+            ISSUER,
+            Utc::now().timestamp() + 3600,
+        );
         assert!(channel.validate_jwt(&token).is_err());
     }
 
@@ -747,14 +821,24 @@ mod tests {
     #[test]
     fn test_validate_jwt_wrong_audience() {
         let channel = MSTeamsChannel::new(test_config()).unwrap();
-        let token = make_hs256_jwt("some-other-app", APP_SECRET, ISSUER, Utc::now().timestamp() + 3600);
+        let token = make_hs256_jwt(
+            "some-other-app",
+            APP_SECRET,
+            ISSUER,
+            Utc::now().timestamp() + 3600,
+        );
         assert!(channel.validate_jwt(&token).is_err());
     }
 
     #[test]
     fn test_validate_jwt_untrusted_issuer() {
         let channel = MSTeamsChannel::new(test_config()).unwrap();
-        let token = make_hs256_jwt(APP_ID, APP_SECRET, "https://evil.example", Utc::now().timestamp() + 3600);
+        let token = make_hs256_jwt(
+            APP_ID,
+            APP_SECRET,
+            "https://evil.example",
+            Utc::now().timestamp() + 3600,
+        );
         assert!(channel.validate_jwt(&token).is_err());
     }
 
@@ -765,7 +849,10 @@ mod tests {
             reqwest::header::AUTHORIZATION,
             reqwest::header::HeaderValue::from_static("Bearer abc.def.ghi"),
         );
-        assert_eq!(extract_bearer_token(&headers).as_deref(), Some("abc.def.ghi"));
+        assert_eq!(
+            extract_bearer_token(&headers).as_deref(),
+            Some("abc.def.ghi")
+        );
 
         let empty = reqwest::header::HeaderMap::new();
         assert!(extract_bearer_token(&empty).is_none());
@@ -774,8 +861,12 @@ mod tests {
     #[test]
     fn test_build_adaptive_card() {
         let channel = MSTeamsChannel::new(test_config()).unwrap();
-        let card = channel.build_adaptive_card("Title", "Body", &[("Go".to_string(), "val".to_string())]);
-        assert_eq!(card["contentType"], "application/vnd.microsoft.card.adaptive");
+        let card =
+            channel.build_adaptive_card("Title", "Body", &[("Go".to_string(), "val".to_string())]);
+        assert_eq!(
+            card["contentType"],
+            "application/vnd.microsoft.card.adaptive"
+        );
         assert_eq!(card["content"]["type"], "AdaptiveCard");
         assert_eq!(card["content"]["body"][0]["text"], "Title");
         assert_eq!(card["content"]["actions"][0]["title"], "Go");
@@ -793,7 +884,10 @@ mod tests {
         );
         assert_eq!(card["contentType"], "application/vnd.microsoft.card.hero");
         assert_eq!(card["content"]["title"], "H");
-        assert_eq!(card["content"]["images"][0]["url"], "https://example.com/img.png");
+        assert_eq!(
+            card["content"]["images"][0]["url"],
+            "https://example.com/img.png"
+        );
         assert_eq!(card["content"]["buttons"][0]["type"], "openUrl");
     }
 
@@ -801,7 +895,10 @@ mod tests {
     fn test_build_thumbnail_card() {
         let channel = MSTeamsChannel::new(test_config()).unwrap();
         let card = channel.build_thumbnail_card("T", "", "", None, &[]);
-        assert_eq!(card["contentType"], "application/vnd.microsoft.card.thumbnail");
+        assert_eq!(
+            card["contentType"],
+            "application/vnd.microsoft.card.thumbnail"
+        );
         assert_eq!(card["content"]["images"], json!([]));
     }
 
@@ -832,7 +929,10 @@ mod tests {
         assert_eq!(result["text"], "hello teams");
         assert_eq!(result["from_id"], "user-1");
         let svc = channel.service_url.lock().await.clone();
-        assert_eq!(svc.as_deref(), Some("https://smba.trafficmanager.net/apis/"));
+        assert_eq!(
+            svc.as_deref(),
+            Some("https://smba.trafficmanager.net/apis/")
+        );
         let conv = channel.conversation_id.lock().await.clone();
         assert_eq!(conv.as_deref(), Some("conv-1"));
     }

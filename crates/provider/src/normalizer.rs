@@ -103,16 +103,10 @@ impl ToolCallNormalizer {
         let mut result = text.to_string();
 
         // Strip DSML blocks
-        result = self
-            .dsml_pattern
-            .replace_all(&result, "")
-            .to_string();
+        result = self.dsml_pattern.replace_all(&result, "").to_string();
 
         // Strip XML-style tags
-        result = self
-            .xml_pattern
-            .replace_all(&result, "")
-            .to_string();
+        result = self.xml_pattern.replace_all(&result, "").to_string();
 
         // Strip JSON code blocks that look like tool calls
         result = self
@@ -175,8 +169,8 @@ impl ToolCallNormalizer {
                 continue;
             };
 
-            let args = serde_json::from_str(&args_raw)
-                .unwrap_or(serde_json::json!({"raw": args_raw}));
+            let args =
+                serde_json::from_str(&args_raw).unwrap_or(serde_json::json!({"raw": args_raw}));
 
             let start = cap.get(0).map(|m| m.start()).unwrap_or(0);
             let end = cap.get(0).map(|m| m.end()).unwrap_or(0);
@@ -313,7 +307,8 @@ Some text after"#;
 
     #[test]
     fn test_parse_xml_parameters() {
-        let xml = "<location>NYC</location>\n<temperature>25.5</temperature>\n<enabled>true</enabled>";
+        let xml =
+            "<location>NYC</location>\n<temperature>25.5</temperature>\n<enabled>true</enabled>";
         let params = parse_xml_parameters(xml);
         assert_eq!(params["location"], "NYC");
         assert_eq!(params["temperature"], 25.5);

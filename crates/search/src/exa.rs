@@ -72,7 +72,9 @@ impl ExaSearch {
             let body_text = response.text().await.unwrap_or_default();
             return match status.as_u16() {
                 401 => Err(SearchError::AuthError("Invalid Exa API key".to_string())),
-                429 => Err(SearchError::RateLimited("Exa rate limit exceeded".to_string())),
+                429 => Err(SearchError::RateLimited(
+                    "Exa rate limit exceeded".to_string(),
+                )),
                 _ => Err(SearchError::NetworkError(format!(
                     "Exa returned {status}: {body_text}"
                 ))),
@@ -117,8 +119,9 @@ impl SearchProvider for ExaSearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+    > {
         Box::pin(self.search_web(request))
     }
 

@@ -3,16 +3,16 @@
 //! Provides `rpc_usage` for usage tracking and cost aggregation. Usage events
 //! are recorded in an in-memory ledger keyed by session and model.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use opensquilla_core::types::Usage;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A single usage event record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,7 +129,10 @@ impl UsageStore {
             model.cost_usd += event.cost_usd;
             model.calls += 1;
 
-            let session = summary.by_session.entry(event.session_id.clone()).or_default();
+            let session = summary
+                .by_session
+                .entry(event.session_id.clone())
+                .or_default();
             session.input_tokens += event.input_tokens;
             session.output_tokens += event.output_tokens;
             session.total_tokens += event.total_tokens;
@@ -187,8 +190,7 @@ pub fn register_usage_handlers(registry: &mut RpcRegistry, store: UsageStore) {
                 let usage = Usage::new(input_tokens, output_tokens);
                 let event = UsageEvent::from_usage(session_id, model, &provider, usage, cost_usd);
                 store.record(event.clone());
-                Ok(serde_json::to_value(event)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(event).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -200,8 +202,7 @@ pub fn register_usage_handlers(registry: &mut RpcRegistry, store: UsageStore) {
             let store = store.clone();
             async move {
                 let summary = store.summary();
-                Ok(serde_json::to_value(summary)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(summary).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -285,7 +286,9 @@ mod tests {
         let r = registry.dispatch("usage.record", params).await;
         assert!(r.unwrap().is_ok());
 
-        let r = registry.dispatch("usage.summary", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("usage.summary", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["total_tokens"], 150);
         assert_eq!(resp["event_count"], 1);
@@ -313,11 +316,15 @@ mod tests {
                 .unwrap();
         }
 
-        let r = registry.dispatch("usage.by_model", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("usage.by_model", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["by_model"]["gpt-4o"].is_object());
 
-        let r = registry.dispatch("usage.by_session", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("usage.by_session", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["by_session"]["s1"].is_object());
     }
@@ -341,7 +348,9 @@ mod tests {
             .await
             .unwrap();
 
-        let r = registry.dispatch("usage.clear", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("usage.clear", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["cleared"], 1);
     }

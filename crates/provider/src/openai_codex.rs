@@ -22,7 +22,9 @@ use std::path::{Component, Path, PathBuf};
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
-use opensquilla_core::types::{ChatMessage, ContentBlock, MessageRole, ToolCall, ToolDefinition, Usage};
+use opensquilla_core::types::{
+    ChatMessage, ContentBlock, MessageRole, ToolCall, ToolDefinition, Usage,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
@@ -102,7 +104,9 @@ impl CodexConfig {
 /// prefix when absent; all other hosts (including OpenAI-platform and proxy
 /// endpoints) are returned unchanged.
 pub fn normalize_base_url(base_url: &str) -> String {
-    let base = (base_url.trim().to_owned()).trim_end_matches('/').to_string();
+    let base = (base_url.trim().to_owned())
+        .trim_end_matches('/')
+        .to_string();
     let host_only = base.to_lowercase();
     if (host_only.contains("chatgpt.com") || host_only.contains("chat.openai.com"))
         && !host_only.contains("/backend-api")
@@ -361,8 +365,7 @@ impl OpenAICodexProvider {
         }
 
         let input_items = build_responses_input_items(messages);
-        let input: Vec<serde_json::Value> =
-            input_items.iter().map(|item| item.to_json()).collect();
+        let input: Vec<serde_json::Value> = input_items.iter().map(|item| item.to_json()).collect();
         let system_text: String = messages
             .iter()
             .filter(|m| m.role == MessageRole::System)
@@ -407,10 +410,7 @@ impl OpenAICodexProvider {
     }
 
     /// Send the request to the Codex endpoint and normalize errors.
-    async fn post_stream(
-        &self,
-        body: &serde_json::Value,
-    ) -> ProviderResult<reqwest::Response> {
+    async fn post_stream(&self, body: &serde_json::Value) -> ProviderResult<reqwest::Response> {
         let mut request = self
             .client
             .post(self.responses_url())
@@ -435,7 +435,9 @@ impl OpenAICodexProvider {
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 return Err(ProviderError::RateLimited(error_text));
             }
-            return Err(ProviderError::Provider(format!("HTTP {status}: {error_text}")));
+            return Err(ProviderError::Provider(format!(
+                "HTTP {status}: {error_text}"
+            )));
         }
         Ok(resp)
     }
@@ -539,7 +541,8 @@ impl OpenAICodexProvider {
 
         let policy = {
             let mut base = SandboxPolicy::build_policy(SandboxLevel::Strict, None);
-            base.resource_limits.cpu_time_secs = request.timeout_secs.or(base.resource_limits.cpu_time_secs);
+            base.resource_limits.cpu_time_secs =
+                request.timeout_secs.or(base.resource_limits.cpu_time_secs);
             if request.network_allowed {
                 base.network = NetworkPolicy::Host;
             }
@@ -585,7 +588,9 @@ impl OpenAICodexProvider {
             .execute(&command, &args_ref, &policy)
             .await
             .map_err(ProviderError::Internal)?;
-        let duration_ms = run_result.duration_ms.max(start.elapsed().as_millis() as u64);
+        let duration_ms = run_result
+            .duration_ms
+            .max(start.elapsed().as_millis() as u64);
 
         let files = collect_files(&workdir, &main_name);
         let timed_out = run_result.exit_code == -1 && !run_result.stderr.is_empty();
@@ -612,7 +617,10 @@ fn build_generation_messages(prompt: &str, language: &str) -> Vec<ChatMessage> {
          and a single fenced code block (```{language}) containing the complete \
          {language} source."
     );
-    vec![ChatMessage::system(system), ChatMessage::user(prompt.to_string())]
+    vec![
+        ChatMessage::system(system),
+        ChatMessage::user(prompt.to_string()),
+    ]
 }
 
 /// Build the messages for a code-review request.
@@ -734,9 +742,7 @@ fn parse_debug_report(text: &str) -> CodeDebugReport {
                 suggested.push('\n');
             }
             suggested.push_str(line);
-        } else if (trimmed.starts_with("- ") || trimmed.starts_with("* "))
-            && trimmed.len() > 2
-        {
+        } else if (trimmed.starts_with("- ") || trimmed.starts_with("* ")) && trimmed.len() > 2 {
             issues.push(CodeDebugIssue {
                 description: trimmed[2..].trim().to_string(),
                 location: None,
@@ -777,7 +783,7 @@ fn language_extension(language: &str) -> Result<&'static str, ProviderError> {
         _ => {
             return Err(ProviderError::Config(format!(
                 "Unsupported code language: {language}"
-            )))
+            )));
         }
     }
 }
@@ -895,9 +901,8 @@ fn create_workdir() -> Result<PathBuf, ProviderError> {
             .unwrap_or(0)
     );
     let workdir = std::env::temp_dir().join(nonce);
-    std::fs::create_dir_all(&workdir).map_err(|e| {
-        ProviderError::Internal(format!("failed to create codex workspace: {e}"))
-    })?;
+    std::fs::create_dir_all(&workdir)
+        .map_err(|e| ProviderError::Internal(format!("failed to create codex workspace: {e}")))?;
     Ok(workdir)
 }
 
@@ -905,9 +910,12 @@ fn create_workdir() -> Result<PathBuf, ProviderError> {
 fn safe_join(workdir: &Path, rel: &str) -> Result<PathBuf, ProviderError> {
     let candidate = Path::new(rel);
     if candidate.is_absolute()
-        || candidate
-            .components()
-            .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+        || candidate.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
     {
         return Err(ProviderError::Config(format!(
             "Unsafe codex workspace path: {rel}"
@@ -936,10 +944,7 @@ fn collect_files(workdir: &Path, exclude_main: &str) -> Vec<CodeFile> {
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .to_string();
-                out.push(CodeFile {
-                    path: rel,
-                    content,
-                });
+                out.push(CodeFile { path: rel, content });
             }
         }
     }
@@ -994,7 +999,11 @@ impl Provider for OpenAICodexProvider {
             match event? {
                 StreamEvent::Text { text: t } => text.push_str(&t),
                 StreamEvent::Reasoning { .. } => {}
-                StreamEvent::ToolCall { id, name, arguments } => {
+                StreamEvent::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                } => {
                     if let Some(tc) = buffer.accumulate(&id, &name, &arguments) {
                         tool_calls.push(tc);
                     }
@@ -1107,7 +1116,10 @@ mod tests {
             "https://chat.openai.com/backend-api"
         );
         // Non-chatgpt hosts are unchanged.
-        assert_eq!(normalize_base_url("https://api.openai.com/v1"), "https://api.openai.com/v1");
+        assert_eq!(
+            normalize_base_url("https://api.openai.com/v1"),
+            "https://api.openai.com/v1"
+        );
     }
 
     #[test]
@@ -1126,7 +1138,10 @@ mod tests {
             "https://chatgpt.com/backend-api/codex/responses"
         );
         let p = OpenAICodexProvider::new("openai_codex", "https://api.openai.com/v1", "key");
-        assert_eq!(p.responses_url(), "https://api.openai.com/v1/codex/responses");
+        assert_eq!(
+            p.responses_url(),
+            "https://api.openai.com/v1/codex/responses"
+        );
     }
 
     #[test]
@@ -1341,7 +1356,9 @@ mod tests {
         let main = workdir.join("main.rs");
         let plan = execution_plan("rust", workdir, &main).unwrap();
         match plan {
-            ExecutionPlan::Compiled { compile_command, .. } => {
+            ExecutionPlan::Compiled {
+                compile_command, ..
+            } => {
                 assert_eq!(compile_command, "rustc");
             }
             _ => panic!("expected compiled plan"),

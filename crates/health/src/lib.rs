@@ -8,7 +8,7 @@ pub mod check;
 pub mod checks;
 pub mod report;
 
-pub use builder::{build_report, ReportOptions};
+pub use builder::{ReportOptions, build_report};
 pub use check::HealthCheck;
 pub use report::{HealthReport, HealthStatus, SubsystemHealth};
 

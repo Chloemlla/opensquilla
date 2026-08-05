@@ -3,13 +3,13 @@
 //! Provides `rpc_commands` for a read-only in-memory slash command directory.
 //! Commands are registered at startup and looked up by name or category.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// The category of a slash command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,8 +201,10 @@ pub fn register_commands_handlers(registry: &mut RpcRegistry, directory: Command
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'name' parameter"))?;
                 match directory.get(name) {
-                    Some(cmd) => Ok(serde_json::to_value(cmd)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(cmd) => {
+                        Ok(serde_json::to_value(cmd)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Command '{name}' not found"))),
                 }
             }
@@ -257,8 +259,7 @@ pub fn register_commands_handlers(registry: &mut RpcRegistry, directory: Command
                     args_hint,
                 };
                 directory.register(cmd.clone());
-                Ok(serde_json::to_value(cmd)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(cmd).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -340,7 +341,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_commands_handlers(&mut registry, directory);
 
-        let r = registry.dispatch("commands.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("commands.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["count"].as_u64().unwrap() > 0);
     }

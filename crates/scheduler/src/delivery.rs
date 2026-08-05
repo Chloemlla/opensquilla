@@ -1,7 +1,7 @@
+use crate::types::JobExecution;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
-use crate::types::JobExecution;
 
 /// Trait for delivering job execution results.
 #[async_trait]
@@ -17,9 +17,17 @@ pub struct DeliveryResult {
 }
 
 impl DeliveryResult {
-    pub fn success() -> Self { Self { success: true, error: None } }
+    pub fn success() -> Self {
+        Self {
+            success: true,
+            error: None,
+        }
+    }
     pub fn failure(error: impl Into<String>) -> Self {
-        Self { success: false, error: Some(error.into()) }
+        Self {
+            success: false,
+            error: Some(error.into()),
+        }
     }
 }
 
@@ -32,13 +40,21 @@ pub struct ChannelDelivery {
 impl ChannelDelivery {
     pub fn new(name: impl Into<String>) -> (Self, mpsc::UnboundedReceiver<JobExecution>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Self { name: name.into(), sender: tx }, rx)
+        (
+            Self {
+                name: name.into(),
+                sender: tx,
+            },
+            rx,
+        )
     }
 }
 
 #[async_trait]
 impl DeliveryChannel for ChannelDelivery {
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
     async fn deliver(&self, execution: &JobExecution) -> DeliveryResult {
         match self.sender.send(execution.clone()) {
             Ok(_) => DeliveryResult::success(),
@@ -55,25 +71,41 @@ pub struct DeliveryChain {
 
 impl DeliveryChain {
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), channels: Vec::new() }
+        Self {
+            name: name.into(),
+            channels: Vec::new(),
+        }
     }
-    pub fn add(&mut self, channel: Box<dyn DeliveryChannel>) { self.channels.push(channel); }
+    pub fn add(&mut self, channel: Box<dyn DeliveryChannel>) {
+        self.channels.push(channel);
+    }
 
     /// Get the chain name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
     /// Get the number of channels in the chain.
-    pub fn len(&self) -> usize { self.channels.len() }
+    pub fn len(&self) -> usize {
+        self.channels.len()
+    }
 
     /// Check whether the chain is empty.
-    pub fn is_empty(&self) -> bool { self.channels.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.channels.is_empty()
+    }
 
     pub async fn deliver_all(&self, execution: &JobExecution) -> Vec<DeliveryResult> {
         let mut results = Vec::with_capacity(self.channels.len());
         for channel in &self.channels {
             let result = channel.deliver(execution).await;
             if !result.success {
-                warn!("Delivery channel '{}' failed for execution {}: {:?}", channel.name(), execution.id, result.error);
+                warn!(
+                    "Delivery channel '{}' failed for execution {}: {:?}",
+                    channel.name(),
+                    execution.id,
+                    result.error
+                );
             }
             results.push(result);
         }
@@ -83,26 +115,44 @@ impl DeliveryChain {
     pub async fn deliver_first(&self, execution: &JobExecution) -> DeliveryResult {
         for channel in &self.channels {
             let result = channel.deliver(execution).await;
-            if result.success { return result; }
+            if result.success {
+                return result;
+            }
         }
         DeliveryResult::failure("All delivery channels failed".to_string())
     }
 }
 
 /// A delivery channel that logs execution results.
-pub struct LogDelivery { name: String }
+pub struct LogDelivery {
+    name: String,
+}
 impl LogDelivery {
-    pub fn new(name: impl Into<String>) -> Self { Self { name: name.into() } }
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
 }
 
 #[async_trait]
 impl DeliveryChannel for LogDelivery {
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
     async fn deliver(&self, execution: &JobExecution) -> DeliveryResult {
-        let status = if execution.success { "SUCCESS" } else { "FAILED" };
-        info!("[{}] Job {} execution {}: attempt={}, duration={}ms, error={:?}",
-              status, execution.job_id, execution.id, execution.attempt,
-              execution.duration_ms.unwrap_or(0), execution.error);
+        let status = if execution.success {
+            "SUCCESS"
+        } else {
+            "FAILED"
+        };
+        info!(
+            "[{}] Job {} execution {}: attempt={}, duration={}ms, error={:?}",
+            status,
+            execution.job_id,
+            execution.id,
+            execution.attempt,
+            execution.duration_ms.unwrap_or(0),
+            execution.error
+        );
         DeliveryResult::success()
     }
 }

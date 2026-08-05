@@ -54,8 +54,7 @@ impl BochaSearch {
         });
 
         if let Some(ref time_range) = request.options.time_range {
-            body["freshness"] =
-                serde_json::Value::String(freshness_from_time_range(time_range));
+            body["freshness"] = serde_json::Value::String(freshness_from_time_range(time_range));
         }
 
         let start = std::time::Instant::now();
@@ -75,9 +74,7 @@ impl BochaSearch {
             let status = response.status();
             let body_text = response.text().await.unwrap_or_default();
             return match status.as_u16() {
-                401 | 403 => Err(SearchError::AuthError(
-                    "Invalid Bocha API key".to_string(),
-                )),
+                401 | 403 => Err(SearchError::AuthError("Invalid Bocha API key".to_string())),
                 429 => Err(SearchError::RateLimited(
                     "Bocha rate limit exceeded".to_string(),
                 )),
@@ -157,8 +154,9 @@ impl SearchProvider for BochaSearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+    > {
         Box::pin(self.search_web(request))
     }
 

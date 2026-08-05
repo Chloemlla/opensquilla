@@ -108,7 +108,9 @@ impl ConfigRepair {
                 issues.push(ConfigIssueReport {
                     issue_type: ConfigIssue::DeprecatedKey,
                     key: key.to_string(),
-                    description: format!("Deprecated config key '{key}' - use provider-specific keys"),
+                    description: format!(
+                        "Deprecated config key '{key}' - use provider-specific keys"
+                    ),
                     severity: IssueSeverity::Warning,
                     can_auto_fix: true,
                 });
@@ -137,9 +139,7 @@ impl ConfigRepair {
                     } else if issue.key == "provider.default" {
                         // Try to find the first configured provider
                         if let Some(provider) = self.find_first_configured_provider() {
-                            self.config
-                                .set("provider.default", &provider)
-                                .ok();
+                            self.config.set("provider.default", &provider).ok();
                             fixed.push(issue.clone());
                             info!("Auto-fixed: set provider.default to {provider}");
                         }
@@ -187,9 +187,8 @@ impl ConfigRepair {
         ));
 
         if self.config_path.exists() {
-            std::fs::copy(&self.config_path, &backup_path).map_err(|e| {
-                ConfigRepairError::IoError(format!("Cannot create backup: {e}"))
-            })?;
+            std::fs::copy(&self.config_path, &backup_path)
+                .map_err(|e| ConfigRepairError::IoError(format!("Cannot create backup: {e}")))?;
             info!("Configuration backed up to {}", backup_path.display());
         }
 
@@ -197,21 +196,22 @@ impl ConfigRepair {
     }
 
     /// Restore from a backup file.
-    pub async fn restore_from_backup(&mut self, backup_path: &PathBuf) -> Result<(), ConfigRepairError> {
+    pub async fn restore_from_backup(
+        &mut self,
+        backup_path: &PathBuf,
+    ) -> Result<(), ConfigRepairError> {
         if !backup_path.exists() {
             return Err(ConfigRepairError::BackupNotFound(
                 backup_path.display().to_string(),
             ));
         }
 
-        std::fs::copy(backup_path, &self.config_path).map_err(|e| {
-            ConfigRepairError::IoError(format!("Cannot restore from backup: {e}"))
-        })?;
+        std::fs::copy(backup_path, &self.config_path)
+            .map_err(|e| ConfigRepairError::IoError(format!("Cannot restore from backup: {e}")))?;
 
         // Reload config
-        self.config = Config::load().map_err(|e| {
-            ConfigRepairError::ConfigError(format!("Cannot reload config: {e}"))
-        })?;
+        self.config = Config::load()
+            .map_err(|e| ConfigRepairError::ConfigError(format!("Cannot reload config: {e}")))?;
 
         info!("Configuration restored from {}", backup_path.display());
         Ok(())
@@ -219,7 +219,9 @@ impl ConfigRepair {
 
     /// Validate the configuration and return whether it's valid.
     pub fn is_valid(&self) -> bool {
-        self.scan().iter().all(|i| i.severity != IssueSeverity::Error)
+        self.scan()
+            .iter()
+            .all(|i| i.severity != IssueSeverity::Error)
     }
 
     /// Get the config path.
@@ -449,7 +451,10 @@ mod tests {
         let mut config = Config::default();
         config.set("provider.openai.api_key", "sk-test").unwrap();
         config.set("provider.anthropic.api_key", "").unwrap();
-        assert_eq!(first_configured_provider(&config).as_deref(), Some("openai"));
+        assert_eq!(
+            first_configured_provider(&config).as_deref(),
+            Some("openai")
+        );
     }
 
     #[test]

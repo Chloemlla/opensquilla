@@ -442,9 +442,7 @@ mod scenario_tests {
 
     #[test]
     fn test_builder_missing_name_errors() {
-        let result = ScenarioBuilder::new()
-            .user_input("hi")
-            .build();
+        let result = ScenarioBuilder::new().user_input("hi").build();
         assert!(matches!(result, Err(ScenarioBuildError::MissingName)));
     }
 

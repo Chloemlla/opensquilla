@@ -102,9 +102,15 @@ pub struct HealthReport {
 impl HealthReport {
     /// Build a report from per-subsystem results, computing the overall status.
     pub fn new(subsystems: Vec<SubsystemHealth>) -> Self {
-        let overall = if subsystems.iter().any(|s| s.status == HealthStatus::Critical) {
+        let overall = if subsystems
+            .iter()
+            .any(|s| s.status == HealthStatus::Critical)
+        {
             HealthStatus::Critical
-        } else if subsystems.iter().any(|s| s.status == HealthStatus::Degraded) {
+        } else if subsystems
+            .iter()
+            .any(|s| s.status == HealthStatus::Degraded)
+        {
             HealthStatus::Degraded
         } else {
             HealthStatus::Ok

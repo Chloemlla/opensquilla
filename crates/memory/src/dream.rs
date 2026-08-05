@@ -25,7 +25,7 @@ use std::sync::Arc;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::retrieval::{content_similarity, RetrievalEngine};
+use crate::retrieval::{RetrievalEngine, content_similarity};
 use crate::store::MemoryStore;
 use crate::types::MemoryEntry;
 
@@ -106,12 +106,32 @@ pub struct Contradiction {
 /// Events emitted by the dream engine for monitoring.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DreamEvent {
-    CycleStarted { agent_id: Uuid, timestamp: DateTime<Utc> },
-    CandidatesFound { agent_id: Uuid, count: usize },
-    ConsolidationCreated { agent_id: Uuid, memory_id: MemoryId, source_count: usize },
-    ContradictionResolved { agent_id: Uuid, kept: MemoryId, removed: MemoryId },
-    Pruned { agent_id: Uuid, removed_count: u64 },
-    CycleComplete { agent_id: Uuid, summary: DreamSummary },
+    CycleStarted {
+        agent_id: Uuid,
+        timestamp: DateTime<Utc>,
+    },
+    CandidatesFound {
+        agent_id: Uuid,
+        count: usize,
+    },
+    ConsolidationCreated {
+        agent_id: Uuid,
+        memory_id: MemoryId,
+        source_count: usize,
+    },
+    ContradictionResolved {
+        agent_id: Uuid,
+        kept: MemoryId,
+        removed: MemoryId,
+    },
+    Pruned {
+        agent_id: Uuid,
+        removed_count: u64,
+    },
+    CycleComplete {
+        agent_id: Uuid,
+        summary: DreamSummary,
+    },
 }
 
 /// LLM-backed consolidation generation.
@@ -123,7 +143,10 @@ pub enum DreamEvent {
 #[async_trait::async_trait]
 pub trait DreamConsolidator: Send + Sync {
     /// Generate a consolidated memory for each candidate cluster.
-    async fn consolidate(&self, candidates: &[ConsolidationCandidate]) -> CoreResult<Vec<ConsolidatedMemory>>;
+    async fn consolidate(
+        &self,
+        candidates: &[ConsolidationCandidate],
+    ) -> CoreResult<Vec<ConsolidatedMemory>>;
 
     /// Optionally resolve a contradiction into a merged memory. Returning
     /// `Ok(None)` means "keep the higher-quality memory and drop the other".
@@ -147,7 +170,10 @@ pub struct HeuristicConsolidator;
 
 #[async_trait::async_trait]
 impl DreamConsolidator for HeuristicConsolidator {
-    async fn consolidate(&self, candidates: &[ConsolidationCandidate]) -> CoreResult<Vec<ConsolidatedMemory>> {
+    async fn consolidate(
+        &self,
+        candidates: &[ConsolidationCandidate],
+    ) -> CoreResult<Vec<ConsolidatedMemory>> {
         Ok(heuristic_consolidate(candidates))
     }
 
@@ -232,7 +258,10 @@ impl DreamEngine {
 
     /// Check if consolidation is due.
     pub fn is_due(&self) -> bool {
-        let last = self.last_consolidation.lock().unwrap_or_else(|e| e.into_inner());
+        let last = self
+            .last_consolidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         match *last {
             Some(t) => {
                 let elapsed = (Utc::now() - t).num_hours() as f64;
@@ -348,7 +377,11 @@ impl DreamEngine {
             }
 
             if cluster.len() > 1 {
-                candidates.push(build_candidate(*agent_id, &cluster, self.config.consolidation_threshold));
+                candidates.push(build_candidate(
+                    *agent_id,
+                    &cluster,
+                    self.config.consolidation_threshold,
+                ));
             }
         }
 
@@ -371,7 +404,11 @@ impl DreamEngine {
     ) -> CoreResult<Vec<ConsolidatedMemory>> {
         if let Some(consolidator) = &self.consolidator {
             let out = consolidator.consolidate(candidates).await?;
-            debug!("Consolidator '{}' produced {} memories", consolidator.name(), out.len());
+            debug!(
+                "Consolidator '{}' produced {} memories",
+                consolidator.name(),
+                out.len()
+            );
             return Ok(out);
         }
         Ok(heuristic_consolidate(candidates))
@@ -501,7 +538,10 @@ impl DreamEngine {
         let mut by_type: std::collections::HashMap<String, Vec<&crate::types::MemoryEntry>> =
             std::collections::HashMap::new();
         for memory in &memories {
-            by_type.entry(memory.memory_type.clone()).or_default().push(memory);
+            by_type
+                .entry(memory.memory_type.clone())
+                .or_default()
+                .push(memory);
         }
 
         let mut patterns_found = 0;
@@ -522,10 +562,7 @@ impl DreamEngine {
                 if pattern.strength > 0.6 {
                     let abstraction_content = format!(
                         "[Dream] Pattern in {}: \"{}\" (appears in {} memories, strength {:.2})",
-                        mem_type,
-                        pattern.phrase,
-                        pattern.frequency,
-                        pattern.strength
+                        mem_type, pattern.phrase, pattern.frequency, pattern.strength
                     );
 
                     let mut entry = crate::types::MemoryEntry::new(
@@ -581,20 +618,123 @@ impl DreamEngine {
 
         // Common stop words to filter out
         let stop_words: std::collections::HashSet<&str> = [
-            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-            "have", "has", "had", "do", "does", "did", "will", "would", "could",
-            "should", "may", "might", "shall", "can", "need", "to", "of", "in",
-            "for", "on", "with", "at", "by", "from", "as", "into", "through",
-            "during", "before", "after", "above", "below", "between", "and",
-            "but", "or", "nor", "not", "so", "yet", "both", "either", "neither",
-            "this", "that", "these", "those", "it", "its", "i", "you", "he",
-            "she", "we", "they", "me", "him", "her", "us", "them", "my", "your",
-            "his", "its", "our", "their", "myself", "yourself", "himself",
-            "herself", "itself", "ourselves", "themselves", "what", "which",
-            "who", "whom", "when", "where", "why", "how", "all", "each",
-            "every", "both", "few", "more", "most", "other", "some", "such",
-            "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-            "very", "just", "because", "as", "until", "while", "about",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "shall",
+            "can",
+            "need",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "as",
+            "into",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "between",
+            "and",
+            "but",
+            "or",
+            "nor",
+            "not",
+            "so",
+            "yet",
+            "both",
+            "either",
+            "neither",
+            "this",
+            "that",
+            "these",
+            "those",
+            "it",
+            "its",
+            "i",
+            "you",
+            "he",
+            "she",
+            "we",
+            "they",
+            "me",
+            "him",
+            "her",
+            "us",
+            "them",
+            "my",
+            "your",
+            "his",
+            "its",
+            "our",
+            "their",
+            "myself",
+            "yourself",
+            "himself",
+            "herself",
+            "itself",
+            "ourselves",
+            "themselves",
+            "what",
+            "which",
+            "who",
+            "whom",
+            "when",
+            "where",
+            "why",
+            "how",
+            "all",
+            "each",
+            "every",
+            "both",
+            "few",
+            "more",
+            "most",
+            "other",
+            "some",
+            "such",
+            "no",
+            "nor",
+            "not",
+            "only",
+            "own",
+            "same",
+            "so",
+            "than",
+            "too",
+            "very",
+            "just",
+            "because",
+            "as",
+            "until",
+            "while",
+            "about",
         ]
         .iter()
         .cloned()
@@ -606,9 +746,7 @@ impl DreamEngine {
             let words: Vec<&str> = lowered
                 .split_whitespace()
                 .filter(|w| {
-                    w.len() > 3
-                        && !stop_words.contains(w)
-                        && w.chars().all(|c| c.is_alphabetic())
+                    w.len() > 3 && !stop_words.contains(w) && w.chars().all(|c| c.is_alphabetic())
                 })
                 .collect();
 
@@ -632,7 +770,11 @@ impl DreamEngine {
             })
             .collect();
 
-        patterns.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap_or(std::cmp::Ordering::Equal));
+        patterns.sort_by(|a, b| {
+            b.strength
+                .partial_cmp(&a.strength)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         patterns.truncate(10);
 
         patterns
@@ -832,13 +974,23 @@ mod tests {
         let summary = engine.run_dream_cycle(&agent).await.unwrap();
         assert!(summary.abstractions_created >= 1);
 
-        let dreams = store.list_memories(&agent, Some("dream_episodic"), 100, 0).unwrap();
+        let dreams = store
+            .list_memories(&agent, Some("dream_episodic"), 100, 0)
+            .unwrap();
         assert!(!dreams.is_empty());
 
         // Events should have been recorded.
         let events = engine.drain_events();
-        assert!(events.iter().any(|e| matches!(e, DreamEvent::CycleStarted { .. })));
-        assert!(events.iter().any(|e| matches!(e, DreamEvent::CycleComplete { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DreamEvent::CycleStarted { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DreamEvent::CycleComplete { .. }))
+        );
     }
 
     #[test]
@@ -901,7 +1053,9 @@ mod tests {
         assert_eq!(stored.source, "dream");
         assert_eq!(stored.memory_type, "dream_episodic");
         assert_eq!(
-            stored.metadata["source_memory_ids"].as_array().map(|a| a.len()),
+            stored.metadata["source_memory_ids"]
+                .as_array()
+                .map(|a| a.len()),
             Some(2)
         );
     }
@@ -957,7 +1111,11 @@ mod tests {
     fn test_is_due() {
         let engine = DreamEngine::new(MemoryStore::in_memory().unwrap());
         assert!(engine.is_due());
-        engine.last_consolidation.lock().unwrap().replace(Utc::now());
+        engine
+            .last_consolidation
+            .lock()
+            .unwrap()
+            .replace(Utc::now());
         assert!(!engine.is_due());
     }
 
@@ -983,7 +1141,10 @@ mod tests {
     #[test]
     fn test_detect_conflict() {
         assert!((detect_conflict("prefers dark mode", "prefers light mode") - 0.4).abs() < 1e-9);
-        assert_eq!(detect_conflict("prefers dark mode", "prefers dark mode"), 0.0);
+        assert_eq!(
+            detect_conflict("prefers dark mode", "prefers dark mode"),
+            0.0
+        );
         assert!((detect_conflict("always use vim", "never use vim") - 0.4).abs() < 1e-9);
     }
 

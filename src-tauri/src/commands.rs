@@ -244,7 +244,9 @@ pub async fn list_secrets(secrets: State<'_, SharedSecretStore>) -> TauriResult<
 
 /// Rotate the secret-store master key, re-encrypting every entry.
 #[tauri::command]
-pub async fn rotate_secret_key(secrets: State<'_, SharedSecretStore>) -> TauriResult<serde_json::Value> {
+pub async fn rotate_secret_key(
+    secrets: State<'_, SharedSecretStore>,
+) -> TauriResult<serde_json::Value> {
     secrets
         .rotate_key()
         .map_err(|e| TauriError::internal(e.to_string()))?;
@@ -493,13 +495,11 @@ pub async fn zoom_reset(window: WebviewWindow) -> TauriResult<f64> {
 /// Resolve the app config directory from the app handle, falling back to the
 /// platform default if the Tauri path resolver is unavailable.
 fn config_dir_for(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_config_dir()
-        .unwrap_or_else(|_| {
-            dirs::config_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("opensquilla")
-        })
+    app.path().app_config_dir().unwrap_or_else(|_| {
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("opensquilla")
+    })
 }
 
 /// Open the shared secret store for the running app. Called by `main.rs`

@@ -107,12 +107,7 @@ impl AuditLog {
     }
 
     /// Record a permission grant.
-    pub async fn record_permission_grant(
-        &self,
-        actor: &str,
-        permission: &str,
-        resource: &str,
-    ) {
+    pub async fn record_permission_grant(&self, actor: &str, permission: &str, resource: &str) {
         self.record_action(
             "permission.grant",
             actor,
@@ -124,12 +119,7 @@ impl AuditLog {
     }
 
     /// Record a permission denial.
-    pub async fn record_permission_denial(
-        &self,
-        actor: &str,
-        permission: &str,
-        resource: &str,
-    ) {
+    pub async fn record_permission_denial(&self, actor: &str, permission: &str, resource: &str) {
         self.record_action(
             "permission.deny",
             actor,
@@ -141,7 +131,13 @@ impl AuditLog {
     }
 
     /// Record a configuration change.
-    pub async fn record_config_change(&self, actor: &str, key: &str, old_value: &str, new_value: &str) {
+    pub async fn record_config_change(
+        &self,
+        actor: &str,
+        key: &str,
+        old_value: &str,
+        new_value: &str,
+    ) {
         self.record_action(
             "config.change",
             actor,
@@ -156,12 +152,7 @@ impl AuditLog {
     }
 
     /// Record a user authentication event.
-    pub async fn record_auth_event(
-        &self,
-        username: &str,
-        success: bool,
-        method: &str,
-    ) {
+    pub async fn record_auth_event(&self, username: &str, success: bool, method: &str) {
         let result = if success {
             AuditResult::Allowed
         } else {

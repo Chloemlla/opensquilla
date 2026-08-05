@@ -194,7 +194,9 @@ pub fn default_stages(config: &TurnRunnerConfig) -> Vec<Box<dyn Stage + Send + S
                 .with_enabled(config.compaction_enabled)
                 .with_context_window(config.context_window_tokens),
         ),
-        Box::new(attachment::AttachmentStage::new(config.workspace_root.clone())),
+        Box::new(attachment::AttachmentStage::new(
+            config.workspace_root.clone(),
+        )),
         Box::new(input::InputStage::new(config.max_messages)),
         Box::new(provider::ProviderStage::new(
             config.default_model.clone(),
@@ -230,8 +232,9 @@ pub fn default_pipeline(config: &TurnRunnerConfig) -> StepChain {
     chain.push(crate::steps::ContextAssemblyStep::new(
         config.pipeline.workspace_root.clone(),
     ));
-    let attachment =
-        crate::steps::AttachmentLoaderStep::default_with_workspace(config.pipeline.workspace_root.clone());
+    let attachment = crate::steps::AttachmentLoaderStep::default_with_workspace(
+        config.pipeline.workspace_root.clone(),
+    );
     attachment.set_attachments(config.pipeline.attachments.clone());
     chain.push(attachment);
     chain
@@ -248,7 +251,7 @@ pub use attachment::{
 pub use compaction::CompactionOutcome;
 pub use finalizer::{CostRollup, FinalizeReport, FinalizerStage};
 pub use harness::{HarnessConfig, HarnessStage, StageMetrics};
-pub use input::{InputConfig, InputReport, InputStage, InputMode};
+pub use input::{InputConfig, InputMode, InputReport, InputStage};
 pub use provider::{ProviderCallReport, ProviderRetryPolicy, ProviderStage, RateLimiter};
 pub use stream_consumer::{
     BufferedToolCall, StreamConfig, StreamConsumerStage, StreamConsumerState,

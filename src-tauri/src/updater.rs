@@ -60,14 +60,9 @@ pub const UPDATE_GITHUB_RELEASES_API_URL: &str =
 /// (`v0.5.0rc2`), the semver rc spelling (`v0.5.0-rc2` / `v0.5.0-rc.2`), and a
 /// plain stable tag (`v0.5.0`). Returns `None` for anything else.
 pub fn parse_release_tag(tag: &str) -> Option<ParsedReleaseTag> {
-    let re: &Regex = static_regex(
-        r"^[vV]?(\d+)\.(\d+)\.(\d+)(?:-?rc\.?(\d+))?$",
-    );
+    let re: &Regex = static_regex(r"^[vV]?(\d+)\.(\d+)\.(\d+)(?:-?rc\.?(\d+))?$");
     let caps = re.captures(tag.trim())?;
-    let base = format!(
-        "{}.{}.{}",
-        &caps[1], &caps[2], &caps[3]
-    );
+    let base = format!("{}.{}.{}", &caps[1], &caps[2], &caps[3]);
     let rc = caps.get(4).map(|m| m.as_str().parse::<u32>().unwrap());
     Some(ParsedReleaseTag { base, rc })
 }
@@ -128,7 +123,11 @@ pub fn select_prerelease_candidate(
             None => u64::MAX,
             Some(rc) => rc as u64,
         };
-        if best.as_ref().map(|(_, _, best_rank)| rank > *best_rank).unwrap_or(true) {
+        if best
+            .as_ref()
+            .map(|(_, _, best_rank)| rank > *best_rank)
+            .unwrap_or(true)
+        {
             best = Some((parsed, tag.to_string(), rank));
         }
     }
@@ -275,7 +274,10 @@ fn compare_base(left: &str, right: &str) -> Result<std::cmp::Ordering, UpdateCha
     Ok(a.cmp(&b))
 }
 
-fn release_outranks(candidate: &ParsedReleaseTag, incumbent: &ParsedReleaseTag) -> Result<bool, UpdateChannelError> {
+fn release_outranks(
+    candidate: &ParsedReleaseTag,
+    incumbent: &ParsedReleaseTag,
+) -> Result<bool, UpdateChannelError> {
     let by_base = compare_base(&candidate.base, &incumbent.base)?;
     if by_base != std::cmp::Ordering::Equal {
         return Ok(by_base == std::cmp::Ordering::Greater);
@@ -367,7 +369,10 @@ pub fn channel_manifest_from_release_inventory(
                     .collect()
             })
             .unwrap_or_default();
-        if required_release_assets(&parsed).iter().any(|n| !asset_names.contains(n)) {
+        if required_release_assets(&parsed)
+            .iter()
+            .any(|n| !asset_names.contains(n))
+        {
             continue;
         }
         if best
@@ -409,7 +414,9 @@ pub fn channel_manifest_from_release_inventory(
 }
 
 /// Validate an untrusted channel manifest payload.
-pub fn validate_channel_manifest(payload: &serde_json::Value) -> Result<UpdateChannelManifest, UpdateChannelError> {
+pub fn validate_channel_manifest(
+    payload: &serde_json::Value,
+) -> Result<UpdateChannelManifest, UpdateChannelError> {
     let obj = payload.as_object().ok_or_else(|| {
         UpdateChannelError::ManifestInvalid("channel manifest must be an object".into())
     })?;
@@ -418,8 +425,18 @@ pub fn validate_channel_manifest(payload: &serde_json::Value) -> Result<UpdateCh
             "unsupported channel manifest schemaVersion".into(),
         ));
     }
-    let tag = obj.get("tag").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-    let version = obj.get("version").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let tag = obj
+        .get("tag")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let version = obj
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let base_version = obj
         .get("baseVersion")
         .and_then(|v| v.as_str())
@@ -478,25 +495,41 @@ pub fn validate_channel_manifest(payload: &serde_json::Value) -> Result<UpdateCh
             "channel manifest sha256sums is invalid".into(),
         ));
     }
-    let platforms = obj.get("platforms").and_then(|v| v.as_object()).ok_or_else(|| {
-        UpdateChannelError::ManifestInvalid("channel manifest platforms must be an object".into())
-    })?;
+    let platforms = obj
+        .get("platforms")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| {
+            UpdateChannelError::ManifestInvalid(
+                "channel manifest platforms must be an object".into(),
+            )
+        })?;
     let mut parsed_platforms = std::collections::HashMap::new();
     for platform in ["darwin-arm64", "win32-x64"] {
-        let entry = platforms.get(platform).and_then(|v| v.as_object()).ok_or_else(|| {
-            UpdateChannelError::ManifestInvalid(format!("channel manifest is missing {platform}"))
-        })?;
+        let entry = platforms
+            .get(platform)
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| {
+                UpdateChannelError::ManifestInvalid(format!(
+                    "channel manifest is missing {platform}"
+                ))
+            })?;
         let feed = safe_filename(
             entry.get("feed").and_then(|v| v.as_str()).unwrap_or(""),
             &format!("{platform}.feed"),
         )?;
         let installer = safe_filename(
-            entry.get("installer").and_then(|v| v.as_str()).unwrap_or(""),
+            entry
+                .get("installer")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
             &format!("{platform}.installer"),
         )?;
         let archive = match entry.get("archive") {
             Some(serde_json::Value::Null) | None => None,
-            Some(v) => Some(safe_filename(v.as_str().unwrap_or(""), &format!("{platform}.archive"))?),
+            Some(v) => Some(safe_filename(
+                v.as_str().unwrap_or(""),
+                &format!("{platform}.archive"),
+            )?),
         };
         parsed_platforms.insert(
             platform.to_string(),
@@ -581,7 +614,8 @@ fn candidate_is_newer(
         }
         return Ok(candidate.rc.is_none() || candidate.rc > current.rc);
     }
-    Ok(candidate.rc.is_none() && compare_base(&candidate.base, &current.base)? == std::cmp::Ordering::Greater)
+    Ok(candidate.rc.is_none()
+        && compare_base(&candidate.base, &current.base)? == std::cmp::Ordering::Greater)
 }
 
 /// The base download URL for a candidate on a given source.
@@ -594,8 +628,16 @@ pub fn feed_base_url(candidate: &DesktopUpdateCandidate, source: DesktopUpdateSo
 }
 
 /// The full asset URL for a candidate on a given source.
-pub fn asset_url(candidate: &DesktopUpdateCandidate, source: DesktopUpdateSource, asset: &str) -> String {
-    format!("{}/{}", feed_base_url(candidate, source), urlencoding(asset))
+pub fn asset_url(
+    candidate: &DesktopUpdateCandidate,
+    source: DesktopUpdateSource,
+    asset: &str,
+) -> String {
+    format!(
+        "{}/{}",
+        feed_base_url(candidate, source),
+        urlencoding(asset)
+    )
 }
 
 /// Order the update sources for the user's locale. Mainland-CN hints prefer
@@ -615,12 +657,12 @@ pub fn ordered_update_sources(
     if let Some(last) = last_successful {
         return match last {
             DesktopUpdateSource::Oss => vec![DesktopUpdateSource::Oss, DesktopUpdateSource::Github],
-            DesktopUpdateSource::Github => vec![DesktopUpdateSource::Github, DesktopUpdateSource::Oss],
+            DesktopUpdateSource::Github => {
+                vec![DesktopUpdateSource::Github, DesktopUpdateSource::Oss]
+            }
         };
     }
-    let mainland_hint = locale_tags.iter().any(|tag| {
-        is_mainland_hint(tag)
-    });
+    let mainland_hint = locale_tags.iter().any(|tag| is_mainland_hint(tag));
     if mainland_hint {
         vec![DesktopUpdateSource::Oss, DesktopUpdateSource::Github]
     } else {
@@ -659,7 +701,10 @@ fn is_mainland_hint(tag: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Parse a canonical SHA256SUMS file and return the digest for `asset`.
-pub fn parse_sha256_sums_for_asset(contents: &str, asset: &str) -> Result<String, UpdateChannelError> {
+pub fn parse_sha256_sums_for_asset(
+    contents: &str,
+    asset: &str,
+) -> Result<String, UpdateChannelError> {
     if asset.is_empty()
         || asset == "."
         || asset == ".."
@@ -682,7 +727,7 @@ pub fn parse_sha256_sums_for_asset(contents: &str, asset: &str) -> Result<String
             None => {
                 return Err(UpdateChannelError::IntegrityFailed(
                     "The canonical SHA256SUMS file is malformed.".into(),
-                ))
+                ));
             }
         };
         let digest = caps[0].split_whitespace().next().unwrap().to_lowercase();
@@ -742,13 +787,10 @@ pub async fn stream_response_to_verified_file(
         ));
     }
 
-    let total_bytes: Option<u64> = response
-        .content_length()
-        .filter(|&l| l > 0)
-        .or_else(|| {
-            // No content-length → unknown total.
-            None
-        });
+    let total_bytes: Option<u64> = response.content_length().filter(|&l| l > 0).or_else(|| {
+        // No content-length → unknown total.
+        None
+    });
     if let Some(total) = total_bytes {
         if total > options.max_bytes {
             return Err(UpdateChannelError::DownloadFailed(
@@ -762,20 +804,10 @@ pub async fn stream_response_to_verified_file(
             UpdateChannelError::DownloadFailed(format!("could not create destination dir: {e}"))
         })?;
     }
-    let tmp = destination.with_extension(format!(
-        "{}.part",
-        uuid::Uuid::new_v4()
-    ));
+    let tmp = destination.with_extension(format!("{}.part", uuid::Uuid::new_v4()));
 
-    let result = write_verified_stream(
-        response,
-        &tmp,
-        destination,
-        &expected,
-        options,
-        total_bytes,
-    )
-    .await;
+    let result =
+        write_verified_stream(response, &tmp, destination, &expected, options, total_bytes).await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(&tmp).await;
     }
@@ -798,9 +830,7 @@ async fn write_verified_stream(
         .open(tmp)
         .await
         .map_err(|e| {
-            UpdateChannelError::DownloadFailed(format!(
-                "could not open temp installer file: {e}"
-            ))
+            UpdateChannelError::DownloadFailed(format!("could not open temp installer file: {e}"))
         })?;
     #[cfg(unix)]
     {
@@ -855,13 +885,11 @@ async fn write_verified_stream(
     // Remove any previously verified file before the rename (Windows cannot
     // rename over an existing destination).
     let _ = tokio::fs::remove_file(destination).await;
-    tokio::fs::rename(tmp, destination)
-        .await
-        .map_err(|e| {
-            UpdateChannelError::DownloadFailed(format!(
-                "The verified installer could not be finalized: {e}"
-            ))
-        })?;
+    tokio::fs::rename(tmp, destination).await.map_err(|e| {
+        UpdateChannelError::DownloadFailed(format!(
+            "The verified installer could not be finalized: {e}"
+        ))
+    })?;
     Ok(VerifiedDownloadResult {
         path: destination.to_path_buf(),
         bytes: received,
@@ -1113,15 +1141,14 @@ fn static_regex(pattern: &str) -> &'static Regex {
     // literals, so the cache fills once and subsequent lookups are cheap. The
     // returned Regex is leaked (lives for the program's lifetime), so the
     // 'static lifetime is sound even when the input pattern is not.
-    static CACHE: once_cell::sync::Lazy<parking_lot::Mutex<std::collections::HashMap<String, &'static Regex>>> =
-        once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+    static CACHE: once_cell::sync::Lazy<
+        parking_lot::Mutex<std::collections::HashMap<String, &'static Regex>>,
+    > = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
     let mut cache = CACHE.lock();
     if let Some(re) = cache.get(pattern) {
         return *re;
     }
-    let leaked: &'static Regex = Box::leak(Box::new(
-        Regex::new(pattern).expect("invalid regex"),
-    ));
+    let leaked: &'static Regex = Box::leak(Box::new(Regex::new(pattern).expect("invalid regex")));
     cache.insert(pattern.to_string(), leaked);
     leaked
 }
@@ -1157,8 +1184,14 @@ fn valid_rfc3339(value: &str) -> bool {
     let hour: u32 = caps[4].parse().unwrap_or(0);
     let minute: u32 = caps[5].parse().unwrap_or(0);
     let second: u32 = caps[6].parse().unwrap_or(0);
-    let offset_hour: u32 = caps.get(7).map(|m| m.as_str().parse().unwrap_or(0)).unwrap_or(0);
-    let offset_minute: u32 = caps.get(8).map(|m| m.as_str().parse().unwrap_or(0)).unwrap_or(0);
+    let offset_hour: u32 = caps
+        .get(7)
+        .map(|m| m.as_str().parse().unwrap_or(0))
+        .unwrap_or(0);
+    let offset_minute: u32 = caps
+        .get(8)
+        .map(|m| m.as_str().parse().unwrap_or(0))
+        .unwrap_or(0);
     let days_in_month = days_in_month(year, month);
     year >= 1
         && (1..=12).contains(&month)
@@ -1247,7 +1280,10 @@ mod tests {
 
     #[test]
     fn channel_path_for_stable_and_preview() {
-        assert_eq!(channel_path_for_version("0.5.0"), Some("stable.json".into()));
+        assert_eq!(
+            channel_path_for_version("0.5.0"),
+            Some("stable.json".into())
+        );
         assert_eq!(
             channel_path_for_version("0.5.0-rc2"),
             Some("preview/0.5.0.json".into())
@@ -1259,18 +1295,30 @@ mod tests {
     fn ordered_sources_mainland_hint() {
         let tags = vec!["zh-CN".to_string()];
         let order = ordered_update_sources(&tags, None, None);
-        assert_eq!(order, vec![DesktopUpdateSource::Oss, DesktopUpdateSource::Github]);
+        assert_eq!(
+            order,
+            vec![DesktopUpdateSource::Oss, DesktopUpdateSource::Github]
+        );
         let tags = vec!["en-US".to_string()];
         let order = ordered_update_sources(&tags, None, None);
-        assert_eq!(order, vec![DesktopUpdateSource::Github, DesktopUpdateSource::Oss]);
+        assert_eq!(
+            order,
+            vec![DesktopUpdateSource::Github, DesktopUpdateSource::Oss]
+        );
     }
 
     #[test]
     fn ordered_sources_override() {
         let order = ordered_update_sources(&[], None, Some("oss"));
-        assert_eq!(order, vec![DesktopUpdateSource::Oss, DesktopUpdateSource::Github]);
+        assert_eq!(
+            order,
+            vec![DesktopUpdateSource::Oss, DesktopUpdateSource::Github]
+        );
         let order = ordered_update_sources(&[], None, Some("github"));
-        assert_eq!(order, vec![DesktopUpdateSource::Github, DesktopUpdateSource::Oss]);
+        assert_eq!(
+            order,
+            vec![DesktopUpdateSource::Github, DesktopUpdateSource::Oss]
+        );
     }
 
     #[test]
@@ -1279,11 +1327,9 @@ mod tests {
             "abcdef0123456789{}  *OpenSquilla-0.5.0-win-x64.exe\n1111  other.exe",
             "a".repeat(48)
         );
-        let digest = parse_sha256_sums_for_asset(&contents, "OpenSquilla-0.5.0-win-x64.exe").unwrap();
-        assert_eq!(
-            digest,
-            format!("abcdef0123456789{}", "a".repeat(48))
-        );
+        let digest =
+            parse_sha256_sums_for_asset(&contents, "OpenSquilla-0.5.0-win-x64.exe").unwrap();
+        assert_eq!(digest, format!("abcdef0123456789{}", "a".repeat(48)));
         assert!(parse_sha256_sums_for_asset(&contents, "missing.exe").is_err());
     }
 

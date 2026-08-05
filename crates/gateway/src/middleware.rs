@@ -13,18 +13,18 @@
 //! - **Request logging**: Logs method, URI, status, and latency.
 
 use axum::{
+    Json,
     extract::{ConnectInfo, Request},
-    http::{header, HeaderValue, Method, StatusCode},
+    http::{HeaderValue, Method, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use futures::future::FutureExt;
 use opensquilla_core::error::AppError;
 use serde_json::json;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, warn};
@@ -189,9 +189,10 @@ impl RateLimiter {
             .unwrap_or_default()
             .as_secs();
 
-        let entry = self.state.entry(peer.to_string()).or_insert_with(|| {
-            (AtomicU64::new(self.max_requests), AtomicU64::new(now))
-        });
+        let entry = self
+            .state
+            .entry(peer.to_string())
+            .or_insert_with(|| (AtomicU64::new(self.max_requests), AtomicU64::new(now)));
 
         let (tokens, last_refill) = entry.value();
         let last = last_refill.load(Ordering::Relaxed);
@@ -419,10 +420,7 @@ pub fn cors_layer(origins: &[String]) -> CorsLayer {
 // ---------------------------------------------------------------------------
 
 /// Add security headers to every response.
-pub async fn security_headers_middleware(
-    req: Request,
-    next: Next,
-) -> impl IntoResponse {
+pub async fn security_headers_middleware(req: Request, next: Next) -> impl IntoResponse {
     let mut response = next.run(req).await;
 
     let headers = response.headers_mut();
@@ -487,18 +485,20 @@ pub fn error_response(
     code: &str,
     message: impl Into<String>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    (status, Json(json!({ "error": code, "message": message.into(), "code": code })))
+    (
+        status,
+        Json(json!({ "error": code, "message": message.into(), "code": code })),
+    )
 }
 
 /// Catch panics and return a 500 JSON response.
-pub async fn catch_panic_middleware(
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn catch_panic_middleware(req: Request, next: Next) -> Response {
     let uri = req.uri().to_string();
     let method = req.method().to_string();
 
-    let result = std::panic::AssertUnwindSafe(next.run(req)).catch_unwind().await;
+    let result = std::panic::AssertUnwindSafe(next.run(req))
+        .catch_unwind()
+        .await;
 
     match result {
         Ok(response) => response,
@@ -518,10 +518,7 @@ pub async fn catch_panic_middleware(
 // ---------------------------------------------------------------------------
 
 /// Log incoming requests and their response status codes.
-pub async fn request_logging_middleware(
-    req: Request,
-    next: Next,
-) -> impl IntoResponse {
+pub async fn request_logging_middleware(req: Request, next: Next) -> impl IntoResponse {
     let method = req.method().to_string();
     let uri = req.uri().to_string();
     let start = Instant::now();
@@ -540,7 +537,7 @@ pub async fn request_logging_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http::Request as HttpRequest, routing::get, Router};
+    use axum::{Router, body::Body, http::Request as HttpRequest, routing::get};
     use tower::ServiceExt;
 
     #[test]
@@ -596,7 +593,9 @@ mod tests {
         assert!(is_public_path("/health"));
         assert!(is_public_path("/readyz"));
         assert!(is_public_path("/api/desktop/identity"));
-        assert!(is_public_path("/api/v1/artifact-preview/abcdef0123456789abcdef0123456789"));
+        assert!(is_public_path(
+            "/api/v1/artifact-preview/abcdef0123456789abcdef0123456789"
+        ));
         assert!(!is_public_path("/api/sessions"));
         assert!(!is_public_path("/"));
     }
@@ -633,8 +632,14 @@ mod tests {
     fn test_origin_allowed_wildcard() {
         assert!(origin_allowed("http://evil.example", &["*".to_string()]));
         assert!(origin_allowed("http://localhost:3000", &[]));
-        assert!(!origin_allowed("http://evil.example", &["http://good.example".to_string()]));
-        assert!(origin_allowed("http://good.example", &["http://good.example".to_string()]));
+        assert!(!origin_allowed(
+            "http://evil.example",
+            &["http://good.example".to_string()]
+        ));
+        assert!(origin_allowed(
+            "http://good.example",
+            &["http://good.example".to_string()]
+        ));
     }
 
     #[test]
@@ -697,7 +702,12 @@ mod tests {
 
         // Public path bypasses auth.
         let response = app
-            .oneshot(HttpRequest::builder().uri("/health").body(Body::empty()).unwrap())
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -771,7 +781,8 @@ mod tests {
 
     #[test]
     fn test_error_response_helper() {
-        let (status, body) = error_response(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "slow down");
+        let (status, body) =
+            error_response(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "slow down");
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(body.0["code"], "RATE_LIMITED");
     }

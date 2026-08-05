@@ -89,7 +89,10 @@ impl DuckDuckGoSearch {
             results.truncate(request.options.max_results);
         }
 
-        debug!("DuckDuckGo returned {} results in {elapsed}ms", results.len());
+        debug!(
+            "DuckDuckGo returned {} results in {elapsed}ms",
+            results.len()
+        );
 
         let total_results = Some(results.len() as u64);
         Ok(SearchResponse {
@@ -106,8 +109,9 @@ impl SearchProvider for DuckDuckGoSearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+    > {
         Box::pin(self.search_web(request))
     }
 

@@ -114,8 +114,7 @@ impl CrashRecovery {
         let snapshot_path = self.snapshot_dir.join(format!("{}.json", snapshot.id));
         let json = serde_json::to_string_pretty(&snapshot)
             .map_err(|e| RecoveryError::SerializationError(e.to_string()))?;
-        std::fs::write(&snapshot_path, &json)
-            .map_err(|e| RecoveryError::IoError(e.to_string()))?;
+        std::fs::write(&snapshot_path, &json).map_err(|e| RecoveryError::IoError(e.to_string()))?;
 
         // Keep in memory
         let mut snapshots = self.snapshots.write().await;
@@ -398,9 +397,7 @@ impl CrashRecovery {
         let mut fixes = Vec::new();
 
         let before = session.messages.len();
-        session
-            .messages
-            .retain(|m| !m.content.trim().is_empty());
+        session.messages.retain(|m| !m.content.trim().is_empty());
         if session.messages.len() != before {
             fixes.push(format!(
                 "dropped {} empty-content message(s)",
@@ -421,7 +418,9 @@ impl CrashRecovery {
             }
         }
 
-        session.messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        session
+            .messages
+            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
         Ok(fixes)
     }
@@ -506,10 +505,8 @@ mod tests {
     }
 
     fn temp_recovery() -> CrashRecovery {
-        let dir = std::env::temp_dir().join(format!(
-            "opensquilla-crash-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-crash-test-{}", uuid::Uuid::new_v4()));
         CrashRecovery::with_snapshot_dir(&test_config(), dir)
     }
 
@@ -533,8 +530,14 @@ mod tests {
     #[tokio::test]
     async fn test_list_snapshots() {
         let recovery = temp_recovery();
-        recovery.record_crash("error 1", None, "ctx1").await.unwrap();
-        recovery.record_crash("error 2", None, "ctx2").await.unwrap();
+        recovery
+            .record_crash("error 1", None, "ctx1")
+            .await
+            .unwrap();
+        recovery
+            .record_crash("error 2", None, "ctx2")
+            .await
+            .unwrap();
 
         let snapshots = recovery.list_snapshots().await;
         assert_eq!(snapshots.len(), 2);
@@ -545,7 +548,10 @@ mod tests {
     #[tokio::test]
     async fn test_delete_snapshot() {
         let recovery = temp_recovery();
-        let snapshot = recovery.record_crash("to delete", None, "ctx").await.unwrap();
+        let snapshot = recovery
+            .record_crash("to delete", None, "ctx")
+            .await
+            .unwrap();
 
         recovery.delete_snapshot(&snapshot.id).await.unwrap();
         let snapshots = recovery.list_snapshots().await;
@@ -555,7 +561,10 @@ mod tests {
     #[tokio::test]
     async fn test_checksum_verification() {
         let recovery = temp_recovery();
-        let snapshot = recovery.record_crash("checksum test", None, "data").await.unwrap();
+        let snapshot = recovery
+            .record_crash("checksum test", None, "data")
+            .await
+            .unwrap();
 
         // Loading should succeed (checksum matches)
         let result = recovery.load_snapshot(&snapshot.id).await;
@@ -617,10 +626,8 @@ mod crash_expansion_tests {
     }
 
     fn temp_recovery() -> CrashRecovery {
-        let dir = std::env::temp_dir().join(format!(
-            "opensquilla-crash-exp-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-crash-exp-{}", uuid::Uuid::new_v4()));
         CrashRecovery::with_snapshot_dir(&opensquilla_core::config::Config::default(), dir)
     }
 
@@ -629,10 +636,7 @@ mod crash_expansion_tests {
         let recovery = temp_recovery();
         let validation = recovery.validate_session_state(&session_state()).await;
         assert!(!validation.valid);
-        assert!(validation
-            .issues
-            .iter()
-            .any(|i| i.contains("tool_call_id")));
+        assert!(validation.issues.iter().any(|i| i.contains("tool_call_id")));
     }
 
     #[tokio::test]
@@ -642,11 +646,7 @@ mod crash_expansion_tests {
         let fixes = recovery.fix_corrupted_session(&mut session).await.unwrap();
         assert!(fixes.iter().any(|f| f.contains("tool_call_id")));
         // The tool message now carries a synthesized id.
-        let tool = session
-            .messages
-            .iter()
-            .find(|m| m.role == "tool")
-            .unwrap();
+        let tool = session.messages.iter().find(|m| m.role == "tool").unwrap();
         assert!(tool.metadata.get("tool_call_id").is_some());
     }
 
@@ -671,7 +671,12 @@ mod crash_expansion_tests {
         let recovery = temp_recovery();
         let report = recovery.recover_from_crash().await.unwrap();
         assert!(!report.recovered);
-        assert!(report.recovery_actions.iter().any(|a| a == "no_snapshots_found"));
+        assert!(
+            report
+                .recovery_actions
+                .iter()
+                .any(|a| a == "no_snapshots_found")
+        );
     }
 
     #[tokio::test]
@@ -683,6 +688,10 @@ mod crash_expansion_tests {
             .unwrap();
         let report = recovery.recover_from_crash().await.unwrap();
         assert!(report.recovered);
-        assert!(report.recovered_session_ids.contains(&"session-9".to_string()));
+        assert!(
+            report
+                .recovered_session_ids
+                .contains(&"session-9".to_string())
+        );
     }
 }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::compaction::{extractive_summary, CompactionPlanner, CompactionReport};
+use crate::compaction::{CompactionPlanner, CompactionReport, extractive_summary};
 use crate::models::{
     AgentTask, CompactedTranscriptEntry, CompactionHistory, ProjectWorkspace, RoutingDecision,
     Session, SessionAttachment, SessionContextState, SessionFork, SessionLock, SessionMetadata,
@@ -493,7 +493,9 @@ impl SessionManager {
                 self.touch(session_id)?;
                 self.storage.get_session(session_id)
             }
-            Some(_) => Ok(Some(self.transition(session_id, SessionTransition::Resume)?)),
+            Some(_) => Ok(Some(
+                self.transition(session_id, SessionTransition::Resume)?,
+            )),
             None => Ok(None),
         }
     }
@@ -537,7 +539,9 @@ impl SessionManager {
         let session = Session {
             id: Uuid::new_v4(),
             agent_id: source.agent_id,
-            name: config.name.unwrap_or_else(|| format!("Fork of {}", source.name)),
+            name: config
+                .name
+                .unwrap_or_else(|| format!("Fork of {}", source.name)),
             created_at: now,
             updated_at: now,
             last_active_at: now,
@@ -754,7 +758,8 @@ impl SessionManager {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<TranscriptEntry>> {
-        self.storage.get_transcript_entries(session_id, limit, offset)
+        self.storage
+            .get_transcript_entries(session_id, limit, offset)
     }
 
     /// Full transcript history (active + compacted) for a session.
@@ -1035,7 +1040,8 @@ impl SessionManager {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<CompactionHistory>> {
-        self.storage.list_compaction_history_by_session(session_id, limit, offset)
+        self.storage
+            .list_compaction_history_by_session(session_id, limit, offset)
     }
 
     // --- Routing ---
@@ -1070,7 +1076,8 @@ impl SessionManager {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<RoutingDecision>> {
-        self.storage.list_routing_decisions_by_session(session_id, limit, offset)
+        self.storage
+            .list_routing_decisions_by_session(session_id, limit, offset)
     }
 
     // --- Workspaces ---
@@ -1236,7 +1243,10 @@ impl SessionManager {
 // Free helpers
 // ---------------------------------------------------------------------------
 
-fn merge_routing_metadata(metadata: serde_json::Value, routing: &RoutingPrefs) -> serde_json::Value {
+fn merge_routing_metadata(
+    metadata: serde_json::Value,
+    routing: &RoutingPrefs,
+) -> serde_json::Value {
     if let Some(obj) = metadata.as_object() {
         let mut out = obj.clone();
         if let Some(provider) = &routing.provider {
@@ -1265,7 +1275,10 @@ fn merge_routing_metadata(metadata: serde_json::Value, routing: &RoutingPrefs) -
 fn merge_fork_metadata(metadata: serde_json::Value, source_id: &Uuid) -> serde_json::Value {
     let mut merged = metadata;
     if let Some(obj) = merged.as_object_mut() {
-        obj.insert("forked_from".into(), serde_json::json!(source_id.to_string()));
+        obj.insert(
+            "forked_from".into(),
+            serde_json::json!(source_id.to_string()),
+        );
         merged = serde_json::Value::Object(obj.clone());
     } else {
         merged = serde_json::json!({ "forked_from": source_id.to_string() });
@@ -1401,7 +1414,9 @@ mod tests {
         let s = create(&m, "branchable");
         let mut ids = Vec::new();
         for i in 0..5 {
-            let e = m.add_message(&s.id, "user".into(), format!("msg {}", i), 10).unwrap();
+            let e = m
+                .add_message(&s.id, "user".into(), format!("msg {}", i), 10)
+                .unwrap();
             ids.push(e.id);
         }
 
@@ -1418,7 +1433,9 @@ mod tests {
         let m = manager();
         let a = create(&m, "a");
         let b = create(&m, "b");
-        let e = m.add_message(&b.id, "user".into(), "hello".into(), 5).unwrap();
+        let e = m
+            .add_message(&b.id, "user".into(), "hello".into(), 5)
+            .unwrap();
         assert!(m.branch(&a.id, &e.id).is_err());
     }
 
@@ -1427,22 +1444,40 @@ mod tests {
         let m = manager();
         let agent = Uuid::new_v4();
         let s1 = m
-            .create_session(agent, "Alpha analysis".into(), String::new(), SessionMode::Chat)
+            .create_session(
+                agent,
+                "Alpha analysis".into(),
+                String::new(),
+                SessionMode::Chat,
+            )
             .unwrap();
         let s2 = m
-            .create_session(agent, "Beta coding".into(), String::new(), SessionMode::Plan)
+            .create_session(
+                agent,
+                "Beta coding".into(),
+                String::new(),
+                SessionMode::Plan,
+            )
             .unwrap();
 
         m.archive_session(&s2.id).unwrap();
 
         let active = m
-            .list(&SessionFilter::new().with_agent(agent).with_status(SessionStatus::Active))
+            .list(
+                &SessionFilter::new()
+                    .with_agent(agent)
+                    .with_status(SessionStatus::Active),
+            )
             .unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].id, s1.id);
 
         let archived = m
-            .list(&SessionFilter::new().with_agent(agent).with_status(SessionStatus::Archived))
+            .list(
+                &SessionFilter::new()
+                    .with_agent(agent)
+                    .with_status(SessionStatus::Archived),
+            )
             .unwrap();
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0].id, s2.id);
@@ -1508,8 +1543,10 @@ mod tests {
     fn add_message_updates_session_counts() {
         let m = manager();
         let s = create(&m, "counts");
-        m.add_message(&s.id, "user".into(), "hello world".into(), 7).unwrap();
-        m.add_message(&s.id, "assistant".into(), "hi there".into(), 5).unwrap();
+        m.add_message(&s.id, "user".into(), "hello world".into(), 7)
+            .unwrap();
+        m.add_message(&s.id, "assistant".into(), "hi there".into(), 5)
+            .unwrap();
         let fetched = m.get(&s.id).unwrap().unwrap();
         assert_eq!(fetched.message_count, 2);
         assert_eq!(fetched.total_tokens, 12);
@@ -1534,7 +1571,8 @@ mod tests {
     fn export_serializes_session_and_transcript() {
         let m = manager();
         let s = create(&m, "export-me");
-        m.add_message(&s.id, "user".into(), "data".into(), 3).unwrap();
+        m.add_message(&s.id, "user".into(), "data".into(), 3)
+            .unwrap();
         let value = m.export(&s.id).unwrap();
         assert!(value.get("session").is_some());
         assert!(value.get("transcript").is_some());

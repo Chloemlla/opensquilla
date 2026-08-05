@@ -146,9 +146,7 @@ impl AuthProvider {
     fn authenticate_with_token(&self, auth_header: Option<&str>) -> AppResult<AuthResult> {
         let header = auth_header
             .and_then(|h| h.strip_prefix("Bearer "))
-            .ok_or_else(|| {
-                AppError::unauthorized("Missing or malformed Authorization header")
-            })?;
+            .ok_or_else(|| AppError::unauthorized("Missing or malformed Authorization header"))?;
 
         let expected = self.token.as_deref().unwrap_or("");
 
@@ -373,8 +371,8 @@ impl ScopeResolver for TokenScopeResolver {
         let scopes = normalize_operator_scopes(&config.token_scopes);
         // Owner flag follows proximity, not the token: a shared token used
         // from a LAN peer should not claim ownership.
-        let is_owner = is_loopback_bind(&config.bind_host)
-            && peer_ip.map(is_loopback).unwrap_or(false);
+        let is_owner =
+            is_loopback_bind(&config.bind_host) && peer_ip.map(is_loopback).unwrap_or(false);
 
         Ok(AuthPrincipal::new(role_claim, scopes, is_owner, true))
     }
@@ -397,7 +395,12 @@ impl ScopeResolver for OpenScopeResolver {
         }
 
         if role_claim == "node" {
-            return Ok(AuthPrincipal::new("node", NODE_DEFAULT_SCOPES, false, false));
+            return Ok(AuthPrincipal::new(
+                "node",
+                NODE_DEFAULT_SCOPES,
+                false,
+                false,
+            ));
         }
 
         let local_owner =
@@ -613,16 +616,16 @@ impl IpAccessControl {
 
     /// Allow the given pattern (exact IP or CIDR).
     pub fn allow(&mut self, pattern: &str) -> std::result::Result<&mut Self, String> {
-        let compiled = IpPattern::parse(pattern)
-            .ok_or_else(|| format!("Invalid IP pattern '{pattern}'"))?;
+        let compiled =
+            IpPattern::parse(pattern).ok_or_else(|| format!("Invalid IP pattern '{pattern}'"))?;
         self.allowlist.push(compiled);
         Ok(self)
     }
 
     /// Deny the given pattern (exact IP or CIDR).
     pub fn deny(&mut self, pattern: &str) -> std::result::Result<&mut Self, String> {
-        let compiled = IpPattern::parse(pattern)
-            .ok_or_else(|| format!("Invalid IP pattern '{pattern}'"))?;
+        let compiled =
+            IpPattern::parse(pattern).ok_or_else(|| format!("Invalid IP pattern '{pattern}'"))?;
         self.denylist.push(compiled);
         Ok(self)
     }
@@ -808,7 +811,12 @@ mod tests {
             bind_host: "127.0.0.1".into(),
             ..Default::default()
         };
-        let principal = resolve_auth(&config, &serde_json::json!({}), "operator", Some("127.0.0.1"));
+        let principal = resolve_auth(
+            &config,
+            &serde_json::json!({}),
+            "operator",
+            Some("127.0.0.1"),
+        );
         let principal = principal.expect("resolved");
         assert!(principal.is_owner);
         assert!(principal.has_scope("operator.admin"));
@@ -823,8 +831,12 @@ mod tests {
             ..Default::default()
         };
         // A remote peer on a public bind must not get admin scopes.
-        let principal =
-            resolve_auth(&config, &serde_json::json!({}), "operator", Some("10.0.0.9"));
+        let principal = resolve_auth(
+            &config,
+            &serde_json::json!({}),
+            "operator",
+            Some("10.0.0.9"),
+        );
         let principal = principal.expect("resolved");
         assert!(!principal.is_owner);
         assert!(!principal.has_scope("operator.admin"));

@@ -25,14 +25,14 @@
 
 use crate::types::{SkillSpec, SkillStep, StepOutput, StepType};
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
@@ -129,12 +129,9 @@ fn build_tera() -> tera::Tera {
             Ok(tera::Value::String(chrono::Utc::now().to_rfc3339()))
         },
     );
-    tera.register_function(
-        "ts",
-        |_: &tera::Value, _: &HashMap<String, tera::Value>| {
-            Ok(tera::Value::Number(chrono::Utc::now().timestamp().into()))
-        },
-    );
+    tera.register_function("ts", |_: &tera::Value, _: &HashMap<String, tera::Value>| {
+        Ok(tera::Value::Number(chrono::Utc::now().timestamp().into()))
+    });
     tera
 }
 
@@ -284,7 +281,8 @@ impl StepExecutor for LlmClassifyExecutor {
                 ctx.step.id
             ));
         }
-        let user_message = render_template(ctx.step.prompt.as_deref().unwrap_or(""), &ctx.variables);
+        let user_message =
+            render_template(ctx.step.prompt.as_deref().unwrap_or(""), &ctx.variables);
 
         let chat = ctx.deps.read().unwrap().llm_chat.clone();
         if let Some(chat) = chat {
@@ -295,8 +293,8 @@ impl StepExecutor for LlmClassifyExecutor {
                  Do not add quotes, punctuation, prefixes, or explanations — emit only the label."
             );
             let raw = chat.chat(&system_prompt, &user_message).await?;
-            let classification = coerce_to_choice(&raw, &choices)
-                .unwrap_or_else(|| raw.trim().to_string());
+            let classification =
+                coerce_to_choice(&raw, &choices).unwrap_or_else(|| raw.trim().to_string());
             Ok(json!({
                 "status": "classified",
                 "step_type": "llm_classify",
@@ -338,10 +336,9 @@ impl StepExecutor for LlmChatExecutor {
 
     async fn execute(&self, ctx: &ExecutionContext) -> Result<Value, String> {
         let args = &ctx.step.with_args;
-        let system_raw = args
-            .get("system")
-            .and_then(|v| v.as_str())
-            .unwrap_or("You are a precise workflow step. Reply only with the requested deliverable.");
+        let system_raw = args.get("system").and_then(|v| v.as_str()).unwrap_or(
+            "You are a precise workflow step. Reply only with the requested deliverable.",
+        );
         let system_prompt = render_template(system_raw, &ctx.variables);
 
         let user_raw = args
@@ -402,7 +399,10 @@ impl StepExecutor for ToolCallExecutor {
     async fn execute(&self, ctx: &ExecutionContext) -> Result<Value, String> {
         let tool = ctx.step.tool.clone().unwrap_or_default();
         if tool.is_empty() {
-            return Err(format!("Step '{}' (kind=tool_call) has no tool", ctx.step.id));
+            return Err(format!(
+                "Step '{}' (kind=tool_call) has no tool",
+                ctx.step.id
+            ));
         }
         let args = render_args(&ctx.step.tool_args, &ctx.variables);
 
@@ -453,7 +453,10 @@ impl StepExecutor for SkillExecExecutor {
     async fn execute(&self, ctx: &ExecutionContext) -> Result<Value, String> {
         let skill_id = ctx.step.skill.clone().unwrap_or_default();
         if skill_id.is_empty() {
-            return Err(format!("Step '{}' (kind=skill_exec) has no skill", ctx.step.id));
+            return Err(format!(
+                "Step '{}' (kind=skill_exec) has no skill",
+                ctx.step.id
+            ));
         }
 
         let resolver = ctx.deps.read().unwrap().skill_resolver.clone();
@@ -594,10 +597,7 @@ pub enum MetaEvent {
         error: String,
     },
     /// A step completed successfully.
-    StepCompleted {
-        run_id: String,
-        step_id: String,
-    },
+    StepCompleted { run_id: String, step_id: String },
     /// A step failed permanently (no retries left).
     StepFailed {
         run_id: String,
@@ -782,7 +782,10 @@ fn topological_order(steps: &[SkillStep], edges: &[DagEdge]) -> Result<Vec<Strin
             .map(|s| s.id.clone())
             .filter(|id| !sorted.contains(id.as_str()))
             .collect();
-        return Err(format!("Cycle detected in DAG. Steps in cycle: {:?}", unsorted));
+        return Err(format!(
+            "Cycle detected in DAG. Steps in cycle: {:?}",
+            unsorted
+        ));
     }
     Ok(order)
 }
@@ -865,7 +868,9 @@ impl MetaOrchestrator {
     /// concurrency cap of 4.
     pub fn new() -> Self {
         let deps = Arc::new(RwLock::new(MetaDependencies::default()));
-        let executors = Arc::new(RwLock::new(HashMap::<StepType, Arc<dyn StepExecutor>>::new()));
+        let executors = Arc::new(RwLock::new(
+            HashMap::<StepType, Arc<dyn StepExecutor>>::new(),
+        ));
         let (event_tx, _) = broadcast::channel(256);
 
         let orch = Self {
@@ -1011,7 +1016,10 @@ impl MetaOrchestrator {
 
     /// Whether a run is still active (not yet finished).
     pub fn is_run_active(&self, run_id: &str) -> bool {
-        self.runs.read().map(|r| r.contains_key(run_id)).unwrap_or(false)
+        self.runs
+            .read()
+            .map(|r| r.contains_key(run_id))
+            .unwrap_or(false)
     }
 
     fn finish_run(&self, run_id: &str) {
@@ -1075,7 +1083,11 @@ impl MetaOrchestrator {
             skill_id: skill.id.clone(),
             total_steps: skill.steps.len(),
         });
-        info!("Executing meta-skill '{}' with {} steps", skill.name, skill.steps.len());
+        info!(
+            "Executing meta-skill '{}' with {} steps",
+            skill.name,
+            skill.steps.len()
+        );
 
         let step_map: HashMap<String, SkillStep> = skill
             .steps
@@ -1123,7 +1135,9 @@ impl MetaOrchestrator {
             if cancel_flag.load(Ordering::SeqCst) {
                 running.abort_all();
                 while running.join_next().await.is_some() {}
-                self.emit(MetaEvent::RunCancelled { run_id: run_id.clone() });
+                self.emit(MetaEvent::RunCancelled {
+                    run_id: run_id.clone(),
+                });
                 return Err("Meta-skill run cancelled".to_string());
             }
 
@@ -1160,7 +1174,10 @@ impl MetaOrchestrator {
                     });
                     info!(
                         "Step '{}' skipped (when condition false)",
-                        step_map.get(&step_id).map(|s| s.name.as_str()).unwrap_or(&step_id)
+                        step_map
+                            .get(&step_id)
+                            .map(|s| s.name.as_str())
+                            .unwrap_or(&step_id)
                     );
                     self.release_step(&step_id, &mut remaining, &dependents, &mut ready);
                     continue;
@@ -1410,7 +1427,12 @@ impl MetaOrchestrator {
         );
         variables.insert(
             "outputs".to_string(),
-            Value::Object(outputs.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+            Value::Object(
+                outputs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            ),
         );
         for (k, v) in outputs {
             variables.entry(k.clone()).or_insert_with(|| v.clone());
@@ -1420,17 +1442,28 @@ impl MetaOrchestrator {
 
     /// Get the execution result for a specific step.
     pub fn get_step_result(&self, step_id: &str) -> Option<Value> {
-        self.results.lock().ok().and_then(|r| r.get(step_id).cloned())
+        self.results
+            .lock()
+            .ok()
+            .and_then(|r| r.get(step_id).cloned())
     }
 
     /// Get all step results of the last run.
     pub fn get_step_results(&self) -> HashMap<String, Value> {
-        self.results.lock().ok().map(|r| r.clone()).unwrap_or_default()
+        self.results
+            .lock()
+            .ok()
+            .map(|r| r.clone())
+            .unwrap_or_default()
     }
 
     /// The full current context (inputs + routed outputs).
     pub fn current_context(&self) -> HashMap<String, Value> {
-        self.context.lock().ok().map(|c| c.clone()).unwrap_or_default()
+        self.context
+            .lock()
+            .ok()
+            .map(|c| c.clone())
+            .unwrap_or_default()
     }
 
     /// Clear all execution state.
@@ -1498,7 +1531,12 @@ async fn run_step(
             .unwrap()
             .get(&ctx.step.step_type)
             .cloned()
-            .ok_or_else(|| format!("No executor registered for step type {:?}", ctx.step.step_type))?;
+            .ok_or_else(|| {
+                format!(
+                    "No executor registered for step type {:?}",
+                    ctx.step.step_type
+                )
+            })?;
 
         let fut = executor.execute(&ctx);
         let result = match timeout_secs {
@@ -1710,7 +1748,9 @@ fn eval_function_predicate(
             };
             let arg_literal = &after[..end];
             let Some(arg) = unquote(arg_literal.trim()) else {
-                return Err(format!("Invalid string literal in {fn_name}: {arg_literal}"));
+                return Err(format!(
+                    "Invalid string literal in {fn_name}: {arg_literal}"
+                ));
             };
             let val = resolve_var(var_part.trim(), ctx, outputs);
             let text = match val {
@@ -1765,8 +1805,7 @@ fn length_of(v: Value) -> usize {
 fn unquote(s: &str) -> Option<String> {
     let s = s.trim();
     if s.len() >= 2
-        && ((s.starts_with('"') && s.ends_with('"'))
-            || (s.starts_with('\'') && s.ends_with('\'')))
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
     {
         Some(s[1..s.len() - 1].to_string())
     } else {
@@ -1808,11 +1847,7 @@ fn split_top_level<'a>(s: &'a str, op: &str) -> Option<Vec<&'a str>> {
         i += c.len_utf8();
     }
     parts.push(&s[start..]);
-    if found {
-        Some(parts)
-    } else {
-        None
-    }
+    if found { Some(parts) } else { None }
 }
 
 /// Finds the first top-level occurrence of `op` in `s`.
@@ -1871,20 +1906,36 @@ fn split_list(s: &str, open: char, close: char) -> Vec<String> {
                 current.push(c);
             }
             ',' if depth == 0 => {
-                items.push(current.trim().trim_matches('"').trim_matches('\'').to_string());
+                items.push(
+                    current
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string(),
+                );
                 current.clear();
             }
             _ => current.push(c),
         }
     }
     if !current.trim().is_empty() {
-        items.push(current.trim().trim_matches('"').trim_matches('\'').to_string());
+        items.push(
+            current
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string(),
+        );
     }
     items
 }
 
 /// Resolves a variable path against the context and prior step outputs.
-fn resolve_var(path: &str, ctx: &HashMap<String, Value>, outputs: &HashMap<String, Value>) -> Value {
+fn resolve_var(
+    path: &str,
+    ctx: &HashMap<String, Value>,
+    outputs: &HashMap<String, Value>,
+) -> Value {
     let path = path.trim();
     if path.is_empty() {
         return Value::Null;
@@ -1905,7 +1956,11 @@ fn resolve_var(path: &str, ctx: &HashMap<String, Value>, outputs: &HashMap<Strin
     if path.contains('.') {
         let mut parts = path.split('.');
         if let Some(first) = parts.next() {
-            if let Some(mut current) = ctx.get(first).cloned().or_else(|| outputs.get(first).cloned()) {
+            if let Some(mut current) = ctx
+                .get(first)
+                .cloned()
+                .or_else(|| outputs.get(first).cloned())
+            {
                 for part in parts {
                     current = match &current {
                         Value::Object(map) => map.get(part).cloned().unwrap_or(Value::Null),
@@ -1959,8 +2014,12 @@ fn compare_values(l: &Value, r: &Value, op: &str) -> Result<bool, String> {
         "==" => Ok(values_equal(l, r)),
         "!=" => Ok(!values_equal(l, r)),
         ">" | ">=" | "<" | "<=" => {
-            let lf = l.as_f64().ok_or_else(|| format!("Left operand not numeric: {}", l))?;
-            let rf = r.as_f64().ok_or_else(|| format!("Right operand not numeric: {}", r))?;
+            let lf = l
+                .as_f64()
+                .ok_or_else(|| format!("Left operand not numeric: {}", l))?;
+            let rf = r
+                .as_f64()
+                .ok_or_else(|| format!("Right operand not numeric: {}", r))?;
             Ok(match op {
                 ">" => lf > rf,
                 ">=" => lf >= rf,
@@ -1990,9 +2049,7 @@ fn value_matches(val: &Value, item: &str) -> bool {
     let item = item.trim();
     match val {
         Value::String(s) => s == item,
-        Value::Number(n) => {
-            n.to_string() == item || item.parse::<f64>().ok() == n.as_f64()
-        }
+        Value::Number(n) => n.to_string() == item || item.parse::<f64>().ok() == n.as_f64(),
         Value::Bool(b) => (item == "true") == *b || (item == "false") == !*b,
         Value::Null => item.eq_ignore_ascii_case("null") || item.eq_ignore_ascii_case("none"),
         _ => false,
@@ -2021,7 +2078,10 @@ mod tests {
         m.insert("score".to_string(), json!(42));
         m.insert("confirmed".to_string(), json!(true));
         m.insert("username".to_string(), json!("alice"));
-        m.insert("config".to_string(), json!({ "timeout": 30, "nested": { "flag": true } }));
+        m.insert(
+            "config".to_string(),
+            json!({ "timeout": 30, "nested": { "flag": true } }),
+        );
         m.insert("items".to_string(), json!(["a", "b", "c"]));
         m
     }
@@ -2175,8 +2235,17 @@ mod tests {
 
     #[test]
     fn coerce_classifier_choices() {
-        assert_eq!(coerce_to_choice("  Yes ", &["yes".to_string(), "no".to_string()]), Some("yes".to_string()));
-        assert_eq!(coerce_to_choice("YES!", &["yes".to_string()]), Some("yes".to_string()));
-        assert_eq!(coerce_to_choice("maybe", &["yes".to_string(), "no".to_string()]), None);
+        assert_eq!(
+            coerce_to_choice("  Yes ", &["yes".to_string(), "no".to_string()]),
+            Some("yes".to_string())
+        );
+        assert_eq!(
+            coerce_to_choice("YES!", &["yes".to_string()]),
+            Some("yes".to_string())
+        );
+        assert_eq!(
+            coerce_to_choice("maybe", &["yes".to_string(), "no".to_string()]),
+            None
+        );
     }
 }

@@ -185,11 +185,7 @@ impl AttachmentStore {
     }
 
     /// Link an attachment to a message.
-    pub fn attach_to_message(
-        &self,
-        attachment_id: &str,
-        message_id: &str,
-    ) -> Result<(), AppError> {
+    pub fn attach_to_message(&self, attachment_id: &str, message_id: &str) -> Result<(), AppError> {
         let mut guard = self.attachments.write();
         let meta = guard.get_mut(attachment_id).ok_or_else(|| {
             AppError::not_found(format!("Attachment '{attachment_id}' not found"))
@@ -206,9 +202,7 @@ impl AttachmentStore {
                 let path = Path::new(&meta.storage_path);
                 if path.exists() {
                     std::fs::remove_file(path).map_err(|e| {
-                        AppError::internal(format!(
-                            "Failed to remove attachment file: {e}"
-                        ))
+                        AppError::internal(format!("Failed to remove attachment file: {e}"))
                     })?;
                 }
                 info!(attachment_id = %attachment_id, "Attachment deleted");
@@ -283,9 +277,8 @@ pub fn store_attachment(
     let id = Uuid::new_v4().to_string();
     let safe_name = sanitize_filename(&upload.filename);
     let storage_path = dir.join(format!("{id}-{safe_name}"));
-    std::fs::write(&storage_path, &upload.bytes).map_err(|e| {
-        AppError::internal(format!("Failed to write attachment file: {e}"))
-    })?;
+    std::fs::write(&storage_path, &upload.bytes)
+        .map_err(|e| AppError::internal(format!("Failed to write attachment file: {e}")))?;
 
     let meta = AttachmentMeta::new(
         session_id,
@@ -365,7 +358,10 @@ mod tests {
 
     #[test]
     fn test_attachment_type_from_mime() {
-        assert_eq!(AttachmentType::from_mime("image/png"), AttachmentType::Image);
+        assert_eq!(
+            AttachmentType::from_mime("image/png"),
+            AttachmentType::Image
+        );
         assert_eq!(
             AttachmentType::from_mime("application/pdf"),
             AttachmentType::Pdf
@@ -410,7 +406,11 @@ mod tests {
             .attach_to_message(&meta.attachment_id, "msg-1")
             .unwrap();
         assert_eq!(
-            store.get(&meta.attachment_id).unwrap().message_id.as_deref(),
+            store
+                .get(&meta.attachment_id)
+                .unwrap()
+                .message_id
+                .as_deref(),
             Some("msg-1")
         );
         assert_eq!(store.list_for_session("s1").len(), 1);

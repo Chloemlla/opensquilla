@@ -73,11 +73,7 @@ pub struct CronJob {
 
 impl CronJob {
     /// Create a new cron job with an auto-generated ID.
-    pub fn new(
-        name: impl Into<String>,
-        kind: ScheduleKind,
-        handler: impl Into<String>,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, kind: ScheduleKind, handler: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4(),
             name: name.into(),

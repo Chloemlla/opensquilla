@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::embedding::{EmbeddingProvider, CachedEmbeddingProvider};
+use crate::embedding::{CachedEmbeddingProvider, EmbeddingProvider};
 use crate::retrieval::RetrievalEngine;
 use crate::session_source::SessionSource;
 use crate::store::MemoryStore;
@@ -384,7 +384,8 @@ impl MemoryManager {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<MemoryEntry>> {
-        self.store.list_memories(agent_id, memory_type, limit, offset)
+        self.store
+            .list_memories(agent_id, memory_type, limit, offset)
     }
 
     /// Get memory count for an agent (in-memory index).
@@ -465,11 +466,7 @@ impl MemoryManager {
 
     /// Compute an importance score for a memory based on recency, access
     /// frequency, and content length. Used to refresh stored importance.
-    pub fn score_importance(
-        &self,
-        entry: &MemoryEntry,
-        recency_half_life_hours: f64,
-    ) -> f64 {
+    pub fn score_importance(&self, entry: &MemoryEntry, recency_half_life_hours: f64) -> f64 {
         let now = Utc::now();
         let age_hours = (now - entry.created_at).num_hours().max(0) as f64;
         let recency = (-age_hours / recency_half_life_hours).exp();
@@ -478,12 +475,17 @@ impl MemoryManager {
         let length_factor = ((entry.content.chars().count() as f64) / 500.0).min(1.0);
 
         // Blend: base importance, recency, access, and modest length bonus.
-        let score = 0.4 * entry.importance + 0.3 * recency + 0.2 * access_factor + 0.1 * length_factor;
+        let score =
+            0.4 * entry.importance + 0.3 * recency + 0.2 * access_factor + 0.1 * length_factor;
         score.clamp(0.0, 1.0)
     }
 
     /// Recompute and persist importance scores for all of an agent's memories.
-    pub fn rebalance_importances(&self, agent_id: &Uuid, recency_half_life_hours: f64) -> CoreResult<u64> {
+    pub fn rebalance_importances(
+        &self,
+        agent_id: &Uuid,
+        recency_half_life_hours: f64,
+    ) -> CoreResult<u64> {
         let memories = self.store.list_memories(agent_id, None, 1000, 0)?;
         let mut updated = 0u64;
         for mut entry in memories {
@@ -505,11 +507,7 @@ impl MemoryManager {
     }
 
     /// Expire old memories with a custom TTL / importance threshold.
-    pub fn expire_with(
-        &self,
-        ttl: Duration,
-        min_importance: f64,
-    ) -> CoreResult<u64> {
+    pub fn expire_with(&self, ttl: Duration, min_importance: f64) -> CoreResult<u64> {
         self.store.expire_old_memories(ttl, min_importance)
     }
 }
@@ -620,11 +618,12 @@ mod tests {
             .unwrap();
         assert!(!ids.is_empty());
 
-        let disabled = MemoryManager::new(MemoryStore::in_memory().unwrap())
-            .with_capture_config(CaptureConfig {
+        let disabled = MemoryManager::new(MemoryStore::in_memory().unwrap()).with_capture_config(
+            CaptureConfig {
                 enabled: false,
                 ..Default::default()
-            });
+            },
+        );
         let ids = disabled
             .capture_turn(session, agent, &messages, serde_json::json!({}))
             .await
@@ -649,15 +648,24 @@ mod tests {
                 serde_json::Value::Null,
             )
         };
-        store.insert_memory(&entry("the user likes to use rust for async work")).unwrap();
-        store.insert_memory(&entry("the user likes to use rust for concurrency work")).unwrap();
-        store.insert_memory(&entry("completely unrelated python topic")).unwrap();
+        store
+            .insert_memory(&entry("the user likes to use rust for async work"))
+            .unwrap();
+        store
+            .insert_memory(&entry("the user likes to use rust for concurrency work"))
+            .unwrap();
+        store
+            .insert_memory(&entry("completely unrelated python topic"))
+            .unwrap();
 
         let summary = manager.consolidate(&agent, 0.3).unwrap();
         assert!(summary.merged >= 1);
         assert!(summary.removed >= 1);
         // The unrelated memory survives.
-        assert_eq!(manager.list_memories(&agent, None, 100, 0).unwrap().len(), 2);
+        assert_eq!(
+            manager.list_memories(&agent, None, 100, 0).unwrap().len(),
+            2
+        );
     }
 
     #[test]
@@ -696,9 +704,7 @@ mod tests {
         old.created_at = Utc::now() - Duration::days(400);
         store.insert_memory(&old).unwrap();
 
-        let deleted = manager
-            .expire_with(Duration::days(30), 0.5)
-            .unwrap();
+        let deleted = manager.expire_with(Duration::days(30), 0.5).unwrap();
         assert_eq!(deleted, 1);
     }
 }

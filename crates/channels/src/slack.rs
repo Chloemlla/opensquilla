@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -33,7 +33,7 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, error, info, warn};
 
 /// The WebSocket stream type used by Socket Mode.
@@ -85,9 +85,7 @@ impl SlackOAuthTokens {
 
     /// Whether the stored token is still valid by expiry.
     pub fn is_expired(&self) -> bool {
-        self.expires_at
-            .map(|e| Utc::now() >= e)
-            .unwrap_or(false)
+        self.expires_at.map(|e| Utc::now() >= e).unwrap_or(false)
     }
 }
 
@@ -203,7 +201,10 @@ impl SlackOAuth {
             .map_err(|e| format!("Slack OAuth exchange parse: {e}"))?;
         if body["ok"].as_bool().unwrap_or(false) {
             Ok(SlackOAuthTokens {
-                bot_token: body.get("access_token").and_then(|v| v.as_str()).map(String::from),
+                bot_token: body
+                    .get("access_token")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 app_token: body
                     .get("app_token")
                     .and_then(|v| v.as_str())
@@ -216,9 +217,20 @@ impl SlackOAuth {
                     .get("expires_in")
                     .and_then(|v| v.as_i64())
                     .map(|secs| Utc::now() + chrono::Duration::seconds(secs)),
-                team_id: body.get("team").and_then(|t| t.get("id")).and_then(|v| v.as_str()).map(String::from),
-                team_name: body.get("team").and_then(|t| t.get("name")).and_then(|v| v.as_str()).map(String::from),
-                app_id: body.get("app_id").and_then(|v| v.as_str()).map(String::from),
+                team_id: body
+                    .get("team")
+                    .and_then(|t| t.get("id"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                team_name: body
+                    .get("team")
+                    .and_then(|t| t.get("name"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                app_id: body
+                    .get("app_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 scope: body.get("scope").and_then(|v| v.as_str()).map(String::from),
             })
         } else {
@@ -252,7 +264,10 @@ impl SlackOAuth {
             .map_err(|e| format!("Slack OAuth refresh parse: {e}"))?;
         if body["ok"].as_bool().unwrap_or(false) {
             Ok(SlackOAuthTokens {
-                bot_token: body.get("access_token").and_then(|v| v.as_str()).map(String::from),
+                bot_token: body
+                    .get("access_token")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 app_token: None,
                 refresh_token: body
                     .get("refresh_token")
@@ -358,7 +373,11 @@ impl SlackBlockBuilder {
     }
 
     /// A button element.
-    pub fn button(text: impl Into<String>, action_id: impl Into<String>, value: impl Into<String>) -> Value {
+    pub fn button(
+        text: impl Into<String>,
+        action_id: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Value {
         json!({
             "type": "button",
             "text": Self::plain_text(text),
@@ -404,7 +423,11 @@ impl SlackClient {
             .timeout(Duration::from_secs(30))
             .build()
             .expect("reqwest client builder cannot fail");
-        Self { http, tokens, api_base }
+        Self {
+            http,
+            tokens,
+            api_base,
+        }
     }
 
     /// Create a client authenticated with a bare bot token.
@@ -568,7 +591,8 @@ impl SlackClient {
 
     /// Look up a user's profile.
     pub async fn users_info(&self, user: &str) -> Result<Value, String> {
-        self.authed_post("users.info", json!({ "user": user })).await
+        self.authed_post("users.info", json!({ "user": user }))
+            .await
     }
 
     /// Upload a file to a channel using multipart form data.
@@ -776,10 +800,26 @@ impl SlackChannel {
             app_token,
             refresh_token,
             expires_at: expires_in,
-            team_id: config.config.get("team_id").and_then(|v| v.as_str()).map(String::from),
-            team_name: config.config.get("team_name").and_then(|v| v.as_str()).map(String::from),
-            app_id: config.config.get("app_id").and_then(|v| v.as_str()).map(String::from),
-            scope: config.config.get("scope").and_then(|v| v.as_str()).map(String::from),
+            team_id: config
+                .config
+                .get("team_id")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            team_name: config
+                .config
+                .get("team_name")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            app_id: config
+                .config
+                .get("app_id")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            scope: config
+                .config
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         });
 
         let client = reqwest::Client::builder()
@@ -825,9 +865,7 @@ impl SlackChannel {
     ///
     /// Used by the Socket Mode loop and the webhook route callback.
     pub fn push_incoming(&self, message: IncomingMessage) {
-        self.incoming
-            .blocking_lock()
-            .push_back(message);
+        self.incoming.blocking_lock().push_back(message);
     }
 
     /// Start the Socket Mode loop in the background.
@@ -847,7 +885,11 @@ impl SlackChannel {
         let client = self.client.clone();
         let tokens = self.tokens.clone();
         let task = tokio::spawn(async move {
-            let api_client = SlackClient { http: client, tokens, api_base: DEFAULT_API_BASE.to_string() };
+            let api_client = SlackClient {
+                http: client,
+                tokens,
+                api_base: DEFAULT_API_BASE.to_string(),
+            };
             run_socket_loop(running, incoming, api_client).await;
         });
         *self.socket_task.lock().await = Some(task);
@@ -873,8 +915,7 @@ impl SlackChannel {
             incoming.blocking_lock().push_back(msg);
             Ok(())
         });
-        let mut route =
-            WebhookRoute::new(path, WebhookMethod::Post, ChannelType::Slack, handler);
+        let mut route = WebhookRoute::new(path, WebhookMethod::Post, ChannelType::Slack, handler);
         if let Some(secret) = &self.signing_secret {
             route = route.with_secret(secret.clone());
         }
@@ -998,8 +1039,10 @@ async fn run_socket_cycle(
             return;
         }
     };
-    let (mut sink, mut read): (SplitSink<SlackWsStream, WsMessage>, SplitStream<SlackWsStream>) =
-        ws_stream.split();
+    let (mut sink, mut read): (
+        SplitSink<SlackWsStream, WsMessage>,
+        SplitStream<SlackWsStream>,
+    ) = ws_stream.split();
     info!("Slack Socket Mode connected");
 
     while let Some(frame) = read.next().await {
@@ -1036,7 +1079,10 @@ async fn run_socket_cycle(
                     }
                     SocketEnvelopeType::Unknown => {
                         // Legacy envelopes do not require acks.
-                        debug!("Slack Socket Mode unknown envelope {}", envelope.envelope_type);
+                        debug!(
+                            "Slack Socket Mode unknown envelope {}",
+                            envelope.envelope_type
+                        );
                     }
                 }
             }
@@ -1059,7 +1105,10 @@ async fn run_socket_cycle(
 }
 
 /// Acknowledge a Socket Mode envelope so Slack keeps delivering.
-async fn ack_socket_envelope(sink: &mut SplitSink<SlackWsStream, WsMessage>, envelope: &SocketEnvelope) {
+async fn ack_socket_envelope(
+    sink: &mut SplitSink<SlackWsStream, WsMessage>,
+    envelope: &SocketEnvelope,
+) {
     let Some(envelope_id) = &envelope.envelope_id else {
         return;
     };

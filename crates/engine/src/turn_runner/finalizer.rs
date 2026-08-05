@@ -234,9 +234,7 @@ impl FinalizerStage {
                 .content
                 .iter()
                 .map(|b| match b {
-                    opensquilla_core::types::ContentBlock::Text(t) => {
-                        t.chars().count() as u64 / 4
-                    }
+                    opensquilla_core::types::ContentBlock::Text(t) => t.chars().count() as u64 / 4,
                     opensquilla_core::types::ContentBlock::Reasoning(r) => {
                         r.chars().count() as u64 / 4
                     }
@@ -314,10 +312,7 @@ impl Stage for FinalizerStage {
                 let content: Vec<Message> = ctx.messages.clone();
                 let _ = tx
                     .send(StreamEvent::MessageStop {
-                        content: content
-                            .iter()
-                            .flat_map(|m| m.content.clone())
-                            .collect(),
+                        content: content.iter().flat_map(|m| m.content.clone()).collect(),
                         usage: Some(report.usage),
                     })
                     .await;

@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use uuid::Uuid;
 
-use crate::types::MemoryEntry;
 use crate::MemoryStore;
+use crate::types::MemoryEntry;
 
 /// Configuration for session-derived memory generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,10 +207,7 @@ impl SessionSource {
             Vec::new()
         };
 
-        let mut tags = vec![
-            "session".to_string(),
-            "session_document".to_string(),
-        ];
+        let mut tags = vec!["session".to_string(), "session_document".to_string()];
         if !preferences.is_empty() {
             tags.push("preference".to_string());
         }
@@ -305,7 +302,11 @@ pub struct ExtractedFact {
 }
 
 impl ExtractedFact {
-    pub fn new(content: impl Into<String>, fact_type: FactType, confidence: SourceConfidence) -> Self {
+    pub fn new(
+        content: impl Into<String>,
+        fact_type: FactType,
+        confidence: SourceConfidence,
+    ) -> Self {
         Self {
             content: content.into(),
             fact_type,
@@ -338,8 +339,14 @@ impl MemoryDocument {
             out.push_str(&format!("## Summary\n{}\n\n", self.summary));
         }
         let mut groups: Vec<(&str, Vec<&ExtractedFact>)> = Vec::new();
-        for ft in [FactType::Knowledge, FactType::Preference, FactType::Skill, FactType::Pattern] {
-            let facts: Vec<&ExtractedFact> = self.facts.iter().filter(|f| f.fact_type == ft).collect();
+        for ft in [
+            FactType::Knowledge,
+            FactType::Preference,
+            FactType::Skill,
+            FactType::Pattern,
+        ] {
+            let facts: Vec<&ExtractedFact> =
+                self.facts.iter().filter(|f| f.fact_type == ft).collect();
             if !facts.is_empty() {
                 groups.push((ft.label(), facts));
             }
@@ -369,7 +376,10 @@ impl MemoryDocument {
 
     /// The number of facts of a given type.
     pub fn fact_count(&self, fact_type: FactType) -> usize {
-        self.facts.iter().filter(|f| f.fact_type == fact_type).count()
+        self.facts
+            .iter()
+            .filter(|f| f.fact_type == fact_type)
+            .count()
     }
 }
 
@@ -483,13 +493,23 @@ impl SessionMemorySource {
         for (tool, count) in counts {
             let confidence = skill_confidence(&tool, count);
             facts.push(ExtractedFact {
-                content: format!("Uses the {} tool ({} time{} this session)", tool, count, if count == 1 { "" } else { "s" }),
+                content: format!(
+                    "Uses the {} tool ({} time{} this session)",
+                    tool,
+                    count,
+                    if count == 1 { "" } else { "s" }
+                ),
                 fact_type: FactType::Skill,
                 confidence,
                 source_message_indices: Vec::new(),
             });
         }
-        facts.sort_by(|a, b| b.confidence.score.partial_cmp(&a.confidence.score).unwrap_or(std::cmp::Ordering::Equal));
+        facts.sort_by(|a, b| {
+            b.confidence
+                .score
+                .partial_cmp(&a.confidence.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         facts
     }
 
@@ -583,7 +603,8 @@ impl SessionMemorySource {
 
     /// Remove duplicate facts, keeping the highest-confidence copy.
     pub fn deduplicate(&self, facts: Vec<ExtractedFact>) -> Vec<ExtractedFact> {
-        let mut by_key: std::collections::HashMap<String, ExtractedFact> = std::collections::HashMap::new();
+        let mut by_key: std::collections::HashMap<String, ExtractedFact> =
+            std::collections::HashMap::new();
         for fact in facts {
             let key = normalize_content(&fact.content);
             if key.is_empty() {
@@ -601,7 +622,12 @@ impl SessionMemorySource {
             }
         }
         let mut out: Vec<ExtractedFact> = by_key.into_values().collect();
-        out.sort_by(|a, b| b.confidence.score.partial_cmp(&a.confidence.score).unwrap_or(std::cmp::Ordering::Equal));
+        out.sort_by(|a, b| {
+            b.confidence
+                .score
+                .partial_cmp(&a.confidence.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         out
     }
 }
@@ -689,14 +715,18 @@ fn estimate_sentence_confidence(sentence: &str, role: MessageRole) -> SourceConf
         _ => 0.4,
     };
     // Strong first-person signals increase confidence.
-    for strong in ["i prefer", "i like", "i love", "i want", "i need", "i use", "i avoid"] {
+    for strong in [
+        "i prefer", "i like", "i love", "i want", "i need", "i use", "i avoid",
+    ] {
         if lower.contains(strong) {
             base += 0.15;
             break;
         }
     }
     // Explicit hedges decrease confidence.
-    for hedge in ["maybe", "perhaps", "i think", "might", "possibly", "not sure"] {
+    for hedge in [
+        "maybe", "perhaps", "i think", "might", "possibly", "not sure",
+    ] {
         if lower.contains(hedge) {
             base -= 0.2;
             break;
@@ -737,10 +767,10 @@ fn extract_pattern_facts(messages: &[Message]) -> Vec<ExtractedFact> {
 fn extract_pattern_words(texts: &[String]) -> Vec<String> {
     let stop_words: std::collections::HashSet<&str> = [
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "to", "of", "in",
-        "for", "on", "with", "at", "by", "from", "as", "and", "or", "but", "not", "this",
-        "that", "it", "its", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our",
-        "their", "what", "which", "who", "when", "where", "why", "how", "all", "can", "will",
-        "would", "should", "just", "very", "please", "want", "need", "help",
+        "for", "on", "with", "at", "by", "from", "as", "and", "or", "but", "not", "this", "that",
+        "it", "its", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our", "their",
+        "what", "which", "who", "when", "where", "why", "how", "all", "can", "will", "would",
+        "should", "just", "very", "please", "want", "need", "help",
     ]
     .iter()
     .cloned()
@@ -752,9 +782,7 @@ fn extract_pattern_words(texts: &[String]) -> Vec<String> {
             .to_lowercase()
             .split_whitespace()
             .filter(|w| {
-                w.len() > 3
-                    && !stop_words.contains(w)
-                    && w.chars().all(|c| c.is_alphabetic())
+                w.len() > 3 && !stop_words.contains(w) && w.chars().all(|c| c.is_alphabetic())
             })
             .map(|w| w.to_string())
             .collect();
@@ -776,7 +804,10 @@ fn extract_pattern_words(texts: &[String]) -> Vec<String> {
 
 /// Normalize content for deduplication.
 fn normalize_content(s: &str) -> String {
-    s.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    s.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Strip leading filler words and trailing punctuation from a sentence.
@@ -847,13 +878,17 @@ fn summarize_document(messages: &[Message]) -> String {
 }
 
 /// Build a summary line from the first user request and first assistant reply.
-fn summarize_session(
-    user_texts: &[String],
-    assistant_texts: &[String],
-    max_len: usize,
-) -> String {
-    let first_user = user_texts.first().map(|s| s.trim()).unwrap_or("").to_string();
-    let first_assistant = assistant_texts.first().map(|s| s.trim()).unwrap_or("").to_string();
+fn summarize_session(user_texts: &[String], assistant_texts: &[String], max_len: usize) -> String {
+    let first_user = user_texts
+        .first()
+        .map(|s| s.trim())
+        .unwrap_or("")
+        .to_string();
+    let first_assistant = assistant_texts
+        .first()
+        .map(|s| s.trim())
+        .unwrap_or("")
+        .to_string();
 
     let mut parts: Vec<String> = Vec::new();
     if !first_user.is_empty() {
@@ -882,14 +917,7 @@ fn extract_preferences(user_texts: &[String]) -> Vec<String> {
     for text in user_texts {
         let lower = text.to_lowercase();
         let markers = [
-            "i prefer",
-            "i like",
-            "i love",
-            "i want",
-            "i need",
-            "i use",
-            "i avoid",
-            "prefer",
+            "i prefer", "i like", "i love", "i want", "i need", "i use", "i avoid", "prefer",
         ];
         for marker in markers {
             if let Some(idx) = lower.find(marker) {
@@ -917,10 +945,10 @@ fn extract_preferences(user_texts: &[String]) -> Vec<String> {
 fn extract_patterns(user_texts: &[String], assistant_texts: &[String]) -> Vec<String> {
     let stop_words: std::collections::HashSet<&str> = [
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "to", "of", "in",
-        "for", "on", "with", "at", "by", "from", "as", "and", "or", "but", "not", "this",
-        "that", "it", "its", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our",
-        "their", "what", "which", "who", "when", "where", "why", "how", "all", "can", "will",
-        "would", "should", "just", "very", "please", "want", "need", "help",
+        "for", "on", "with", "at", "by", "from", "as", "and", "or", "but", "not", "this", "that",
+        "it", "its", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our", "their",
+        "what", "which", "who", "when", "where", "why", "how", "all", "can", "will", "would",
+        "should", "just", "very", "please", "want", "need", "help",
     ]
     .iter()
     .cloned()
@@ -932,9 +960,7 @@ fn extract_patterns(user_texts: &[String], assistant_texts: &[String]) -> Vec<St
             .to_lowercase()
             .split_whitespace()
             .filter(|w| {
-                w.len() > 3
-                    && !stop_words.contains(w)
-                    && w.chars().all(|c| c.is_alphabetic())
+                w.len() > 3 && !stop_words.contains(w) && w.chars().all(|c| c.is_alphabetic())
             })
             .map(|w| w.to_string())
             .collect();
@@ -1024,16 +1050,20 @@ mod tests {
         let facts = source.extract_knowledge(&messages);
         assert!(!facts.is_empty());
         assert!(facts.iter().all(|f| f.fact_type == FactType::Knowledge));
-        assert!(facts.iter().all(|f| f.confidence.score > 0.0 && f.confidence.score <= 1.0));
+        assert!(
+            facts
+                .iter()
+                .all(|f| f.confidence.score > 0.0 && f.confidence.score <= 1.0)
+        );
     }
 
     #[test]
     fn test_extract_preferences_typed() {
         let store = MemoryStore::in_memory().unwrap();
         let source = SessionMemorySource::new(store);
-        let messages = vec![
-            Message::user("I prefer dark mode and I love terse answers."),
-        ];
+        let messages = vec![Message::user(
+            "I prefer dark mode and I love terse answers.",
+        )];
         let facts = source.extract_preferences(&messages);
         assert!(!facts.is_empty());
         assert!(facts.iter().all(|f| f.fact_type == FactType::Preference));

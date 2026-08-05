@@ -120,9 +120,7 @@ impl TurnGenerator for ProviderTurnGenerator {
                 .provider
                 .stream_chat(&self.config, messages, tools)
                 .await
-                .map_err(|e| {
-                    opensquilla_core::error::Error::Provider(e.to_string())
-                })?;
+                .map_err(|e| opensquilla_core::error::Error::Provider(e.to_string()))?;
 
             use futures::StreamExt;
             let mut stream = stream;
@@ -168,10 +166,14 @@ impl TurnGenerator for ProviderTurnGenerator {
                                         .await;
                                 }
                             }
-                            PStreamEvent::ToolCall { id, name, arguments } => {
+                            PStreamEvent::ToolCall {
+                                id,
+                                name,
+                                arguments,
+                            } => {
                                 // Try to parse the accumulated arguments as JSON.
-                                let input: serde_json::Value =
-                                    serde_json::from_str(&arguments).unwrap_or(serde_json::Value::Null);
+                                let input: serde_json::Value = serde_json::from_str(&arguments)
+                                    .unwrap_or(serde_json::Value::Null);
                                 let call = opensquilla_core::types::ToolCall::new(id, name, input);
                                 if let Some(tx) = &self.streaming_tx {
                                     let _ = tx
@@ -183,7 +185,10 @@ impl TurnGenerator for ProviderTurnGenerator {
                                 }
                                 tool_calls.push(call);
                             }
-                            PStreamEvent::Done { usage, stop_reason: sr } => {
+                            PStreamEvent::Done {
+                                usage,
+                                stop_reason: sr,
+                            } => {
                                 final_usage = usage;
                                 stop_reason = sr;
                             }
@@ -242,7 +247,9 @@ impl TurnGenerator for ProviderTurnGenerator {
                 ));
             }
             if !accumulated_text.is_empty() {
-                content.push(opensquilla_core::types::ContentBlock::Text(accumulated_text));
+                content.push(opensquilla_core::types::ContentBlock::Text(
+                    accumulated_text,
+                ));
             }
             for call in tool_calls {
                 content.push(opensquilla_core::types::ContentBlock::ToolUse(call));
@@ -274,9 +281,7 @@ impl TurnGenerator for ProviderTurnGenerator {
                 .provider
                 .send_message(&self.config, messages, tools)
                 .await
-                .map_err(|e| {
-                    opensquilla_core::error::Error::Provider(e.to_string())
-                })?;
+                .map_err(|e| opensquilla_core::error::Error::Provider(e.to_string()))?;
 
             // Forward the response as stream events if a channel is attached.
             if let Some(tx) = &self.streaming_tx {
@@ -289,9 +294,7 @@ impl TurnGenerator for ProviderTurnGenerator {
                             })
                             .await;
                         let _ = tx
-                            .send(opensquilla_core::events::StreamEvent::ContentBlockStop {
-                                index,
-                            })
+                            .send(opensquilla_core::events::StreamEvent::ContentBlockStop { index })
                             .await;
                     }
                 }
@@ -394,12 +397,10 @@ pub fn spawn_turn_task(
     let event_channel = format!("{AGENT_STREAM_EVENT_PREFIX}{session_id}");
 
     // Channel for streaming events from the engine stages to the task.
-    let (stream_tx, mut stream_rx) =
-        mpsc::channel::<opensquilla_core::events::StreamEvent>(256);
+    let (stream_tx, mut stream_rx) = mpsc::channel::<opensquilla_core::events::StreamEvent>(256);
 
     // Channel for turn events from the runtime.
-    let (turn_event_tx, mut turn_event_rx) =
-        mpsc::channel::<TurnEvent>(256);
+    let (turn_event_tx, mut turn_event_rx) = mpsc::channel::<TurnEvent>(256);
 
     // Clone the app handle for the spawned task.
     let task_app = app.clone();
@@ -474,12 +475,8 @@ pub fn spawn_turn_task(
         let turn_event_task = tokio::spawn(async move {
             while let Some(turn_event) = turn_event_rx.recv().await {
                 let event = match &turn_event {
-                    TurnEvent::GenerationStart { .. } => {
-                        Some(MessageStreamEvent::from(turn_event))
-                    }
-                    TurnEvent::Compaction { .. } => {
-                        Some(MessageStreamEvent::from(turn_event))
-                    }
+                    TurnEvent::GenerationStart { .. } => Some(MessageStreamEvent::from(turn_event)),
+                    TurnEvent::Compaction { .. } => Some(MessageStreamEvent::from(turn_event)),
                     _ => None,
                 };
                 if let Some(event) = event {
@@ -507,15 +504,17 @@ pub fn spawn_turn_task(
         match outcome {
             Ok(turn_outcome) => {
                 let (messages, usage, duration_ms) = match &turn_outcome {
-                    TurnOutcome::Complete { messages, usage, duration_ms } => {
-                        (messages.clone(), *usage, *duration_ms)
-                    }
-                    TurnOutcome::Halted { messages, usage, .. } => {
-                        (messages.clone(), *usage, 0)
-                    }
-                    TurnOutcome::Error { messages, usage, .. } => {
-                        (messages.clone(), *usage, 0)
-                    }
+                    TurnOutcome::Complete {
+                        messages,
+                        usage,
+                        duration_ms,
+                    } => (messages.clone(), *usage, *duration_ms),
+                    TurnOutcome::Halted {
+                        messages, usage, ..
+                    } => (messages.clone(), *usage, 0),
+                    TurnOutcome::Error {
+                        messages, usage, ..
+                    } => (messages.clone(), *usage, 0),
                 };
 
                 match turn_outcome {
@@ -594,12 +593,13 @@ pub async fn send_message(
 
     // Store the user's message in the chat store.
     let session_id_str = request.session_id.clone();
-    let session_id = opensquilla_core::types::SessionId::from_string(&session_id_str).ok_or_else(|| {
-        TauriError::bad_request(format!("Invalid session_id: {session_id_str}"))
-    })?;
+    let session_id = opensquilla_core::types::SessionId::from_string(&session_id_str)
+        .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id_str}")))?;
 
     let user_message = Message::user(&request.message);
-    state.chat_store.add_message(&session_id, user_message.clone());
+    state
+        .chat_store
+        .add_message(&session_id, user_message.clone());
 
     // Build the message list from history + current message.
     let mut messages: Vec<Message> = if request.history.is_empty() {
@@ -683,7 +683,9 @@ pub async fn send_message_sync(
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id_str}")))?;
 
     let user_message = Message::user(&request.message);
-    state.chat_store.add_message(&session_id, user_message.clone());
+    state
+        .chat_store
+        .add_message(&session_id, user_message.clone());
 
     let mut messages: Vec<Message> = if request.history.is_empty() {
         state.chat_store.get_history(&session_id)
@@ -740,9 +742,15 @@ pub async fn send_message_sync(
     let duration_ms = start.elapsed().as_millis() as u64;
 
     let (response_messages, usage) = match outcome {
-        TurnOutcome::Complete { messages, usage, .. } => (messages, usage),
-        TurnOutcome::Halted { messages, usage, .. } => (messages, usage),
-        TurnOutcome::Error { messages, usage, .. } => (messages, usage),
+        TurnOutcome::Complete {
+            messages, usage, ..
+        } => (messages, usage),
+        TurnOutcome::Halted {
+            messages, usage, ..
+        } => (messages, usage),
+        TurnOutcome::Error {
+            messages, usage, ..
+        } => (messages, usage),
     };
 
     // Store assistant messages in the chat store.
@@ -766,10 +774,7 @@ pub async fn send_message_sync(
 /// Currently a placeholder — the engine does not yet support cancellation.
 /// When implemented, this would send a cancellation signal to the turn task.
 #[tauri::command]
-pub async fn cancel_turn(
-    _state: State<'_, AppState>,
-    session_id: String,
-) -> TauriResult<bool> {
+pub async fn cancel_turn(_state: State<'_, AppState>, session_id: String) -> TauriResult<bool> {
     info!(session_id = %session_id, "Cancel turn requested (not yet implemented)");
     Ok(false)
 }
@@ -836,9 +841,7 @@ pub async fn create_session(
 
 /// List all sessions.
 #[tauri::command]
-pub async fn list_sessions(
-    state: State<'_, AppState>,
-) -> TauriResult<SessionListResponse> {
+pub async fn list_sessions(state: State<'_, AppState>) -> TauriResult<SessionListResponse> {
     let entries = state.session_store.list();
     let sessions: Vec<SessionInfo> = entries
         .iter()
@@ -945,12 +948,9 @@ pub async fn archive_session(
 
 /// List configured providers.
 #[tauri::command]
-pub async fn list_providers(
-    state: State<'_, AppState>,
-) -> TauriResult<ProviderListResponse> {
+pub async fn list_providers(state: State<'_, AppState>) -> TauriResult<ProviderListResponse> {
     let config = state.config().await;
-    let providers: Vec<ProviderInfo> =
-        config.providers.iter().map(ProviderInfo::from).collect();
+    let providers: Vec<ProviderInfo> = config.providers.iter().map(ProviderInfo::from).collect();
     let default_provider = providers.first().map(|p| p.name.clone());
     let count = providers.len();
     Ok(ProviderListResponse {
@@ -962,9 +962,7 @@ pub async fn list_providers(
 
 /// List available models.
 #[tauri::command]
-pub async fn list_models(
-    state: State<'_, AppState>,
-) -> TauriResult<ModelListResponse> {
+pub async fn list_models(state: State<'_, AppState>) -> TauriResult<ModelListResponse> {
     let config = state.config().await;
     let mut models: Vec<ModelInfoDto> = Vec::new();
 
@@ -1000,9 +998,7 @@ pub async fn list_models(
 
 /// List available skills.
 #[tauri::command]
-pub async fn list_skills(
-    state: State<'_, AppState>,
-) -> TauriResult<SkillListResponse> {
+pub async fn list_skills(state: State<'_, AppState>) -> TauriResult<SkillListResponse> {
     let config = state.config().await;
 
     // If skills are configured, scan the directories.
@@ -1015,10 +1011,7 @@ pub async fn list_skills(
             for dir in &skills_config.skill_dirs {
                 let path = std::path::PathBuf::from(dir);
                 if path.exists() {
-                    loader.register_layer_dir(
-                        opensquilla_skills::SkillLayer::Bundled,
-                        path,
-                    );
+                    loader.register_layer_dir(opensquilla_skills::SkillLayer::Bundled, path);
                 }
             }
             let _ = loader.scan_all().await;
@@ -1053,9 +1046,7 @@ pub async fn list_skills(
 
 /// Run a health check and return a health report.
 #[tauri::command]
-pub async fn health_check(
-    state: State<'_, AppState>,
-) -> TauriResult<HealthReport> {
+pub async fn health_check(state: State<'_, AppState>) -> TauriResult<HealthReport> {
     let config = state.config().await;
     let health = opensquilla_recovery::health::HealthCheck::new(&config);
     let result = health.run_full_check().await;
@@ -1110,9 +1101,7 @@ pub async fn health_check(
 
 /// Get the full configuration.
 #[tauri::command]
-pub async fn get_config(
-    state: State<'_, AppState>,
-) -> TauriResult<ConfigGetResponse> {
+pub async fn get_config(state: State<'_, AppState>) -> TauriResult<ConfigGetResponse> {
     let config = state.config().await;
     let json = serde_json::to_value(config.deref()).map_err(TauriError::from)?;
     Ok(ConfigGetResponse { config: json })
@@ -1166,16 +1155,14 @@ pub async fn get_config_value(
 
 /// List all configuration values.
 #[tauri::command]
-pub async fn list_config(
-    state: State<'_, AppState>,
-) -> TauriResult<serde_json::Value> {
+pub async fn list_config(state: State<'_, AppState>) -> TauriResult<serde_json::Value> {
     let config = state.config().await;
     let flat = config.list();
     let mut map = serde_json::Map::new();
     for (k, v) in flat {
         // Try to parse as JSON value, falling back to string.
-        let value = serde_json::from_str::<serde_json::Value>(&v)
-            .unwrap_or(serde_json::Value::String(v));
+        let value =
+            serde_json::from_str::<serde_json::Value>(&v).unwrap_or(serde_json::Value::String(v));
         map.insert(k, value);
     }
     Ok(serde_json::Value::Object(map))
@@ -1197,7 +1184,7 @@ fn dto_to_message(dto: &MessageDto) -> Result<Message, TauriError> {
         other => {
             return Err(TauriError::bad_request(format!(
                 "Invalid message role: {other}"
-            )))
+            )));
         }
     };
 
@@ -1264,10 +1251,7 @@ fn resolve_provider(
             .ok_or_else(|| format!("Provider '{name}' not found in config"))?
     };
 
-    let api_key = provider_config
-        .api_key
-        .clone()
-        .unwrap_or_default();
+    let api_key = provider_config.api_key.clone().unwrap_or_default();
     let base_url = provider_config.base_url.clone();
 
     // Create the appropriate provider based on the type.
@@ -1291,31 +1275,27 @@ fn resolve_provider(
     let base_url = base_url.unwrap_or_else(|| default_base_url.to_string());
 
     let provider: Arc<dyn Provider> = match provider_type.as_str() {
-        "openai" | "openai_compat" | "deepseek" | "dashscope" | "qwen" | "moonshot"
-        | "groq" | "zhipu" | "siliconflow" | "openrouter" | "azure" | "mistral" => {
+        "openai" | "openai_compat" | "deepseek" | "dashscope" | "qwen" | "moonshot" | "groq"
+        | "zhipu" | "siliconflow" | "openrouter" | "azure" | "mistral" => {
             Arc::new(opensquilla_provider::OpenAiCompatProvider::new(
                 provider_name.clone(),
                 base_url,
                 api_key,
             ))
         }
-        "anthropic" => {
-            Arc::new(opensquilla_provider::AnthropicProvider::new(
-                provider_name.clone(),
-                base_url,
-                api_key,
-            ))
-        }
-        "ollama" => {
-            Arc::new(opensquilla_provider::OllamaProvider::new(
-                provider_name.clone(),
-                base_url,
-            ))
-        }
+        "anthropic" => Arc::new(opensquilla_provider::AnthropicProvider::new(
+            provider_name.clone(),
+            base_url,
+            api_key,
+        )),
+        "ollama" => Arc::new(opensquilla_provider::OllamaProvider::new(
+            provider_name.clone(),
+            base_url,
+        )),
         other => {
             return Err(format!(
                 "Unknown provider type: '{other}'. Supported: openai, anthropic, ollama"
-            ))
+            ));
         }
     };
 

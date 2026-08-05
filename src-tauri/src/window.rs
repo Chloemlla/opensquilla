@@ -105,8 +105,8 @@ pub fn main_window_close_action(ctx: &MainWindowCloseContext) -> MainWindowClose
     if ctx.system_session_ending || ctx.exit_phase == ExitPhase::Committed {
         return MainWindowCloseAction::Allow;
     }
-    let background_supported = ctx.platform == "macos"
-        || (ctx.platform == "windows" && ctx.windows_tray_ready);
+    let background_supported =
+        ctx.platform == "macos" || (ctx.platform == "windows" && ctx.windows_tray_ready);
     if !background_supported {
         return MainWindowCloseAction::Quit;
     }
@@ -203,7 +203,10 @@ pub fn zoom_factor(current: f64, command: ZoomCommand) -> f64 {
 /// Tauri 2 exposes `set_zoom` but no zoom getter, so the current factor is
 /// tracked per-window-label in a process-local map (defaulting to 1.0). This
 /// matches the Electron shell's compounding behavior within a session.
-pub fn apply_zoom<R: Runtime>(window: &WebviewWindow<R>, command: ZoomCommand) -> tauri::Result<f64> {
+pub fn apply_zoom<R: Runtime>(
+    window: &WebviewWindow<R>,
+    command: ZoomCommand,
+) -> tauri::Result<f64> {
     let label = window.label().to_string();
     let current = current_zoom_factor(&label);
     let next = zoom_factor(current, command);

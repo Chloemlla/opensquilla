@@ -154,11 +154,7 @@ pub struct ClassifiedError {
 ///
 /// `status` and `body` should be `Some` when the error originated from an HTTP
 /// response; they may be `None` for network/timeout errors.
-pub fn classify(
-    err: &ProviderError,
-    status: Option<u16>,
-    body: Option<&str>,
-) -> ClassifiedError {
+pub fn classify(err: &ProviderError, status: Option<u16>, body: Option<&str>) -> ClassifiedError {
     let category = categorize(err, status, body);
 
     let action = recovery_action(category, status, body);
@@ -390,7 +386,11 @@ impl CircuitBreaker {
                     if now.duration_since(opened_at) >= self.config.reset_timeout {
                         entry.state = CircuitState::HalfOpen;
                         entry.half_open_successes = 0;
-                        debug!(target = "provider", provider = provider, "Circuit half-open");
+                        debug!(
+                            target = "provider",
+                            provider = provider,
+                            "Circuit half-open"
+                        );
                     }
                 }
             }
@@ -405,7 +405,11 @@ impl CircuitBreaker {
             CircuitState::Closed => true,
             CircuitState::HalfOpen => true,
             CircuitState::Open => {
-                warn!(target = "provider", provider = provider, "Circuit open; failing fast");
+                warn!(
+                    target = "provider",
+                    provider = provider,
+                    "Circuit open; failing fast"
+                );
                 false
             }
         }
@@ -443,7 +447,11 @@ impl CircuitBreaker {
                 // A failure in half-open reopens the circuit.
                 entry.state = CircuitState::Open;
                 entry.opened_at = Some(Instant::now());
-                warn!(target = "provider", provider = provider, "Circuit reopened from half-open");
+                warn!(
+                    target = "provider",
+                    provider = provider,
+                    "Circuit reopened from half-open"
+                );
             }
             CircuitState::Closed => {
                 if entry.consecutive_failures >= self.config.failure_threshold {

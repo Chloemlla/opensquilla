@@ -250,11 +250,7 @@ impl TurnIngress {
     ///
     /// This enforces one-turn-per-session concurrency: each session has at
     /// most one worker, and the worker processes turns sequentially.
-    pub async fn spawn_worker<F, Fut>(
-        &self,
-        session_id: &str,
-        handler: F,
-    ) -> Result<(), AppError>
+    pub async fn spawn_worker<F, Fut>(&self, session_id: &str, handler: F) -> Result<(), AppError>
     where
         F: FnOnce(InboundTurn, Arc<SessionServices>) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<(), AppError>> + Send + 'static,
@@ -264,9 +260,9 @@ impl TurnIngress {
                 "Session '{session_id}' already has an active worker"
             )));
         }
-        let rx = self.claim_receiver(session_id).ok_or_else(|| {
-            AppError::not_found(format!("No queue for session '{session_id}'"))
-        })?;
+        let rx = self
+            .claim_receiver(session_id)
+            .ok_or_else(|| AppError::not_found(format!("No queue for session '{session_id}'")))?;
         let services = self.services.clone();
         let broadcaster = self.broadcaster.clone();
         let ingress = self.clone();

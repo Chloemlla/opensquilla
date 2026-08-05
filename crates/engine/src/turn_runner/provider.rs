@@ -280,8 +280,10 @@ impl ProviderStage {
                         report.error_message = Some(e.to_string());
                         return Err(e);
                     }
-                    let backoff =
-                        self.retry_policy.backoff_ms.saturating_mul(1u64 << (attempt - 1));
+                    let backoff = self
+                        .retry_policy
+                        .backoff_ms
+                        .saturating_mul(1u64 << (attempt - 1));
                     report.last_backoff_ms = backoff;
                     warn!(
                         attempt = attempt,
@@ -305,7 +307,10 @@ impl ProviderStage {
         let mut report = ProviderCallReport::default();
         report.served_by = Some(primary.provider_name().to_string());
 
-        match self.generate_with_retries(primary, &ctx.messages, &mut report).await {
+        match self
+            .generate_with_retries(primary, &ctx.messages, &mut report)
+            .await
+        {
             Ok(response) => {
                 *self.last_report.lock().unwrap_or_else(|e| e.into_inner()) = Some(report);
                 return Ok(response);
@@ -352,9 +357,7 @@ impl ProviderStage {
                         block: block.clone(),
                     })
                     .await;
-                let _ = tx
-                    .send(StreamEvent::ContentBlockStop { index })
-                    .await;
+                let _ = tx.send(StreamEvent::ContentBlockStop { index }).await;
                 index += 1;
             }
         }
@@ -373,7 +376,11 @@ impl ProviderStage {
     ///
     /// Only available with the `provider` feature.
     #[cfg(feature = "provider")]
-    pub fn build_chat_config(&self, ctx: &StageContext, stream: bool) -> opensquilla_provider::ChatConfig {
+    pub fn build_chat_config(
+        &self,
+        ctx: &StageContext,
+        stream: bool,
+    ) -> opensquilla_provider::ChatConfig {
         let model = if ctx.current_model.is_empty() {
             self.default_model.clone()
         } else {
@@ -647,12 +654,13 @@ mod tests {
             failures_before_success: 2,
             attempts: Arc::new(AtomicU32::new(0)),
         };
-        let stage = ProviderStage::new(String::new(), String::new(), false)
-            .with_retry_policy(ProviderRetryPolicy {
+        let stage = ProviderStage::new(String::new(), String::new(), false).with_retry_policy(
+            ProviderRetryPolicy {
                 max_retries: 3,
                 backoff_ms: 1,
                 retry_transient_only: false,
-            });
+            },
+        );
         let mut report = ProviderCallReport::default();
         let result = stage
             .generate_with_retries(&failing, &[Message::user("hi")], &mut report)
@@ -668,12 +676,13 @@ mod tests {
             failures_before_success: 99,
             attempts: Arc::new(AtomicU32::new(0)),
         };
-        let stage = ProviderStage::new(String::new(), String::new(), false)
-            .with_retry_policy(ProviderRetryPolicy {
+        let stage = ProviderStage::new(String::new(), String::new(), false).with_retry_policy(
+            ProviderRetryPolicy {
                 max_retries: 2,
                 backoff_ms: 1,
                 retry_transient_only: false,
-            });
+            },
+        );
         let mut report = ProviderCallReport::default();
         let result = stage
             .generate_with_retries(&failing, &[Message::user("hi")], &mut report)
@@ -686,12 +695,13 @@ mod tests {
     #[tokio::test]
     async fn test_transient_only_skips_permanent() {
         let failing = PermanentFailGenerator;
-        let stage = ProviderStage::new(String::new(), String::new(), false)
-            .with_retry_policy(ProviderRetryPolicy {
+        let stage = ProviderStage::new(String::new(), String::new(), false).with_retry_policy(
+            ProviderRetryPolicy {
                 max_retries: 3,
                 backoff_ms: 1,
                 retry_transient_only: true,
-            });
+            },
+        );
         let mut report = ProviderCallReport::default();
         let result = stage
             .generate_with_retries(&failing, &[Message::user("hi")], &mut report)

@@ -45,12 +45,10 @@ impl BundledSkillDef {
     /// Expand this static definition into a full [`SkillSpec`].
     pub fn to_spec(&self) -> SkillSpec {
         let requires = SkillRequires {
-            os: (!self.requires_os.is_empty()).then(|| {
-                self.requires_os.iter().map(|s| s.to_string()).collect()
-            }),
-            binaries: (!self.requires_bins.is_empty()).then(|| {
-                self.requires_bins.iter().map(|s| s.to_string()).collect()
-            }),
+            os: (!self.requires_os.is_empty())
+                .then(|| self.requires_os.iter().map(|s| s.to_string()).collect()),
+            binaries: (!self.requires_bins.is_empty())
+                .then(|| self.requires_bins.iter().map(|s| s.to_string()).collect()),
             env_vars: None,
             capabilities: None,
             min_version: None,
@@ -498,7 +496,10 @@ a multi-step task.
 /// register the built-in catalog. It is cheap: it merely expands the static
 /// [`BUNDLED_SKILLS`] array.
 pub fn load_bundled_skills() -> Vec<SkillSpec> {
-    BUNDLED_SKILLS.iter().map(BundledSkillDef::to_spec).collect()
+    BUNDLED_SKILLS
+        .iter()
+        .map(BundledSkillDef::to_spec)
+        .collect()
 }
 
 /// Look up a single bundled skill by id.
@@ -557,7 +558,10 @@ mod tests {
         for spec in load_bundled_skills() {
             assert!(!spec.id.is_empty(), "skill id must not be empty");
             assert!(!spec.name.is_empty(), "skill name must not be empty");
-            assert!(!spec.description.is_empty(), "skill description must not be empty");
+            assert!(
+                !spec.description.is_empty(),
+                "skill description must not be empty"
+            );
             assert!(
                 spec.version.as_deref().is_some_and(|v| !v.is_empty()),
                 "skill {} must have a version",

@@ -209,7 +209,8 @@ impl ToolCallBuffer {
             let buf = self.buffers.remove(&id).unwrap_or_default();
             let name = self.names.remove(&id).unwrap_or_default();
             if !name.is_empty() {
-                let parsed = serde_json::from_str(&buf).unwrap_or(serde_json::Value::Object(Default::default()));
+                let parsed = serde_json::from_str(&buf)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
                 result.push(opensquilla_core::types::ToolCall::new(id, name, parsed));
             }
         }

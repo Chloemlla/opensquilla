@@ -32,7 +32,7 @@ pub mod health_ledger;
 pub mod selector;
 
 use crate::routing::calibration::{apply_bias, effective_threshold};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -71,20 +71,107 @@ pub const DEFAULT_CONTEXT_WINDOW_TOKENS: u64 = 200_000;
 
 /// Complaint terms, zh/en only (mirrors `policy_data.py`).
 const COMPLAINT_TERMS: &[&str] = &[
-    "不对", "不行", "不对劲", "还是不对", "完全不对", "不是这样", "你搞错了", "你说错了",
-    "回答错了", "理解错了", "搞错重点了", "错了", "答非所问", "没理解", "没听懂", "太差",
-    "太敷衍", "敷衍", "没用", "废话", "离谱", "乱说", "瞎说", "胡扯", "答得太差", "质量太差",
-    "不满意", "胡说", "漏了", "遗漏了", "没提到", "没覆盖", "跑题了", "偏题了", "不是我要的",
-    "没按要求", "没有按要求", "重写", "重新来", "重新回答", "再来一版", "换个说法", "重新组织",
-    "按我说的重来", "你没有回答", "垃圾", "傻逼", "sb", "蠢", "废物", "滚", "妈的", "操", "艹",
-    "wrong", "incorrect", "not correct", "you are wrong", "completely wrong", "totally wrong",
-    "not what i asked", "you misunderstood", "that's not right", "this is not right",
-    "bad answer", "terrible answer", "awful answer", "horrible answer", "poor answer",
-    "lazy answer", "low quality", "poor quality", "try again", "redo", "rewrite",
-    "start over", "answer again", "you missed", "missed the point", "off topic",
-    "irrelevant", "not helpful", "garbage", "trash", "crap", "sucks", "stupid", "idiot",
-    "moron", "dumb", "pathetic", "ridiculous", "fuck", "fucking", "shit", "damn", "wtf",
-    "asshole", "bullshit", "nonsense", "useless",
+    "不对",
+    "不行",
+    "不对劲",
+    "还是不对",
+    "完全不对",
+    "不是这样",
+    "你搞错了",
+    "你说错了",
+    "回答错了",
+    "理解错了",
+    "搞错重点了",
+    "错了",
+    "答非所问",
+    "没理解",
+    "没听懂",
+    "太差",
+    "太敷衍",
+    "敷衍",
+    "没用",
+    "废话",
+    "离谱",
+    "乱说",
+    "瞎说",
+    "胡扯",
+    "答得太差",
+    "质量太差",
+    "不满意",
+    "胡说",
+    "漏了",
+    "遗漏了",
+    "没提到",
+    "没覆盖",
+    "跑题了",
+    "偏题了",
+    "不是我要的",
+    "没按要求",
+    "没有按要求",
+    "重写",
+    "重新来",
+    "重新回答",
+    "再来一版",
+    "换个说法",
+    "重新组织",
+    "按我说的重来",
+    "你没有回答",
+    "垃圾",
+    "傻逼",
+    "sb",
+    "蠢",
+    "废物",
+    "滚",
+    "妈的",
+    "操",
+    "艹",
+    "wrong",
+    "incorrect",
+    "not correct",
+    "you are wrong",
+    "completely wrong",
+    "totally wrong",
+    "not what i asked",
+    "you misunderstood",
+    "that's not right",
+    "this is not right",
+    "bad answer",
+    "terrible answer",
+    "awful answer",
+    "horrible answer",
+    "poor answer",
+    "lazy answer",
+    "low quality",
+    "poor quality",
+    "try again",
+    "redo",
+    "rewrite",
+    "start over",
+    "answer again",
+    "you missed",
+    "missed the point",
+    "off topic",
+    "irrelevant",
+    "not helpful",
+    "garbage",
+    "trash",
+    "crap",
+    "sucks",
+    "stupid",
+    "idiot",
+    "moron",
+    "dumb",
+    "pathetic",
+    "ridiculous",
+    "fuck",
+    "fucking",
+    "shit",
+    "damn",
+    "wtf",
+    "asshole",
+    "bullshit",
+    "nonsense",
+    "useless",
 ];
 
 /// Normalize a tier value to its canonical text tier id, accepting legacy
@@ -137,11 +224,7 @@ fn canonical_order(valid_tiers: &[String]) -> Vec<String> {
     let mut tiers: Vec<&String> = valid_tiers.iter().collect();
     tiers.sort_by_key(|name| {
         let idx = tier_index(name);
-        if idx >= 0 {
-            (0, idx as usize)
-        } else {
-            (1, 0)
-        }
+        if idx >= 0 { (0, idx as usize) } else { (1, 0) }
     });
     tiers.into_iter().cloned().collect()
 }
@@ -245,7 +328,10 @@ impl TierConfig {
                 .as_str()
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default(),
-            model: model.as_str().map(|s| s.trim().to_string()).unwrap_or_default(),
+            model: model
+                .as_str()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default(),
             description: get("description")
                 .as_str()
                 .map(|s| s.to_string())
@@ -408,7 +494,8 @@ pub fn confidence_gate(
             default_tier: None,
         };
     };
-    let default_tier = normalize_text_tier(default_tier).unwrap_or_else(|| default_tier.to_string());
+    let default_tier =
+        normalize_text_tier(default_tier).unwrap_or_else(|| default_tier.to_string());
 
     // Image-only tiers bypass the gate.
     if tiers.get(tier).map_or(false, |t| t.image_only) {
@@ -644,7 +731,10 @@ pub fn capability_gate(
         }
     }
 
-    CapabilityGateResult { tier: current, actions }
+    CapabilityGateResult {
+        tier: current,
+        actions,
+    }
 }
 
 /// Append the capability gate's actions to the routing trail.
@@ -661,9 +751,15 @@ pub fn record_capability_gate_trail(
     if let Some(arr) = trail.as_array_mut() {
         for action in &result.actions {
             let mut entry = serde_json::Map::new();
-            entry.insert("stage".to_string(), Value::String("capability_gate".to_string()));
+            entry.insert(
+                "stage".to_string(),
+                Value::String("capability_gate".to_string()),
+            );
             entry.insert("rule".to_string(), Value::String(action.rule.clone()));
-            entry.insert("from_tier".to_string(), Value::String(action.from_tier.clone()));
+            entry.insert(
+                "from_tier".to_string(),
+                Value::String(action.from_tier.clone()),
+            );
             entry.insert("to_tier".to_string(), Value::String(action.to_tier.clone()));
             arr.push(Value::Object(entry));
         }
@@ -688,11 +784,15 @@ pub fn bind(
     window: f64,
 ) -> RoutingDecision {
     let final_route_class = route_class_for_tier(final_tier);
-    extra.insert("base_tier".to_string(), Value::String(base_tier.to_string()));
+    extra.insert(
+        "base_tier".to_string(),
+        Value::String(base_tier.to_string()),
+    );
     extra.insert(
         "pre_confidence_tier".to_string(),
         Value::String(
-            normalize_text_tier(pre_confidence_tier).unwrap_or_else(|| pre_confidence_tier.to_string()),
+            normalize_text_tier(pre_confidence_tier)
+                .unwrap_or_else(|| pre_confidence_tier.to_string()),
         ),
     );
     extra.insert("confidence_threshold".to_string(), json!(gate.threshold));
@@ -704,7 +804,10 @@ pub fn bind(
         "confidence_gate_applied".to_string(),
         Value::Bool(gate.applied),
     );
-    extra.insert("final_tier".to_string(), Value::String(final_tier.to_string()));
+    extra.insert(
+        "final_tier".to_string(),
+        Value::String(final_tier.to_string()),
+    );
     extra.insert("final_route_class".to_string(), json!(&final_route_class));
     extra.insert(
         "complaint_detected".to_string(),
@@ -822,7 +925,9 @@ pub fn reconcile_controller_with_final_tier(
 
     let mut prompt_policy = prompt_policy;
     if prompt_policy.as_deref() == Some("P0")
-        && (final_tier == "c2" || final_tier == HIGHEST_TEXT_TIER || extra.get("complaint_detected").is_some())
+        && (final_tier == "c2"
+            || final_tier == HIGHEST_TEXT_TIER
+            || extra.get("complaint_detected").is_some())
     {
         prompt_policy = Some("P1".to_string());
     }
@@ -918,10 +1023,7 @@ pub fn large_context_floor(
         extra
             .entry("base_tier".to_string())
             .or_insert_with(|| Value::String(decision.tier.clone()));
-        extra.insert(
-            "large_context_floor_applied".to_string(),
-            Value::Bool(true),
-        );
+        extra.insert("large_context_floor_applied".to_string(), Value::Bool(true));
         extra.insert(
             "large_context_floor_from_tier".to_string(),
             Value::String(decision.tier.clone()),
@@ -938,10 +1040,7 @@ pub fn large_context_floor(
             "large_context_pre_floor_source".to_string(),
             Value::String(decision.source.clone()),
         );
-        extra.insert(
-            "final_tier".to_string(),
-            Value::String(min_tier.clone()),
-        );
+        extra.insert("final_tier".to_string(), Value::String(min_tier.clone()));
         extra.insert(
             "final_route_class".to_string(),
             json!(route_class_for_tier(&min_tier)),
@@ -1041,7 +1140,8 @@ pub fn budget_gate(
     if budget.action == "cap" {
         let target = budget.cap_tier.as_deref().and_then(normalize_text_tier);
         if let Some(target) = target {
-            if valid_tiers.contains(&target) && tier_index_in(&target, valid_tiers) < tier_index_in(tier, valid_tiers)
+            if valid_tiers.contains(&target)
+                && tier_index_in(&target, valid_tiers) < tier_index_in(tier, valid_tiers)
             {
                 return BudgetGateResult {
                     tier: target,
@@ -1089,13 +1189,22 @@ pub fn record_budget_gate_trail(extra: &mut HashMap<String, Value>, result: &Bud
         return;
     }
     let mut entry = serde_json::Map::new();
-    entry.insert("stage".to_string(), Value::String("budget_gate".to_string()));
+    entry.insert(
+        "stage".to_string(),
+        Value::String("budget_gate".to_string()),
+    );
     entry.insert("rule".to_string(), Value::String(result.outcome.clone()));
     entry.insert("spend_usd".to_string(), json!(result.spend_usd));
     entry.insert("limit_usd".to_string(), json!(result.limit_usd));
-    entry.insert("spend_source".to_string(), Value::String(result.spend_source.clone()));
+    entry.insert(
+        "spend_source".to_string(),
+        Value::String(result.spend_source.clone()),
+    );
     if result.outcome == "cap" {
-        entry.insert("from_tier".to_string(), Value::String(result.from_tier.clone()));
+        entry.insert(
+            "from_tier".to_string(),
+            Value::String(result.from_tier.clone()),
+        );
         entry.insert("to_tier".to_string(), Value::String(result.tier.clone()));
     }
     let trail = extra
@@ -1135,7 +1244,10 @@ pub fn apply_budget_gate(
         "router_budget_action".to_string(),
         Value::String(result.action.clone()),
     );
-    metadata_updates.insert("router_budget_limit_usd".to_string(), json!(result.limit_usd));
+    metadata_updates.insert(
+        "router_budget_limit_usd".to_string(),
+        json!(result.limit_usd),
+    );
     metadata_updates.insert(
         "router_budget_spend_source".to_string(),
         Value::String(result.spend_source.clone()),
@@ -1145,7 +1257,10 @@ pub fn apply_budget_gate(
     }
     if let (Some(projected), Some(spend)) = (result.projected_usd, result.spend_usd) {
         if projected != spend {
-            metadata_updates.insert("router_budget_projected_usd".to_string(), Value::from(projected));
+            metadata_updates.insert(
+                "router_budget_projected_usd".to_string(),
+                Value::from(projected),
+            );
         }
     }
     if let Some(extra) = extra {
@@ -1167,10 +1282,7 @@ pub fn apply_budget_gate(
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| decision.model.clone());
         if let Some(extra) = extra {
-            extra.insert(
-                "final_tier".to_string(),
-                Value::String(result.tier.clone()),
-            );
+            extra.insert("final_tier".to_string(), Value::String(result.tier.clone()));
             extra.insert(
                 "final_route_class".to_string(),
                 json!(route_class_for_tier(&result.tier)),
@@ -1343,9 +1455,15 @@ pub fn record_provider_mismatch_veto_trail(
         return;
     }
     let mut entry = serde_json::Map::new();
-    entry.insert("stage".to_string(), Value::String("provider_mismatch".to_string()));
+    entry.insert(
+        "stage".to_string(),
+        Value::String("provider_mismatch".to_string()),
+    );
     entry.insert("rule".to_string(), Value::String("veto_rebind".to_string()));
-    entry.insert("from_tier".to_string(), Value::String(veto.from_tier.clone()));
+    entry.insert(
+        "from_tier".to_string(),
+        Value::String(veto.from_tier.clone()),
+    );
     entry.insert("to_tier".to_string(), Value::String(veto.to_tier.clone()));
     let trail = extra
         .entry("routing_trail".to_string())
@@ -1439,7 +1557,8 @@ impl RoutingPolicyEngine {
         if inputs.history_strategy && extra.is_some() {
             let extra_mut = extra.as_mut().unwrap();
             decision = self.finalize(inputs, extra_mut);
-            let (tm, pp) = reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
+            let (tm, pp) =
+                reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
             thinking_mode = tm;
             prompt_policy = pp;
         }
@@ -1455,18 +1574,16 @@ impl RoutingPolicyEngine {
         );
         if decision.source == "large_context_floor" && extra.is_some() {
             let extra_mut = extra.as_mut().unwrap();
-            let (tm, pp) = reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
+            let (tm, pp) =
+                reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
             thinking_mode = tm;
             prompt_policy = pp;
         }
 
         // Budget gate runs last: it can only hold or lower the tier.
         if inputs.budget.is_some() {
-            let budget_result = budget_gate(
-                &decision.tier,
-                &inputs.valid_tiers,
-                inputs.budget.as_ref(),
-            );
+            let budget_result =
+                budget_gate(&decision.tier, &inputs.valid_tiers, inputs.budget.as_ref());
             decision = apply_budget_gate(
                 &decision,
                 &budget_result,
@@ -1493,7 +1610,8 @@ impl RoutingPolicyEngine {
         extra: &mut HashMap<String, Value>,
     ) -> RoutingDecision {
         let decision = &inputs.decision;
-        let base_tier = normalize_text_tier(&decision.tier).unwrap_or_else(|| decision.tier.clone());
+        let base_tier =
+            normalize_text_tier(&decision.tier).unwrap_or_else(|| decision.tier.clone());
         let mut final_tier = base_tier.clone();
 
         let base_route_class = extra

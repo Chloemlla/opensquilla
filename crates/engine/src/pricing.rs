@@ -8,8 +8,8 @@
 //! price table is used so cost accounting never hard-fails.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
@@ -191,10 +191,7 @@ impl PricingCache {
     /// Set the fallback price table used when fetches fail.
     pub fn with_fallback(mut self, prices: Vec<ModelPrice>) -> Self {
         if let Some(inner) = Arc::get_mut(&mut self.inner) {
-            inner.fallback = prices
-                .into_iter()
-                .map(|p| (p.model.clone(), p))
-                .collect();
+            inner.fallback = prices.into_iter().map(|p| (p.model.clone(), p)).collect();
         }
         self
     }
@@ -261,7 +258,12 @@ impl PricingCache {
                 .or_else(|| lookup_static_price(model))
                 .unwrap_or_else(|| default_price(model)),
         };
-        cost(price.input_per_1m, price.output_per_1m, input_tokens, output_tokens)
+        cost(
+            price.input_per_1m,
+            price.output_per_1m,
+            input_tokens,
+            output_tokens,
+        )
     }
 
     /// Check whether a cached price exists and is within its TTL.
@@ -326,7 +328,11 @@ impl PricingCache {
     /// `provider` is the configured provider id (e.g. `"openrouter"`,
     /// `"ollama"`). The returned [`ModelPricing`] always carries a price so
     /// cost accounting never hard-fails offline.
-    pub async fn get_price(&self, model: &str, provider: &str) -> Result<ModelPricing, PricingError> {
+    pub async fn get_price(
+        &self,
+        model: &str,
+        provider: &str,
+    ) -> Result<ModelPricing, PricingError> {
         let model = model.trim();
         let prov = provider.trim().to_lowercase();
 
@@ -687,7 +693,10 @@ mod tests {
             reqwest::Client::new(),
             "http://127.0.0.1:1/nonexistent".to_string(),
         );
-        let price = cache.get_price("gpt-4o", "openrouter").await.expect("price resolves");
+        let price = cache
+            .get_price("gpt-4o", "openrouter")
+            .await
+            .expect("price resolves");
         assert_eq!(price.input_price, 2.5);
         assert_eq!(price.output_price, 10.0);
         assert_eq!(price.currency, "usd");
@@ -697,7 +706,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_price_local_free_provider() {
         let cache = PricingCache::new();
-        let price = cache.get_price("qwen3:4b", "ollama").await.expect("price resolves");
+        let price = cache
+            .get_price("qwen3:4b", "ollama")
+            .await
+            .expect("price resolves");
         assert_eq!(price.input_price, 0.0);
         assert_eq!(price.output_price, 0.0);
     }

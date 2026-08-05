@@ -34,8 +34,10 @@ pub struct SweBenchTask {
 impl SweBenchTask {
     /// Convert this instance to a generic `CodeTask` for execution.
     pub fn to_code_task(&self) -> CodeTask {
-        let mut task =
-            CodeTask::new(format!("SWE-bench: {}", self.instance_id), &self.problem_statement);
+        let mut task = CodeTask::new(
+            format!("SWE-bench: {}", self.instance_id),
+            &self.problem_statement,
+        );
         task.validation_commands = vec![
             format!("git apply --check {}", self.test_patch),
             "pytest".to_string(),

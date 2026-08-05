@@ -127,7 +127,11 @@ impl AgentBootstrapStage {
     pub fn new(system_prompt: impl Into<String>) -> Self {
         let prompt = system_prompt.into();
         Self {
-            system_prompt: if prompt.is_empty() { None } else { Some(prompt) },
+            system_prompt: if prompt.is_empty() {
+                None
+            } else {
+                Some(prompt)
+            },
             settings: BootstrapSettings::default(),
             workspace_root: None,
             context_window_tokens: 128_000,
@@ -283,7 +287,8 @@ impl Stage for AgentBootstrapStage {
                     stage: self.name().to_string(),
                 }));
             }
-            ctx.messages.insert(0, Message::system(&identity.assembled_prompt));
+            ctx.messages
+                .insert(0, Message::system(&identity.assembled_prompt));
         }
 
         // Record the token budget and identity metadata on the context so
@@ -355,8 +360,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_with_inline_prompt() {
-        let stage = AgentBootstrapStage::new("You are a helpful agent.")
-            .with_context_files(Vec::new());
+        let stage =
+            AgentBootstrapStage::new("You are a helpful agent.").with_context_files(Vec::new());
         let identity = stage.assemble_identity().await.unwrap();
         assert!(identity.assembled_prompt.contains("helpful agent"));
         assert!(identity.loaded_files.is_empty());
@@ -364,10 +369,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_missing_workspace_files_are_skipped() {
-        let stage = AgentBootstrapStage::new("You are a test agent.")
-            .with_workspace_root(Some(PathBuf::from(
-                "/nonexistent/opensquilla/path/that/does/not/exist",
-            )));
+        let stage = AgentBootstrapStage::new("You are a test agent.").with_workspace_root(Some(
+            PathBuf::from("/nonexistent/opensquilla/path/that/does/not/exist"),
+        ));
         let identity = stage.assemble_identity().await.unwrap();
         // The inline prompt still assembles; missing files are skipped.
         assert!(identity.assembled_prompt.contains("test agent"));
@@ -375,8 +379,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_injects_system_prompt() {
-        let stage = AgentBootstrapStage::new("You are a test agent.")
-            .with_context_files(Vec::new());
+        let stage =
+            AgentBootstrapStage::new("You are a test agent.").with_context_files(Vec::new());
         let mut ctx = StageContext {
             turn_id: "t1".to_string(),
             messages: vec![Message::user("hello")],

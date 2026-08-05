@@ -96,7 +96,11 @@ impl EmbeddingProvider for CachedEmbeddingProvider {
     async fn embed(&self, text: &str) -> CoreResult<Vec<f32>> {
         let model = &self.inner.config().model;
         if let Ok(Some(cached)) = self.store.get_cached_embedding(model, text) {
-            debug!("embedding cache hit (model={}, len={} chars)", model, text.len());
+            debug!(
+                "embedding cache hit (model={}, len={} chars)",
+                model,
+                text.len()
+            );
             return Ok(cached);
         }
         let emb = self.inner.embed(text).await?;
@@ -426,9 +430,10 @@ impl EmbeddingProvider for OnnxEmbeddingProvider {
             .map_err(|e| CoreError::Provider(format!("mask value: {}", e)))?;
 
         let outputs = session
-            .run(ort::inputs!["input_ids" => inputs, "attention_mask" => mask_value].map_err(
-                |e| CoreError::Provider(format!("ort inputs: {}", e)),
-            )?)
+            .run(
+                ort::inputs!["input_ids" => inputs, "attention_mask" => mask_value]
+                    .map_err(|e| CoreError::Provider(format!("ort inputs: {}", e)))?,
+            )
             .map_err(|e| CoreError::Provider(format!("ONNX inference failed: {}", e)))?;
 
         // The first output is the token embeddings / last_hidden_state with

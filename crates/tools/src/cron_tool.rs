@@ -8,13 +8,15 @@
 //! The engine does not need to be started for these CRUD operations; starting
 //! the tick loop is the caller's responsibility.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use opensquilla_scheduler::engine::SchedulerEngine;
-use opensquilla_scheduler::types::{CronJob, JobStatus, ScheduleKind};
 use opensquilla_scheduler::HandlerRegistry;
 use opensquilla_scheduler::JobStore;
+use opensquilla_scheduler::engine::SchedulerEngine;
+use opensquilla_scheduler::types::{CronJob, JobStatus, ScheduleKind};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,24 +28,21 @@ fn map_ops_error(err: opensquilla_scheduler::ops::OpsError) -> ToolError {
         opensquilla_scheduler::ops::OpsError::JobNotFound(id) => {
             ToolError::new("JOB_NOT_FOUND", format!("Scheduled job '{}' not found", id))
         }
-        opensquilla_scheduler::ops::OpsError::HandlerNotFound(h) => {
-            ToolError::new(
-                "HANDLER_NOT_FOUND",
-                format!(
-                    "No cron handler '{}' is registered. Available handlers: {}",
-                    h,
-                    HandlerRegistry::with_defaults()
-                        .handler_names()
-                        .join(", ")
-                ),
-            )
-        }
+        opensquilla_scheduler::ops::OpsError::HandlerNotFound(h) => ToolError::new(
+            "HANDLER_NOT_FOUND",
+            format!(
+                "No cron handler '{}' is registered. Available handlers: {}",
+                h,
+                HandlerRegistry::with_defaults().handler_names().join(", ")
+            ),
+        ),
         opensquilla_scheduler::ops::OpsError::InvalidSchedule(s) => {
             ToolError::new("INVALID_SCHEDULE", format!("Invalid schedule: {}", s))
         }
-        opensquilla_scheduler::ops::OpsError::Store(e) => {
-            ToolError::new("SCHEDULER_STORE_ERROR", format!("Scheduler store error: {}", e))
-        }
+        opensquilla_scheduler::ops::OpsError::Store(e) => ToolError::new(
+            "SCHEDULER_STORE_ERROR",
+            format!("Scheduler store error: {}", e),
+        ),
     }
 }
 
@@ -52,9 +51,9 @@ fn parse_opt_uuid(params: &Value, name: &str) -> Result<Option<Uuid>, ToolError>
     match params.get(name).and_then(|v| v.as_str()) {
         None => Ok(None),
         Some(raw) if raw.is_empty() => Ok(None),
-        Some(raw) => Uuid::parse_str(raw)
-            .map(Some)
-            .map_err(|e| ToolError::invalid_args(format!("Invalid '{}' UUID '{}': {}", name, raw, e))),
+        Some(raw) => Uuid::parse_str(raw).map(Some).map_err(|e| {
+            ToolError::invalid_args(format!("Invalid '{}' UUID '{}': {}", name, raw, e))
+        }),
     }
 }
 
@@ -84,10 +83,19 @@ pub fn build_scheduler_engine(db_path: Option<&str>) -> Result<SchedulerEngine, 
         Some(path) => opensquilla_scheduler::SchedulerBuilder::new()
             .with_db_path(path)
             .build()
-            .map_err(|e| ToolError::new("SCHEDULER_ERROR", format!("Failed to build scheduler: {}", e))),
+            .map_err(|e| {
+                ToolError::new(
+                    "SCHEDULER_ERROR",
+                    format!("Failed to build scheduler: {}", e),
+                )
+            }),
         None => Ok(SchedulerEngine::new(
-            JobStore::in_memory()
-                .map_err(|e| ToolError::new("SCHEDULER_ERROR", format!("Failed to open job store: {}", e)))?,
+            JobStore::in_memory().map_err(|e| {
+                ToolError::new(
+                    "SCHEDULER_ERROR",
+                    format!("Failed to open job store: {}", e),
+                )
+            })?,
             HandlerRegistry::with_defaults(),
         )),
     }
@@ -113,7 +121,12 @@ impl ScheduleTaskTool {
 
     /// Build a schedule kind from the `kind`/`cron`/`at`/`every_secs` params.
     fn parse_schedule(&self, params: &Value) -> Result<ScheduleKind, ToolError> {
-        match params["kind"].as_str().unwrap_or("cron").to_lowercase().as_str() {
+        match params["kind"]
+            .as_str()
+            .unwrap_or("cron")
+            .to_lowercase()
+            .as_str()
+        {
             "cron" => {
                 let expr = params["cron"].as_str().ok_or_else(|| {
                     ToolError::invalid_args("Missing 'cron' expression for kind=cron")
@@ -121,9 +134,9 @@ impl ScheduleTaskTool {
                 Ok(ScheduleKind::Cron(expr.to_string()))
             }
             "at" => {
-                let raw = params["at"].as_str().ok_or_else(|| {
-                    ToolError::invalid_args("Missing 'at' timestamp for kind=at")
-                })?;
+                let raw = params["at"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'at' timestamp for kind=at"))?;
                 let parsed = DateTime::parse_from_rfc3339(raw).map_err(|e| {
                     ToolError::invalid_args(format!("Invalid 'at' timestamp '{}': {}", raw, e))
                 })?;
@@ -158,7 +171,9 @@ impl Tool for ScheduleTaskTool {
                 HashMap::from([
                     (
                         "name".to_string(),
-                        ParameterDefinition::required_string("A unique human-readable name for the job"),
+                        ParameterDefinition::required_string(
+                            "A unique human-readable name for the job",
+                        ),
                     ),
                     (
                         "kind".to_string(),
@@ -168,11 +183,15 @@ impl Tool for ScheduleTaskTool {
                     ),
                     (
                         "cron".to_string(),
-                        ParameterDefinition::string("POSIX 5-field cron expression, e.g. '0 * * * *' (for kind=cron)"),
+                        ParameterDefinition::string(
+                            "POSIX 5-field cron expression, e.g. '0 * * * *' (for kind=cron)",
+                        ),
                     ),
                     (
                         "at".to_string(),
-                        ParameterDefinition::string("RFC3339 datetime for one-time execution (for kind=at)"),
+                        ParameterDefinition::string(
+                            "RFC3339 datetime for one-time execution (for kind=at)",
+                        ),
                     ),
                     (
                         "every_secs".to_string(),
@@ -180,32 +199,44 @@ impl Tool for ScheduleTaskTool {
                     ),
                     (
                         "handler".to_string(),
-                        ParameterDefinition::string("Registered cron handler name (default: heartbeat)")
-                            .default(serde_json::json!("heartbeat")),
+                        ParameterDefinition::string(
+                            "Registered cron handler name (default: heartbeat)",
+                        )
+                        .default(serde_json::json!("heartbeat")),
                     ),
                     (
                         "payload".to_string(),
-                        ParameterDefinition::string("Optional JSON payload string passed to the handler"),
+                        ParameterDefinition::string(
+                            "Optional JSON payload string passed to the handler",
+                        ),
                     ),
                     (
                         "tags".to_string(),
-                        ParameterDefinition::string("Optional tags as a JSON object string, e.g. {\"env\":\"prod\"}"),
+                        ParameterDefinition::string(
+                            "Optional tags as a JSON object string, e.g. {\"env\":\"prod\"}",
+                        ),
                     ),
                     (
                         "agent_id".to_string(),
-                        ParameterDefinition::string("Optional agent UUID to associate with the job"),
+                        ParameterDefinition::string(
+                            "Optional agent UUID to associate with the job",
+                        ),
                     ),
                     (
                         "session_id".to_string(),
-                        ParameterDefinition::string("Optional session UUID to associate with the job"),
+                        ParameterDefinition::string(
+                            "Optional session UUID to associate with the job",
+                        ),
                     ),
                     (
                         "max_retries".to_string(),
-                        ParameterDefinition::integer("Maximum retry attempts on failure").default(serde_json::json!(3)),
+                        ParameterDefinition::integer("Maximum retry attempts on failure")
+                            .default(serde_json::json!(3)),
                     ),
                     (
                         "retry_delay_secs".to_string(),
-                        ParameterDefinition::integer("Seconds between retries").default(serde_json::json!(10)),
+                        ParameterDefinition::integer("Seconds between retries")
+                            .default(serde_json::json!(10)),
                     ),
                 ]),
             )
@@ -221,7 +252,10 @@ impl Tool for ScheduleTaskTool {
             .ok_or_else(|| ToolError::invalid_args("Missing required parameter 'name'"))?
             .to_string();
         let kind = self.parse_schedule(&params)?;
-        let handler = params["handler"].as_str().unwrap_or("heartbeat").to_string();
+        let handler = params["handler"]
+            .as_str()
+            .unwrap_or("heartbeat")
+            .to_string();
         let payload: Value = params["payload"]
             .as_str()
             .and_then(|s| serde_json::from_str(s).ok())
@@ -305,12 +339,12 @@ impl Tool for ListTasksTool {
             ToolDefinition::new(
                 "list_tasks",
                 "List scheduled cron jobs, optionally filtered by status.",
-                HashMap::from([
-                    (
-                        "status".to_string(),
-                        ParameterDefinition::string("Optional status filter: active, paused, disabled, completed, failed"),
+                HashMap::from([(
+                    "status".to_string(),
+                    ParameterDefinition::string(
+                        "Optional status filter: active, paused, disabled, completed, failed",
                     ),
-                ]),
+                )]),
             )
             .category("cron")
             .risk_level(1)

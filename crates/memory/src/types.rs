@@ -358,8 +358,7 @@ mod tests {
 
     #[test]
     fn test_query_builder() {
-        let q = MemoryQuery::from_text("rust async", 10)
-            .with_min_score(0.2);
+        let q = MemoryQuery::from_text("rust async", 10).with_min_score(0.2);
         assert_eq!(q.limit, 10);
         assert_eq!(q.min_score, 0.2);
         assert!(q.embedding.is_none());

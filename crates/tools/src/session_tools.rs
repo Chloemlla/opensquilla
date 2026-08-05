@@ -10,10 +10,12 @@
 //! `current_session_key`). The switch is validated against storage so it can
 //! only point at an existing session.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
-use opensquilla_session::models::{Session, SessionMode, TranscriptEntry};
 use opensquilla_session::SessionStorage;
+use opensquilla_session::models::{Session, SessionMode, TranscriptEntry};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -84,11 +86,15 @@ impl Tool for SessionCreateTool {
                 HashMap::from([
                     (
                         "agent_id".to_string(),
-                        ParameterDefinition::required_string("The agent UUID the session belongs to"),
+                        ParameterDefinition::required_string(
+                            "The agent UUID the session belongs to",
+                        ),
                     ),
                     (
                         "name".to_string(),
-                        ParameterDefinition::required_string("A human-readable name for the session"),
+                        ParameterDefinition::required_string(
+                            "A human-readable name for the session",
+                        ),
                     ),
                     (
                         "system_prompt".to_string(),
@@ -97,7 +103,12 @@ impl Tool for SessionCreateTool {
                     (
                         "mode".to_string(),
                         ParameterDefinition::string("Session mode: chat, plan, agent, batch")
-                            .enum_values(vec!["chat".into(), "plan".into(), "agent".into(), "batch".into()])
+                            .enum_values(vec![
+                                "chat".into(),
+                                "plan".into(),
+                                "agent".into(),
+                                "batch".into(),
+                            ])
                             .default(serde_json::json!("chat")),
                     ),
                 ]),
@@ -138,7 +149,12 @@ impl Tool for SessionCreateTool {
                 .map_err(|e| map_session_error("create", e))
         })
         .await
-        .map_err(|e| ToolError::new("SESSION_ERROR", format!("Session create task failed: {}", e)))??;
+        .map_err(|e| {
+            ToolError::new(
+                "SESSION_ERROR",
+                format!("Session create task failed: {}", e),
+            )
+        })??;
 
         let data = serde_json::json!({
             "session_id": session.id.to_string(),
@@ -151,9 +167,7 @@ impl Tool for SessionCreateTool {
         Ok(ToolOutput::success_with_data(
             format!(
                 "Created session '{}' ({}) for agent {}",
-                name,
-                session.id,
-                agent_id
+                name, session.id, agent_id
             ),
             data,
         ))
@@ -193,11 +207,13 @@ impl Tool for SessionListTool {
                     ),
                     (
                         "limit".to_string(),
-                        ParameterDefinition::integer("Maximum number of sessions").default(serde_json::json!(20)),
+                        ParameterDefinition::integer("Maximum number of sessions")
+                            .default(serde_json::json!(20)),
                     ),
                     (
                         "offset".to_string(),
-                        ParameterDefinition::integer("Result offset for pagination").default(serde_json::json!(0)),
+                        ParameterDefinition::integer("Result offset for pagination")
+                            .default(serde_json::json!(0)),
                     ),
                 ]),
             )
@@ -218,14 +234,15 @@ impl Tool for SessionListTool {
         let offset = params["offset"].as_i64().unwrap_or(0).max(0) as u64;
 
         let storage = self.storage.clone();
-        let sessions =
-            tokio::task::spawn_blocking(move || -> Result<Vec<Session>, ToolError> {
-                storage
-                    .list_sessions(&agent_id, limit, offset)
-                    .map_err(|e| map_session_error("list", e))
-            })
-            .await
-            .map_err(|e| ToolError::new("SESSION_ERROR", format!("Session list task failed: {}", e)))??;
+        let sessions = tokio::task::spawn_blocking(move || -> Result<Vec<Session>, ToolError> {
+            storage
+                .list_sessions(&agent_id, limit, offset)
+                .map_err(|e| map_session_error("list", e))
+        })
+        .await
+        .map_err(|e| {
+            ToolError::new("SESSION_ERROR", format!("Session list task failed: {}", e))
+        })??;
 
         let items: Vec<Value> = sessions.iter().map(session_to_json).collect();
         let data = serde_json::json!({
@@ -297,7 +314,9 @@ impl Tool for SessionGetTool {
                 .map_err(|e| map_session_error("get", e))
         })
         .await
-        .map_err(|e| ToolError::new("SESSION_ERROR", format!("Session get task failed: {}", e)))??;
+        .map_err(|e| {
+            ToolError::new("SESSION_ERROR", format!("Session get task failed: {}", e))
+        })??;
 
         let session = session.ok_or_else(|| {
             ToolError::new("SESSION_NOT_FOUND", format!("Session '{}' not found", raw))
@@ -351,7 +370,9 @@ impl Tool for SessionSwitchTool {
                 HashMap::from([
                     (
                         "agent_id".to_string(),
-                        ParameterDefinition::required_string("The agent UUID whose current session to switch"),
+                        ParameterDefinition::required_string(
+                            "The agent UUID whose current session to switch",
+                        ),
                     ),
                     (
                         "session_id".to_string(),
@@ -388,7 +409,12 @@ impl Tool for SessionSwitchTool {
             Ok(s.is_some())
         })
         .await
-        .map_err(|e| ToolError::new("SESSION_ERROR", format!("Session switch task failed: {}", e)))??;
+        .map_err(|e| {
+            ToolError::new(
+                "SESSION_ERROR",
+                format!("Session switch task failed: {}", e),
+            )
+        })??;
 
         if !exists {
             return Err(ToolError::new(
@@ -399,7 +425,9 @@ impl Tool for SessionSwitchTool {
 
         self.current
             .lock()
-            .map_err(|_| ToolError::new("SESSION_ERROR", "Session switch lock poisoned".to_string()))?
+            .map_err(|_| {
+                ToolError::new("SESSION_ERROR", "Session switch lock poisoned".to_string())
+            })?
             .insert(agent_raw.to_string(), session_id);
 
         let data = serde_json::json!({
@@ -461,29 +489,36 @@ impl Tool for SessionExportTool {
         })?;
 
         let storage = self.storage.clone();
-        let (session, entries) = tokio::task::spawn_blocking(move || -> Result<(Option<Session>, Vec<TranscriptEntry>), ToolError> {
-            let session = storage
-                .get_session(&id)
-                .map_err(|e| map_session_error("get", e))?;
-            // Paginate through the full transcript.
-            let mut all = Vec::new();
-            let page = 200u64;
-            let mut offset = 0u64;
-            loop {
-                let batch = storage
-                    .get_transcript_entries(&id, page, offset)
-                    .map_err(|e| map_session_error("export", e))?;
-                let len = batch.len() as u64;
-                all.extend(batch);
-                if len < page {
-                    break;
+        let (session, entries) = tokio::task::spawn_blocking(
+            move || -> Result<(Option<Session>, Vec<TranscriptEntry>), ToolError> {
+                let session = storage
+                    .get_session(&id)
+                    .map_err(|e| map_session_error("get", e))?;
+                // Paginate through the full transcript.
+                let mut all = Vec::new();
+                let page = 200u64;
+                let mut offset = 0u64;
+                loop {
+                    let batch = storage
+                        .get_transcript_entries(&id, page, offset)
+                        .map_err(|e| map_session_error("export", e))?;
+                    let len = batch.len() as u64;
+                    all.extend(batch);
+                    if len < page {
+                        break;
+                    }
+                    offset += len;
                 }
-                offset += len;
-            }
-            Ok((session, all))
-        })
+                Ok((session, all))
+            },
+        )
         .await
-        .map_err(|e| ToolError::new("SESSION_ERROR", format!("Session export task failed: {}", e)))??;
+        .map_err(|e| {
+            ToolError::new(
+                "SESSION_ERROR",
+                format!("Session export task failed: {}", e),
+            )
+        })??;
 
         let session = session.ok_or_else(|| {
             ToolError::new("SESSION_NOT_FOUND", format!("Session '{}' not found", raw))
@@ -500,9 +535,18 @@ impl Tool for SessionExportTool {
         out.push('\n');
         out.push_str("----- TRANSCRIPT -----\n");
         for entry in &entries {
-            let role = if entry.role.is_empty() { "unknown" } else { &entry.role };
+            let role = if entry.role.is_empty() {
+                "unknown"
+            } else {
+                &entry.role
+            };
             let compacted_note = if entry.compacted { " (compacted)" } else { "" };
-            out.push_str(&format!("\n[{}]{} {}\n", role, compacted_note, entry.created_at.to_rfc3339()));
+            out.push_str(&format!(
+                "\n[{}]{} {}\n",
+                role,
+                compacted_note,
+                entry.created_at.to_rfc3339()
+            ));
             out.push_str(entry.content.trim());
             out.push('\n');
         }
@@ -514,7 +558,9 @@ impl Tool for SessionExportTool {
             "entries": entries.len(),
             "exported_at": chrono::Utc::now().to_rfc3339(),
         });
-        Ok(ToolOutput::success(out).with_data(data).with_mime_type("text/plain"))
+        Ok(ToolOutput::success(out)
+            .with_data(data)
+            .with_mime_type("text/plain"))
     }
 }
 
@@ -579,7 +625,12 @@ impl Tool for SessionDeleteTool {
             Ok(exists)
         })
         .await
-        .map_err(|e| ToolError::new("SESSION_ERROR", format!("Session delete task failed: {}", e)))??;
+        .map_err(|e| {
+            ToolError::new(
+                "SESSION_ERROR",
+                format!("Session delete task failed: {}", e),
+            )
+        })??;
 
         if !deleted {
             return Err(ToolError::new(
@@ -636,7 +687,10 @@ mod tests {
             .execute(serde_json::json!({ "session_id": session_id }))
             .await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().data.unwrap()["name"].as_str(), Some("test session"));
+        assert_eq!(
+            result.unwrap().data.unwrap()["name"].as_str(),
+            Some("test session")
+        );
     }
 
     #[tokio::test]
@@ -667,7 +721,10 @@ mod tests {
             }))
             .await
             .unwrap();
-        let session_id = result.data.unwrap()["session_id"].as_str().unwrap().to_string();
+        let session_id = result.data.unwrap()["session_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         let result = export
             .execute(serde_json::json!({ "session_id": session_id }))
@@ -691,13 +748,19 @@ mod tests {
             }))
             .await
             .unwrap();
-        let session_id = result.data.unwrap()["session_id"].as_str().unwrap().to_string();
+        let session_id = result.data.unwrap()["session_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         let result = delete
             .execute(serde_json::json!({ "session_id": session_id }))
             .await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().data.unwrap()["deleted"], serde_json::json!(true));
+        assert_eq!(
+            result.unwrap().data.unwrap()["deleted"],
+            serde_json::json!(true)
+        );
 
         // The session is gone, and deleting it again reports not-found.
         let result = get

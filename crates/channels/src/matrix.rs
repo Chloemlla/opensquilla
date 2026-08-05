@@ -24,7 +24,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 const DEFAULT_SYNC_TIMEOUT_MS: u64 = 30_000;
@@ -240,14 +240,24 @@ impl MatrixChannel {
 
     /// Send an `m.notice` message (used for non-user-visible bot output).
     pub async fn send_notice(&self, room_id: &str, text: &str) -> Result<(), String> {
-        let mut msg = OutgoingMessage::new(room_id.to_string(), ChannelType::Matrix, text.to_string());
+        let mut msg =
+            OutgoingMessage::new(room_id.to_string(), ChannelType::Matrix, text.to_string());
         msg.metadata = json!({"msgtype": "m.notice"});
         self.send_matrix_message(&msg).await
     }
 
     /// Send an `m.image` message by `mxc://` URL.
-    pub async fn send_image(&self, room_id: &str, mxc_url: &str, alt_text: &str) -> Result<(), String> {
-        let mut msg = OutgoingMessage::new(room_id.to_string(), ChannelType::Matrix, alt_text.to_string());
+    pub async fn send_image(
+        &self,
+        room_id: &str,
+        mxc_url: &str,
+        alt_text: &str,
+    ) -> Result<(), String> {
+        let mut msg = OutgoingMessage::new(
+            room_id.to_string(),
+            ChannelType::Matrix,
+            alt_text.to_string(),
+        );
         msg.attachments.push(MessageAttachment {
             attachment_type: "m.image".to_string(),
             url: Some(mxc_url.to_string()),
@@ -339,7 +349,10 @@ impl MatrixChannel {
 
 /// Parse a `/sync` response into the next batch token and incoming messages.
 fn parse_sync_response(body: &Value) -> (Option<String>, Vec<IncomingMessage>) {
-    let next_batch = body.get("next_batch").and_then(|v| v.as_str()).map(String::from);
+    let next_batch = body
+        .get("next_batch")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let mut messages = Vec::new();
     let Some(rooms) = body.get("rooms").and_then(|r| r.as_object()) else {
         return (next_batch, messages);
@@ -378,10 +391,24 @@ fn parse_sync_response(body: &Value) -> (Option<String>, Vec<IncomingMessage>) {
 /// Parse a single `m.room.message` event into an [`IncomingMessage`].
 fn parse_room_message(room_id: &str, event: &Value) -> Option<IncomingMessage> {
     let content = event.get("content")?;
-    let msgtype = content.get("msgtype").and_then(|v| v.as_str()).unwrap_or("m.text");
-    let body_text = content.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let sender = event.get("sender").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let event_id = event.get("event_id").and_then(|v| v.as_str()).map(String::from);
+    let msgtype = content
+        .get("msgtype")
+        .and_then(|v| v.as_str())
+        .unwrap_or("m.text");
+    let body_text = content
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let sender = event
+        .get("sender")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let event_id = event
+        .get("event_id")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let thread_id = content
         .get("m.relates_to")
         .and_then(|r| r.get("event_id"))
@@ -418,7 +445,10 @@ fn parse_message_attachments(content: &Value, msgtype: &str) -> Vec<MessageAttac
     if msgtype == "m.text" || msgtype == "m.notice" || msgtype == "m.emote" {
         return Vec::new();
     }
-    let url = content.get("url").and_then(|v| v.as_str()).map(String::from);
+    let url = content
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let mime = content
         .get("info")
         .and_then(|i| i.get("mimetype"))
@@ -672,7 +702,11 @@ mod tests {
 
     #[test]
     fn test_build_text_payload() {
-        let msg = OutgoingMessage::new("!r:server".to_string(), ChannelType::Matrix, "hi".to_string());
+        let msg = OutgoingMessage::new(
+            "!r:server".to_string(),
+            ChannelType::Matrix,
+            "hi".to_string(),
+        );
         let payload = build_room_message_payload(&msg);
         assert_eq!(payload["msgtype"], "m.text");
         assert_eq!(payload["body"], "hi");
@@ -680,7 +714,11 @@ mod tests {
 
     #[test]
     fn test_build_notice_payload() {
-        let mut msg = OutgoingMessage::new("!r:server".to_string(), ChannelType::Matrix, "note".to_string());
+        let mut msg = OutgoingMessage::new(
+            "!r:server".to_string(),
+            ChannelType::Matrix,
+            "note".to_string(),
+        );
         msg.metadata = json!({"msgtype": "m.notice"});
         let payload = build_room_message_payload(&msg);
         assert_eq!(payload["msgtype"], "m.notice");
@@ -688,7 +726,11 @@ mod tests {
 
     #[test]
     fn test_build_image_payload() {
-        let mut msg = OutgoingMessage::new("!r:server".to_string(), ChannelType::Matrix, "pic".to_string());
+        let mut msg = OutgoingMessage::new(
+            "!r:server".to_string(),
+            ChannelType::Matrix,
+            "pic".to_string(),
+        );
         msg.attachments.push(MessageAttachment {
             attachment_type: "image".to_string(),
             url: Some("mxc://server/key".to_string()),

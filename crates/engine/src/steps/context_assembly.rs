@@ -107,10 +107,7 @@ impl ContextAssemblyStep {
         }
 
         let fragment_count = builder.fragments().len();
-        let had_system_message = ctx
-            .messages
-            .iter()
-            .any(|m| m.role == MessageRole::System);
+        let had_system_message = ctx.messages.iter().any(|m| m.role == MessageRole::System);
 
         if !prompt.is_empty() {
             if let Some(system_idx) = ctx
@@ -126,8 +123,7 @@ impl ContextAssemblyStep {
                 } else {
                     format!("{existing}\n\n{prompt}")
                 };
-                ctx.messages[system_idx] =
-                    Message::text(MessageRole::System, combined);
+                ctx.messages[system_idx] = Message::text(MessageRole::System, combined);
             } else {
                 let system_msg = Message {
                     role: MessageRole::System,

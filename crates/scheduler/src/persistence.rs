@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::info;
@@ -35,7 +35,10 @@ impl JobStore {
     }
 
     fn initialize_tables(&self) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS cron_jobs (
@@ -73,8 +76,9 @@ impl JobStore {
             CREATE INDEX IF NOT EXISTS idx_job_executions_started_at ON job_executions(started_at);
             CREATE INDEX IF NOT EXISTS idx_cron_jobs_status ON cron_jobs(status);
             CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
-            CREATE INDEX IF NOT EXISTS idx_cron_jobs_handler ON cron_jobs(handler);"
-        ).map_err(|e| StoreError::Initialize(e.to_string()))?;
+            CREATE INDEX IF NOT EXISTS idx_cron_jobs_handler ON cron_jobs(handler);",
+        )
+        .map_err(|e| StoreError::Initialize(e.to_string()))?;
 
         Ok(())
     }
@@ -83,7 +87,10 @@ impl JobStore {
 
     /// Insert a new cron job.
     pub fn insert_job(&self, job: &CronJob) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let (kind_str, schedule_value) = serialize_schedule_kind(&job.kind);
 
         conn.execute(
@@ -92,31 +99,45 @@ impl JobStore {
              next_run_at, last_run_at, agent_id, session_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
-                job.id.to_string(), job.name, kind_str, schedule_value, job.handler,
-                job.payload.to_string(), serde_json::to_string(&job.status).unwrap_or_default(),
-                job.max_retries as i64, job.retry_delay_secs as i64,
-                job.created_at.to_rfc3339(), job.updated_at.to_rfc3339(),
+                job.id.to_string(),
+                job.name,
+                kind_str,
+                schedule_value,
+                job.handler,
+                job.payload.to_string(),
+                serde_json::to_string(&job.status).unwrap_or_default(),
+                job.max_retries as i64,
+                job.retry_delay_secs as i64,
+                job.created_at.to_rfc3339(),
+                job.updated_at.to_rfc3339(),
                 job.next_run_at.map(|dt| dt.to_rfc3339()),
                 job.last_run_at.map(|dt| dt.to_rfc3339()),
                 job.agent_id.map(|id| id.to_string()),
                 job.session_id.map(|id| id.to_string())
             ],
-        ).map_err(|e| StoreError::Insert(e.to_string()))?;
+        )
+        .map_err(|e| StoreError::Insert(e.to_string()))?;
 
         Ok(())
     }
 
     /// Get a job by its ID.
     pub fn get_job(&self, job_id: &Uuid) -> Result<Option<CronJob>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, kind, schedule_value, handler, payload, status,
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, kind, schedule_value, handler, payload, status,
              max_retries, retry_delay_secs, created_at, updated_at,
              next_run_at, last_run_at, agent_id, session_id
-             FROM cron_jobs WHERE id = ?1"
-        ).map_err(|e| StoreError::Query(e.to_string()))?;
+             FROM cron_jobs WHERE id = ?1",
+            )
+            .map_err(|e| StoreError::Query(e.to_string()))?;
 
-        let mut rows = stmt.query_map(params![job_id.to_string()], |row| job_from_row(row))
+        let mut rows = stmt
+            .query_map(params![job_id.to_string()], |row| job_from_row(row))
             .map_err(|e| StoreError::Query(e.to_string()))?;
 
         match rows.next() {
@@ -128,7 +149,10 @@ impl JobStore {
 
     /// Update an existing cron job.
     pub fn update_job(&self, job: &CronJob) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let (kind_str, schedule_value) = serialize_schedule_kind(&job.kind);
 
         conn.execute(
@@ -137,9 +161,14 @@ impl JobStore {
              updated_at=?9, next_run_at=?10, last_run_at=?11,
              agent_id=?12, session_id=?13 WHERE id=?14",
             params![
-                job.name, kind_str, schedule_value, job.handler,
-                job.payload.to_string(), serde_json::to_string(&job.status).unwrap_or_default(),
-                job.max_retries as i64, job.retry_delay_secs as i64,
+                job.name,
+                kind_str,
+                schedule_value,
+                job.handler,
+                job.payload.to_string(),
+                serde_json::to_string(&job.status).unwrap_or_default(),
+                job.max_retries as i64,
+                job.retry_delay_secs as i64,
                 job.updated_at.to_rfc3339(),
                 job.next_run_at.map(|dt| dt.to_rfc3339()),
                 job.last_run_at.map(|dt| dt.to_rfc3339()),
@@ -147,45 +176,67 @@ impl JobStore {
                 job.session_id.map(|id| id.to_string()),
                 job.id.to_string()
             ],
-        ).map_err(|e| StoreError::Update(e.to_string()))?;
+        )
+        .map_err(|e| StoreError::Update(e.to_string()))?;
 
         Ok(())
     }
 
     /// Delete a job by its ID.
     pub fn delete_job(&self, job_id: &Uuid) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
-        conn.execute("DELETE FROM cron_jobs WHERE id=?1", params![job_id.to_string()])
-            .map_err(|e| StoreError::Delete(e.to_string()))?;
-        conn.execute("DELETE FROM job_executions WHERE job_id=?1", params![job_id.to_string()])
-            .map_err(|e| StoreError::Delete(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM cron_jobs WHERE id=?1",
+            params![job_id.to_string()],
+        )
+        .map_err(|e| StoreError::Delete(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM job_executions WHERE job_id=?1",
+            params![job_id.to_string()],
+        )
+        .map_err(|e| StoreError::Delete(e.to_string()))?;
         Ok(())
     }
 
     /// List all jobs, optionally filtered by status.
     pub fn list_jobs(&self, status_filter: Option<JobStatus>) -> Result<Vec<CronJob>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
 
         let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
             if let Some(status) = status_filter {
                 let status_str = serde_json::to_string(&status).unwrap_or_default();
-                ("SELECT id, name, kind, schedule_value, handler, payload, status,
+                (
+                    "SELECT id, name, kind, schedule_value, handler, payload, status,
                   max_retries, retry_delay_secs, created_at, updated_at,
                   next_run_at, last_run_at, agent_id, session_id
-                  FROM cron_jobs WHERE status=?1 ORDER BY created_at DESC".to_string(),
-                 vec![Box::new(status_str)])
+                  FROM cron_jobs WHERE status=?1 ORDER BY created_at DESC"
+                        .to_string(),
+                    vec![Box::new(status_str)],
+                )
             } else {
-                ("SELECT id, name, kind, schedule_value, handler, payload, status,
+                (
+                    "SELECT id, name, kind, schedule_value, handler, payload, status,
                   max_retries, retry_delay_secs, created_at, updated_at,
                   next_run_at, last_run_at, agent_id, session_id
-                  FROM cron_jobs ORDER BY created_at DESC".to_string(),
-                 Vec::new())
+                  FROM cron_jobs ORDER BY created_at DESC"
+                        .to_string(),
+                    Vec::new(),
+                )
             };
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| StoreError::Query(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| StoreError::Query(e.to_string()))?;
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|b| b.as_ref()).collect();
-        let rows = stmt.query_map(params_ref.as_slice(), |row| job_from_row(row))
+        let rows = stmt
+            .query_map(params_ref.as_slice(), |row| job_from_row(row))
             .map_err(|e| StoreError::Query(e.to_string()))?;
         let jobs: Vec<CronJob> = rows.filter_map(|r| r.ok()).collect();
         Ok(jobs)
@@ -193,43 +244,66 @@ impl JobStore {
 
     /// List jobs that are due for execution.
     pub fn list_due_jobs(&self) -> Result<Vec<CronJob>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let now = Utc::now().to_rfc3339();
         let active_str = serde_json::to_string(&JobStatus::Active).unwrap_or_default();
 
-        let mut stmt = conn.prepare(
-            "SELECT id, name, kind, schedule_value, handler, payload, status,
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, kind, schedule_value, handler, payload, status,
              max_retries, retry_delay_secs, created_at, updated_at,
              next_run_at, last_run_at, agent_id, session_id
              FROM cron_jobs WHERE status=?1 AND next_run_at IS NOT NULL AND next_run_at<=?2
-             ORDER BY next_run_at ASC"
-        ).map_err(|e| StoreError::Query(e.to_string()))?;
+             ORDER BY next_run_at ASC",
+            )
+            .map_err(|e| StoreError::Query(e.to_string()))?;
 
-        let rows = stmt.query_map(params![active_str, now], |row| job_from_row(row))
+        let rows = stmt
+            .query_map(params![active_str, now], |row| job_from_row(row))
             .map_err(|e| StoreError::Query(e.to_string()))?;
         let jobs: Vec<CronJob> = rows.filter_map(|r| r.ok()).collect();
         Ok(jobs)
     }
 
     /// Mark a job's next_run_at and last_run_at.
-    pub fn mark_job_run(&self, job_id: &Uuid, next_run: Option<DateTime<Utc>>) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+    pub fn mark_job_run(
+        &self,
+        job_id: &Uuid,
+        next_run: Option<DateTime<Utc>>,
+    ) -> Result<(), StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let now = Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE cron_jobs SET last_run_at=?1, next_run_at=?2, updated_at=?3 WHERE id=?4",
-            params![now, next_run.map(|dt| dt.to_rfc3339()), now, job_id.to_string()],
-        ).map_err(|e| StoreError::Update(e.to_string()))?;
+            params![
+                now,
+                next_run.map(|dt| dt.to_rfc3339()),
+                now,
+                job_id.to_string()
+            ],
+        )
+        .map_err(|e| StoreError::Update(e.to_string()))?;
         Ok(())
     }
 
     /// Update a job's status.
     pub fn update_job_status(&self, job_id: &Uuid, status: JobStatus) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let status_str = serde_json::to_string(&status).unwrap_or_default();
         conn.execute(
             "UPDATE cron_jobs SET status=?1, updated_at=?2 WHERE id=?3",
             params![status_str, Utc::now().to_rfc3339(), job_id.to_string()],
-        ).map_err(|e| StoreError::Update(e.to_string()))?;
+        )
+        .map_err(|e| StoreError::Update(e.to_string()))?;
         Ok(())
     }
 
@@ -237,7 +311,10 @@ impl JobStore {
 
     /// Insert an execution record.
     pub fn insert_execution(&self, execution: &JobExecution) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         conn.execute(
             "INSERT INTO job_executions (id, job_id, started_at, finished_at, success, result, error, attempt, duration_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -253,14 +330,26 @@ impl JobStore {
     }
 
     /// List executions for a specific job.
-    pub fn list_executions(&self, job_id: &Uuid, limit: u64, offset: u64) -> Result<Vec<JobExecution>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+    pub fn list_executions(
+        &self,
+        job_id: &Uuid,
+        limit: u64,
+        offset: u64,
+    ) -> Result<Vec<JobExecution>, StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT id, job_id, started_at, finished_at, success, result, error, attempt, duration_ms
              FROM job_executions WHERE job_id=?1 ORDER BY started_at DESC LIMIT ?2 OFFSET ?3"
         ).map_err(|e| StoreError::Query(e.to_string()))?;
 
-        let rows = stmt.query_map(params![job_id.to_string(), limit as i64, offset as i64], |row| execution_from_row(row))
+        let rows = stmt
+            .query_map(
+                params![job_id.to_string(), limit as i64, offset as i64],
+                |row| execution_from_row(row),
+            )
             .map_err(|e| StoreError::Query(e.to_string()))?;
         let executions: Vec<JobExecution> = rows.filter_map(|r| r.ok()).collect();
         Ok(executions)
@@ -268,7 +357,10 @@ impl JobStore {
 
     /// Clean up old execution records, keeping only the most recent N per job.
     pub fn cleanup_executions(&self, keep_per_job: u64) -> Result<u64, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let deleted = conn.execute(
             "DELETE FROM job_executions WHERE id IN (
                 SELECT id FROM (
@@ -277,20 +369,29 @@ impl JobStore {
                 ) WHERE rn > ?1
             )", params![keep_per_job as i64],
         ).map_err(|e| StoreError::Delete(e.to_string()))?;
-        if deleted > 0 { info!("Cleaned up {} old execution records", deleted); }
+        if deleted > 0 {
+            info!("Cleaned up {} old execution records", deleted);
+        }
         Ok(deleted as u64)
     }
 
     /// Clean up old completed jobs (for AT jobs that have completed).
     pub fn cleanup_completed_jobs(&self, older_than_days: u64) -> Result<u64, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
         let cutoff = (Utc::now() - chrono::Duration::days(older_than_days as i64)).to_rfc3339();
         let completed_str = serde_json::to_string(&JobStatus::Completed).unwrap_or_default();
-        let deleted = conn.execute(
-            "DELETE FROM cron_jobs WHERE status=?1 AND updated_at<?2",
-            params![completed_str, cutoff],
-        ).map_err(|e| StoreError::Delete(e.to_string()))?;
-        if deleted > 0 { info!("Cleaned up {} completed jobs", deleted); }
+        let deleted = conn
+            .execute(
+                "DELETE FROM cron_jobs WHERE status=?1 AND updated_at<?2",
+                params![completed_str, cutoff],
+            )
+            .map_err(|e| StoreError::Delete(e.to_string()))?;
+        if deleted > 0 {
+            info!("Cleaned up {} completed jobs", deleted);
+        }
         Ok(deleted as u64)
     }
 
@@ -298,13 +399,21 @@ impl JobStore {
 
     /// Compute scheduler statistics.
     pub fn stats(&self) -> Result<SchedulerStats, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Lock(e.to_string()))?;
-        let total_jobs: i64 = conn.query_row("SELECT COUNT(*) FROM cron_jobs", [], |row| row.get(0))
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Lock(e.to_string()))?;
+        let total_jobs: i64 = conn
+            .query_row("SELECT COUNT(*) FROM cron_jobs", [], |row| row.get(0))
             .map_err(|e| StoreError::Query(e.to_string()))?;
 
         let count_status = |s: &str| -> Result<i64, StoreError> {
-            conn.query_row("SELECT COUNT(*) FROM cron_jobs WHERE status=?1", params![s], |row| row.get(0))
-                .map_err(|e| StoreError::Query(e.to_string()))
+            conn.query_row(
+                "SELECT COUNT(*) FROM cron_jobs WHERE status=?1",
+                params![s],
+                |row| row.get(0),
+            )
+            .map_err(|e| StoreError::Query(e.to_string()))
         };
 
         let active_s = serde_json::to_string(&JobStatus::Active).unwrap_or_default();
@@ -313,11 +422,16 @@ impl JobStore {
         let failed_s = serde_json::to_string(&JobStatus::Failed).unwrap_or_default();
         let completed_s = serde_json::to_string(&JobStatus::Completed).unwrap_or_default();
 
-        let total_executions: i64 = conn.query_row("SELECT COUNT(*) FROM job_executions", [], |row| row.get(0))
+        let total_executions: i64 = conn
+            .query_row("SELECT COUNT(*) FROM job_executions", [], |row| row.get(0))
             .map_err(|e| StoreError::Query(e.to_string()))?;
-        let successful_executions: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM job_executions WHERE success=1", [], |row| row.get(0)
-        ).map_err(|e| StoreError::Query(e.to_string()))?;
+        let successful_executions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM job_executions WHERE success=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| StoreError::Query(e.to_string()))?;
 
         Ok(SchedulerStats {
             total_jobs: total_jobs as u64,
@@ -353,11 +467,15 @@ fn deserialize_schedule_kind(kind_str: &str, value: &str) -> Result<ScheduleKind
             Ok(ScheduleKind::At(dt))
         }
         "every" => {
-            let secs: u64 = value.parse()
+            let secs: u64 = value
+                .parse()
                 .map_err(|e| StoreError::Deserialize(format!("Invalid interval: {}", e)))?;
             Ok(ScheduleKind::Every(secs))
         }
-        _ => Err(StoreError::Deserialize(format!("Unknown schedule kind: {}", kind_str))),
+        _ => Err(StoreError::Deserialize(format!(
+            "Unknown schedule kind: {}",
+            kind_str
+        ))),
     }
 }
 
@@ -378,13 +496,27 @@ fn job_from_row(row: &rusqlite::Row) -> rusqlite::Result<CronJob> {
         status,
         max_retries: row.get::<_, i64>(7)? as u32,
         retry_delay_secs: row.get::<_, i64>(8)? as u64,
-        created_at: row.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap_or(Utc::now()),
-        updated_at: row.get::<_, String>(10)?.parse::<DateTime<Utc>>().unwrap_or(Utc::now()),
-        next_run_at: row.get::<_, Option<String>>(11)?.and_then(|s| s.parse::<DateTime<Utc>>().ok()),
-        last_run_at: row.get::<_, Option<String>>(12)?.and_then(|s| s.parse::<DateTime<Utc>>().ok()),
+        created_at: row
+            .get::<_, String>(9)?
+            .parse::<DateTime<Utc>>()
+            .unwrap_or(Utc::now()),
+        updated_at: row
+            .get::<_, String>(10)?
+            .parse::<DateTime<Utc>>()
+            .unwrap_or(Utc::now()),
+        next_run_at: row
+            .get::<_, Option<String>>(11)?
+            .and_then(|s| s.parse::<DateTime<Utc>>().ok()),
+        last_run_at: row
+            .get::<_, Option<String>>(12)?
+            .and_then(|s| s.parse::<DateTime<Utc>>().ok()),
         tags: HashMap::new(),
-        agent_id: row.get::<_, Option<String>>(13)?.and_then(|s| Uuid::parse_str(&s).ok()),
-        session_id: row.get::<_, Option<String>>(14)?.and_then(|s| Uuid::parse_str(&s).ok()),
+        agent_id: row
+            .get::<_, Option<String>>(13)?
+            .and_then(|s| Uuid::parse_str(&s).ok()),
+        session_id: row
+            .get::<_, Option<String>>(14)?
+            .and_then(|s| Uuid::parse_str(&s).ok()),
     })
 }
 
@@ -392,8 +524,13 @@ fn execution_from_row(row: &rusqlite::Row) -> rusqlite::Result<JobExecution> {
     Ok(JobExecution {
         id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or(Uuid::nil()),
         job_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or(Uuid::nil()),
-        started_at: row.get::<_, String>(2)?.parse::<DateTime<Utc>>().unwrap_or(Utc::now()),
-        finished_at: row.get::<_, Option<String>>(3)?.and_then(|s| s.parse::<DateTime<Utc>>().ok()),
+        started_at: row
+            .get::<_, String>(2)?
+            .parse::<DateTime<Utc>>()
+            .unwrap_or(Utc::now()),
+        finished_at: row
+            .get::<_, Option<String>>(3)?
+            .and_then(|s| s.parse::<DateTime<Utc>>().ok()),
         success: row.get::<_, i64>(4)? != 0,
         result: row.get(5)?,
         error: row.get(6)?,
@@ -404,14 +541,22 @@ fn execution_from_row(row: &rusqlite::Row) -> rusqlite::Result<JobExecution> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("Failed to open database: {0}")]  Open(String),
-    #[error("Failed to acquire lock: {0}")]   Lock(String),
-    #[error("Failed to initialize tables: {0}")] Initialize(String),
-    #[error("Failed to insert record: {0}")]  Insert(String),
-    #[error("Failed to update record: {0}")]  Update(String),
-    #[error("Failed to delete record: {0}")]  Delete(String),
-    #[error("Query failed: {0}")]             Query(String),
-    #[error("Failed to deserialize: {0}")]    Deserialize(String),
+    #[error("Failed to open database: {0}")]
+    Open(String),
+    #[error("Failed to acquire lock: {0}")]
+    Lock(String),
+    #[error("Failed to initialize tables: {0}")]
+    Initialize(String),
+    #[error("Failed to insert record: {0}")]
+    Insert(String),
+    #[error("Failed to update record: {0}")]
+    Update(String),
+    #[error("Failed to delete record: {0}")]
+    Delete(String),
+    #[error("Query failed: {0}")]
+    Query(String),
+    #[error("Failed to deserialize: {0}")]
+    Deserialize(String),
 }
 
 #[cfg(test)]
@@ -431,8 +576,12 @@ mod tests {
     #[test]
     fn test_list_jobs() {
         let store = JobStore::in_memory().unwrap();
-        store.insert_job(&CronJob::new("j1", ScheduleKind::Every(60), "h1")).unwrap();
-        store.insert_job(&CronJob::new("j2", ScheduleKind::Every(120), "h2")).unwrap();
+        store
+            .insert_job(&CronJob::new("j1", ScheduleKind::Every(60), "h1"))
+            .unwrap();
+        store
+            .insert_job(&CronJob::new("j2", ScheduleKind::Every(120), "h2"))
+            .unwrap();
         assert_eq!(store.list_jobs(None).unwrap().len(), 2);
     }
 
@@ -459,7 +608,9 @@ mod tests {
     #[test]
     fn test_stats() {
         let store = JobStore::in_memory().unwrap();
-        store.insert_job(&CronJob::new("s", ScheduleKind::Every(60), "h")).unwrap();
+        store
+            .insert_job(&CronJob::new("s", ScheduleKind::Every(60), "h"))
+            .unwrap();
         let stats = store.stats().unwrap();
         assert_eq!(stats.total_jobs, 1);
         assert_eq!(stats.active_jobs, 1);

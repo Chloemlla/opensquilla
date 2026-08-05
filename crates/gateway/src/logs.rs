@@ -3,11 +3,11 @@
 //! Provides `rpc_logs` for log file inspection: tailing recent lines,
 //! filtering by level, and listing available log files.
 
-use std::path::PathBuf;
 use opensquilla_core::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A log entry parsed from a line.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,10 +34,15 @@ fn resolve_log_path(params: &serde_json::Value) -> Result<PathBuf, AppError> {
     }
     // Default: platform log directory
     if let Some(data_dir) = dirs::data_dir() {
-        let candidate = data_dir.join("opensquilla").join("logs").join("opensquilla.log");
+        let candidate = data_dir
+            .join("opensquilla")
+            .join("logs")
+            .join("opensquilla.log");
         return Ok(candidate);
     }
-    Err(AppError::bad_request("Missing 'path' parameter and no default log directory available"))
+    Err(AppError::bad_request(
+        "Missing 'path' parameter and no default log directory available",
+    ))
 }
 
 /// Parse a log level from a line (looks for common level tokens).
@@ -67,11 +72,11 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
     registry.register(rpc_handler("logs.tail", {
         move |params| {
             let path = resolve_log_path(params)?;
-            let max_lines = params
-                .get("lines")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(100) as usize;
-            let level_filter = params.get("level").and_then(|v| v.as_str()).map(String::from);
+            let max_lines = params.get("lines").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+            let level_filter = params
+                .get("level")
+                .and_then(|v| v.as_str())
+                .map(String::from);
 
             if !path.exists() {
                 return Ok(serde_json::to_value(LogReadResult {
@@ -108,8 +113,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 truncated: total > max_lines as u64,
                 entries,
             };
-            Ok(serde_json::to_value(result)
-                .map_err(|e| AppError::internal(e.to_string()))?)
+            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
         }
     }));
 
@@ -117,10 +121,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
     registry.register(rpc_handler("logs.head", {
         move |params| {
             let path = resolve_log_path(params)?;
-            let max_lines = params
-                .get("lines")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(50) as usize;
+            let max_lines = params.get("lines").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
             if !path.exists() {
                 return Ok(serde_json::to_value(LogReadResult {
@@ -160,8 +161,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 truncated: total > max_lines as u64,
                 entries,
             };
-            Ok(serde_json::to_value(result)
-                .map_err(|e| AppError::internal(e.to_string()))?)
+            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
         }
     }));
 
@@ -173,10 +173,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 .get("pattern")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| AppError::bad_request("Missing 'pattern' parameter"))?;
-            let max_results = params
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(50) as usize;
+            let max_results = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
             if !path.exists() {
                 return Err(AppError::not_found(format!(
@@ -208,8 +205,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 truncated: entries.len() >= max_results,
                 entries,
             };
-            Ok(serde_json::to_value(result)
-                .map_err(|e| AppError::internal(e.to_string()))?)
+            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
         }
     }));
 
@@ -228,7 +224,9 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                             .to_string()
                     })
                 })
-                .ok_or_else(|| AppError::bad_request("Missing 'dir' parameter and no default log directory"))?;
+                .ok_or_else(|| {
+                    AppError::bad_request("Missing 'dir' parameter and no default log directory")
+                })?;
             let dir = PathBuf::from(&dir_str);
 
             if !dir.exists() {

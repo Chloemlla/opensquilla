@@ -254,7 +254,10 @@ impl StreamConsumerStage {
                         self.config.timeout.as_secs()
                     ));
                     state.error_code = Some("STREAM_TIMEOUT".to_string());
-                    warn!(timeout_s = self.config.timeout.as_secs(), "stream consumer timed out");
+                    warn!(
+                        timeout_s = self.config.timeout.as_secs(),
+                        "stream consumer timed out"
+                    );
                     break;
                 }
             };
@@ -421,9 +424,7 @@ impl Stage for StreamConsumerStage {
                             block: block.clone(),
                         })
                         .await;
-                    let _ = tx
-                        .send(StreamEvent::ContentBlockStop { index })
-                        .await;
+                    let _ = tx.send(StreamEvent::ContentBlockStop { index }).await;
                     index += 1;
                 }
             }

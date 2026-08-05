@@ -209,7 +209,8 @@ fn extract_xml(text: &str) -> Vec<ToolCall> {
         } else {
             continue;
         };
-        let args = serde_json::from_str(&args_raw).unwrap_or_else(|_| serde_json::json!({"raw": args_raw}));
+        let args = serde_json::from_str(&args_raw)
+            .unwrap_or_else(|_| serde_json::json!({"raw": args_raw}));
         calls.push(ToolCall::new("", name, args));
     }
     for cap in XML_SELF_CLOSING_REV_RE.captures_iter(text) {
@@ -220,7 +221,8 @@ fn extract_xml(text: &str) -> Vec<ToolCall> {
         } else {
             continue;
         };
-        let args = serde_json::from_str(&args_raw).unwrap_or_else(|_| serde_json::json!({"raw": args_raw}));
+        let args = serde_json::from_str(&args_raw)
+            .unwrap_or_else(|_| serde_json::json!({"raw": args_raw}));
         calls.push(ToolCall::new("", name, args));
     }
 
@@ -292,7 +294,10 @@ fn extract_anthropic(text: &str) -> Vec<ToolCall> {
             .unwrap_or(false);
         if is_tool_use {
             let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let input = value.get("input").cloned().unwrap_or_else(|| serde_json::json!({}));
+            let input = value
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
             if !name.is_empty() {
                 calls.push(ToolCall::new("", name, input));
             }
@@ -301,7 +306,10 @@ fn extract_anthropic(text: &str) -> Vec<ToolCall> {
         // Wrapped {"tool_use": {...}}.
         if let Some(inner) = value.get("tool_use") {
             let name = inner.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let input = inner.get("input").cloned().unwrap_or_else(|| serde_json::json!({}));
+            let input = inner
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
             if !name.is_empty() {
                 calls.push(ToolCall::new("", name, input));
             }
@@ -317,7 +325,10 @@ fn extract_anthropic(text: &str) -> Vec<ToolCall> {
                 .unwrap_or(false);
             if is_tool_use {
                 let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let input = value.get("input").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let input = value
+                    .get("input")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
                 if !name.is_empty() {
                     calls.push(ToolCall::new("", name, input));
                 }
@@ -478,9 +489,8 @@ static KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"([\{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)").expect("invalid key repair regex")
 });
 
-static TRAILING_COMMA_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r",\s*([\}\]])").expect("invalid trailing comma regex")
-});
+static TRAILING_COMMA_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r",\s*([\}\]])").expect("invalid trailing comma regex"));
 
 /// Lightweight JSON repair for malformed tool-call fragments.
 ///
@@ -576,7 +586,8 @@ mod tests {
     #[test]
     fn test_extract_dsml_inline_json_parameters() {
         let n = ToolCallNormalizer::new(ToolDialect::DeepSeekDsml);
-        let text = "<tool_call><tool_name>f</tool_name><parameters>{\"a\": 1}</parameters></tool_call>";
+        let text =
+            "<tool_call><tool_name>f</tool_name><parameters>{\"a\": 1}</parameters></tool_call>";
         let calls = n.extract_tool_calls(text);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "f");
@@ -617,7 +628,8 @@ mod tests {
     #[test]
     fn test_extract_xml_invoke() {
         let n = ToolCallNormalizer::new(ToolDialect::Xml);
-        let text = r#"<invoke name="get_weather"><parameter name="location">NYC</parameter></invoke>"#;
+        let text =
+            r#"<invoke name="get_weather"><parameter name="location">NYC</parameter></invoke>"#;
         let calls = n.extract_tool_calls(text);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "get_weather");
@@ -647,7 +659,8 @@ mod tests {
     #[test]
     fn test_extract_openai_stringified_arguments() {
         let n = ToolCallNormalizer::new(ToolDialect::OpenAi);
-        let text = r#"{"function_call": {"name": "get_weather", "arguments": "{\"location\": \"NYC\"}"}}"#;
+        let text =
+            r#"{"function_call": {"name": "get_weather", "arguments": "{\"location\": \"NYC\"}"}}"#;
         let calls = n.extract_tool_calls(text);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "get_weather");
@@ -677,7 +690,9 @@ mod tests {
             ToolDialect::Xml
         );
         assert_eq!(
-            ToolCallNormalizer::detect_dialect("```json\n{\"function\":\"x\",\"parameters\":{}}\n```"),
+            ToolCallNormalizer::detect_dialect(
+                "```json\n{\"function\":\"x\",\"parameters\":{}}\n```"
+            ),
             ToolDialect::JsonBlock
         );
         assert_eq!(

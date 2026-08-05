@@ -8,9 +8,7 @@
 //!   transcript row).
 //! - Message deduplication.
 
-use opensquilla_core::types::{
-    ContentBlock, Message, MessageRole, ToolCall, ToolResult,
-};
+use opensquilla_core::types::{ContentBlock, Message, MessageRole, ToolCall, ToolResult};
 
 /// An immutable identifier for a message, used for deduplication.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -81,7 +79,10 @@ pub fn truncate_to_budget(
         }
     }
 
-    let system_tokens: u64 = system.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let system_tokens: u64 = system
+        .iter()
+        .map(|m| estimate_tokens(m, tokens_per_char))
+        .sum();
     let mut budget = max_tokens.saturating_sub(system_tokens);
     if budget == 0 && !system.is_empty() {
         // Extremely tight budget: keep only the system context.
@@ -237,8 +238,7 @@ pub fn drop_orphaned_results(messages: &[Message]) -> (Vec<Message>, usize) {
 /// `MessageFingerprint`) that appears after the first occurrence is removed.
 /// Tool result messages are always preserved.
 pub fn deduplicate(messages: &[Message]) -> Vec<Message> {
-    let mut seen: std::collections::HashSet<MessageFingerprint> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<MessageFingerprint> = std::collections::HashSet::new();
     let mut out: Vec<Message> = Vec::new();
 
     for msg in messages {
@@ -292,9 +292,8 @@ pub fn reconstruct_from_row(row: &TranscriptRow) -> Result<Message, String> {
     // Tool calls from JSON.
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     if let Some(json) = &row.tool_calls_json {
-        let calls: Vec<ToolCall> = serde_json::from_str(json).map_err(|e| {
-            format!("failed to parse tool_calls for row: {e}")
-        })?;
+        let calls: Vec<ToolCall> = serde_json::from_str(json)
+            .map_err(|e| format!("failed to parse tool_calls for row: {e}"))?;
         tool_calls.extend(calls);
     }
     for call in &tool_calls {

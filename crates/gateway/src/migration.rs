@@ -4,12 +4,12 @@
 //! existing config files on disk and previewing their contents without
 //! applying them.
 
-use std::path::PathBuf;
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A discovered configuration file candidate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,25 +146,22 @@ pub fn register_migration_handlers(registry: &mut RpcRegistry) {
                 },
             };
 
-            Ok(serde_json::to_value(preview)
-                .map_err(|e| AppError::internal(e.to_string()))?)
+            Ok(serde_json::to_value(preview).map_err(|e| AppError::internal(e.to_string()))?)
         }
     }));
 
     // migration.discover_path — resolve the active config path per discovery rules
     registry.register(rpc_handler("migration.discover_path", {
-        move |_params| {
-            match Config::discover_path() {
-                Ok(path) => Ok(serde_json::json!({
-                    "path": path.display().to_string(),
-                    "found": true,
-                })),
-                Err(e) => Ok(serde_json::json!({
-                    "path": null,
-                    "found": false,
-                    "error": e.to_string(),
-                })),
-            }
+        move |_params| match Config::discover_path() {
+            Ok(path) => Ok(serde_json::json!({
+                "path": path.display().to_string(),
+                "found": true,
+            })),
+            Err(e) => Ok(serde_json::json!({
+                "path": null,
+                "found": false,
+                "error": e.to_string(),
+            })),
         }
     }));
 
@@ -218,7 +215,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_migration_handlers(&mut registry);
 
-        let r = registry.dispatch("migration.discover", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("migration.discover", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["candidates"].is_array());
         assert!(resp["count"].as_u64().is_some());

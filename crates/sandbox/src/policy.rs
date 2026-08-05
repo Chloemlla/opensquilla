@@ -16,20 +16,12 @@ pub enum SandboxLevel {
 impl SandboxLevel {
     /// The most restrictive of two levels.
     pub fn max(self, other: SandboxLevel) -> SandboxLevel {
-        if self >= other {
-            self
-        } else {
-            other
-        }
+        if self >= other { self } else { other }
     }
 
     /// The least restrictive of two levels.
     pub fn min(self, other: SandboxLevel) -> SandboxLevel {
-        if self <= other {
-            self
-        } else {
-            other
-        }
+        if self <= other { self } else { other }
     }
 }
 
@@ -76,8 +68,9 @@ pub fn classify_operation(operation: &str) -> OperationClass {
         "package_install" | "install_package" | "pip_install" | "npm_install" => {
             OperationClass::PackageInstall
         }
-        "system_modification" | "service_management" | "system_config" | "shutdown"
-        | "reboot" => OperationClass::SystemModification,
+        "system_modification" | "service_management" | "system_config" | "shutdown" | "reboot" => {
+            OperationClass::SystemModification
+        }
         "credential_access" | "key_access" | "secret_read" | "password" => {
             OperationClass::CredentialAccess
         }
@@ -144,9 +137,7 @@ fn path_is_within(path: &str, base: &str) -> bool {
 }
 
 fn is_windows_path(path: &str) -> bool {
-    path.len() >= 2
-        && path.as_bytes()[1] == b':'
-        && (path.as_bytes()[0].is_ascii_alphabetic())
+    path.len() >= 2 && path.as_bytes()[1] == b':' && (path.as_bytes()[0].is_ascii_alphabetic())
 }
 
 fn strip_prefix_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
@@ -523,9 +514,7 @@ impl SandboxPolicy {
         }
 
         if self.level == SandboxLevel::Locked && self.network.is_host() {
-            return Err(PolicyValidationError::LevelNetworkConflict {
-                level: self.level,
-            });
+            return Err(PolicyValidationError::LevelNetworkConflict { level: self.level });
         }
 
         if let NetworkPolicy::ProxyAllowlist(domains) = &self.network {
@@ -673,11 +662,7 @@ impl SandboxPolicy {
                 file_size_bytes: Some(50 * 1024 * 1024),
             },
             audit_enabled: true,
-            env_allowlist: vec![
-                "PATH".to_string(),
-                "HOME".to_string(),
-                "TMPDIR".to_string(),
-            ],
+            env_allowlist: vec!["PATH".to_string(), "HOME".to_string(), "TMPDIR".to_string()],
         }
     }
 
@@ -738,7 +723,9 @@ pub enum PolicyValidationError {
     DeniedPathAlsoWritable { path: String },
     #[error("invalid resource limit: {message}")]
     InvalidResourceLimit { message: String },
-    #[error("level '{level:?}' requires full network isolation but network policy allows host access")]
+    #[error(
+        "level '{level:?}' requires full network isolation but network policy allows host access"
+    )]
     LevelNetworkConflict { level: SandboxLevel },
     #[error("invalid domain in network allowlist: '{domain}'")]
     InvalidAllowedDomain { domain: String },

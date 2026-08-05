@@ -8,7 +8,10 @@ use tracing::{debug, info, warn};
 #[derive(Debug, Clone)]
 pub enum StorageBackend {
     /// Store config in a file (YAML or JSON).
-    File { path: PathBuf, format: StorageFormat },
+    File {
+        path: PathBuf,
+        format: StorageFormat,
+    },
     /// Store config in environment variables.
     Environment,
 }
@@ -79,17 +82,15 @@ impl ConfigStorage {
 
                 match format {
                     StorageFormat::Yaml => {
-                        let yaml_str = serde_yaml::to_string(&config_map).map_err(|e| {
-                            ConfigStorageError::SerializationError(e.to_string())
-                        })?;
+                        let yaml_str = serde_yaml::to_string(&config_map)
+                            .map_err(|e| ConfigStorageError::SerializationError(e.to_string()))?;
                         std::fs::write(path, &yaml_str).map_err(|e| {
                             ConfigStorageError::WriteError(format!("Cannot write config: {e}"))
                         })?;
                     }
                     StorageFormat::Json => {
-                        let json_str = serde_json::to_string_pretty(&config_map).map_err(|e| {
-                            ConfigStorageError::SerializationError(e.to_string())
-                        })?;
+                        let json_str = serde_json::to_string_pretty(&config_map)
+                            .map_err(|e| ConfigStorageError::SerializationError(e.to_string()))?;
                         std::fs::write(path, &json_str).map_err(|e| {
                             ConfigStorageError::WriteError(format!("Cannot write config: {e}"))
                         })?;
@@ -165,9 +166,7 @@ impl ConfigStorage {
     /// Check if the storage backend is available.
     pub fn is_available(&self) -> bool {
         match &self.backend {
-            StorageBackend::File { path, .. } => {
-                path.parent().map_or(false, |p| p.exists())
-            }
+            StorageBackend::File { path, .. } => path.parent().map_or(false, |p| p.exists()),
             StorageBackend::Environment => true,
         }
     }

@@ -16,12 +16,12 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tracing::{debug, error, info, warn};
 use trust_dns_resolver::TokioAsyncResolver;
 
@@ -239,7 +239,9 @@ impl NetworkProxy {
         let listener = TcpListener::bind(self.config.bind_addr)
             .await
             .map_err(|e| format!("failed to bind proxy: {e}"))?;
-        let bound = listener.local_addr().map_err(|e| format!("local addr: {e}"))?;
+        let bound = listener
+            .local_addr()
+            .map_err(|e| format!("local addr: {e}"))?;
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let ctx = Arc::new(ConnCtx {
@@ -576,7 +578,10 @@ fn matches_allowlist(domains: &dashmap::DashSet<String>, domain: &str) -> bool {
     false
 }
 
-async fn read_line(reader: &mut tokio::net::tcp::OwnedReadHalf, buf: &mut Vec<u8>) -> Result<usize, String> {
+async fn read_line(
+    reader: &mut tokio::net::tcp::OwnedReadHalf,
+    buf: &mut Vec<u8>,
+) -> Result<usize, String> {
     buf.clear();
     loop {
         let mut byte = [0u8; 1];

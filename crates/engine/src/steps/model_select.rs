@@ -197,7 +197,10 @@ mod tests {
         let outcome = step.resolve(&mut pipeline);
         assert_eq!(outcome.model, "gpt-4o");
         assert_eq!(outcome.source, "default");
-        assert_eq!(pipeline.get_metadata("resolved_model").map(String::as_str), Some("gpt-4o"));
+        assert_eq!(
+            pipeline.get_metadata("resolved_model").map(String::as_str),
+            Some("gpt-4o")
+        );
     }
 
     #[test]
@@ -220,10 +223,16 @@ mod tests {
             confidence: 0.6,
             source: "heuristic".into(),
         };
-        pipeline.set_metadata("routing_decision", serde_json::to_string(&decision).unwrap());
+        pipeline.set_metadata(
+            "routing_decision",
+            serde_json::to_string(&decision).unwrap(),
+        );
         let outcome = step.resolve(&mut pipeline);
         assert_eq!(outcome.model, "deepseek-chat");
         assert_eq!(outcome.routed_tier.as_deref(), Some("c2"));
-        assert_eq!(pipeline.get_metadata("routed_tier").map(String::as_str), Some("c2"));
+        assert_eq!(
+            pipeline.get_metadata("routed_tier").map(String::as_str),
+            Some("c2")
+        );
     }
 }

@@ -5,10 +5,7 @@
 //! [`GatewayBuilder`] for configuring auth, CORS, and custom handlers before
 //! construction.
 
-use axum::{
-    routing::get,
-    Extension, Router,
-};
+use axum::{Extension, Router, routing::get};
 use opensquilla_core::config::GatewayConfig;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -16,15 +13,15 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use crate::auth::{AuthConfig, AuthMode};
-use crate::chat::{register_chat_handlers, ChatStore};
-use crate::config::{register_config_handlers, ConfigStore};
+use crate::chat::{ChatStore, register_chat_handlers};
+use crate::config::{ConfigStore, register_config_handlers};
 use crate::middleware::{
-    catch_panic_middleware, cors_layer, request_logging_middleware, security_headers_middleware,
-    sliding_window_rate_limit_middleware, token_auth_middleware, unsafe_origin_guard_middleware,
-    RateLimiter, SlidingWindowRateLimiter,
+    RateLimiter, SlidingWindowRateLimiter, catch_panic_middleware, cors_layer,
+    request_logging_middleware, security_headers_middleware, sliding_window_rate_limit_middleware,
+    token_auth_middleware, unsafe_origin_guard_middleware,
 };
 use crate::rpc::{RpcHandler, RpcRegistry};
-use crate::sessions::{register_session_handlers, SessionStore};
+use crate::sessions::{SessionStore, register_session_handlers};
 use crate::websocket::{ConnectionRegistry, SubscriptionManager, ws_handler};
 
 /// The OpenSquilla gateway server.
@@ -167,15 +164,11 @@ impl Gateway {
             }))
             .layer(axum::middleware::from_fn(move |req, next| {
                 let limiter = sliding_limiter.clone();
-                async move {
-                    sliding_window_rate_limit_middleware(req, next, limiter).await
-                }
+                async move { sliding_window_rate_limit_middleware(req, next, limiter).await }
             }))
             .layer(axum::middleware::from_fn(move |req, next| {
                 let limiter = rate_limiter.clone();
-                async move {
-                    crate::middleware::rate_limit_middleware(req, next, limiter).await
-                }
+                async move { crate::middleware::rate_limit_middleware(req, next, limiter).await }
             }))
             .layer(axum::middleware::from_fn(request_logging_middleware))
             .layer(cors)
@@ -334,6 +327,9 @@ mod tests {
             .build();
         assert_eq!(gateway.auth_config.mode, AuthMode::Token);
         assert_eq!(gateway.auth_config.token.as_deref(), Some("secret"));
-        assert_eq!(gateway.config.cors_origins, vec!["http://good.example".to_string()]);
+        assert_eq!(
+            gateway.config.cors_origins,
+            vec!["http://good.example".to_string()]
+        );
     }
 }

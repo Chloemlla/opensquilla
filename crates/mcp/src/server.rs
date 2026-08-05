@@ -14,7 +14,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use opensquilla_core::config::Config;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -39,8 +39,7 @@ pub trait SessionBridge: Send + Sync {
     async fn session_resolve(&self, key: &str) -> Result<Value, McpServerError>;
 
     /// Read persisted messages for a session.
-    async fn messages_read(&self, key: &str, limit: Option<u32>)
-        -> Result<Value, McpServerError>;
+    async fn messages_read(&self, key: &str, limit: Option<u32>) -> Result<Value, McpServerError>;
 
     /// Send a user message to an existing session.
     async fn messages_send(
@@ -61,7 +60,11 @@ pub trait SessionBridge: Send + Sync {
     ) -> Result<Value, McpServerError>;
 
     /// Export a session transcript as JSONL.
-    async fn transcript_jsonl(&self, key: &str, limit: Option<u32>) -> Result<String, McpServerError>;
+    async fn transcript_jsonl(
+        &self,
+        key: &str,
+        limit: Option<u32>,
+    ) -> Result<String, McpServerError>;
 }
 
 /// Executes a registered MCP tool.
@@ -118,8 +121,14 @@ impl McpServer {
         tool: McpTool,
         executor: Arc<dyn McpToolExecutor>,
     ) {
-        self.tools.lock().await.insert(tool.name.clone(), tool.clone());
-        self.executors.lock().await.insert(tool.name.clone(), executor);
+        self.tools
+            .lock()
+            .await
+            .insert(tool.name.clone(), tool.clone());
+        self.executors
+            .lock()
+            .await
+            .insert(tool.name.clone(), executor);
         info!(tool = %tool.name, "Registered MCP tool");
     }
 
@@ -140,8 +149,8 @@ impl McpServer {
         let session_tools: Vec<McpTool> = vec![
             McpTool {
                 name: "conversations_list".into(),
-                description: "List OpenSquilla sessions visible to the connected gateway principal."
-                    .into(),
+                description:
+                    "List OpenSquilla sessions visible to the connected gateway principal.".into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": { "limit": { "type": "integer" } }
@@ -200,8 +209,9 @@ impl McpServer {
             },
             McpTool {
                 name: "transcript_export".into(),
-                description: "Export a session transcript as JSONL with standard tool evidence events."
-                    .into(),
+                description:
+                    "Export a session transcript as JSONL with standard tool evidence events."
+                        .into(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -238,9 +248,7 @@ impl McpServer {
             "initialize" => JsonRpcResponse::ok(id, self.initialize_result()),
             "ping" => JsonRpcResponse::ok(id, json!({})),
             "tools/list" => self.handle_tools_list(id).await,
-            "tools/call" => {
-                self.handle_tools_call(id, request.params.as_ref()).await
-            }
+            "tools/call" => self.handle_tools_call(id, request.params.as_ref()).await,
             "resources/list" => JsonRpcResponse::ok(id, json!({ "resources": [] })),
             "prompts/list" => JsonRpcResponse::ok(id, json!({ "prompts": [] })),
             "notifications/initialized" => JsonRpcResponse::notification(),
@@ -342,40 +350,93 @@ impl McpServer {
         call: &McpToolCall,
     ) -> Option<Value> {
         let result = match call.name.as_str() {
-            "conversations_list" => bridge
-                .conversations_list(call.arguments.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32))
-                .await,
-            "session_resolve" => bridge
-                .session_resolve(
-                    call.arguments.get("key").and_then(|v| v.as_str()).unwrap_or(""),
-                )
-                .await,
-            "messages_read" => bridge
-                .messages_read(
-                    call.arguments.get("key").and_then(|v| v.as_str()).unwrap_or(""),
-                    call.arguments.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32),
-                )
-                .await,
-            "messages_send" => bridge
-                .messages_send(
-                    call.arguments.get("key").and_then(|v| v.as_str()).unwrap_or(""),
-                    call.arguments.get("message").and_then(|v| v.as_str()).unwrap_or(""),
-                    call.arguments.get("intent").and_then(|v| v.as_str()).unwrap_or("continue"),
-                )
-                .await,
-            "events_wait" => bridge
-                .events_wait(
-                    call.arguments.get("key").and_then(|v| v.as_str()).unwrap_or(""),
-                    call.arguments.get("since_stream_seq").and_then(|v| v.as_i64()),
-                    call.arguments.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(30_000),
-                    call.arguments.get("max_events").and_then(|v| v.as_u64()).unwrap_or(100) as u32,
-                    call.arguments.get("terminal_only").and_then(|v| v.as_bool()).unwrap_or(false),
-                )
-                .await,
+            "conversations_list" => {
+                bridge
+                    .conversations_list(
+                        call.arguments
+                            .get("limit")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32),
+                    )
+                    .await
+            }
+            "session_resolve" => {
+                bridge
+                    .session_resolve(
+                        call.arguments
+                            .get("key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                    )
+                    .await
+            }
+            "messages_read" => {
+                bridge
+                    .messages_read(
+                        call.arguments
+                            .get("key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        call.arguments
+                            .get("limit")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32),
+                    )
+                    .await
+            }
+            "messages_send" => {
+                bridge
+                    .messages_send(
+                        call.arguments
+                            .get("key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        call.arguments
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        call.arguments
+                            .get("intent")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("continue"),
+                    )
+                    .await
+            }
+            "events_wait" => {
+                bridge
+                    .events_wait(
+                        call.arguments
+                            .get("key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        call.arguments
+                            .get("since_stream_seq")
+                            .and_then(|v| v.as_i64()),
+                        call.arguments
+                            .get("timeout_ms")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(30_000),
+                        call.arguments
+                            .get("max_events")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(100) as u32,
+                        call.arguments
+                            .get("terminal_only")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                    )
+                    .await
+            }
             "transcript_export" => bridge
                 .transcript_jsonl(
-                    call.arguments.get("key").and_then(|v| v.as_str()).unwrap_or(""),
-                    call.arguments.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32),
+                    call.arguments
+                        .get("key")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                    call.arguments
+                        .get("limit")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32),
                 )
                 .await
                 .map(|text| json!({ "jsonl": text })),
@@ -480,10 +541,7 @@ impl McpServer {
 
 /// The axum JSON-RPC endpoint handler. Accepts both a single request and a
 /// JSON-RPC batch (array of requests).
-async fn handle_mcp_endpoint(
-    State(server): State<Arc<McpServer>>,
-    body: Bytes,
-) -> Response {
+async fn handle_mcp_endpoint(State(server): State<Arc<McpServer>>, body: Bytes) -> Response {
     match serde_json::from_slice::<Value>(&body) {
         Ok(Value::Array(items)) => {
             let mut responses = Vec::new();
@@ -627,7 +685,10 @@ mod tests {
         let resp = server.handle_jsonrpc(&request("initialize", None)).await;
         let result = resp.result.unwrap();
         assert_eq!(result["serverInfo"]["name"].as_str(), Some("test"));
-        assert_eq!(result["protocolVersion"].as_str(), Some(MCP_PROTOCOL_VERSION));
+        assert_eq!(
+            result["protocolVersion"].as_str(),
+            Some(MCP_PROTOCOL_VERSION)
+        );
     }
 
     #[tokio::test]

@@ -7,19 +7,19 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use opensquilla_core::config::Config;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command as TokioCommand};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use crate::types::{
-    JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpRequest, McpResponse, McpPrompt, McpResource,
+    JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpPrompt, McpRequest, McpResource, McpResponse,
     McpTool, McpToolCall, McpToolResult,
 };
 
@@ -215,8 +215,11 @@ impl McpClient {
                 "version": env!("CARGO_PKG_VERSION"),
             },
         });
-        let result = self.request(server_name, "initialize", Some(params)).await?;
-        self.notify(server_name, "notifications/initialized").await?;
+        let result = self
+            .request(server_name, "initialize", Some(params))
+            .await?;
+        self.notify(server_name, "notifications/initialized")
+            .await?;
         Ok(result)
     }
 
@@ -353,8 +356,7 @@ impl McpClient {
     pub async fn list_tools(&self, server_name: &str) -> Result<Vec<McpTool>, McpError> {
         let result = self.request(server_name, "tools/list", None).await?;
         let tools = result.get("tools").cloned().unwrap_or(Value::Null);
-        serde_json::from_value(tools)
-            .map_err(|e| McpError::DeserializationFailed(e.to_string()))
+        serde_json::from_value(tools).map_err(|e| McpError::DeserializationFailed(e.to_string()))
     }
 
     /// Invoke a tool on an MCP server.
@@ -367,7 +369,9 @@ impl McpClient {
             "name": call.name,
             "arguments": call.arguments,
         });
-        let result = self.request(server_name, "tools/call", Some(params)).await?;
+        let result = self
+            .request(server_name, "tools/call", Some(params))
+            .await?;
         Ok(McpToolResult::from_raw(result))
     }
 
@@ -397,8 +401,7 @@ impl McpClient {
     pub async fn list_prompts(&self, server_name: &str) -> Result<Vec<McpPrompt>, McpError> {
         let result = self.request(server_name, "prompts/list", None).await?;
         let prompts = result.get("prompts").cloned().unwrap_or(Value::Null);
-        serde_json::from_value(prompts)
-            .map_err(|e| McpError::DeserializationFailed(e.to_string()))
+        serde_json::from_value(prompts).map_err(|e| McpError::DeserializationFailed(e.to_string()))
     }
 
     /// List the names of all connected servers.

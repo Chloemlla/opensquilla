@@ -47,16 +47,31 @@ impl Report {
     pub fn to_markdown(&self) -> String {
         let mut md = String::new();
         md.push_str(&format!("# {}\n\n", self.title));
-        md.push_str(&format!("*Generated at {}*\n\n", self.generated_at.to_rfc3339()));
+        md.push_str(&format!(
+            "*Generated at {}*\n\n",
+            self.generated_at.to_rfc3339()
+        ));
 
         // Configuration
         md.push_str("## Configuration\n\n");
         md.push_str(&format!("- **Name**: {}\n", self.benchmark.config.name));
-        md.push_str(&format!("- **Provider**: {}\n", self.benchmark.config.provider));
+        md.push_str(&format!(
+            "- **Provider**: {}\n",
+            self.benchmark.config.provider
+        ));
         md.push_str(&format!("- **Model**: {}\n", self.benchmark.config.model));
-        md.push_str(&format!("- **Iterations**: {}\n", self.benchmark.config.iterations));
-        md.push_str(&format!("- **Timeout**: {}s\n", self.benchmark.config.timeout_seconds));
-        md.push_str(&format!("- **Concurrency**: {}\n", self.benchmark.config.concurrency));
+        md.push_str(&format!(
+            "- **Iterations**: {}\n",
+            self.benchmark.config.iterations
+        ));
+        md.push_str(&format!(
+            "- **Timeout**: {}s\n",
+            self.benchmark.config.timeout_seconds
+        ));
+        md.push_str(&format!(
+            "- **Concurrency**: {}\n",
+            self.benchmark.config.concurrency
+        ));
         md.push_str("\n");
 
         // Overall metrics
@@ -64,19 +79,46 @@ impl Report {
         md.push_str("| Metric | Value |\n");
         md.push_str("|--------|-------|\n");
         md.push_str(&format!("| Total Runs | {} |\n", self.metrics.total_runs));
-        md.push_str(&format!("| Successful | {} |\n", self.metrics.successful_runs));
+        md.push_str(&format!(
+            "| Successful | {} |\n",
+            self.metrics.successful_runs
+        ));
         md.push_str(&format!("| Failed | {} |\n", self.metrics.failed_runs));
-        md.push_str(&format!("| Accuracy | {:.2}% |\n", self.metrics.accuracy * 100.0));
+        md.push_str(&format!(
+            "| Accuracy | {:.2}% |\n",
+            self.metrics.accuracy * 100.0
+        ));
         md.push_str(&format!("| Precision | {:.2} |\n", self.metrics.precision));
         md.push_str(&format!("| Recall | {:.2} |\n", self.metrics.recall));
         md.push_str(&format!("| F1 Score | {:.2} |\n", self.metrics.f1));
-        md.push_str(&format!("| Avg Latency | {:.2} ms |\n", self.metrics.avg_latency_ms));
-        md.push_str(&format!("| P50 Latency | {:.2} ms |\n", self.metrics.p50_latency_ms));
-        md.push_str(&format!("| P90 Latency | {:.2} ms |\n", self.metrics.p90_latency_ms));
-        md.push_str(&format!("| P95 Latency | {:.2} ms |\n", self.metrics.p95_latency_ms));
-        md.push_str(&format!("| Max Latency | {} ms |\n", self.metrics.max_latency_ms));
-        md.push_str(&format!("| Min Latency | {} ms |\n", self.metrics.min_latency_ms));
-        md.push_str(&format!("| Total Tokens | {} |\n", self.metrics.total_tokens));
+        md.push_str(&format!(
+            "| Avg Latency | {:.2} ms |\n",
+            self.metrics.avg_latency_ms
+        ));
+        md.push_str(&format!(
+            "| P50 Latency | {:.2} ms |\n",
+            self.metrics.p50_latency_ms
+        ));
+        md.push_str(&format!(
+            "| P90 Latency | {:.2} ms |\n",
+            self.metrics.p90_latency_ms
+        ));
+        md.push_str(&format!(
+            "| P95 Latency | {:.2} ms |\n",
+            self.metrics.p95_latency_ms
+        ));
+        md.push_str(&format!(
+            "| Max Latency | {} ms |\n",
+            self.metrics.max_latency_ms
+        ));
+        md.push_str(&format!(
+            "| Min Latency | {} ms |\n",
+            self.metrics.min_latency_ms
+        ));
+        md.push_str(&format!(
+            "| Total Tokens | {} |\n",
+            self.metrics.total_tokens
+        ));
         md.push_str("\n");
 
         // Per-scenario breakdown
@@ -89,7 +131,12 @@ impl Report {
             for (name, sm) in scenarios {
                 md.push_str(&format!(
                     "| {} | {} | {} | {} | {:.1}% | {:.2} ms |\n",
-                    name, sm.runs, sm.passed, sm.failed, sm.pass_rate * 100.0, sm.avg_latency_ms
+                    name,
+                    sm.runs,
+                    sm.passed,
+                    sm.failed,
+                    sm.pass_rate * 100.0,
+                    sm.avg_latency_ms
                 ));
             }
             md.push_str("\n");
@@ -104,7 +151,12 @@ impl Report {
             let error = run.error.as_deref().unwrap_or("");
             md.push_str(&format!(
                 "| {} | {} | {} | {} | {} | {} |\n",
-                i + 1, run.scenario, run.iteration, run.duration_ms, success, error
+                i + 1,
+                run.scenario,
+                run.iteration,
+                run.duration_ms,
+                success,
+                error
             ));
         }
         md.push_str("\n");
@@ -128,13 +180,19 @@ impl Report {
     }
 
     /// Get the report title.
-    pub fn title(&self) -> &str { &self.title }
+    pub fn title(&self) -> &str {
+        &self.title
+    }
 
     /// Get the benchmark result.
-    pub fn benchmark(&self) -> &BenchmarkResult { &self.benchmark }
+    pub fn benchmark(&self) -> &BenchmarkResult {
+        &self.benchmark
+    }
 
     /// Get the evaluation metrics.
-    pub fn metrics(&self) -> &EvalMetrics { &self.metrics }
+    pub fn metrics(&self) -> &EvalMetrics {
+        &self.metrics
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -153,18 +211,16 @@ mod tests {
 
     fn sample_report() -> Report {
         let config = BenchmarkConfig::default();
-        let runs = vec![
-            BenchmarkRun {
-                scenario: "test_scenario".to_string(),
-                iteration: 0,
-                duration_ms: 100,
-                prompt_tokens: 10,
-                completion_tokens: 20,
-                success: true,
-                error: None,
-                timestamp: Utc::now(),
-            },
-        ];
+        let runs = vec![BenchmarkRun {
+            scenario: "test_scenario".to_string(),
+            iteration: 0,
+            duration_ms: 100,
+            prompt_tokens: 10,
+            completion_tokens: 20,
+            success: true,
+            error: None,
+            timestamp: Utc::now(),
+        }];
         let metrics = EvalMetrics::compute(&runs);
         let benchmark = BenchmarkResult {
             config,

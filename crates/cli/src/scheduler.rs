@@ -7,9 +7,9 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use opensquilla_scheduler::types::{CronJob, ScheduleKind};
 use opensquilla_scheduler::SchedulerBuilder;
 use opensquilla_scheduler::SchedulerEngine;
+use opensquilla_scheduler::types::{CronJob, ScheduleKind};
 use std::collections::HashMap;
 use tracing::info;
 use uuid::Uuid;

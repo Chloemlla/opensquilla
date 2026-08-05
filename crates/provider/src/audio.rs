@@ -17,10 +17,10 @@
 //! they arrive.
 
 use crate::types::{ProviderError, ProviderResult};
-use crate::util::{check_status, with_retry, RateLimiter, RetryConfig, DEFAULT_TIMEOUT};
+use crate::util::{DEFAULT_TIMEOUT, RateLimiter, RetryConfig, check_status, with_retry};
 use futures::{Stream, StreamExt};
-use reqwest::multipart::{Form, Part};
 use reqwest::Client;
+use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -164,9 +164,9 @@ impl AudioProviderType {
     pub fn default_voice(&self) -> &'static str {
         match self {
             AudioProviderType::ElevenLabs => "Rachel",
-            AudioProviderType::OpenAiTts | AudioProviderType::OpenAiStt | AudioProviderType::Local => {
-                "alloy"
-            }
+            AudioProviderType::OpenAiTts
+            | AudioProviderType::OpenAiStt
+            | AudioProviderType::Local => "alloy",
         }
     }
 
@@ -356,8 +356,14 @@ impl TtsParams {
     pub fn to_request(&self, config: &AudioConfig) -> TtsRequest {
         TtsRequest {
             text: self.text.clone(),
-            model: self.model.clone().unwrap_or_else(|| config.default_model.clone()),
-            voice: self.voice.clone().unwrap_or_else(|| config.default_voice.clone()),
+            model: self
+                .model
+                .clone()
+                .unwrap_or_else(|| config.default_model.clone()),
+            voice: self
+                .voice
+                .clone()
+                .unwrap_or_else(|| config.default_voice.clone()),
             format: self.format.unwrap_or(AudioFormat::Mp3),
             speed: self.speed.unwrap_or(1.0) as f64,
             stability: self.stability.map(|x| x as f64),
@@ -801,10 +807,16 @@ impl AudioProvider {
 
         let mut resp = match self.config.provider {
             AudioProviderType::ElevenLabs => {
-                with_retry(&self.config.retry, |_attempt| self.synthesize_elevenlabs(request)).await?
+                with_retry(&self.config.retry, |_attempt| {
+                    self.synthesize_elevenlabs(request)
+                })
+                .await?
             }
             AudioProviderType::OpenAiTts | AudioProviderType::Local => {
-                with_retry(&self.config.retry, |_attempt| self.synthesize_openai(request)).await?
+                with_retry(&self.config.retry, |_attempt| {
+                    self.synthesize_openai(request)
+                })
+                .await?
             }
             AudioProviderType::OpenAiStt => {
                 return Err(ProviderError::Config(
@@ -842,7 +854,9 @@ impl AudioProvider {
 
         let resp = match self.config.provider {
             AudioProviderType::ElevenLabs => self.send_elevenlabs(request).await?,
-            AudioProviderType::OpenAiTts | AudioProviderType::Local => self.send_openai(request).await?,
+            AudioProviderType::OpenAiTts | AudioProviderType::Local => {
+                self.send_openai(request).await?
+            }
             AudioProviderType::OpenAiStt => {
                 return Err(ProviderError::Config(
                     "OpenAI STT provider cannot perform text-to-speech".into(),
@@ -873,7 +887,10 @@ impl AudioProvider {
             .config
             .cost_override
             .or(response.cost)
-            .or(estimate_tts_cost(&request.model, request.text.chars().count()));
+            .or(estimate_tts_cost(
+                &request.model,
+                request.text.chars().count(),
+            ));
         Ok(TtsResult {
             audio_data: response.audio,
             format: response.format,
@@ -909,10 +926,16 @@ impl AudioProvider {
 
         let result = match self.config.provider {
             AudioProviderType::ElevenLabs => {
-                with_retry(&self.config.retry, |_attempt| self.transcribe_elevenlabs(params)).await?
+                with_retry(&self.config.retry, |_attempt| {
+                    self.transcribe_elevenlabs(params)
+                })
+                .await?
             }
             AudioProviderType::OpenAiStt | AudioProviderType::Local => {
-                with_retry(&self.config.retry, |_attempt| self.transcribe_openai(params)).await?
+                with_retry(&self.config.retry, |_attempt| {
+                    self.transcribe_openai(params)
+                })
+                .await?
             }
             AudioProviderType::OpenAiTts => {
                 return Err(ProviderError::Config(
@@ -957,10 +980,12 @@ impl AudioProvider {
     /// Fetch the configuration for a voice.
     pub async fn get_voice_settings(&self, voice_id: &str) -> ProviderResult<VoiceSettings> {
         match self.config.provider {
-            AudioProviderType::ElevenLabs => with_retry(&self.config.retry, |_attempt| {
-                self.get_elevenlabs_voice_settings(voice_id)
-            })
-            .await,
+            AudioProviderType::ElevenLabs => {
+                with_retry(&self.config.retry, |_attempt| {
+                    self.get_elevenlabs_voice_settings(voice_id)
+                })
+                .await
+            }
             AudioProviderType::OpenAiTts | AudioProviderType::Local => {
                 Ok(VoiceSettings::openai_default())
             }
@@ -985,7 +1010,8 @@ impl AudioProvider {
             form = form.text("description", description.clone());
         }
         if !params.labels.is_empty() {
-            let labels = serde_json::to_string(&params.labels).map_err(ProviderError::Serialization)?;
+            let labels =
+                serde_json::to_string(&params.labels).map_err(ProviderError::Serialization)?;
             form = form.text("labels", labels);
         }
 
@@ -1001,12 +1027,15 @@ impl AudioProvider {
         let text = resp.text().await.map_err(ProviderError::Network)?;
         check_status(status, &text, "voice clone")?;
 
-        let data: serde_json::Value = serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
+        let data: serde_json::Value =
+            serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
         let voice_id = data
             .get("voice_id")
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| ProviderError::Provider("Voice clone provider returned no voice_id".into()))?;
+            .ok_or_else(|| {
+                ProviderError::Provider("Voice clone provider returned no voice_id".into())
+            })?;
         let name = data
             .get("name")
             .and_then(|v| v.as_str())
@@ -1018,7 +1047,10 @@ impl AudioProvider {
             provider: "elevenlabs".into(),
             voice_id: voice_id.to_string(),
             name,
-            preview_url: data.get("preview_url").and_then(|v| v.as_str()).map(String::from),
+            preview_url: data
+                .get("preview_url")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             requires_verification: data
                 .get("requires_verification")
                 .and_then(|v| v.as_bool())
@@ -1116,12 +1148,15 @@ impl AudioProvider {
         let text = resp.text().await.map_err(ProviderError::Network)?;
         check_status(status, &text, "dubbing")?;
 
-        let data: serde_json::Value = serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
+        let data: serde_json::Value =
+            serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
         let dubbing_id = data
             .get("dubbing_id")
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| ProviderError::Provider("Dubbing provider returned no dubbing_id".into()))?;
+            .ok_or_else(|| {
+                ProviderError::Provider("Dubbing provider returned no dubbing_id".into())
+            })?;
         let status_str = data
             .get("status")
             .and_then(|v| v.as_str())
@@ -1150,7 +1185,8 @@ impl AudioProvider {
         let text = resp.text().await.map_err(ProviderError::Network)?;
         check_status(status, &text, "dubbing status")?;
 
-        let data: serde_json::Value = serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
+        let data: serde_json::Value =
+            serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
         let state = data
             .get("status")
             .or_else(|| data.get("state"))
@@ -1174,9 +1210,7 @@ impl AudioProvider {
     ) -> ProviderResult<Vec<u8>> {
         let resp = self
             .client
-            .get(self.endpoint(&format!(
-                "/v1/dubbing/{dubbing_id}/audio/{language_code}"
-            )))
+            .get(self.endpoint(&format!("/v1/dubbing/{dubbing_id}/audio/{language_code}")))
             .header("xi-api-key", &self.config.api_key)
             .send()
             .await
@@ -1271,13 +1305,17 @@ impl AudioProvider {
         let text = resp.text().await.map_err(ProviderError::Network)?;
         check_status(status, &text, "ElevenLabs subscription")?;
 
-        let data: serde_json::Value = serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
+        let data: serde_json::Value =
+            serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
         let tier = data
             .get("tier")
             .or_else(|| data.get("plan"))
             .and_then(|v| v.as_str())
             .map(String::from);
-        let status_str = data.get("status").and_then(|v| v.as_str()).map(String::from);
+        let status_str = data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         Ok(SubscriptionInfo {
             provider: "elevenlabs".into(),
             tier,
@@ -1321,7 +1359,8 @@ impl AudioProvider {
         let text = resp.text().await.map_err(ProviderError::Network)?;
         check_status(status, &text, "shared voices search")?;
 
-        let data: serde_json::Value = serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
+        let data: serde_json::Value =
+            serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
         let voices = data
             .get("voices")
             .and_then(|v| v.as_array())
@@ -1425,7 +1464,10 @@ impl AudioProvider {
     }
 
     async fn transcribe_openai(&self, params: &SttParams) -> ProviderResult<SttResult> {
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let file_part = Part::bytes(params.audio_data.clone())
             .file_name(params.filename.clone())
             .mime_str(&params.mime_type)
@@ -1457,7 +1499,10 @@ impl AudioProvider {
     }
 
     async fn transcribe_elevenlabs(&self, params: &SttParams) -> ProviderResult<SttResult> {
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let file_part = Part::bytes(params.audio_data.clone())
             .file_name(params.filename.clone())
             .mime_str(&params.mime_type)
@@ -1556,7 +1601,10 @@ pub fn build_elevenlabs_tts_body(request: &TtsRequest) -> serde_json::Value {
         settings.insert("style".into(), serde_json::json!(style));
     }
     if let Some(use_speaker_boost) = request.use_speaker_boost {
-        settings.insert("use_speaker_boost".into(), serde_json::json!(use_speaker_boost));
+        settings.insert(
+            "use_speaker_boost".into(),
+            serde_json::json!(use_speaker_boost),
+        );
     }
     if !settings.is_empty() {
         body["voice_settings"] = serde_json::Value::Object(settings);
@@ -1566,13 +1614,17 @@ pub fn build_elevenlabs_tts_body(request: &TtsRequest) -> serde_json::Value {
 
 /// Parse an OpenAI Whisper verbose-JSON transcription response.
 pub fn parse_openai_stt_json(text: &str, model: &str) -> ProviderResult<SttResult> {
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
     let transcript = data
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ProviderError::Provider("Speech to text provider returned no text".into()))?
         .to_string();
-    let language = data.get("language").and_then(|v| v.as_str()).map(String::from);
+    let language = data
+        .get("language")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let duration = data.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let segments = data
         .get("segments")
@@ -1601,13 +1653,17 @@ pub fn parse_openai_stt_json(text: &str, model: &str) -> ProviderResult<SttResul
 
 /// Parse an ElevenLabs `/v1/speech-to-text` response.
 pub fn parse_elevenlabs_stt_json(text: &str, model: &str) -> ProviderResult<SttResult> {
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
     let transcript = data
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ProviderError::Provider("Speech to text provider returned no text".into()))?
         .to_string();
-    let language = data.get("language_code").and_then(|v| v.as_str()).map(String::from);
+    let language = data
+        .get("language_code")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let language_probability = data.get("language_probability").and_then(|v| v.as_f64());
     let words = data
         .get("words")
@@ -1631,7 +1687,8 @@ pub fn parse_elevenlabs_stt_json(text: &str, model: &str) -> ProviderResult<SttR
 
 /// Parse the ElevenLabs `/v1/voices` response into [`Voice`] entries.
 pub fn parse_elevenlabs_voices_json(text: &str) -> ProviderResult<Vec<Voice>> {
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
     let voices = data
         .get("voices")
         .and_then(|v| v.as_array())
@@ -1651,18 +1708,34 @@ fn parse_voice_item(value: &serde_json::Value) -> Option<Voice> {
     Some(Voice {
         id,
         name,
-        category: value.get("category").and_then(|v| v.as_str()).map(String::from),
-        description: value.get("description").and_then(|v| v.as_str()).map(String::from),
-        preview_url: value.get("preview_url").and_then(|v| v.as_str()).map(String::from),
+        category: value
+            .get("category")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        description: value
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        preview_url: value
+            .get("preview_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     })
 }
 
 /// Parse the ElevenLabs `/v1/voices/{id}/settings` response.
 pub fn parse_elevenlabs_voice_settings_json(text: &str) -> ProviderResult<VoiceSettings> {
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
     Ok(VoiceSettings {
-        stability: data.get("stability").and_then(|v| v.as_f64()).map(|x| x as f32),
-        similarity_boost: data.get("similarity_boost").and_then(|v| v.as_f64()).map(|x| x as f32),
+        stability: data
+            .get("stability")
+            .and_then(|v| v.as_f64())
+            .map(|x| x as f32),
+        similarity_boost: data
+            .get("similarity_boost")
+            .and_then(|v| v.as_f64())
+            .map(|x| x as f32),
         style: data.get("style").and_then(|v| v.as_f64()).map(|x| x as f32),
         use_speaker_boost: data.get("use_speaker_boost").and_then(|v| v.as_bool()),
         speed: data.get("speed").and_then(|v| v.as_f64()).map(|x| x as f32),
@@ -1674,7 +1747,8 @@ pub fn default_openai_voices() -> Vec<Voice> {
     const NAMES: &[&str] = &[
         "alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse",
     ];
-    NAMES.iter()
+    NAMES
+        .iter()
         .map(|name| Voice {
             id: name.to_string(),
             name: name.to_string(),
@@ -1898,9 +1972,18 @@ mod tests {
 
     #[test]
     fn provider_type_roundtrip() {
-        assert_eq!(AudioProviderType::from_str("elevenlabs"), Some(AudioProviderType::ElevenLabs));
-        assert_eq!(AudioProviderType::from_str("whisper"), Some(AudioProviderType::OpenAiStt));
-        assert_eq!(AudioProviderType::from_str("local"), Some(AudioProviderType::Local));
+        assert_eq!(
+            AudioProviderType::from_str("elevenlabs"),
+            Some(AudioProviderType::ElevenLabs)
+        );
+        assert_eq!(
+            AudioProviderType::from_str("whisper"),
+            Some(AudioProviderType::OpenAiStt)
+        );
+        assert_eq!(
+            AudioProviderType::from_str("local"),
+            Some(AudioProviderType::Local)
+        );
         assert_eq!(AudioProviderType::from_str("bogus"), None);
         assert_eq!(AudioProviderType::OpenAiTts.as_str(), "openai-tts");
     }
@@ -2122,7 +2205,10 @@ mod tests {
         assert_eq!(voices[0].id, "21m00Tcm4TlvDq8ikWAM");
         assert_eq!(voices[0].name, "Rachel");
         assert_eq!(voices[0].category.as_deref(), Some("premade"));
-        assert_eq!(voices[1].preview_url.as_deref(), Some("https://x/preview.mp3"));
+        assert_eq!(
+            voices[1].preview_url.as_deref(),
+            Some("https://x/preview.mp3")
+        );
     }
 
     #[test]
@@ -2153,7 +2239,10 @@ mod tests {
 
     #[test]
     fn stt_openai_form_has_expected_fields() {
-        let file_part = Part::bytes(vec![0u8; 8]).file_name("clip.wav").mime_str("audio/wav").unwrap();
+        let file_part = Part::bytes(vec![0u8; 8])
+            .file_name("clip.wav")
+            .mime_str("audio/wav")
+            .unwrap();
         let form = Form::new()
             .text("model", "whisper-1")
             .text("response_format", "verbose_json")
@@ -2174,7 +2263,10 @@ mod tests {
         assert_eq!(&wav[8..12], b"WAVE");
         assert_eq!(&wav[12..16], b"fmt ");
         assert_eq!(&wav[36..40], b"data");
-        assert_eq!(u32::from_le_bytes([wav[40], wav[41], wav[42], wav[43]]), 1600);
+        assert_eq!(
+            u32::from_le_bytes([wav[40], wav[41], wav[42], wav[43]]),
+            1600
+        );
         assert_eq!(wav.len(), 1644);
     }
 

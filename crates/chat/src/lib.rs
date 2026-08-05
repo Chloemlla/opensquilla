@@ -8,7 +8,7 @@ pub mod history;
 pub mod source;
 
 pub use conversation::Conversation;
-pub use history::{trim_history, HistoryTrimOptions};
+pub use history::{HistoryTrimOptions, trim_history};
 pub use source::SessionSource;
 
 /// Error type for chat operations.

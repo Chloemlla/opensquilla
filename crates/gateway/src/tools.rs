@@ -4,19 +4,19 @@
 //! checking search provider status. Backed by the tools crate's
 //! [`ToolRegistry`] and the search crate's [`SearchRegistry`].
 
-use std::sync::Arc;
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
 use opensquilla_core::types::ToolCall;
 use opensquilla_search::registry::SearchRegistry;
-use opensquilla_search::types::{SearchRequest, SearchOptions};
+use opensquilla_search::types::{SearchOptions, SearchRequest};
 use opensquilla_tools::dispatch::{DispatchContext, DispatchEngine};
 use opensquilla_tools::registry::{ToolDefinition, ToolRegistry};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A tools service combining the tool registry and search registry.
 #[derive(Clone)]
@@ -190,8 +190,10 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                 };
 
                 let response = response.map_err(|e| AppError::internal(e.to_string()))?;
-                Ok(serde_json::to_value(response)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(
+                    serde_json::to_value(response)
+                        .map_err(|e| AppError::internal(e.to_string()))?,
+                )
             }
         }
     }));
@@ -276,7 +278,11 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                     views.retain(|v| {
                         v.name.to_lowercase().contains(&query)
                             || v.description.to_lowercase().contains(&query)
-                            || v.category.as_deref().unwrap_or("").to_lowercase().contains(&query)
+                            || v.category
+                                .as_deref()
+                                .unwrap_or("")
+                                .to_lowercase()
+                                .contains(&query)
                     });
                 }
                 Ok(serde_json::json!({
@@ -335,8 +341,7 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                     .with_timeout(timeout_secs)
                     .with_sandbox(sandbox);
                 let output = engine.dispatch(call, &ctx).await?;
-                Ok(serde_json::to_value(output)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(output).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -378,7 +383,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_tools_handlers(&mut registry, service);
 
-        let r = registry.dispatch("tools.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("tools.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 0);
     }
@@ -389,7 +396,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_tools_handlers(&mut registry, service);
 
-        let r = registry.dispatch("tools.providers", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("tools.providers", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["configured"], false);
     }
@@ -400,7 +409,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_tools_handlers(&mut registry, service);
 
-        let r = registry.dispatch("tools.count", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("tools.count", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 0);
     }

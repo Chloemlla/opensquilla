@@ -17,10 +17,12 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::attachments::{store_attachment, AttachmentMeta, AttachmentStore, AttachmentUpload};
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::attachments::{AttachmentMeta, AttachmentStore, AttachmentUpload, store_attachment};
+use crate::rpc::{RpcRegistry, rpc_handler};
 use crate::session_events::{SessionEvent, SessionEventBroadcaster, SessionEventKind};
-use crate::session_search::{IndexedMessage, SessionSearchIndex, SessionSearchOptions, SessionSearchResult};
+use crate::session_search::{
+    IndexedMessage, SessionSearchIndex, SessionSearchOptions, SessionSearchResult,
+};
 use crate::session_services::SessionServices;
 use crate::turn_ingress::{InboundTurn, TurnIngress};
 
@@ -209,10 +211,7 @@ impl ChatStore {
     /// Clear all messages for a session.
     pub fn clear(&self, session_id: &str) -> usize {
         let mut conversations = self.conversations.lock();
-        let count = conversations
-            .get(session_id)
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let count = conversations.get(session_id).map(|v| v.len()).unwrap_or(0);
         conversations.remove(session_id);
         drop(conversations);
         self.search_index.remove_session(session_id);
@@ -290,7 +289,12 @@ impl ChatStore {
     // -----------------------------------------------------------------------
 
     /// Search the transcript index, optionally scoped to a session.
-    pub fn search(&self, query: &str, session_id: Option<&str>, limit: usize) -> SessionSearchResult {
+    pub fn search(
+        &self,
+        query: &str,
+        session_id: Option<&str>,
+        limit: usize,
+    ) -> SessionSearchResult {
         let result = self.search_index.search(
             query,
             SessionSearchOptions {
@@ -344,17 +348,17 @@ impl ChatStore {
     ) -> Result<Option<SessionEvent>, AppError> {
         let mut rx = self.broadcaster.subscribe();
         let session_id = session_id.to_string();
-        let wait = tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            async {
-                loop {
-                    let event = rx.recv().await.map_err(|e| AppError::internal(e.to_string()))?;
-                    if event.session_id == session_id {
-                        return Ok::<_, AppError>(event);
-                    }
+        let wait = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
+            loop {
+                let event = rx
+                    .recv()
+                    .await
+                    .map_err(|e| AppError::internal(e.to_string()))?;
+                if event.session_id == session_id {
+                    return Ok::<_, AppError>(event);
                 }
-            },
-        );
+            }
+        });
         match wait.await {
             Ok(Ok(event)) => Ok(Some(event)),
             Ok(Err(e)) => Err(e),
@@ -416,10 +420,7 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
 
                 // Record the user message locally and start the session worker
                 // on first send so the pipeline is exercised end to end.
-                if !matches!(
-                    recorded.status,
-                    crate::turn_ingress::TurnStatus::Duplicate
-                ) {
+                if !matches!(recorded.status, crate::turn_ingress::TurnStatus::Duplicate) {
                     let user_msg = ChatMessageResponse::new(&session_id_str, "user", message);
                     store.add_message(&session_id_str, user_msg.clone());
                     store.spawn_worker_if_needed(&session_id_str).await;
@@ -449,10 +450,7 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     .get("limit")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(DEFAULT_PAGE_SIZE as u64) as usize;
-                let offset = params
-                    .get("offset")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as usize;
+                let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                 let session_id_str = session_id.to_string();
                 let total = store.history_len(&session_id_str);
                 let messages = store.get_history(&session_id_str, limit, offset);
@@ -492,8 +490,10 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'message_id' parameter"))?;
                 match store.get_message(&session_id.to_string(), message_id) {
-                    Some(msg) => Ok(serde_json::to_value(msg)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(msg) => {
+                        Ok(serde_json::to_value(msg)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!(
                         "Message '{message_id}' not found"
                     ))),
@@ -517,9 +517,12 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     .get("content")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'content' parameter"))?;
-                match store.update_message(&session_id.to_string(), message_id, content.to_string()) {
-                    Some(msg) => Ok(serde_json::to_value(msg)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                match store.update_message(&session_id.to_string(), message_id, content.to_string())
+                {
+                    Some(msg) => {
+                        Ok(serde_json::to_value(msg)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!(
                         "Message '{message_id}' not found"
                     ))),
@@ -561,13 +564,9 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'query' parameter"))?;
                 let session_id = params.get("session_id").and_then(|v| v.as_str());
-                let limit = params
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(20) as usize;
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
                 let result = store.search(query, session_id, limit);
-                Ok(serde_json::to_value(result)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -618,8 +617,7 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     bytes,
                 };
                 let meta = store.upload_attachment(&session_id.to_string(), upload)?;
-                Ok(serde_json::to_value(meta)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(meta).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -672,7 +670,10 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     .get("timeout_ms")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(200);
-                match store.next_event(&session_id.to_string(), timeout_ms).await? {
+                match store
+                    .next_event(&session_id.to_string(), timeout_ms)
+                    .await?
+                {
                     Some(event) => Ok(serde_json::to_value(event)
                         .map_err(|e| AppError::internal(e.to_string()))?),
                     None => Ok(serde_json::json!({"timeout": true})),
@@ -732,7 +733,10 @@ mod tests {
         register_chat_handlers(&mut registry, store);
 
         let r = registry
-            .dispatch("chat.history", serde_json::json!({"session_id": "s1", "limit": 2, "offset": 0}))
+            .dispatch(
+                "chat.history",
+                serde_json::json!({"session_id": "s1", "limit": 2, "offset": 0}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 2);
@@ -740,7 +744,10 @@ mod tests {
         assert_eq!(resp["has_more"], true);
 
         let r = registry
-            .dispatch("chat.history", serde_json::json!({"session_id": "s1", "limit": 2, "offset": 4}))
+            .dispatch(
+                "chat.history",
+                serde_json::json!({"session_id": "s1", "limit": 2, "offset": 4}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
@@ -780,9 +787,18 @@ mod tests {
     #[tokio::test]
     async fn test_chat_search() {
         let store = ChatStore::new();
-        store.add_message("s1", ChatMessageResponse::new("s1", "user", "How do I configure the API key?"));
-        store.add_message("s1", ChatMessageResponse::new("s1", "assistant", "It goes in the TOML file."));
-        store.add_message("s2", ChatMessageResponse::new("s2", "user", "What is the weather today?"));
+        store.add_message(
+            "s1",
+            ChatMessageResponse::new("s1", "user", "How do I configure the API key?"),
+        );
+        store.add_message(
+            "s1",
+            ChatMessageResponse::new("s1", "assistant", "It goes in the TOML file."),
+        );
+        store.add_message(
+            "s2",
+            ChatMessageResponse::new("s2", "user", "What is the weather today?"),
+        );
 
         let mut registry = RpcRegistry::new();
         register_chat_handlers(&mut registry, store);
@@ -833,7 +849,10 @@ mod tests {
         assert_eq!(resp["status"], "duplicate");
 
         let r = registry
-            .dispatch("chat.turns", serde_json::json!({"session_id": session_id.to_string()}))
+            .dispatch(
+                "chat.turns",
+                serde_json::json!({"session_id": session_id.to_string()}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
@@ -862,7 +881,10 @@ mod tests {
         assert_eq!(resp["filename"], "file.txt");
 
         let r = registry
-            .dispatch("chat.attachments.list", serde_json::json!({"session_id": "s1"}))
+            .dispatch(
+                "chat.attachments.list",
+                serde_json::json!({"session_id": "s1"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);

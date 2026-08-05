@@ -80,7 +80,11 @@ impl CheckStatus {
         }
     }
 
-    fn fail(requirement: impl Into<String>, kind: RequirementKind, detail: impl Into<String>) -> Self {
+    fn fail(
+        requirement: impl Into<String>,
+        kind: RequirementKind,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             requirement: requirement.into(),
             kind,
@@ -191,17 +195,15 @@ fn detect_total_memory_mib() -> Option<u64> {
         // Best-effort: read TOTALMEMORY via `wmic` or `systeminfo` is slow;
         // fall back to the `GetPhysicallyInstalledSystemMemory` API is complex,
         // so we return None on Windows unless the env is set.
-        std::env::var("OSQ_TOTAL_MEMORY_MIB").ok().and_then(|s| s.parse().ok())
+        std::env::var("OSQ_TOTAL_MEMORY_MIB")
+            .ok()
+            .and_then(|s| s.parse().ok())
     }
     #[cfg(target_os = "linux")]
     {
         let content = std::fs::read_to_string("/proc/meminfo").ok()?;
         let line = content.lines().find(|l| l.starts_with("MemTotal:"))?;
-        let kb: u64 = line
-            .split_whitespace()
-            .nth(1)?
-            .parse()
-            .ok()?;
+        let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
         Some(kb / 1024)
     }
     #[cfg(target_os = "macos")]
@@ -343,7 +345,9 @@ impl EligibilityChecker {
 
         if let Some(tool_versions) = &requires.tool_versions {
             for (tool, constraint) in tool_versions {
-                report.checks.push(self.check_tool_version_check(tool, constraint));
+                report
+                    .checks
+                    .push(self.check_tool_version_check(tool, constraint));
             }
         }
 
@@ -362,7 +366,9 @@ impl EligibilityChecker {
         }
 
         if let Some(min_version) = &requires.min_version {
-            report.checks.push(self.check_min_version_check(min_version));
+            report
+                .checks
+                .push(self.check_min_version_check(min_version));
         }
 
         report
@@ -468,7 +474,10 @@ impl EligibilityChecker {
             CheckStatus::fail(
                 requirement,
                 RequirementKind::ToolVersion,
-                format!("'{tool}' version {} does not satisfy '{constraint}'", version),
+                format!(
+                    "'{tool}' version {} does not satisfy '{constraint}'",
+                    version
+                ),
             )
         }
     }
@@ -489,7 +498,9 @@ impl EligibilityChecker {
     fn check_memory_check(&self, min_mib: u64) -> CheckStatus {
         let requirement = format!("memory:>{min_mib}MiB");
         match self.host.total_memory_mib {
-            Some(total) if total >= min_mib => CheckStatus::pass(requirement, RequirementKind::Memory),
+            Some(total) if total >= min_mib => {
+                CheckStatus::pass(requirement, RequirementKind::Memory)
+            }
             Some(total) => CheckStatus::fail(
                 requirement,
                 RequirementKind::Memory,
@@ -666,7 +677,11 @@ impl EligibilityChecker {
             "rust" | "cargo" => self.is_binary_available("cargo"),
             "go" | "golang" => self.is_binary_available("go"),
             "java" | "jvm" => self.is_binary_available("java"),
-            "sandbox" => cfg!(any(target_os = "linux", target_os = "macos", target_os = "windows")),
+            "sandbox" => cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "windows"
+            )),
             "tty" | "terminal" => std::io::IsTerminal::is_terminal(&std::io::stdout()),
             "gui" => cfg!(any(target_os = "windows", target_os = "macos")) || cfg!(feature = "gui"),
             "ffmpeg" => self.is_binary_available("ffmpeg"),
@@ -703,8 +718,13 @@ impl EligibilityChecker {
     }
 
     /// Filter a list of skills down to those eligible on this host.
-    pub fn filter_eligible<'a>(&self, skills: impl Iterator<Item = &'a crate::types::SkillSpec>) -> Vec<&'a crate::types::SkillSpec> {
-        skills.filter(|s| self.is_eligible(&s.requires).unwrap_or(false)).collect()
+    pub fn filter_eligible<'a>(
+        &self,
+        skills: impl Iterator<Item = &'a crate::types::SkillSpec>,
+    ) -> Vec<&'a crate::types::SkillSpec> {
+        skills
+            .filter(|s| self.is_eligible(&s.requires).unwrap_or(false))
+            .collect()
     }
 
     /// Compute a compact verdict string for logging, e.g. `"eligible"` or
@@ -719,7 +739,11 @@ impl EligibilityChecker {
                 .into_iter()
                 .map(|c| c.requirement.clone())
                 .collect();
-            format!("{} failure(s): {}", report.failure_count(), reasons.join(", "))
+            format!(
+                "{} failure(s): {}",
+                report.failure_count(),
+                reasons.join(", ")
+            )
         }
     }
 }
@@ -851,8 +875,14 @@ mod tests {
     #[test]
     fn extract_version_from_output() {
         assert_eq!(extract_version("Python 3.11.4"), Some("3.11.4".to_string()));
-        assert_eq!(extract_version("git version 2.43.0.windows.1"), Some("2.43.0".to_string()));
-        assert_eq!(extract_version("node v20.11.0"), Some("20.11.0".to_string()));
+        assert_eq!(
+            extract_version("git version 2.43.0.windows.1"),
+            Some("2.43.0".to_string())
+        );
+        assert_eq!(
+            extract_version("node v20.11.0"),
+            Some("20.11.0".to_string())
+        );
         assert_eq!(extract_version("no version here"), None);
     }
 
@@ -868,11 +898,7 @@ mod tests {
         let report = checker.check(&requires);
         assert!(!report.is_eligible());
         assert_eq!(report.failure_count(), 3);
-        let labels: Vec<&str> = report
-            .failures()
-            .iter()
-            .map(|c| c.kind.label())
-            .collect();
+        let labels: Vec<&str> = report.failures().iter().map(|c| c.kind.label()).collect();
         assert!(labels.contains(&"os"));
         assert!(labels.contains(&"binary"));
         assert!(labels.contains(&"env"));

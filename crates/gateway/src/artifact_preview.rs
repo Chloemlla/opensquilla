@@ -39,9 +39,7 @@ impl PreviewKind {
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => PreviewKind::Image,
             "pdf" => PreviewKind::Pdf,
             "rs" | "py" | "ts" | "js" | "tsx" | "jsx" | "go" | "c" | "cpp" | "h" | "hpp"
-            | "toml" | "json" | "yaml" | "yml" | "sh" | "md" | "html" | "css" => {
-                PreviewKind::Code
-            }
+            | "toml" | "json" | "yaml" | "yml" | "sh" | "md" | "html" | "css" => PreviewKind::Code,
             "txt" | "log" => PreviewKind::Text,
             _ => PreviewKind::Unknown,
         }
@@ -139,7 +137,8 @@ impl PreviewGenerator for DefaultPreviewGenerator {
             PreviewKind::Pdf => {
                 // A real implementation would render the first PDF page. We
                 // produce a small placeholder so the pipeline is exercised.
-                let placeholder = format!("PDF preview for artifact {artifact_id} (rendering not enabled)");
+                let placeholder =
+                    format!("PDF preview for artifact {artifact_id} (rendering not enabled)");
                 Some(PreviewData {
                     artifact_id: artifact_id.to_string(),
                     kind,
@@ -194,11 +193,7 @@ impl PreviewCache {
     }
 
     /// Generate and cache a preview for an artifact file.
-    pub fn generate(
-        &self,
-        artifact_id: &str,
-        path: &Path,
-    ) -> Result<PreviewData, AppError> {
+    pub fn generate(&self, artifact_id: &str, path: &Path) -> Result<PreviewData, AppError> {
         {
             let guard = self.entries.read();
             if let Some(entry) = guard.get(artifact_id) {
@@ -206,14 +201,11 @@ impl PreviewCache {
             }
         }
 
-        let preview = self
-            .generator
-            .generate(artifact_id, path)
-            .ok_or_else(|| {
-                AppError::bad_request(format!(
-                    "No preview can be generated for artifact '{artifact_id}'"
-                ))
-            })?;
+        let preview = self.generator.generate(artifact_id, path).ok_or_else(|| {
+            AppError::bad_request(format!(
+                "No preview can be generated for artifact '{artifact_id}'"
+            ))
+        })?;
 
         self.evict_if_needed();
         {
@@ -339,7 +331,8 @@ mod tests {
     use super::*;
 
     fn temp_file(tag: &str, contents: &[u8], ext: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("opensquilla-preview-test-{tag}-{}", Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-preview-test-{tag}-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("artifact.{ext}"));
         std::fs::write(&path, contents).unwrap();

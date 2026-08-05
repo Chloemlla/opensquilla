@@ -24,22 +24,24 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use opensquilla_core::config::Config;
+use opensquilla_desktop_lib::agent_bridge;
+use opensquilla_desktop_lib::gateway;
+use opensquilla_desktop_lib::state::AppState;
+use opensquilla_desktop_lib::workbench;
 use opensquilla_desktop_lib::{
     TrayEvent, commands,
     commands::{app_info, ping, reload_config},
     deep_link,
     tray::{TrayIconState, build_tray_menu, rebuild_menu},
-    updater,
-    window,
+    updater, window,
 };
-use opensquilla_desktop_lib::agent_bridge;
-use opensquilla_desktop_lib::workbench;
-use opensquilla_desktop_lib::gateway;
-use opensquilla_desktop_lib::state::AppState;
 use opensquilla_engine::{AgentRuntime, TurnRunnerBuilder};
 use opensquilla_session::SessionStorage;
 use std::sync::Arc;
-use tauri::{Emitter, Manager, TrayIconBuilder, WindowEvent, tray::{MouseButton, MouseButtonState, TrayIconEvent}};
+use tauri::{
+    Emitter, Manager, TrayIconBuilder, WindowEvent,
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -248,10 +250,7 @@ fn main() {
 /// 1. An in-memory or file-based SessionStorage.
 /// 2. An AgentRuntime with a default TurnRunner, started on the Tokio runtime.
 /// 3. The AppState wrapping all of the above.
-fn build_app_state(
-    rt: &tokio::runtime::Runtime,
-    config: Config,
-) -> AppState {
+fn build_app_state(rt: &tokio::runtime::Runtime, config: Config) -> AppState {
     // Create session storage. Use a file-based database in the app data dir,
     // falling back to in-memory if the directory is not available.
     let storage_path = dirs::data_dir()
@@ -294,7 +293,10 @@ fn build_app_state(
     // Create and start the AgentRuntime.
     let runtime = Arc::new(AgentRuntime::new(runner, event_tx));
     rt.block_on(async {
-        runtime.start().await.expect("failed to start agent runtime");
+        runtime
+            .start()
+            .await
+            .expect("failed to start agent runtime");
     });
     tracing::info!("agent runtime started");
 

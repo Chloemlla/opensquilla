@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::time::{interval, Duration, MissedTickBehavior};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::time::{Duration, MissedTickBehavior, interval};
 use tracing::{info, warn};
 
 /// A precise tick loop that fires at a configurable interval.
@@ -25,18 +25,25 @@ impl TickLoop {
 
     /// Start the tick loop. Calls the provided handler on each tick.
     pub fn start<F>(&self, mut handler: F) -> TickHandle
-    where F: FnMut(u64) + Send + 'static {
+    where
+        F: FnMut(u64) + Send + 'static,
+    {
         self.running.store(true, Ordering::SeqCst);
         let running = self.running.clone();
         let interval_secs = self.interval_secs;
         let name = self.name.clone();
-        let handle = TickHandle { running: running.clone() };
+        let handle = TickHandle {
+            running: running.clone(),
+        };
 
         tokio::spawn(async move {
             let mut tick_count = 0u64;
             let mut ticker = interval(Duration::from_secs(interval_secs));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            info!("Tick loop '{}' started (interval: {}s)", name, interval_secs);
+            info!(
+                "Tick loop '{}' started (interval: {}s)",
+                name, interval_secs
+            );
 
             while running.load(Ordering::SeqCst) {
                 ticker.tick().await;
@@ -45,7 +52,10 @@ impl TickLoop {
                 handler(tick_count);
                 let elapsed = tick_start.elapsed();
                 if elapsed > Duration::from_secs(interval_secs) {
-                    warn!("Tick loop '{}' tick #{} took {:?} (exceeded interval)", name, tick_count, elapsed);
+                    warn!(
+                        "Tick loop '{}' tick #{} took {:?} (exceeded interval)",
+                        name, tick_count, elapsed
+                    );
                 }
             }
             info!("Tick loop '{}' stopped ({} ticks)", name, tick_count);
@@ -55,18 +65,26 @@ impl TickLoop {
 
     /// Start a tick loop with an async handler.
     pub fn start_async<F, Fut>(&self, handler: F) -> TickHandle
-    where F: Fn(u64) -> Fut + Send + 'static, Fut: std::future::Future<Output = ()> + Send {
+    where
+        F: Fn(u64) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = ()> + Send,
+    {
         self.running.store(true, Ordering::SeqCst);
         let running = self.running.clone();
         let interval_secs = self.interval_secs;
         let name = self.name.clone();
-        let handle = TickHandle { running: running.clone() };
+        let handle = TickHandle {
+            running: running.clone(),
+        };
 
         tokio::spawn(async move {
             let mut tick_count = 0u64;
             let mut ticker = interval(Duration::from_secs(interval_secs));
             ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            info!("Async tick loop '{}' started (interval: {}s)", name, interval_secs);
+            info!(
+                "Async tick loop '{}' started (interval: {}s)",
+                name, interval_secs
+            );
 
             while running.load(Ordering::SeqCst) {
                 ticker.tick().await;
@@ -75,7 +93,10 @@ impl TickLoop {
                 handler(tick_count).await;
                 let elapsed = tick_start.elapsed();
                 if elapsed > Duration::from_secs(interval_secs) {
-                    warn!("Tick loop '{}' tick #{} took {:?} (exceeded interval)", name, tick_count, elapsed);
+                    warn!(
+                        "Tick loop '{}' tick #{} took {:?} (exceeded interval)",
+                        name, tick_count, elapsed
+                    );
                 }
             }
             info!("Async tick loop '{}' stopped ({} ticks)", name, tick_count);
@@ -83,8 +104,12 @@ impl TickLoop {
         handle
     }
 
-    pub fn is_running(&self) -> bool { self.running.load(Ordering::SeqCst) }
-    pub fn interval_secs(&self) -> u64 { self.interval_secs }
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+    pub fn interval_secs(&self) -> u64 {
+        self.interval_secs
+    }
 }
 
 /// Handle to control a running tick loop.
@@ -94,8 +119,12 @@ pub struct TickHandle {
 }
 
 impl TickHandle {
-    pub fn stop(&self) { self.running.store(false, Ordering::SeqCst); }
-    pub fn is_running(&self) -> bool { self.running.load(Ordering::SeqCst) }
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
+    }
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
 }
 
 /// A timer that fires once at a specific future time.
@@ -103,17 +132,27 @@ pub struct OneShotTimer;
 
 impl OneShotTimer {
     pub fn at<F>(target: chrono::DateTime<chrono::Utc>, handler: F) -> tokio::task::JoinHandle<()>
-    where F: FnOnce() + Send + 'static {
+    where
+        F: FnOnce() + Send + 'static,
+    {
         let now = chrono::Utc::now();
-        let delay = if target > now { (target - now).num_milliseconds().max(0) as u64 } else { 0 };
+        let delay = if target > now {
+            (target - now).num_milliseconds().max(0) as u64
+        } else {
+            0
+        };
         tokio::spawn(async move {
-            if delay > 0 { tokio::time::sleep(Duration::from_millis(delay)).await; }
+            if delay > 0 {
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
             handler();
         })
     }
 
     pub fn after<F>(duration: Duration, handler: F) -> tokio::task::JoinHandle<()>
-    where F: FnOnce() + Send + 'static {
+    where
+        F: FnOnce() + Send + 'static,
+    {
         tokio::spawn(async move {
             tokio::time::sleep(duration).await;
             handler();
@@ -131,7 +170,9 @@ mod tests {
         let counter = Arc::new(AtomicU64::new(0));
         let cc = counter.clone();
         let loop_ = TickLoop::new("test", 1);
-        let handle = loop_.start(move |_| { cc.fetch_add(1, Ordering::SeqCst); });
+        let handle = loop_.start(move |_| {
+            cc.fetch_add(1, Ordering::SeqCst);
+        });
         tokio::time::sleep(Duration::from_millis(1100)).await;
         handle.stop();
         assert!(counter.load(Ordering::SeqCst) >= 1);
@@ -143,7 +184,9 @@ mod tests {
         let counter = Arc::new(AtomicU64::new(0));
         let cc = counter.clone();
         let loop_ = TickLoop::new("stop_test", 10);
-        let handle = loop_.start(move |_| { cc.fetch_add(1, Ordering::SeqCst); });
+        let handle = loop_.start(move |_| {
+            cc.fetch_add(1, Ordering::SeqCst);
+        });
         tokio::time::sleep(Duration::from_millis(100)).await;
         handle.stop();
         let before = counter.load(Ordering::SeqCst);
@@ -155,7 +198,9 @@ mod tests {
     async fn test_one_shot() {
         let fired = Arc::new(AtomicBool::new(false));
         let f = fired.clone();
-        OneShotTimer::after(Duration::from_millis(100), move || { f.store(true, Ordering::SeqCst); });
+        OneShotTimer::after(Duration::from_millis(100), move || {
+            f.store(true, Ordering::SeqCst);
+        });
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(fired.load(Ordering::SeqCst));
     }

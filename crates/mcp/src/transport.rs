@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use axum::{
+    Json, Router,
     extract::State,
     routing::{get, post},
-    Json, Router,
 };
 use tracing::{info, warn};
 
@@ -14,15 +14,9 @@ pub enum Transport {
     /// Standard I/O transport (stdio).
     Stdio,
     /// Server-Sent Events transport (SSE).
-    Sse {
-        endpoint: String,
-        port: u16,
-    },
+    Sse { endpoint: String, port: u16 },
     /// Streamable HTTP transport.
-    StreamableHttp {
-        endpoint: String,
-        port: u16,
-    },
+    StreamableHttp { endpoint: String, port: u16 },
 }
 
 impl Transport {
@@ -165,21 +159,19 @@ struct AppState {
 
 async fn sse_handler(
     State(_state): State<AppState>,
-) -> axum::response::Sse<impl futures::stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
-{
+) -> axum::response::Sse<
+    impl futures::stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
     use axum::response::sse::Event;
     use futures::stream::{self, StreamExt};
-    use tokio_stream::wrappers::IntervalStream;
     use std::time::Duration;
+    use tokio_stream::wrappers::IntervalStream;
 
-    let stream = stream::once(async {
-        Ok(Event::default().data("connected"))
-    });
+    let stream = stream::once(async { Ok(Event::default().data("connected")) });
 
     let interval = tokio::time::interval(Duration::from_secs(30));
-    let keepalive = IntervalStream::new(interval).map(|_| {
-        Ok(Event::default().data("ping").event("ping"))
-    });
+    let keepalive =
+        IntervalStream::new(interval).map(|_| Ok(Event::default().data("ping").event("ping")));
 
     let combined = stream.chain(keepalive);
     axum::response::Sse::new(combined).keep_alive(

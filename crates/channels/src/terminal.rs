@@ -59,10 +59,7 @@ pub fn format_outgoing(message: &OutgoingMessage, color: bool) -> String {
     let header = if color {
         format!(
             "{}[{}]{} {}",
-            ANSI_CYAN,
-            message.channel_id,
-            ANSI_RESET,
-            ANSI_GRAY
+            ANSI_CYAN, message.channel_id, ANSI_RESET, ANSI_GRAY
         )
     } else {
         format!("[{}] ", message.channel_id)
@@ -252,7 +249,7 @@ impl LineEditor {
                 b'D' => self.cursor_left(),
                 b'H' => self.cursor = 0,
                 b'F' => self.cursor = self.buffer.len(),
-                b'1' => self.cursor = 0,          // Home
+                b'1' => self.cursor = 0,                 // Home
                 b'4' => self.cursor = self.buffer.len(), // End
                 b'3' => {
                     if self.cursor < self.buffer.len() {
@@ -511,7 +508,10 @@ mod tests {
         assert_eq!(ed.handle_input(b'h'), EditorAction::Continue);
         assert_eq!(ed.handle_input(b'i'), EditorAction::Continue);
         assert_eq!(ed.buffer(), "hi");
-        assert_eq!(ed.handle_input(b'\n'), EditorAction::Submit("hi".to_string()));
+        assert_eq!(
+            ed.handle_input(b'\n'),
+            EditorAction::Submit("hi".to_string())
+        );
         assert_eq!(ed.buffer(), "");
     }
 
@@ -549,9 +549,15 @@ mod tests {
     fn test_line_editor_history() {
         let mut ed = LineEditor::new();
         ed.handle_input(b'a');
-        assert_eq!(ed.handle_input(b'\n'), EditorAction::Submit("a".to_string()));
+        assert_eq!(
+            ed.handle_input(b'\n'),
+            EditorAction::Submit("a".to_string())
+        );
         ed.handle_input(b'b');
-        assert_eq!(ed.handle_input(b'\n'), EditorAction::Submit("b".to_string()));
+        assert_eq!(
+            ed.handle_input(b'\n'),
+            EditorAction::Submit("b".to_string())
+        );
         // Up twice -> "a"
         ed.handle_input(0x1b);
         ed.handle_input(b'[');
@@ -577,7 +583,11 @@ mod tests {
 
     #[test]
     fn test_format_outgoing_plain() {
-        let msg = OutgoingMessage::new("term".to_string(), ChannelType::Terminal, "hello".to_string());
+        let msg = OutgoingMessage::new(
+            "term".to_string(),
+            ChannelType::Terminal,
+            "hello".to_string(),
+        );
         let text = format_outgoing(&msg, false);
         assert!(text.contains("hello"));
         assert!(text.contains("[term]"));

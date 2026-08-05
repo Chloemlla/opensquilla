@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 /// An MCP request from a client to a server.
@@ -272,12 +272,11 @@ impl From<&McpRequest> for JsonRpcRequest {
 impl From<JsonRpcResponse> for McpResponse {
     fn from(resp: JsonRpcResponse) -> Self {
         Self {
-            id: resp
-                .id
-                .map(|id| id.to_id_string())
-                .unwrap_or_default(),
+            id: resp.id.map(|id| id.to_id_string()).unwrap_or_default(),
             result: resp.result.unwrap_or(Value::Null),
-            error: resp.error.map(|e| json!({ "code": e.code, "message": e.message })),
+            error: resp
+                .error
+                .map(|e| json!({ "code": e.code, "message": e.message })),
         }
     }
 }
@@ -285,9 +284,16 @@ impl From<JsonRpcResponse> for McpResponse {
 impl From<&JsonRpcResponse> for McpResponse {
     fn from(resp: &JsonRpcResponse) -> Self {
         Self {
-            id: resp.id.clone().map(|id| id.to_id_string()).unwrap_or_default(),
+            id: resp
+                .id
+                .clone()
+                .map(|id| id.to_id_string())
+                .unwrap_or_default(),
             result: resp.result.clone().unwrap_or(Value::Null),
-            error: resp.error.clone().map(|e| json!({ "code": e.code, "message": e.message })),
+            error: resp
+                .error
+                .clone()
+                .map(|e| json!({ "code": e.code, "message": e.message })),
         }
     }
 }
@@ -298,10 +304,14 @@ impl From<McpResponse> for JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: Some(JsonRpcId::String(resp.id.clone())),
             result: Some(resp.result),
-            error: resp.error.map(|e| JsonRpcError::new(
-                e.get("code").and_then(|c| c.as_i64()).unwrap_or(-32603),
-                e.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error"),
-            )),
+            error: resp.error.map(|e| {
+                JsonRpcError::new(
+                    e.get("code").and_then(|c| c.as_i64()).unwrap_or(-32603),
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error"),
+                )
+            }),
         }
     }
 }
@@ -312,10 +322,14 @@ impl From<&McpResponse> for JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: Some(JsonRpcId::String(resp.id.clone())),
             result: Some(resp.result.clone()),
-            error: resp.error.clone().map(|e| JsonRpcError::new(
-                e.get("code").and_then(|c| c.as_i64()).unwrap_or(-32603),
-                e.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error"),
-            )),
+            error: resp.error.clone().map(|e| {
+                JsonRpcError::new(
+                    e.get("code").and_then(|c| c.as_i64()).unwrap_or(-32603),
+                    e.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error"),
+                )
+            }),
         }
     }
 }
@@ -337,7 +351,10 @@ pub struct McpToolResult {
 impl McpToolResult {
     /// Build a result from a raw `tools/call` result value.
     pub fn from_raw(result: Value) -> Self {
-        let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+        let is_error = result
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let content_items = result
             .get("content")
             .and_then(|v| v.as_array())
@@ -349,7 +366,10 @@ impl McpToolResult {
         for item in content_items {
             if item.get("type").and_then(|v| v.as_str()) == Some("text") {
                 text_parts.push(
-                    item.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    item.get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 );
             } else {
                 structured.push(item);

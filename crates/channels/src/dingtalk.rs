@@ -35,11 +35,11 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 type HmacSha256 = Hmac<Sha256>;
 /// The WebSocket stream type used by the DingTalk Stream Mode connection.
@@ -118,7 +118,9 @@ impl DingTalkStreamEnvelope {
         }
         if let Some(payload) = &self.payload {
             if let Some(s) = payload.as_str() {
-                return serde_json::from_str(s).ok().or_else(|| Some(payload.clone()));
+                return serde_json::from_str(s)
+                    .ok()
+                    .or_else(|| Some(payload.clone()));
             }
             return Some(payload.clone());
         }
@@ -185,7 +187,10 @@ impl DingTalkChannel {
 
     /// Obtain a tenant access token for the DingTalk OpenAPI.
     async fn get_access_token(&self) -> Result<String, String> {
-        let secret = self.client_secret.as_ref().ok_or("No client_secret configured")?;
+        let secret = self
+            .client_secret
+            .as_ref()
+            .ok_or("No client_secret configured")?;
         let resp = self
             .client
             .post(format!("{}/oauth2/accessToken", self.api_base))
@@ -193,7 +198,10 @@ impl DingTalkChannel {
             .send()
             .await
             .map_err(|e| format!("DingTalk auth request failed: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("DingTalk auth parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("DingTalk auth parse: {}", e))?;
         body["accessToken"]
             .as_str()
             .map(String::from)
@@ -207,7 +215,8 @@ impl DingTalkChannel {
     /// read loop.
     pub async fn connect(&self) -> Result<WsStream, String> {
         let secret = self.client_secret.as_deref().unwrap_or("");
-        let (ticket, endpoint) = open_connection_ticket(&self.client, &self.api_base, &self.client_id, secret).await?;
+        let (ticket, endpoint) =
+            open_connection_ticket(&self.client, &self.api_base, &self.client_id, secret).await?;
         let endpoint = if endpoint.is_empty() {
             self.ws_endpoint.clone()
         } else {
@@ -332,7 +341,12 @@ impl DingTalkChannel {
     }
 
     /// Send a text or markdown message to a group conversation.
-    async fn send_group_message(&self, token: &str, message: &OutgoingMessage, msg_type: &str) -> Result<(), String> {
+    async fn send_group_message(
+        &self,
+        token: &str,
+        message: &OutgoingMessage,
+        msg_type: &str,
+    ) -> Result<(), String> {
         let (msg_key, msg_param) = build_msg_key_param(msg_type, &message.text);
         let payload = json!({
             "conversationId": message.channel_id,
@@ -347,7 +361,10 @@ impl DingTalkChannel {
             .send()
             .await
             .map_err(|e| format!("DingTalk group send: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("DingTalk parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("DingTalk parse: {}", e))?;
         if body["processQueryKey"].is_string() {
             Ok(())
         } else {
@@ -356,7 +373,12 @@ impl DingTalkChannel {
     }
 
     /// Send a text or markdown message to a single chat.
-    async fn send_single_message(&self, token: &str, message: &OutgoingMessage, msg_type: &str) -> Result<(), String> {
+    async fn send_single_message(
+        &self,
+        token: &str,
+        message: &OutgoingMessage,
+        msg_type: &str,
+    ) -> Result<(), String> {
         let (msg_key, msg_param) = build_msg_key_param(msg_type, &message.text);
         let payload = json!({
             "userId": message.channel_id,
@@ -371,7 +393,10 @@ impl DingTalkChannel {
             .send()
             .await
             .map_err(|e| format!("DingTalk single send: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("DingTalk parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("DingTalk parse: {}", e))?;
         if body["processQueryKey"].is_string() {
             Ok(())
         } else {
@@ -380,12 +405,24 @@ impl DingTalkChannel {
     }
 
     /// Send a markdown message to a conversation.
-    pub async fn send_markdown_message(&self, channel_id: &str, title: &str, text: &str, is_group: bool) -> Result<(), String> {
+    pub async fn send_markdown_message(
+        &self,
+        channel_id: &str,
+        title: &str,
+        text: &str,
+        is_group: bool,
+    ) -> Result<(), String> {
         let token = self.get_access_token().await?;
         let (url, id_key) = if is_group {
-            (format!("{}/robot/groupMessages/send", self.api_base), "conversationId")
+            (
+                format!("{}/robot/groupMessages/send", self.api_base),
+                "conversationId",
+            )
         } else {
-            (format!("{}/robot/singleMessages/send", self.api_base), "userId")
+            (
+                format!("{}/robot/singleMessages/send", self.api_base),
+                "userId",
+            )
         };
         let msg_param = json!({"title": title, "text": text}).to_string();
         let mut payload = json!({"msgKey": "sampleMarkdown", "msgParam": msg_param});
@@ -398,7 +435,10 @@ impl DingTalkChannel {
             .send()
             .await
             .map_err(|e| format!("DingTalk markdown send: {}", e))?;
-        let body: Value = resp.json().await.map_err(|e| format!("DingTalk parse: {}", e))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("DingTalk parse: {}", e))?;
         if body["processQueryKey"].is_string() {
             Ok(())
         } else {
@@ -441,12 +481,18 @@ async fn run_stream_cycle(
                 let event_type = envelope.event_type().to_string();
                 if event_type == BOT_MESSAGE_EVENT {
                     if let Some(event_id) = envelope.event_id() {
-                        if let Err(e) = acknowledge_event(&client, &api_base, &client_id, event_id).await {
+                        if let Err(e) =
+                            acknowledge_event(&client, &api_base, &client_id, event_id).await
+                        {
                             warn!("DingTalk ack failed: {}", e);
                         }
                     }
                     if let Some(value) = envelope.message() {
-                        match parse_message_event(&value, envelope.event_id(), ChannelType::DingTalk) {
+                        match parse_message_event(
+                            &value,
+                            envelope.event_id(),
+                            ChannelType::DingTalk,
+                        ) {
                             Ok(msg) => {
                                 let mut q = incoming.lock().await;
                                 q.push_back(msg);
@@ -488,7 +534,10 @@ async fn open_connection_ticket(
         .send()
         .await
         .map_err(|e| format!("DingTalk ticket request: {}", e))?;
-    let body: Value = resp.json().await.map_err(|e| format!("DingTalk ticket parse: {}", e))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("DingTalk ticket parse: {}", e))?;
     let ticket = body["ticket"]
         .as_str()
         .ok_or_else(|| format!("No ticket in response: {}", body))?
@@ -572,7 +621,10 @@ fn parse_message_event(
         .get("senderNick")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let thread_id = message.get("msgId").and_then(|v| v.as_str()).map(String::from);
+    let thread_id = message
+        .get("msgId")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let timestamp = message
         .get("createAt")
         .and_then(|v| v.as_i64())
@@ -613,13 +665,22 @@ fn extract_message_text(message: &Value, msg_type: &str) -> String {
             .get("markdown")
             .and_then(|m| m.get("text"))
             .and_then(|v| v.as_str())
-            .or_else(|| message.get("markdown").and_then(|m| m.get("content")).and_then(|v| v.as_str()))
+            .or_else(|| {
+                message
+                    .get("markdown")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .to_string(),
         "picture" | "image" => "[image]".to_string(),
         "audio" | "voice" => "[audio]".to_string(),
         "file" => {
-            let name = message.get("content").and_then(|c| c.get("fileName")).and_then(|v| v.as_str()).unwrap_or("file");
+            let name = message
+                .get("content")
+                .and_then(|c| c.get("fileName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("file");
             format!("[file] {}", name)
         }
         _ => format!("[{}]", msg_type),
@@ -640,7 +701,10 @@ fn parse_message_attachments(message: &Value, msg_type: &str) -> Vec<MessageAtta
         if let Some(obj) = obj {
             return vec![MessageAttachment {
                 attachment_type: "image".to_string(),
-                url: obj.get("downloadCode").and_then(|v| v.as_str()).map(String::from),
+                url: obj
+                    .get("downloadCode")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 data: Some(json!({"picMediaId": obj.get("picMediaId").and_then(|v| v.as_str())})),
                 mime_type: Some("image/*".to_string()),
             }];
@@ -673,8 +737,8 @@ fn build_msg_key_param(msg_type: &str, text: &str) -> (String, String) {
 /// secret and base64-encodes the digest. `timestamp` is epoch milliseconds.
 pub fn compute_webhook_signature(secret: &str, timestamp_ms: &str) -> String {
     let string_to_sign = format!("{}\n{}", timestamp_ms, secret);
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC accepts keys of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts keys of any size");
     mac.update(string_to_sign.as_bytes());
     base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes())
 }
@@ -824,7 +888,9 @@ mod tests {
     #[test]
     fn test_build_ws_url() {
         let url = build_ws_url("wss://stream.dingtalk.com", "appid", "ticket123");
-        assert!(url.starts_with("wss://stream.dingtalk.com/connect?ticket=ticket123&clientId=appid"));
+        assert!(
+            url.starts_with("wss://stream.dingtalk.com/connect?ticket=ticket123&clientId=appid")
+        );
         assert!(url.contains("protocol=websocket"));
         assert!(url.contains("version=1.0"));
     }
@@ -847,7 +913,8 @@ mod tests {
         let string_to_sign = format!("{}\n{}", timestamp, secret);
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(string_to_sign.as_bytes());
-        let expected = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+        let expected =
+            base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
         assert_eq!(sign, expected);
     }
 
@@ -855,11 +922,17 @@ mod tests {
     fn test_msg_key_param_builder() {
         let (key, param) = build_msg_key_param("text", "hi");
         assert_eq!(key, "sampleText");
-        assert_eq!(serde_json::from_str::<Value>(&param).unwrap()["content"], "hi");
+        assert_eq!(
+            serde_json::from_str::<Value>(&param).unwrap()["content"],
+            "hi"
+        );
 
         let (key, param) = build_msg_key_param("markdown", "# title");
         assert_eq!(key, "sampleMarkdown");
-        assert_eq!(serde_json::from_str::<Value>(&param).unwrap()["text"], "# title");
+        assert_eq!(
+            serde_json::from_str::<Value>(&param).unwrap()["text"],
+            "# title"
+        );
     }
 
     #[test]

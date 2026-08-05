@@ -32,14 +32,14 @@ mod backend {
     use std::process::Stdio;
     use tokio::process::Command;
     use tracing::warn;
-    use windows::core::{PCWSTR, PWSTR};
-    use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, STILL_ACTIVE};
+    use windows::Win32::Foundation::{BOOL, CloseHandle, HANDLE, STILL_ACTIVE};
     use windows::Win32::Security::{
-        CreateRestrictedToken, CreateWellKnownSid, SetTokenInformation,
-        DISABLE_MAX_PRIVILEGE, PSID, SECURITY_ATTRIBUTES, SID, SID_AND_ATTRIBUTES,
-        TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
-        TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TokenIntegrityLevel, WinLowLabelSid,
+        CreateRestrictedToken, CreateWellKnownSid, DISABLE_MAX_PRIVILEGE, PSID,
+        SECURITY_ATTRIBUTES, SID, SID_AND_ATTRIBUTES, SetTokenInformation, TOKEN_ADJUST_DEFAULT,
+        TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
+        TokenIntegrityLevel, WinLowLabelSid,
     };
+    use windows::core::{PCWSTR, PWSTR};
 
     /// `HANDLE` is `*mut c_void` which is not `Send`/`Sync`, but Windows
     /// handles are just pointer-sized integers and are safe to transfer
@@ -49,16 +49,17 @@ mod backend {
     unsafe impl Send for SendHandle {}
     unsafe impl Sync for SendHandle {}
     use windows::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME,
-        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+        JOB_OBJECT_LIMIT_PROCESS_TIME, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
     };
     use windows::Win32::System::Pipes::CreatePipe;
     use windows::Win32::System::Threading::{
-        CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, ResumeThread,
-        TerminateProcess, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
-        PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW, STARTF_USESTDHANDLES,
+        CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+        CreateProcessAsUserW, GetCurrentProcess, GetExitCodeProcess, OpenProcessToken,
+        PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES,
+        STARTUPINFOW, TerminateProcess,
     };
 
     /// `CLSID_NetFwPolicy2` (`{E2B3C97F-6AE1-41AC-817A-F6F92166D7DD}`). The `windows` crate
@@ -126,8 +127,8 @@ mod backend {
                 Ok(token) => {
                     match spawn_restricted(command, args, &filtered_env, working_dir, token, job) {
                         Ok(proc) => {
-                            let result = wait_restricted(proc, policy.resource_limits.cpu_time_secs)
-                                .await;
+                            let result =
+                                wait_restricted(proc, policy.resource_limits.cpu_time_secs).await;
                             outcome = Some(result);
                         }
                         Err(e) => {
@@ -289,10 +290,7 @@ mod backend {
             let mut process_token: HANDLE = HANDLE(std::ptr::null_mut());
             OpenProcessToken(
                 GetCurrentProcess(),
-                TOKEN_ASSIGN_PRIMARY
-                    | TOKEN_DUPLICATE
-                    | TOKEN_QUERY
-                    | TOKEN_ADJUST_DEFAULT,
+                TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT,
                 &mut process_token,
             )
             .map_err(|e| format!("OpenProcessToken: {e}"))?;
@@ -381,8 +379,11 @@ mod backend {
             let mut cmdline_wide: Vec<u16> =
                 cmdline.encode_utf16().chain(std::iter::once(0)).collect();
             let env_block = build_environment_block(env);
-            let cwd_wide = working_dir
-                .map(|c| c.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>());
+            let cwd_wide = working_dir.map(|c| {
+                c.encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect::<Vec<u16>>()
+            });
             let cwd_ptr = cwd_wide
                 .as_ref()
                 .map(|v| PCWSTR::from_raw(v.as_ptr()))
@@ -459,8 +460,7 @@ mod backend {
             err_buf
         });
 
-        let timeout_dur =
-            std::time::Duration::from_secs(cpu_time_secs.unwrap_or(300).max(1));
+        let timeout_dur = std::time::Duration::from_secs(cpu_time_secs.unwrap_or(300).max(1));
         let start = std::time::Instant::now();
         let mut exit_code: i32;
         loop {
@@ -489,7 +489,11 @@ mod backend {
             let _ = CloseHandle(proc.thread);
         }
 
-        Ok((exit_code, out_res.unwrap_or_default(), err_res.unwrap_or_default()))
+        Ok((
+            exit_code,
+            out_res.unwrap_or_default(),
+            err_res.unwrap_or_default(),
+        ))
     }
 
     /// Build a quoted Windows command line from the program and arguments.
@@ -544,12 +548,14 @@ mod backend {
         direction: windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_RULE_DIRECTION,
         action: windows::Win32::NetworkManagement::WindowsFirewall::NET_FW_ACTION,
     ) -> Result<String, String> {
-        use windows::core::BSTR;
         use windows::Win32::Foundation::VARIANT_TRUE;
         use windows::Win32::NetworkManagement::WindowsFirewall::{
             INetFwPolicy2, INetFwRule, NET_FW_PROFILE2_ALL,
         };
-        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+        use windows::Win32::System::Com::{
+            CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+        };
+        use windows::core::BSTR;
 
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -575,7 +581,8 @@ mod backend {
                 .map_err(|e| format!("INetFwRule::Profiles: {e}"))?;
             rule.SetInterfaceTypes(&BSTR::from("All")).ok();
 
-            rules.Add(&rule)
+            rules
+                .Add(&rule)
                 .map_err(|e| format!("INetFwRules::Add: {e}"))?;
             Ok(name.to_string())
         }
@@ -583,9 +590,9 @@ mod backend {
 
     /// Remove a Windows Firewall rule by name.
     fn remove_firewall_rule(name: &str) -> Result<(), String> {
-        use windows::core::BSTR;
         use windows::Win32::NetworkManagement::WindowsFirewall::INetFwPolicy2;
-        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::core::BSTR;
 
         unsafe {
             let policy2: INetFwPolicy2 = CoCreateInstance(&CLSID_NET_FW_POLICY2, None, CLSCTX_ALL)
@@ -593,7 +600,8 @@ mod backend {
             let rules = policy2
                 .Rules()
                 .map_err(|e| format!("INetFwPolicy2::Rules: {e}"))?;
-            rules.Remove(&BSTR::from(name))
+            rules
+                .Remove(&BSTR::from(name))
                 .map_err(|e| format!("INetFwRules::Remove: {e}"))?;
             Ok(())
         }
@@ -645,7 +653,8 @@ impl WindowsSandbox {
         working_dir: Option<&str>,
         policy: &SandboxPolicy,
     ) -> Result<SandboxResult, String> {
-        self.run(command, args, Some(env), working_dir, policy).await
+        self.run(command, args, Some(env), working_dir, policy)
+            .await
     }
 
     /// Check whether the Windows sandbox can operate on this host.

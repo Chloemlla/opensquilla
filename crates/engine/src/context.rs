@@ -122,8 +122,7 @@ impl ContextBuilder {
                     bytes = content.len(),
                     "Loaded context file"
                 );
-                self.fragments
-                    .push(ContextFragment::new(label, content));
+                self.fragments.push(ContextFragment::new(label, content));
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 debug!(file = %resolved.display(), "Context file not found, skipping");

@@ -8,7 +8,7 @@ pub mod migration;
 pub mod pidlock;
 pub mod runner;
 
-pub use backup::{snapshot, Backup};
+pub use backup::{Backup, snapshot};
 pub use migration::{AppliedMigration, SchemaMigration};
 pub use pidlock::PidLock;
 pub use runner::MigrationRunner;

@@ -27,11 +27,13 @@ pub use governance::{
 };
 pub use linux::LinuxSandbox;
 pub use macos::MacOsSandbox;
-pub use network::{IpRange, NetworkConfig, NetworkMode, NetworkProxy, ProxyAuditEntry, ProxyHandle};
+pub use network::{
+    IpRange, NetworkConfig, NetworkMode, NetworkProxy, ProxyAuditEntry, ProxyHandle,
+};
 pub use noop::NoopSandbox;
 pub use policy::{
-    classify_operation, AuditEntry, FilesystemPolicy, NetworkPolicy, OperationClass,
-    PolicyValidationError, ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult,
+    AuditEntry, FilesystemPolicy, NetworkPolicy, OperationClass, PolicyValidationError,
+    ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult, classify_operation,
 };
 pub use stale_output_cache::{CacheEntry, NullStaleOutputCache, StaleOutputCache};
 pub use windows::WindowsSandbox;

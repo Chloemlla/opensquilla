@@ -64,10 +64,7 @@ pub fn drop_reasoning(messages: &[Message]) -> (Vec<Message>, usize) {
 ///
 /// This is the primary entry point used by the pipeline when preparing
 /// messages for a provider request.
-pub fn sanitize_for_provider(
-    messages: &[Message],
-    support: ReasoningSupport,
-) -> Vec<Message> {
+pub fn sanitize_for_provider(messages: &[Message], support: ReasoningSupport) -> Vec<Message> {
     match support {
         ReasoningSupport::Supported | ReasoningSupport::Streaming => messages.to_vec(),
         ReasoningSupport::Unsupported => drop_reasoning(messages).0,
@@ -154,19 +151,13 @@ mod tests {
 
     #[test]
     fn test_sanitize_unsupported() {
-        let cleaned = sanitize_for_provider(
-            &[msg_with_reasoning()],
-            ReasoningSupport::Unsupported,
-        );
+        let cleaned = sanitize_for_provider(&[msg_with_reasoning()], ReasoningSupport::Unsupported);
         assert_eq!(count_reasoning_blocks(&cleaned), 0);
     }
 
     #[test]
     fn test_sanitize_supported() {
-        let kept = sanitize_for_provider(
-            &[msg_with_reasoning()],
-            ReasoningSupport::Supported,
-        );
+        let kept = sanitize_for_provider(&[msg_with_reasoning()], ReasoningSupport::Supported);
         assert_eq!(count_reasoning_blocks(&kept), 1);
     }
 

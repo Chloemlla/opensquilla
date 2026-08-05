@@ -171,11 +171,7 @@ impl SessionEventBroadcaster {
 
     /// Publish a simple event (no payload/turn id) and return the receiver
     /// count.
-    pub fn publish_simple(
-        &self,
-        kind: SessionEventKind,
-        session_id: impl Into<String>,
-    ) -> usize {
+    pub fn publish_simple(&self, kind: SessionEventKind, session_id: impl Into<String>) -> usize {
         self.publish(SessionEvent::new(kind, session_id))
     }
 

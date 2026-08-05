@@ -170,8 +170,16 @@ fn real_directory_status(path: &Path) -> DirStatus {
 
 fn recovery_profile_status(user_data: &Path, profile: &ProfilePaths) -> DirStatus {
     let recovery_root = user_data.join("recovery-profiles");
-    let profile_root = profile.home.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    for path in [recovery_root.as_path(), profile_root.as_path(), profile.home.as_path()] {
+    let profile_root = profile
+        .home
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    for path in [
+        recovery_root.as_path(),
+        profile_root.as_path(),
+        profile.home.as_path(),
+    ] {
         match real_directory_status(path) {
             DirStatus::Valid => {}
             other => return other,
@@ -180,7 +188,8 @@ fn recovery_profile_status(user_data: &Path, profile: &ProfilePaths) -> DirStatu
     // Confirm each path resolves inside its parent (no symlink escape).
     let resolved_recovery_root = std::fs::canonicalize(&recovery_root).unwrap_or(recovery_root);
     let resolved_profile_root = std::fs::canonicalize(&profile_root).unwrap_or(profile_root);
-    let resolved_home = std::fs::canonicalize(&profile.home).unwrap_or_else(|_| profile.home.clone());
+    let resolved_home =
+        std::fs::canonicalize(&profile.home).unwrap_or_else(|_| profile.home.clone());
     if resolved_profile_root.parent() != Some(resolved_recovery_root.as_path()) {
         return DirStatus::Unsafe;
     }
@@ -193,7 +202,8 @@ fn recovery_profile_status(user_data: &Path, profile: &ProfilePaths) -> DirStatu
 /// SHA-256 fingerprint of the canonical profile home path, hiding the real
 /// path from the ownership record. Mirrors `recovery.locking.profile_lock_key`.
 pub fn profile_fingerprint(profile_home: &Path) -> String {
-    let canonical = std::fs::canonicalize(profile_home).unwrap_or_else(|_| profile_home.to_path_buf());
+    let canonical =
+        std::fs::canonicalize(profile_home).unwrap_or_else(|_| profile_home.to_path_buf());
     let mut display = canonical.to_string_lossy().to_string();
     // Normalize separators and, on Windows, case-fold (NTFS is case-insensitive).
     if cfg!(windows) {
@@ -595,7 +605,10 @@ fn posix_process_start_identity(pid: u32) -> Option<String> {
 
 #[cfg(all(unix, not(target_os = "linux")))]
 fn posix_ps_lstart_identity(stdout: &str) -> Option<String> {
-    let value: String = stdout.split_ascii_whitespace().collect::<Vec<_>>().join(" ");
+    let value: String = stdout
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     if value.is_empty() {
         return None;
     }
@@ -627,9 +640,7 @@ pub fn process_may_still_be_alive(pid: u32) -> bool {
         // OpenProcess with PROCESS_QUERY_LIMITED_INFORMATION. A failure other
         // than "invalid parameter" still implies the PID may be live.
         use windows::Win32::Foundation::{CloseHandle, HANDLE};
-        use windows::Win32::System::Threading::{
-            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        };
+        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
         unsafe {
             let handle: HANDLE = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
                 Ok(h) => h,
@@ -719,11 +730,7 @@ impl OwnershipVerificationCoordinator {
     /// Always challenges first, including after the budget expires, so a later
     /// startup phase can recover an orphan that became ready after the original
     /// poll — without granting authority from a cached result.
-    pub async fn verify_when_ready(
-        &self,
-        state_dir: &Path,
-        record: &OwnershipRecord,
-    ) -> bool {
+    pub async fn verify_when_ready(&self, state_dir: &Path, record: &OwnershipRecord) -> bool {
         let key = ownership_record_key(state_dir, record);
         let deadline = self.state_deadline(state_dir, &key);
         let mut start_identity_checked = false;
@@ -835,14 +842,23 @@ fn identity_matches_record(
     };
     // Every shared field must agree.
     let fields = [
-        ("schema_version", serde_json::Value::from(record.schema_version)),
-        ("protocol", serde_json::Value::from(record.protocol.as_str())),
+        (
+            "schema_version",
+            serde_json::Value::from(record.schema_version),
+        ),
+        (
+            "protocol",
+            serde_json::Value::from(record.protocol.as_str()),
+        ),
         (
             "profile_fingerprint",
             serde_json::Value::from(record.profile_fingerprint.as_str()),
         ),
         ("pid", serde_json::Value::from(record.pid)),
-        ("start_identity", serde_json::Value::from(record.start_identity.as_str())),
+        (
+            "start_identity",
+            serde_json::Value::from(record.start_identity.as_str()),
+        ),
         ("port", serde_json::Value::from(record.port)),
         ("version", serde_json::Value::from(record.version.as_str())),
     ];
@@ -872,10 +888,8 @@ pub async fn wait_for_ownership_release(
     loop {
         match load_ownership_record(state_dir) {
             OwnershipRecordLoad::Missing => return true,
-            OwnershipRecordLoad::Valid(current)
-                if !same_ownership_instance(&current, record) =>
-            {
-                return false
+            OwnershipRecordLoad::Valid(current) if !same_ownership_instance(&current, record) => {
+                return false;
             }
             _ => {}
         }
@@ -933,7 +947,10 @@ where
         if unique.is_empty() {
             return (options.current_process)().is_none();
         }
-        let futures: Vec<_> = unique.into_iter().map(|p| (options.wait_for_exit)(p)).collect();
+        let futures: Vec<_> = unique
+            .into_iter()
+            .map(|p| (options.wait_for_exit)(p))
+            .collect();
         let results = futures::future::join_all(futures).await;
         if !results.into_iter().all(|exited| exited) {
             return false;
@@ -1270,7 +1287,9 @@ mod tests {
 
     #[test]
     fn recovery_id_validation() {
-        assert!(is_recovery_profile_id("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(is_recovery_profile_id(
+            "550e8400-e29b-41d4-a716-446655440000"
+        ));
         assert!(!is_recovery_profile_id("not-a-uuid"));
         assert!(!is_recovery_profile_id(
             "550e8400-e29b-31d4-a716-446655440000" // v3, not v4

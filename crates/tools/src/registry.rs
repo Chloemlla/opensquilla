@@ -4,8 +4,8 @@
 //! the `ToolRegistry` that manages tool lifecycle and lookup,
 //! and associated types for parameter definitions and execution results.
 
-use opensquilla_core::error::{AppError, AppResult};
 use opensquilla_core::ToolCall;
+use opensquilla_core::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -42,7 +42,10 @@ impl ToolError {
 
     /// Create a tool-not-found error.
     pub fn not_found(name: impl Into<String>) -> Self {
-        Self::new("TOOL_NOT_FOUND", format!("Tool '{}' not found", name.into()))
+        Self::new(
+            "TOOL_NOT_FOUND",
+            format!("Tool '{}' not found", name.into()),
+        )
     }
 
     /// Create an invalid-arguments error.
@@ -57,7 +60,10 @@ impl ToolError {
 
     /// Create a timeout error.
     pub fn timeout(duration_secs: u64) -> Self {
-        Self::new("TIMEOUT", format!("Tool execution timed out after {}s", duration_secs))
+        Self::new(
+            "TIMEOUT",
+            format!("Tool execution timed out after {}s", duration_secs),
+        )
     }
 
     /// Create a permission-denied error.
@@ -76,9 +82,8 @@ impl std::error::Error for ToolError {}
 
 impl From<ToolError> for AppError {
     fn from(err: ToolError) -> Self {
-        AppError::new(&err.code, &err.message).with_details(
-            serde_json::json!({ "tool_error": err.details }),
-        )
+        AppError::new(&err.code, &err.message)
+            .with_details(serde_json::json!({ "tool_error": err.details }))
     }
 }
 
@@ -311,15 +316,24 @@ impl ToolDefinition {
 
         for (name, param) in &self.parameters {
             let mut prop = serde_json::Map::new();
-            prop.insert("type".to_string(), serde_json::Value::String(param.param_type.clone()));
+            prop.insert(
+                "type".to_string(),
+                serde_json::Value::String(param.param_type.clone()),
+            );
             if let Some(ref desc) = param.description {
-                prop.insert("description".to_string(), serde_json::Value::String(desc.clone()));
+                prop.insert(
+                    "description".to_string(),
+                    serde_json::Value::String(desc.clone()),
+                );
             }
             if let Some(ref default) = param.default {
                 prop.insert("default".to_string(), default.clone());
             }
             if let Some(ref enum_vals) = param.enum_values {
-                let vals: Vec<serde_json::Value> = enum_vals.iter().map(|v| serde_json::Value::String(v.clone())).collect();
+                let vals: Vec<serde_json::Value> = enum_vals
+                    .iter()
+                    .map(|v| serde_json::Value::String(v.clone()))
+                    .collect();
                 prop.insert("enum".to_string(), serde_json::Value::Array(vals));
             }
             if param.required {
@@ -456,7 +470,9 @@ impl ToolRegistry {
 
         // Artifact generation.
         registry.register(crate::artifacts::ArtifactTool::new(working_dir.clone()))?;
-        registry.register(crate::artifacts::GenerateMarkdownTool::new(working_dir.clone()))?;
+        registry.register(crate::artifacts::GenerateMarkdownTool::new(
+            working_dir.clone(),
+        ))?;
         registry.register(crate::artifacts::GenerateJsonTool::new(working_dir.clone()))?;
 
         // Memory tools share a single in-memory store.
@@ -466,20 +482,26 @@ impl ToolRegistry {
                 format!("Failed to open in-memory memory store: {}", e),
             )
         })?;
-        registry.register(crate::memory_tools::MemorySaveTool::new(memory_store.clone()))?;
-        registry.register(crate::memory_tools::MemorySearchTool::new(memory_store.clone()))?;
-        registry.register(crate::memory_tools::MemoryDeleteTool::new(memory_store.clone()))?;
+        registry.register(crate::memory_tools::MemorySaveTool::new(
+            memory_store.clone(),
+        ))?;
+        registry.register(crate::memory_tools::MemorySearchTool::new(
+            memory_store.clone(),
+        ))?;
+        registry.register(crate::memory_tools::MemoryDeleteTool::new(
+            memory_store.clone(),
+        ))?;
         registry.register(crate::memory_tools::MemoryListTool::new(memory_store))?;
 
         // Session tools share a single in-memory storage handle.
-        let session_storage = Arc::new(
-            opensquilla_session::SessionStorage::in_memory().map_err(|e| {
+        let session_storage = Arc::new(opensquilla_session::SessionStorage::in_memory().map_err(
+            |e| {
                 ToolError::new(
                     "SESSION_ERROR",
                     format!("Failed to open in-memory session storage: {}", e),
                 )
-            })?,
-        );
+            },
+        )?);
         registry.register(crate::session_tools::SessionCreateTool::from_arc(
             session_storage.clone(),
         ))?;
@@ -527,7 +549,10 @@ impl ToolRegistry {
         }
 
         if let Some(ref cat) = category {
-            self.categories.entry(cat.clone()).or_default().push(name.clone());
+            self.categories
+                .entry(cat.clone())
+                .or_default()
+                .push(name.clone());
         }
 
         self.tools.insert(name, tool);
@@ -547,7 +572,10 @@ impl ToolRegistry {
         }
 
         if let Some(ref cat) = category {
-            self.categories.entry(cat.clone()).or_default().push(name.clone());
+            self.categories
+                .entry(cat.clone())
+                .or_default()
+                .push(name.clone());
         }
 
         self.tools.insert(name, tool);
@@ -596,7 +624,12 @@ impl ToolRegistry {
                 })
             })
             .collect();
-        defs.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
+        defs.sort_by(|a, b| {
+            a["name"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["name"].as_str().unwrap_or(""))
+        });
         defs
     }
 
@@ -604,7 +637,11 @@ impl ToolRegistry {
     pub fn by_category(&self) -> HashMap<&str, Vec<&dyn Tool>> {
         let mut result: HashMap<&str, Vec<&dyn Tool>> = HashMap::new();
         for tool in self.tools.values() {
-            let cat = tool.definition().category.as_deref().unwrap_or("uncategorized");
+            let cat = tool
+                .definition()
+                .category
+                .as_deref()
+                .unwrap_or("uncategorized");
             result.entry(cat).or_default().push(tool.as_ref());
         }
         result
@@ -639,7 +676,9 @@ impl ToolRegistry {
 
     /// Iterate over all registered tools.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &dyn Tool)> {
-        self.tools.iter().map(|(name, tool)| (name.as_str(), tool.as_ref()))
+        self.tools
+            .iter()
+            .map(|(name, tool)| (name.as_str(), tool.as_ref()))
     }
 }
 
@@ -661,7 +700,9 @@ impl ToolInput {
 
     /// Get a string argument by name.
     pub fn get_string(&self, name: &str) -> Option<String> {
-        self.args.get(name).and_then(|v| v.as_str().map(String::from))
+        self.args
+            .get(name)
+            .and_then(|v| v.as_str().map(String::from))
     }
 
     /// Get an integer argument by name.
@@ -700,13 +741,17 @@ mod tests {
     #[async_trait::async_trait]
     impl Tool for EchoTool {
         fn definition(&self) -> &ToolDefinition {
-            static DEFINITION: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
-                ToolDefinition::new(
-                    "echo",
-                    "Echo back the input text",
-                    HashMap::from([("text".to_string(), ParameterDefinition::required_string("The text to echo"))]),
-                )
-            });
+            static DEFINITION: std::sync::LazyLock<ToolDefinition> =
+                std::sync::LazyLock::new(|| {
+                    ToolDefinition::new(
+                        "echo",
+                        "Echo back the input text",
+                        HashMap::from([(
+                            "text".to_string(),
+                            ParameterDefinition::required_string("The text to echo"),
+                        )]),
+                    )
+                });
             &DEFINITION
         }
 

@@ -4,7 +4,9 @@
 //! canonicalization. All paths are resolved relative to an allowed base
 //! directory to prevent directory traversal attacks.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -27,7 +29,7 @@ impl FilesystemTool {
         Self {
             allowed_base,
             max_read_size: 10 * 1024 * 1024, // 10 MB
-            max_write_size: 1 * 1024 * 1024,  // 1 MB
+            max_write_size: 1 * 1024 * 1024, // 1 MB
         }
     }
 
@@ -52,9 +54,7 @@ impl FilesystemTool {
                             format!("Cannot access parent directory of '{}'", path_str),
                         )
                     })?;
-                    return Ok(parent_canonical.join(
-                        resolved.file_name().unwrap_or_default(),
-                    ));
+                    return Ok(parent_canonical.join(resolved.file_name().unwrap_or_default()));
                 }
             }
             ToolError::new(
@@ -101,9 +101,9 @@ impl FilesystemTool {
             ));
         }
 
-        let content = fs::read_to_string(path).await.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read file: {}", e))
-        })?;
+        let content = fs::read_to_string(path)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read file: {}", e)))?;
 
         let data = serde_json::json!({
             "size": metadata.len(),
@@ -133,9 +133,9 @@ impl FilesystemTool {
             })?;
         }
 
-        fs::write(path, content).await.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to write file: {}", e))
-        })?;
+        fs::write(path, content)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to write file: {}", e)))?;
 
         tracing::info!(target = "tools", path = %path.display(), bytes = byte_len, "File written");
 
@@ -144,8 +144,10 @@ impl FilesystemTool {
             "path": path.to_string_lossy(),
         });
 
-        Ok(ToolOutput::success(format!("Wrote {} bytes to {}", byte_len, path.display()))
-            .with_data(data))
+        Ok(
+            ToolOutput::success(format!("Wrote {} bytes to {}", byte_len, path.display()))
+                .with_data(data),
+        )
     }
 
     /// Edit a file by applying line-based replacements.
@@ -156,13 +158,19 @@ impl FilesystemTool {
         new_string: &str,
     ) -> ToolResult<ToolOutput> {
         let content = fs::read_to_string(path).await.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read file for editing: {}", e))
+            ToolError::new(
+                "IO_ERROR",
+                format!("Failed to read file for editing: {}", e),
+            )
         })?;
 
         if !content.contains(old_string) {
             return Err(ToolError::new(
                 "STRING_NOT_FOUND",
-                format!("The string to replace was not found in '{}'", path.display()),
+                format!(
+                    "The string to replace was not found in '{}'",
+                    path.display()
+                ),
             ));
         }
 
@@ -177,16 +185,18 @@ impl FilesystemTool {
             "replacements": 1,
         });
 
-        Ok(ToolOutput::success(format!("Edited {}: replaced 1 occurrence", path.display()))
-            .with_data(data))
+        Ok(
+            ToolOutput::success(format!("Edited {}: replaced 1 occurrence", path.display()))
+                .with_data(data),
+        )
     }
 
     /// List directory contents.
     async fn list_dir(&self, path: &Path) -> ToolResult<ToolOutput> {
         let mut entries = Vec::new();
-        let mut read_dir = fs::read_dir(path).await.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e))
-        })?;
+        let mut read_dir = fs::read_dir(path)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e)))?;
 
         while let Some(entry) = read_dir.next_entry().await.map_err(|e| {
             ToolError::new("IO_ERROR", format!("Failed to read directory entry: {}", e))
@@ -206,8 +216,10 @@ impl FilesystemTool {
             "count": entries.len(),
         });
 
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-            .with_data(data))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
     }
 }
 
@@ -293,7 +305,10 @@ impl Tool for FilesystemTool {
                 }
                 self.list_dir(&path).await
             }
-            other => Err(ToolError::invalid_args(format!("Unknown operation: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown operation: {}",
+                other
+            ))),
         }
     }
 }

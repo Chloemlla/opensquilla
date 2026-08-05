@@ -10,5 +10,5 @@
 pub mod skill_loader;
 
 pub use skill_loader::{
-    get_bundled_skill, load_bundled_skills, bundled_skill_count, BundledSkillDef, BUNDLED_SKILLS,
+    BUNDLED_SKILLS, BundledSkillDef, bundled_skill_count, get_bundled_skill, load_bundled_skills,
 };

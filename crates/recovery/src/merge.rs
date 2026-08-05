@@ -111,10 +111,8 @@ impl SessionMerge {
 
         match self.strategy {
             MergeStrategy::Chronological => {
-                let mut all: Vec<&SessionMessage> = sessions
-                    .iter()
-                    .flat_map(|s| &s.messages)
-                    .collect();
+                let mut all: Vec<&SessionMessage> =
+                    sessions.iter().flat_map(|s| &s.messages).collect();
                 all.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
                 // Deduplicate by content
@@ -214,7 +212,10 @@ impl SessionMerge {
     pub async fn merge_by_ids(
         &self,
         session_ids: &[String],
-        session_loader: impl Fn(&str) -> futures::future::BoxFuture<'_, Result<MergeableSession, MergeError>>,
+        session_loader: impl Fn(
+            &str,
+        )
+            -> futures::future::BoxFuture<'_, Result<MergeableSession, MergeError>>,
     ) -> Result<MergeResult, MergeError> {
         if session_ids.is_empty() {
             return Err(MergeError::NoSessions);
@@ -299,8 +300,7 @@ impl SessionMerge {
         target: &MergeableSession,
     ) -> Result<MergeResult, MergeError> {
         let merged = self.merge_turns(source.messages.clone(), target.messages.clone());
-        let deduplicated =
-            source.messages.len() + target.messages.len() - merged.len();
+        let deduplicated = source.messages.len() + target.messages.len() - merged.len();
         Ok(MergeResult {
             new_session_id: uuid::Uuid::new_v4().to_string(),
             merged_from: vec![source.id.clone(), target.id.clone()],
@@ -343,9 +343,7 @@ impl SessionMerge {
                         MergeResolution::KeepTarget(conflict.target_message)
                     }
                 }
-                MergeStrategy::KeepPrimary => {
-                    MergeResolution::KeepTarget(conflict.target_message)
-                }
+                MergeStrategy::KeepPrimary => MergeResolution::KeepTarget(conflict.target_message),
                 _ => MergeResolution::KeepBoth,
             })
             .collect()
@@ -353,11 +351,7 @@ impl SessionMerge {
 
     /// Build a merge plan describing the operations a pairwise merge would take,
     /// without executing it.
-    pub fn plan_merge(
-        &self,
-        source: &MergeableSession,
-        target: &MergeableSession,
-    ) -> MergePlan {
+    pub fn plan_merge(&self, source: &MergeableSession, target: &MergeableSession) -> MergePlan {
         let mut seen: std::collections::HashSet<String> =
             source.messages.iter().map(msg_key).collect();
         let mut operations: Vec<MergeOperation> = source
@@ -523,9 +517,10 @@ mod tests {
         let plan = merge().plan_merge(&source, &target);
         assert_eq!(plan.source_ids, vec!["s1", "s2"]);
         assert!(!plan.operations.is_empty());
-        assert!(plan
-            .operations
-            .iter()
-            .any(|op| matches!(op, MergeOperation::KeepTarget(_))));
+        assert!(
+            plan.operations
+                .iter()
+                .any(|op| matches!(op, MergeOperation::KeepTarget(_)))
+        );
     }
 }

@@ -9,13 +9,13 @@
 use chrono::Utc;
 use dashmap::DashMap;
 use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult};
+use notify_debouncer_mini::{DebounceEventResult, new_debouncer};
 use opensquilla_core::error::CoreError;
 use opensquilla_core::result::CoreResult;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
@@ -128,10 +128,8 @@ impl FileWatcher {
     /// Start watching. Returns `self` so the caller can keep the watcher alive.
     pub fn start(mut self) -> CoreResult<Self> {
         let (tx, rx) = mpsc::channel::<DebounceEventResult>();
-        let mut debouncer =
-            new_debouncer(self.debounce, tx).map_err(|e| {
-                CoreError::Internal(format!("Failed to create debouncer: {}", e))
-            })?;
+        let mut debouncer = new_debouncer(self.debounce, tx)
+            .map_err(|e| CoreError::Internal(format!("Failed to create debouncer: {}", e)))?;
 
         for path in &self.paths {
             debouncer
@@ -281,7 +279,10 @@ impl SyncManager {
     fn sync_file_internal(&self, file_path: &str) -> CoreResult<usize> {
         let path = PathBuf::from(file_path);
         if !path.is_file() {
-            return Err(CoreError::InvalidInput(format!("Not a file: {}", file_path)));
+            return Err(CoreError::InvalidInput(format!(
+                "Not a file: {}",
+                file_path
+            )));
         }
         if !self.is_supported(&path) {
             debug!("Skipping file not matching sync patterns: {}", file_path);
@@ -434,7 +435,10 @@ impl SyncManager {
     ///
     /// The returned handle can be used to cancel the task. Each tick syncs all
     /// configured watch directories and expires old memories.
-    pub fn schedule_periodic_sync(&self, interval: Duration) -> CoreResult<tokio::task::JoinHandle<()>> {
+    pub fn schedule_periodic_sync(
+        &self,
+        interval: Duration,
+    ) -> CoreResult<tokio::task::JoinHandle<()>> {
         let store = self.store.clone();
         let config = self.config.clone();
         let workspace_dirs: Vec<String> = config.watch_dirs.clone();
@@ -463,7 +467,9 @@ impl SyncManager {
     /// Expire old, low-importance memories based on the configured TTL.
     pub fn handle_ttl_expiry(&self) -> CoreResult<u64> {
         let ttl = chrono::Duration::seconds(self.config.ttl_seconds as i64);
-        let deleted = self.store.expire_old_memories(ttl, self.config.min_importance)?;
+        let deleted = self
+            .store
+            .expire_old_memories(ttl, self.config.min_importance)?;
         info!("TTL expiry removed {} memories", deleted);
         Ok(deleted)
     }
@@ -551,11 +557,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "osq_memory_sync_{}_{}",
-            name,
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("osq_memory_sync_{}_{}", name, uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

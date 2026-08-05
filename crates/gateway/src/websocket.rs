@@ -16,12 +16,12 @@
 //! 7. On disconnect, unregister and clean up subscriptions.
 
 use axum::{
+    Extension,
     extract::{
-        ws::{CloseFrame, Message, WebSocket},
         WebSocketUpgrade,
+        ws::{CloseFrame, Message, WebSocket},
     },
     response::IntoResponse,
-    Extension,
 };
 use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
@@ -30,11 +30,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
-use crate::auth::{resolve_auth, AuthConfig, AuthPrincipal};
+use crate::auth::{AuthConfig, AuthPrincipal, resolve_auth};
 use crate::protocol::{
-    ERROR_INVALID_REQUEST, ERROR_METHOD_NOT_FOUND, ERROR_UNAUTHORIZED, HelloOk, PongFrame,
-    ReqFrame, ResFrame, WsEventFrame, negotiate_protocol, PROTOCOL_VERSION, PREAUTH_TIMEOUT_MS,
-    TICK_INTERVAL_MS, WS_CLOSE_SERVICE_RESTART, make_error_res, make_ok_res,
+    ERROR_INVALID_REQUEST, ERROR_METHOD_NOT_FOUND, ERROR_UNAUTHORIZED, HelloOk, PREAUTH_TIMEOUT_MS,
+    PROTOCOL_VERSION, PongFrame, ReqFrame, ResFrame, TICK_INTERVAL_MS, WS_CLOSE_SERVICE_RESTART,
+    WsEventFrame, make_error_res, make_ok_res, negotiate_protocol,
 };
 use crate::rpc::{RpcContext, RpcRegistry};
 
@@ -145,7 +145,19 @@ async fn handle_socket(
     let value = match serde_json::from_str::<serde_json::Value>(&raw) {
         Ok(v) if v.is_object() => v,
         _ => {
-            send_res(&sender, make_error_res("handshake", ERROR_INVALID_REQUEST, "Invalid JSON in connect frame", false, None, None, None)).await;
+            send_res(
+                &sender,
+                make_error_res(
+                    "handshake",
+                    ERROR_INVALID_REQUEST,
+                    "Invalid JSON in connect frame",
+                    false,
+                    None,
+                    None,
+                    None,
+                ),
+            )
+            .await;
             send_close(&sender, WS_CLOSE_SERVICE_RESTART, "invalid_connect").await;
             return;
         }
@@ -170,7 +182,10 @@ async fn handle_socket(
     }
 
     let req_id = wire_frame_id(value.get("id"));
-    let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    let params = value
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let params = params.as_object().cloned().unwrap_or_default();
 
     // Step 4: resolve auth.
@@ -246,7 +261,11 @@ async fn handle_socket(
     }
 
     // Step 7: register the connection and start the tick loop.
-    let conn = Arc::new(WsConnection::new(conn_id.clone(), principal, sender.clone()));
+    let conn = Arc::new(WsConnection::new(
+        conn_id.clone(),
+        principal,
+        sender.clone(),
+    ));
     connection_registry.register(conn.clone());
     info!(conn_id = %conn_id, role = %conn.principal.role, "WebSocket authenticated");
 
@@ -302,7 +321,15 @@ async fn handle_text_frame(conn: &Arc<WsConnection>, registry: &RpcRegistry, tex
     let value = match serde_json::from_str::<serde_json::Value>(text) {
         Ok(v) if v.is_object() => v,
         _ => {
-            let err = make_error_res("", ERROR_INVALID_REQUEST, "Invalid JSON", false, None, None, None);
+            let err = make_error_res(
+                "",
+                ERROR_INVALID_REQUEST,
+                "Invalid JSON",
+                false,
+                None,
+                None,
+                None,
+            );
             let _ = conn.send_res(&err).await;
             return;
         }
@@ -313,7 +340,9 @@ async fn handle_text_frame(conn: &Arc<WsConnection>, registry: &RpcRegistry, tex
     match frame_type {
         "ping" => {
             let pong = PongFrame::default();
-            let _ = conn.send_text(serde_json::to_string(&pong).unwrap_or_default()).await;
+            let _ = conn
+                .send_text(serde_json::to_string(&pong).unwrap_or_default())
+                .await;
         }
         "pong" => {
             // Keepalive acknowledged; nothing to do.
@@ -339,7 +368,10 @@ async fn handle_text_frame(conn: &Arc<WsConnection>, registry: &RpcRegistry, tex
                 return;
             }
 
-            let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+            let params = value
+                .get("params")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             debug!(conn_id = %conn.conn_id, method = %method, "RPC call");
             let ctx = RpcContext::new(
                 conn.conn_id.clone(),
@@ -493,7 +525,11 @@ impl std::fmt::Debug for WsConnection {
 
 impl WsConnection {
     /// Create a new connection handle.
-    pub fn new(conn_id: impl Into<String>, principal: AuthPrincipal, sender: Arc<tokio::sync::Mutex<WsSender>>) -> Self {
+    pub fn new(
+        conn_id: impl Into<String>,
+        principal: AuthPrincipal,
+        sender: Arc<tokio::sync::Mutex<WsSender>>,
+    ) -> Self {
         Self {
             conn_id: conn_id.into(),
             principal,
@@ -560,7 +596,9 @@ pub struct ConnectionRegistry {
 impl std::fmt::Debug for ConnectionRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let len = self.connections.lock().unwrap().len();
-        f.debug_struct("ConnectionRegistry").field("len", &len).finish()
+        f.debug_struct("ConnectionRegistry")
+            .field("len", &len)
+            .finish()
     }
 }
 
@@ -574,7 +612,10 @@ impl ConnectionRegistry {
 
     /// Register a connection.
     pub fn register(&self, conn: Arc<WsConnection>) {
-        self.connections.lock().unwrap().insert(conn.conn_id.clone(), conn);
+        self.connections
+            .lock()
+            .unwrap()
+            .insert(conn.conn_id.clone(), conn);
     }
 
     /// Unregister a connection by id.
@@ -638,7 +679,10 @@ impl SubscriptionManager {
 
     /// Subscribe a connection to session lifecycle events.
     pub fn subscribe_sessions(&self, conn_id: &str) {
-        self.session_subs.lock().unwrap().insert(conn_id.to_string());
+        self.session_subs
+            .lock()
+            .unwrap()
+            .insert(conn_id.to_string());
     }
 
     /// Unsubscribe a connection from session lifecycle events.

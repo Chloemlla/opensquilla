@@ -95,10 +95,9 @@ impl ModelSelector {
     fn select_default(&self, model: &str) -> ProviderResult<(Arc<dyn Provider>, String)> {
         // Check if model has a provider prefix: "provider/model"
         if let Some((provider_name, model_name)) = model.split_once('/') {
-            let provider = self
-                .registry
-                .get(provider_name)
-                .ok_or_else(|| ProviderError::Config(format!("Provider '{provider_name}' not found")))?;
+            let provider = self.registry.get(provider_name).ok_or_else(|| {
+                ProviderError::Config(format!("Provider '{provider_name}' not found"))
+            })?;
             Ok((provider, model_name.to_string()))
         } else {
             let provider = self
@@ -131,7 +130,11 @@ impl ModelSelector {
                 }
             };
 
-            let model_name = if link.model.is_empty() { model } else { &link.model };
+            let model_name = if link.model.is_empty() {
+                model
+            } else {
+                &link.model
+            };
             return Ok((provider, model_name.to_string()));
         }
 
@@ -186,7 +189,8 @@ mod tests {
             _config: &ChatConfig,
             _messages: &[ChatMessage],
             _tools: &[ToolDefinition],
-        ) -> ProviderResult<Box<dyn Stream<Item = ProviderResult<StreamEvent>> + Send + Unpin>> {
+        ) -> ProviderResult<Box<dyn Stream<Item = ProviderResult<StreamEvent>> + Send + Unpin>>
+        {
             unimplemented!()
         }
     }

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -328,7 +328,9 @@ impl TurnRunner {
         // Patch in the real duration and emit terminal events.
         let duration_ms = start.elapsed().as_millis() as u64;
         let outcome = match outcome {
-            Ok(TurnOutcome::Complete { messages, usage, .. }) => {
+            Ok(TurnOutcome::Complete {
+                messages, usage, ..
+            }) => {
                 info!(
                     turn_id = %turn_id,
                     duration_ms = duration_ms,
@@ -410,8 +412,10 @@ impl TurnRunner {
         }
 
         let provider_stage = &self.stages[provider_idx];
-        let executor: Option<&dyn ToolExecutor> =
-            self.tool_executor.as_ref().map(|e| e.as_ref() as &dyn ToolExecutor);
+        let executor: Option<&dyn ToolExecutor> = self
+            .tool_executor
+            .as_ref()
+            .map(|e| e.as_ref() as &dyn ToolExecutor);
 
         loop {
             // Emit generatoreration start for each provider round.
@@ -590,7 +594,9 @@ impl TurnRunner {
 
     /// Get a reference to the current tool executor, if set.
     pub fn tool_executor(&self) -> Option<&dyn ToolExecutor> {
-        self.tool_executor.as_ref().map(|e| e.as_ref() as &dyn ToolExecutor)
+        self.tool_executor
+            .as_ref()
+            .map(|e| e.as_ref() as &dyn ToolExecutor)
     }
 }
 
@@ -815,7 +821,10 @@ impl TurnRunner {
         }
 
         // Seed the stage context with the routed model when available.
-        let routed_model = ctx.get_metadata("resolved_model").cloned().unwrap_or_default();
+        let routed_model = ctx
+            .get_metadata("resolved_model")
+            .cloned()
+            .unwrap_or_default();
         let routed_provider = ctx
             .get_metadata("provider_name")
             .cloned()
@@ -844,7 +853,9 @@ impl TurnRunner {
 
         let duration_ms = start.elapsed().as_millis() as u64;
         let outcome = match outcome {
-            Ok(TurnOutcome::Complete { messages, usage, .. }) => {
+            Ok(TurnOutcome::Complete {
+                messages, usage, ..
+            }) => {
                 info!(
                     turn_id = %turn_id,
                     duration_ms = duration_ms,
@@ -1225,10 +1236,12 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(outcome, TurnOutcome::Complete { .. }));
-        assert!(outcome
-            .messages()
-            .iter()
-            .any(|m| m.role == MessageRole::System && m.text_content() == "pipeline ran"));
+        assert!(
+            outcome
+                .messages()
+                .iter()
+                .any(|m| m.role == MessageRole::System && m.text_content() == "pipeline ran")
+        );
     }
 
     #[tokio::test]

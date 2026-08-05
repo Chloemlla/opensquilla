@@ -3,15 +3,15 @@
 //! Provides `rpc_skills` for skill directory scanning, install, and
 //! enable/disable operations, backed by [`opensquilla_skills::SkillLoader`].
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use opensquilla_skills::loader::SkillLoader;
 use opensquilla_skills::types::{SkillKind, SkillLayer, SkillSpec};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A shared skills service wrapping a [`SkillLoader`] plus a disable list.
 #[derive(Clone)]
@@ -198,8 +198,10 @@ pub fn register_skills_handlers(registry: &mut RpcRegistry, service: SkillsServi
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'id' parameter"))?;
                 match service.loader.get_skill(id).await {
-                    Some(spec) => Ok(serde_json::to_value(to_view(&spec, service.is_disabled(id)))
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(spec) => Ok(
+                        serde_json::to_value(to_view(&spec, service.is_disabled(id)))
+                            .map_err(|e| AppError::internal(e.to_string()))?,
+                    ),
                     None => Err(AppError::not_found(format!("Skill '{id}' not found"))),
                 }
             }
@@ -350,7 +352,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_skills_handlers(&mut registry, service);
 
-        let r = registry.dispatch("skills.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("skills.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 0);
     }

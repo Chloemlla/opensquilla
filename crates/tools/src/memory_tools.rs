@@ -13,11 +13,13 @@
 //! All synchronous SQLite calls are wrapped in `tokio::task::spawn_blocking`
 //! so they never stall the async executor.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use opensquilla_core::types::MemoryId;
-use opensquilla_memory::store::MemoryEntry;
 use opensquilla_memory::MemoryStore;
+use opensquilla_memory::store::MemoryEntry;
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -27,9 +29,8 @@ fn parse_agent_id(params: &Value) -> Result<Uuid, ToolError> {
     let raw = params["agent_id"]
         .as_str()
         .ok_or_else(|| ToolError::invalid_args("Missing required parameter 'agent_id'"))?;
-    Uuid::parse_str(raw).map_err(|e| {
-        ToolError::invalid_args(format!("Invalid 'agent_id' UUID '{}': {}", raw, e))
-    })
+    Uuid::parse_str(raw)
+        .map_err(|e| ToolError::invalid_args(format!("Invalid 'agent_id' UUID '{}': {}", raw, e)))
 }
 
 /// A helper for mapping memory-store errors to tool errors.
@@ -73,25 +74,35 @@ impl Tool for MemorySaveTool {
                     ),
                     (
                         "agent_id".to_string(),
-                        ParameterDefinition::required_string("The agent UUID this memory belongs to"),
+                        ParameterDefinition::required_string(
+                            "The agent UUID this memory belongs to",
+                        ),
                     ),
                     (
                         "source".to_string(),
-                        ParameterDefinition::string("Where the memory came from (e.g. conversation, user, tool)")
-                            .default(serde_json::json!("tool")),
+                        ParameterDefinition::string(
+                            "Where the memory came from (e.g. conversation, user, tool)",
+                        )
+                        .default(serde_json::json!("tool")),
                     ),
                     (
                         "memory_type".to_string(),
-                        ParameterDefinition::string("Type of memory (e.g. general, preference, fact)")
-                            .default(serde_json::json!("general")),
+                        ParameterDefinition::string(
+                            "Type of memory (e.g. general, preference, fact)",
+                        )
+                        .default(serde_json::json!("general")),
                     ),
                     (
                         "importance".to_string(),
-                        ParameterDefinition::integer("Importance score 0-100").default(serde_json::json!(50)),
+                        ParameterDefinition::integer("Importance score 0-100")
+                            .default(serde_json::json!(50)),
                     ),
                     (
                         "tags".to_string(),
-                        ParameterDefinition::array("Optional tags to attach", ParameterDefinition::string("tag")),
+                        ParameterDefinition::array(
+                            "Optional tags to attach",
+                            ParameterDefinition::string("tag"),
+                        ),
                     ),
                     (
                         "metadata".to_string(),
@@ -116,11 +127,19 @@ impl Tool for MemorySaveTool {
 
         let agent_id = parse_agent_id(&params)?;
         let source = params["source"].as_str().unwrap_or("tool").to_string();
-        let memory_type = params["memory_type"].as_str().unwrap_or("general").to_string();
-        let importance = (params["importance"].as_i64().unwrap_or(50) as f64 / 100.0).clamp(0.0, 1.0);
+        let memory_type = params["memory_type"]
+            .as_str()
+            .unwrap_or("general")
+            .to_string();
+        let importance =
+            (params["importance"].as_i64().unwrap_or(50) as f64 / 100.0).clamp(0.0, 1.0);
         let tags: Vec<String> = params["tags"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let metadata: Value = params["metadata"]
             .as_str()
@@ -207,11 +226,13 @@ impl Tool for MemorySearchTool {
                     ),
                     (
                         "limit".to_string(),
-                        ParameterDefinition::integer("Maximum number of results").default(serde_json::json!(10)),
+                        ParameterDefinition::integer("Maximum number of results")
+                            .default(serde_json::json!(10)),
                     ),
                     (
                         "offset".to_string(),
-                        ParameterDefinition::integer("Result offset for pagination").default(serde_json::json!(0)),
+                        ParameterDefinition::integer("Result offset for pagination")
+                            .default(serde_json::json!(0)),
                     ),
                 ]),
             )
@@ -235,13 +256,16 @@ impl Tool for MemorySearchTool {
             .map_err(|e| ToolError::invalid_args(format!("Invalid 'agent_id' UUID: {}", e)))?;
 
         let store = self.store.clone();
-        let results = tokio::task::spawn_blocking(move || -> Result<Vec<MemoryEntry>, ToolError> {
-            store
-                .search_fts(&query, limit, offset)
-                .map_err(|e| map_store_error("search", e))
-        })
-        .await
-        .map_err(|e| ToolError::new("MEMORY_ERROR", format!("Memory search task failed: {}", e)))??;
+        let results =
+            tokio::task::spawn_blocking(move || -> Result<Vec<MemoryEntry>, ToolError> {
+                store
+                    .search_fts(&query, limit, offset)
+                    .map_err(|e| map_store_error("search", e))
+            })
+            .await
+            .map_err(|e| {
+                ToolError::new("MEMORY_ERROR", format!("Memory search task failed: {}", e))
+            })??;
 
         // The store-level FTS query is global; narrow to the requested agent
         // if one was given.
@@ -323,9 +347,9 @@ impl Tool for MemoryDeleteTool {
         let raw = params["memory_id"]
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing required parameter 'memory_id'"))?;
-        let id = Uuid::parse_str(raw)
-            .map(MemoryId)
-            .map_err(|e| ToolError::invalid_args(format!("Invalid 'memory_id' UUID '{}': {}", raw, e)))?;
+        let id = Uuid::parse_str(raw).map(MemoryId).map_err(|e| {
+            ToolError::invalid_args(format!("Invalid 'memory_id' UUID '{}': {}", raw, e))
+        })?;
 
         let store = self.store.clone();
         tokio::task::spawn_blocking(move || -> Result<(), ToolError> {
@@ -334,7 +358,9 @@ impl Tool for MemoryDeleteTool {
                 .map_err(|e| map_store_error("delete", e))
         })
         .await
-        .map_err(|e| ToolError::new("MEMORY_ERROR", format!("Memory delete task failed: {}", e)))??;
+        .map_err(|e| {
+            ToolError::new("MEMORY_ERROR", format!("Memory delete task failed: {}", e))
+        })??;
 
         let data = serde_json::json!({ "memory_id": raw });
         Ok(ToolOutput::success(format!("Deleted memory {}", raw)).with_data(data))
@@ -377,11 +403,13 @@ impl Tool for MemoryListTool {
                     ),
                     (
                         "limit".to_string(),
-                        ParameterDefinition::integer("Maximum number of results").default(serde_json::json!(50)),
+                        ParameterDefinition::integer("Maximum number of results")
+                            .default(serde_json::json!(50)),
                     ),
                     (
                         "offset".to_string(),
-                        ParameterDefinition::integer("Result offset for pagination").default(serde_json::json!(0)),
+                        ParameterDefinition::integer("Result offset for pagination")
+                            .default(serde_json::json!(0)),
                     ),
                 ]),
             )
@@ -406,7 +434,9 @@ impl Tool for MemoryListTool {
                     .map_err(|e| map_store_error("list", e))
             })
             .await
-            .map_err(|e| ToolError::new("MEMORY_ERROR", format!("Memory list task failed: {}", e)))??;
+            .map_err(|e| {
+                ToolError::new("MEMORY_ERROR", format!("Memory list task failed: {}", e))
+            })??;
 
         let items: Vec<Value> = results
             .iter()
@@ -463,7 +493,10 @@ mod tests {
             .await;
         assert!(result.is_ok(), "save failed: {:?}", result.err());
         let output = result.unwrap();
-        let memory_id = output.data.as_ref().unwrap()["memory_id"].as_str().unwrap().to_string();
+        let memory_id = output.data.as_ref().unwrap()["memory_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
         assert!(!memory_id.is_empty());
 
         let result = search
@@ -476,10 +509,12 @@ mod tests {
         let output = result.unwrap();
         let data = output.data.unwrap();
         assert_eq!(data["count"].as_u64(), Some(1));
-        assert!(data["results"][0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("France"));
+        assert!(
+            data["results"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("France")
+        );
     }
 
     #[tokio::test]

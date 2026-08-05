@@ -67,16 +67,22 @@ impl SearchRegistry {
     }
 
     /// Search using the default provider.
-    pub async fn search_default(&self, request: &SearchRequest) -> Result<SearchResponse, SearchError> {
+    pub async fn search_default(
+        &self,
+        request: &SearchRequest,
+    ) -> Result<SearchResponse, SearchError> {
         self.search(&self.default_provider, request).await
     }
 
     /// Search using a specific provider.
-    pub async fn search(&self, provider_name: &str, request: &SearchRequest) -> Result<SearchResponse, SearchError> {
-        let provider = self
-            .providers
-            .get(provider_name)
-            .ok_or_else(|| SearchError::ConfigError(format!("Unknown provider: {provider_name}")))?;
+    pub async fn search(
+        &self,
+        provider_name: &str,
+        request: &SearchRequest,
+    ) -> Result<SearchResponse, SearchError> {
+        let provider = self.providers.get(provider_name).ok_or_else(|| {
+            SearchError::ConfigError(format!("Unknown provider: {provider_name}"))
+        })?;
 
         debug!("Searching with provider: {provider_name}");
         let response = provider.search(request).await?;

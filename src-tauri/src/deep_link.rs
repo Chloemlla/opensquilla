@@ -178,7 +178,11 @@ pub fn deep_link_arguments(argv: &[String]) -> Vec<String> {
 /// Emits `deep-link://action` carrying a [`DeepLinkPayload`]. The main window
 /// is activated first so the user sees the result of the link even if the
 /// frontend is slow to mount.
-pub fn dispatch<R: tauri::Runtime>(app: &tauri::AppHandle<R>, raw_url: &str, action: &DeepLinkAction) {
+pub fn dispatch<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    raw_url: &str,
+    action: &DeepLinkAction,
+) {
     use tauri::Emitter;
     crate::window::activate_main_window(app);
     let payload = DeepLinkPayload {
@@ -207,20 +211,36 @@ mod tests {
 
     #[test]
     fn parses_open_action() {
-        assert_eq!(parse_deep_link("opensquilla://open"), Ok(DeepLinkAction::Open));
-        assert_eq!(parse_deep_link("opensquilla://OPEN"), Ok(DeepLinkAction::Open));
+        assert_eq!(
+            parse_deep_link("opensquilla://open"),
+            Ok(DeepLinkAction::Open)
+        );
+        assert_eq!(
+            parse_deep_link("opensquilla://OPEN"),
+            Ok(DeepLinkAction::Open)
+        );
     }
 
     #[test]
     fn parses_session_action() {
         let action = parse_deep_link("opensquilla://session/abc-123").unwrap();
-        assert_eq!(action, DeepLinkAction::Session { id: "abc-123".into() });
+        assert_eq!(
+            action,
+            DeepLinkAction::Session {
+                id: "abc-123".into()
+            }
+        );
     }
 
     #[test]
     fn parses_import_action() {
         let action = parse_deep_link("opensquilla://import/Zm9vYmFy").unwrap();
-        assert_eq!(action, DeepLinkAction::Import { data: "Zm9vYmFy".into() });
+        assert_eq!(
+            action,
+            DeepLinkAction::Import {
+                data: "Zm9vYmFy".into()
+            }
+        );
     }
 
     #[test]

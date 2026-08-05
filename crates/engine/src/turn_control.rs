@@ -184,9 +184,7 @@ fn has_text_content(messages: &[Message]) -> bool {
         .iter()
         .filter(|m| matches!(m.role, MessageRole::Assistant))
         .flat_map(|m| m.content.iter())
-        .any(|block| {
-            matches!(block, ContentBlock::Text(t) if !t.trim().is_empty())
-        })
+        .any(|block| matches!(block, ContentBlock::Text(t) if !t.trim().is_empty()))
 }
 
 #[cfg(test)]

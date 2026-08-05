@@ -19,7 +19,7 @@ use crate::types::{
 };
 use crate::webhook::{WebhookError, WebhookMethod, WebhookRoute};
 use reqwest::multipart::{Form, Part};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
@@ -498,13 +498,18 @@ impl TelegramChannel {
     ///
     /// Verifies the `X-Telegram-Bot-Api-Secret-Token` header when a secret is
     /// configured and forwards parsed updates to the internal queue.
-    pub fn webhook_route(&self, path: impl Into<String>, secret_token: Option<String>) -> WebhookRoute {
+    pub fn webhook_route(
+        &self,
+        path: impl Into<String>,
+        secret_token: Option<String>,
+    ) -> WebhookRoute {
         let incoming = self.incoming.clone();
         let handler = crate::webhook::TelegramWebhookHandler::new().on_message(move |msg| {
             incoming.blocking_lock().push_back(msg);
             Ok(())
         });
-        let mut route = WebhookRoute::new(path, WebhookMethod::Post, ChannelType::Telegram, handler);
+        let mut route =
+            WebhookRoute::new(path, WebhookMethod::Post, ChannelType::Telegram, handler);
         if let Some(secret) = secret_token {
             route = route.with_secret(secret);
         }
@@ -703,25 +708,20 @@ impl Channel for TelegramChannel {
             .thread_id
             .as_deref()
             .and_then(|t| t.parse::<i64>().ok());
-        let reply_markup = message
-            .metadata
-            .get("reply_markup")
-            .cloned()
-            .or_else(|| {
-                message
-                    .metadata
-                    .get("keyboard")
-                    .cloned()
-                    .map(|k| json!({ "inline_keyboard": k }))
-            });
+        let reply_markup = message.metadata.get("reply_markup").cloned().or_else(|| {
+            message
+                .metadata
+                .get("keyboard")
+                .cloned()
+                .map(|k| json!({ "inline_keyboard": k }))
+        });
 
         // File upload path: send the first attachment as a document.
         if let Some(att) = message.attachments.first() {
             if let Some(data) = &att.data {
                 if let Some(base64_str) = data.get("base64").and_then(|v| v.as_str()) {
                     use base64::Engine;
-                    if let Ok(bytes) =
-                        base64::engine::general_purpose::STANDARD.decode(base64_str)
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(base64_str)
                     {
                         let name = data
                             .get("file_name")

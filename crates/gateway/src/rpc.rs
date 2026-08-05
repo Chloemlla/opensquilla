@@ -6,11 +6,11 @@
 //! optional [`RpcContext`] passed to handlers that opt into context-aware
 //! execution.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use async_trait::async_trait;
 use opensquilla_core::error::{AppError, AppResult};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// The error type returned by RPC handlers.
 pub type RpcError = AppError;
@@ -327,12 +327,17 @@ where
 
         async fn handle(&self, params: Value) -> RpcResult {
             // Without a context, use a minimal anonymous context.
-            let ctx = RpcContext::new("", crate::auth::AuthPrincipal::new(
-                "operator",
-                crate::auth::CLI_DEFAULT_OPERATOR_SCOPES,
-                false,
-                false,
-            ), "", "");
+            let ctx = RpcContext::new(
+                "",
+                crate::auth::AuthPrincipal::new(
+                    "operator",
+                    crate::auth::CLI_DEFAULT_OPERATOR_SCOPES,
+                    false,
+                    false,
+                ),
+                "",
+                "",
+            );
             (self.f)(params, &ctx).await
         }
 
@@ -392,7 +397,17 @@ mod tests {
             }))
         }));
 
-        let ctx = RpcContext::new("conn-1", crate::auth::AuthPrincipal::new("operator", crate::auth::CLI_DEFAULT_OPERATOR_SCOPES, true, false), "echo", "r1");
+        let ctx = RpcContext::new(
+            "conn-1",
+            crate::auth::AuthPrincipal::new(
+                "operator",
+                crate::auth::CLI_DEFAULT_OPERATOR_SCOPES,
+                true,
+                false,
+            ),
+            "echo",
+            "r1",
+        );
         let result = registry
             .dispatch_with_ctx("echo", serde_json::json!({"x": 1}), &ctx)
             .await;
@@ -409,10 +424,18 @@ mod tests {
             Ok(serde_json::json!({"greeting": "hi"}))
         }));
 
-        let ctx = RpcContext::new("conn-1", crate::auth::AuthPrincipal::new("operator", crate::auth::CLI_DEFAULT_OPERATOR_SCOPES, true, false), "hello", "r1");
-        let result = registry
-            .dispatch_with_ctx("hello", Value::Null, &ctx)
-            .await;
+        let ctx = RpcContext::new(
+            "conn-1",
+            crate::auth::AuthPrincipal::new(
+                "operator",
+                crate::auth::CLI_DEFAULT_OPERATOR_SCOPES,
+                true,
+                false,
+            ),
+            "hello",
+            "r1",
+        );
+        let result = registry.dispatch_with_ctx("hello", Value::Null, &ctx).await;
         assert!(result.is_some());
         assert!(result.unwrap().is_ok());
     }
@@ -420,12 +443,8 @@ mod tests {
     #[test]
     fn test_try_register_duplicate() {
         let mut registry = RpcRegistry::new();
-        registry.register(rpc_handler("dup", |_| async {
-            Ok(Value::Null)
-        }));
-        let second = registry.try_register(rpc_handler("dup", |_| async {
-            Ok(Value::Null)
-        }));
+        registry.register(rpc_handler("dup", |_| async { Ok(Value::Null) }));
+        let second = registry.try_register(rpc_handler("dup", |_| async { Ok(Value::Null) }));
         assert!(second.is_err());
     }
 

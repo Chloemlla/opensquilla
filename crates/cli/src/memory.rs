@@ -6,9 +6,9 @@
 
 use anyhow::Result;
 use opensquilla_core::types::MemoryId;
+use opensquilla_memory::DreamEngine;
 use opensquilla_memory::store::MemoryEntry;
 use opensquilla_memory::store::MemoryStore;
-use opensquilla_memory::DreamEngine;
 use tracing::info;
 use uuid::Uuid;
 

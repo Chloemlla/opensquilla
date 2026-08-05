@@ -69,7 +69,11 @@ impl TauriError {
 
     /// Create a 429 Too Many Requests error.
     pub fn rate_limited(retry_after_secs: u64) -> Self {
-        Self::new("RATE_LIMITED", format!("Rate limited, retry after {retry_after_secs}s"), 429)
+        Self::new(
+            "RATE_LIMITED",
+            format!("Rate limited, retry after {retry_after_secs}s"),
+            429,
+        )
     }
 
     /// Create a 500 Internal Server Error.
@@ -126,9 +130,11 @@ impl From<ProviderError> for TauriError {
             ProviderError::RateLimited(msg) => ("RATE_LIMITED", 429, msg.clone()),
             ProviderError::Timeout(msg) => ("TIMEOUT", 504, msg.clone()),
             ProviderError::Network(_) => ("NETWORK_ERROR", 502, err.to_string()),
-            ProviderError::UnsupportedModel(model) => {
-                ("UNSUPPORTED_MODEL", 400, format!("Unsupported model: {model}"))
-            }
+            ProviderError::UnsupportedModel(model) => (
+                "UNSUPPORTED_MODEL",
+                400,
+                format!("Unsupported model: {model}"),
+            ),
             ProviderError::Config(msg) => ("CONFIG_ERROR", 400, msg.clone()),
             ProviderError::Provider(msg) => ("PROVIDER_ERROR", 502, msg.clone()),
             ProviderError::Serialization(_) => ("SERIALIZATION_ERROR", 400, err.to_string()),

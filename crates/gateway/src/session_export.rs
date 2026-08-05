@@ -76,15 +76,14 @@ impl SessionExport {
     /// Serialize the export to bytes in the requested format.
     pub fn to_bytes(&self, format: ExportFormat) -> Result<Vec<u8>, AppError> {
         match format {
-            ExportFormat::Json => {
-                serde_json::to_vec_pretty(self)
-                    .map_err(|e| AppError::internal(format!("Export serialization failed: {e}")))
-            }
+            ExportFormat::Json => serde_json::to_vec_pretty(self)
+                .map_err(|e| AppError::internal(format!("Export serialization failed: {e}"))),
             ExportFormat::Jsonl => {
                 let mut out = Vec::new();
                 for msg in &self.messages {
-                    let line = serde_json::to_string(msg)
-                        .map_err(|e| AppError::internal(format!("Export serialization failed: {e}")))?;
+                    let line = serde_json::to_string(msg).map_err(|e| {
+                        AppError::internal(format!("Export serialization failed: {e}"))
+                    })?;
                     out.extend_from_slice(line.as_bytes());
                     out.push(b'\n');
                 }

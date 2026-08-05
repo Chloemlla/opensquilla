@@ -44,9 +44,8 @@ impl CronParser {
             ));
         };
 
-        let schedule = Schedule::from_str(&normalized).map_err(|e| {
-            ParseError::InvalidCron(trimmed.to_string(), e.to_string())
-        })?;
+        let schedule = Schedule::from_str(&normalized)
+            .map_err(|e| ParseError::InvalidCron(trimmed.to_string(), e.to_string()))?;
 
         Ok(Self {
             expression: trimmed.to_string(),
@@ -84,12 +83,10 @@ impl CronParser {
 /// Validate a schedule kind's time expression.
 pub fn validate_schedule_expression(kind: &super::types::ScheduleKind) -> Option<String> {
     match kind {
-        super::types::ScheduleKind::Cron(expr) => {
-            match CronParser::new(expr) {
-                Ok(_) => None,
-                Err(e) => Some(e.to_string()),
-            }
-        }
+        super::types::ScheduleKind::Cron(expr) => match CronParser::new(expr) {
+            Ok(_) => None,
+            Err(e) => Some(e.to_string()),
+        },
         super::types::ScheduleKind::At(dt) => {
             if *dt < Utc::now() {
                 Some("Scheduled time is in the past".to_string())
@@ -110,15 +107,13 @@ pub fn validate_schedule_expression(kind: &super::types::ScheduleKind) -> Option
 /// Compute the next run time for a given schedule kind.
 pub fn compute_next_run(kind: &super::types::ScheduleKind) -> Option<DateTime<Utc>> {
     match kind {
-        super::types::ScheduleKind::Cron(expr) => {
-            match CronParser::new(expr) {
-                Ok(parser) => parser.next(),
-                Err(e) => {
-                    warn!("Failed to compute next run for cron '{}': {}", expr, e);
-                    None
-                }
+        super::types::ScheduleKind::Cron(expr) => match CronParser::new(expr) {
+            Ok(parser) => parser.next(),
+            Err(e) => {
+                warn!("Failed to compute next run for cron '{}': {}", expr, e);
+                None
             }
-        }
+        },
         super::types::ScheduleKind::At(dt) => {
             if *dt > Utc::now() {
                 Some(*dt)
@@ -171,15 +166,21 @@ mod tests {
 
     #[test]
     fn test_validate_good_cron() {
-        assert!(validate_schedule_expression(&super::super::types::ScheduleKind::Cron(
-            "0 9 * * 1-5".to_string()
-        )).is_none());
+        assert!(
+            validate_schedule_expression(&super::super::types::ScheduleKind::Cron(
+                "0 9 * * 1-5".to_string()
+            ))
+            .is_none()
+        );
     }
 
     #[test]
     fn test_validate_bad_cron() {
-        assert!(validate_schedule_expression(&super::super::types::ScheduleKind::Cron(
-            "bad cron".to_string()
-        )).is_some());
+        assert!(
+            validate_schedule_expression(&super::super::types::ScheduleKind::Cron(
+                "bad cron".to_string()
+            ))
+            .is_some()
+        );
     }
 }

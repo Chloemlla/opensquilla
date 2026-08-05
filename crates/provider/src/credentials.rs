@@ -9,8 +9,8 @@
 //! round-robin counter.
 
 use dashmap::DashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -212,7 +212,11 @@ impl CredentialPool {
             let state = entry.value_mut();
             // Cool down for a long time (1 hour) to effectively disable the key.
             state.cooldown_until = Some(Instant::now() + Duration::from_secs(3600));
-            warn!(target = "provider", key_index = index, "Credential marked invalid (401)");
+            warn!(
+                target = "provider",
+                key_index = index,
+                "Credential marked invalid (401)"
+            );
         }
     }
 

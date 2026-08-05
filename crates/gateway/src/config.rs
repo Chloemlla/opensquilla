@@ -16,7 +16,7 @@ use opensquilla_core::error::AppError;
 use parking_lot::{Mutex, RwLock};
 
 use crate::model_routing::{ModelRouter, ModelRouterConfig, RouteRequest, RoutingRule};
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A config store combining a structured [`Config`], a flat key/value overlay,
 /// and a model router.
@@ -256,9 +256,7 @@ impl ConfigStore {
             Some(path) => config
                 .save_to(&path)
                 .map_err(|e| AppError::internal(e.to_string())),
-            None => config
-                .save()
-                .map_err(|e| AppError::internal(e.to_string())),
+            None => config.save().map_err(|e| AppError::internal(e.to_string())),
         }
     }
 
@@ -323,7 +321,11 @@ impl ConfigStore {
     }
 
     /// Return recent routing decisions.
-    pub fn routing_decisions(&self, session_id: Option<&str>, limit: usize) -> Vec<crate::routing::RoutingDecision> {
+    pub fn routing_decisions(
+        &self,
+        session_id: Option<&str>,
+        limit: usize,
+    ) -> Vec<crate::routing::RoutingDecision> {
         let router = self.router.read();
         router.decisions(session_id, limit)
     }
@@ -539,7 +541,10 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
         move |params| {
             let store = store.clone();
             async move {
-                let path = params.get("path").and_then(|v| v.as_str()).map(PathBuf::from);
+                let path = params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .map(PathBuf::from);
                 store.save(path)?;
                 Ok(serde_json::json!({"saved": true}))
             }
@@ -551,9 +556,7 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
         let store = config_store.clone();
         move |_params| {
             let store = store.clone();
-            async move {
-                Ok(store.routing_view())
-            }
+            async move { Ok(store.routing_view()) }
         }
     }));
 
@@ -575,13 +578,19 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
                     .to_string();
                 let rule = RoutingRule {
                     name,
-                    session_pattern: params.get("session_pattern").and_then(|v| v.as_str()).map(String::from),
+                    session_pattern: params
+                        .get("session_pattern")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     requested_model_contains: params
                         .get("requested_model_contains")
                         .and_then(|v| v.as_str())
                         .map(String::from),
                     model,
-                    provider: params.get("provider").and_then(|v| v.as_str()).map(String::from),
+                    provider: params
+                        .get("provider")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     priority: params.get("priority").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
                 };
                 store.set_routing_rule(rule.clone());
@@ -604,7 +613,10 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
                     .get("model")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'model' parameter"))?;
-                let provider = params.get("provider").and_then(|v| v.as_str()).map(String::from);
+                let provider = params
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let reason = params
                     .get("reason")
                     .and_then(|v| v.as_str())
@@ -615,7 +627,13 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
                     .and_then(|v| v.as_str())
                     .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&Utc));
-                store.set_routing_override(session_id, model, provider.clone(), &reason, expires_at);
+                store.set_routing_override(
+                    session_id,
+                    model,
+                    provider.clone(),
+                    &reason,
+                    expires_at,
+                );
                 Ok(serde_json::json!({
                     "held": true,
                     "session_id": session_id,
@@ -649,10 +667,7 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
             let store = store.clone();
             async move {
                 let session_id = params.get("session_id").and_then(|v| v.as_str());
-                let limit = params
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(20) as usize;
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
                 let decisions = store.routing_decisions(session_id, limit);
                 Ok(serde_json::json!({
                     "decisions": decisions,
@@ -687,8 +702,7 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
                     requested_model,
                     purpose,
                 });
-                Ok(serde_json::to_value(outcome)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(outcome).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -716,7 +730,9 @@ mod tests {
         assert_eq!(resp["value"], "dark");
 
         // List
-        let result = registry.dispatch("config.list", serde_json::Value::Null).await;
+        let result = registry
+            .dispatch("config.list", serde_json::Value::Null)
+            .await;
         let resp = result.unwrap().unwrap();
         assert!(resp["count"].as_u64().unwrap() >= 1);
 
@@ -742,7 +758,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_config_handlers(&mut registry, store);
 
-        let r = registry.dispatch("config.validate", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("config.validate", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         // Default config has no providers configured, so there will be issues.
         assert_eq!(resp["valid"], false);
@@ -824,7 +842,10 @@ mod tests {
 
         // Decisions recorded.
         let r = registry
-            .dispatch("config.routing.decisions", serde_json::json!({"session_id": "s1"}))
+            .dispatch(
+                "config.routing.decisions",
+                serde_json::json!({"session_id": "s1"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["count"].as_u64().unwrap() >= 2);

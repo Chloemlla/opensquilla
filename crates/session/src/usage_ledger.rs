@@ -53,7 +53,8 @@ impl UsageLedger {
         model: String,
         provider: String,
     ) -> UsageEntry {
-        let cost_nanodollars = Self::compute_cost_nanodollars(prompt_tokens, completion_tokens, &model);
+        let cost_nanodollars =
+            Self::compute_cost_nanodollars(prompt_tokens, completion_tokens, &model);
 
         let entry = UsageEntry {
             id: Uuid::new_v4(),
@@ -66,7 +67,10 @@ impl UsageLedger {
             provider,
         };
 
-        self.entries.entry(session_id).or_default().push(entry.clone());
+        self.entries
+            .entry(session_id)
+            .or_default()
+            .push(entry.clone());
 
         self.session_totals
             .entry(session_id)

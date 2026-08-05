@@ -10,8 +10,8 @@
 
 use crate::policy::{PolicyChain, PolicyContext, PolicyDecision};
 use crate::registry::{Tool, ToolError, ToolOutput, ToolRegistry, ToolResult};
-use opensquilla_core::error::AppError;
 use opensquilla_core::ToolCall;
+use opensquilla_core::error::AppError;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -133,11 +133,8 @@ impl SandboxHandle for NoopSandbox {
         cmd.args(args);
         cmd.kill_on_drop(true);
 
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout_secs),
-            cmd.output(),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), cmd.output()).await;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -488,10 +485,12 @@ impl From<DispatchError> for AppError {
             DispatchError::RequiresConfirmation(_) => {
                 AppError::new("REQUIRES_CONFIRMATION", err.to_string()).with_status(428)
             }
-            DispatchError::Deferred { retry_after_secs, .. } => {
-                AppError::new("DEFERRED", err.to_string()).with_status(429)
+            DispatchError::Deferred {
+                retry_after_secs, ..
+            } => AppError::new("DEFERRED", err.to_string()).with_status(429),
+            DispatchError::Timeout { .. } => {
+                AppError::new("TIMEOUT", err.to_string()).with_status(408)
             }
-            DispatchError::Timeout { .. } => AppError::new("TIMEOUT", err.to_string()).with_status(408),
             DispatchError::SandboxUnavailable(_) => {
                 AppError::new("SANDBOX_UNAVAILABLE", err.to_string()).with_status(503)
             }

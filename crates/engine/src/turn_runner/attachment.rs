@@ -48,7 +48,11 @@ pub struct TurnAttachment {
 
 impl TurnAttachment {
     /// Create a new attachment from inline base64 bytes.
-    pub fn inline(id: impl Into<String>, name: impl Into<String>, base64: impl Into<String>) -> Self {
+    pub fn inline(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        base64: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -502,7 +506,12 @@ impl Stage for AttachmentStage {
 }
 
 /// Render an attachment into a text block.
-fn render_attachment(label: &str, declared_mime: &str, loaded: &LoadedAttachment, max_chars: usize) -> String {
+fn render_attachment(
+    label: &str,
+    declared_mime: &str,
+    loaded: &LoadedAttachment,
+    max_chars: usize,
+) -> String {
     let mime = if declared_mime.is_empty() {
         loaded.metadata.detected_mime.as_str()
     } else {
@@ -548,9 +557,9 @@ fn detect_mime_type(extension: &Option<String>, bytes: &[u8]) -> String {
         Some("html") | Some("htm") => "text/html".into(),
         Some("md") | Some("markdown") => "text/markdown".into(),
         Some("txt") => "text/plain".into(),
-        Some("py") | Some("rs") | Some("js") | Some("ts") | Some("go") | Some("c") | Some("cpp")
-        | Some("h") | Some("java") | Some("sh") | Some("toml") | Some("yaml") | Some("yml")
-        | Some("sql") => "text/plain".into(),
+        Some("py") | Some("rs") | Some("js") | Some("ts") | Some("go") | Some("c")
+        | Some("cpp") | Some("h") | Some("java") | Some("sh") | Some("toml") | Some("yaml")
+        | Some("yml") | Some("sql") => "text/plain".into(),
         Some("zip") => "application/zip".into(),
         Some("xml") => "application/xml".into(),
         Some("docx") | Some("xlsx") | Some("pptx") => {
@@ -693,7 +702,11 @@ fn read_headers(body: &[u8], from: usize) -> Option<(Vec<(String, String)>, usiz
         let line_end = find_subslice(body, b"\n", cursor)?;
         let line = &body[cursor..line_end];
         // Strip trailing CR.
-        let line = if line.ends_with(b"\r") { &line[..line.len() - 1] } else { line };
+        let line = if line.ends_with(b"\r") {
+            &line[..line.len() - 1]
+        } else {
+            line
+        };
 
         if line.is_empty() {
             return Some((headers, line_end + 1));
@@ -801,7 +814,11 @@ mod tests {
             max_attachments: 1,
             ..Default::default()
         });
-        assert!(stage.validate(&[descriptor("a"), descriptor("b")]).is_some());
+        assert!(
+            stage
+                .validate(&[descriptor("a"), descriptor("b")])
+                .is_some()
+        );
     }
 
     #[test]
@@ -817,11 +834,22 @@ mod tests {
 
     #[test]
     fn test_base64_roundtrip() {
-        let cases: &[&[u8]] = &[b"hello world", b"", b"abc", b"abcd", b"\x00\x01\x02\xff", b"f"];
+        let cases: &[&[u8]] = &[
+            b"hello world",
+            b"",
+            b"abc",
+            b"abcd",
+            b"\x00\x01\x02\xff",
+            b"f",
+        ];
         for original in cases {
             let encoded = encode_for_test(original);
             let decoded = base64_decode(&encoded).unwrap();
-            assert_eq!(decoded.as_slice(), *original, "roundtrip failed for {original:?}");
+            assert_eq!(
+                decoded.as_slice(),
+                *original,
+                "roundtrip failed for {original:?}"
+            );
         }
     }
 
@@ -842,15 +870,26 @@ mod tests {
             let n = (b0 << 16) | (b1 << 8) | b2;
             out.push(TABLE[(n >> 18) as usize & 0x3f] as char);
             out.push(TABLE[(n >> 12) as usize & 0x3f] as char);
-            out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 0x3f] as char } else { '=' });
-            out.push(if chunk.len() > 2 { TABLE[n as usize & 0x3f] as char } else { '=' });
+            out.push(if chunk.len() > 1 {
+                TABLE[(n >> 6) as usize & 0x3f] as char
+            } else {
+                '='
+            });
+            out.push(if chunk.len() > 2 {
+                TABLE[n as usize & 0x3f] as char
+            } else {
+                '='
+            });
         }
         out
     }
 
     #[test]
     fn test_detect_mime_magic() {
-        assert_eq!(detect_mime_type(&None, b"\x89PNG\r\n\x1a\n..."), "image/png");
+        assert_eq!(
+            detect_mime_type(&None, b"\x89PNG\r\n\x1a\n..."),
+            "image/png"
+        );
         assert_eq!(detect_mime_type(&None, b"\xff\xd8\xff\xe0"), "image/jpeg");
         assert_eq!(detect_mime_type(&None, b"%PDF-1.7"), "application/pdf");
         assert_eq!(detect_mime_type(&None, b"PK\x03\x04..."), "application/zip");
@@ -858,9 +897,18 @@ mod tests {
 
     #[test]
     fn test_detect_mime_extension() {
-        assert_eq!(detect_mime_type(&Some("md".into()), b"# title"), "text/markdown");
-        assert_eq!(detect_mime_type(&Some("png".into()), b"not really"), "image/png");
-        assert_eq!(detect_mime_type(&Some("unknown".into()), b"data"), "application/octet-stream");
+        assert_eq!(
+            detect_mime_type(&Some("md".into()), b"# title"),
+            "text/markdown"
+        );
+        assert_eq!(
+            detect_mime_type(&Some("png".into()), b"not really"),
+            "image/png"
+        );
+        assert_eq!(
+            detect_mime_type(&Some("unknown".into()), b"data"),
+            "application/octet-stream"
+        );
     }
 
     #[test]

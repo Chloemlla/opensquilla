@@ -252,7 +252,9 @@ impl CompactionStage {
         let mut repaired_tool_pairs = false;
         if compacted.iter().any(|m| {
             matches!(m.role, MessageRole::Tool)
-                || m.content.iter().any(|b| matches!(b, opensquilla_core::types::ContentBlock::ToolUse(_)))
+                || m.content
+                    .iter()
+                    .any(|b| matches!(b, opensquilla_core::types::ContentBlock::ToolUse(_)))
         }) {
             let outcome = crate::history::repair_tool_pairs(&compacted);
             if outcome.removed_results > 0 || outcome.unpaired_calls > 0 {
@@ -269,7 +271,9 @@ impl CompactionStage {
         let tokens_after = self.estimate_tokens(&compacted);
 
         for hook in &self.hooks {
-            let _ = hook.after_compaction(turn_id, before, compacted.len()).await;
+            let _ = hook
+                .after_compaction(turn_id, before, compacted.len())
+                .await;
         }
 
         let outcome = CompactionOutcome {
@@ -291,10 +295,7 @@ impl CompactionStage {
     /// storage is attached or the session row is absent (the caller falls back
     /// to in-memory compaction).
     #[cfg(feature = "session")]
-    pub async fn run_session_compaction(
-        &self,
-        turn_id: &str,
-    ) -> Result<bool> {
+    pub async fn run_session_compaction(&self, turn_id: &str) -> Result<bool> {
         use opensquilla_core::error::Error;
         let Some(storage) = &self.session_storage else {
             return Ok(false);
@@ -332,11 +333,7 @@ impl CompactionStage {
 
         // Mark every compacted entry (up to the newest compacted row) and
         // persist a marker summary so the session history reflects the run.
-        let up_to = plan
-            .entries_to_compact
-            .iter()
-            .map(|e| e.created_at)
-            .max();
+        let up_to = plan.entries_to_compact.iter().map(|e| e.created_at).max();
         if let Some(up_to) = up_to {
             let count = storage
                 .mark_entries_compacted(&session_id, &up_to)

@@ -252,9 +252,7 @@ mod tests {
     #[tokio::test]
     async fn test_transcribe_unsupported_rejected() {
         let service = TranscriptionService::new();
-        let result = service
-            .transcribe("s1", "video/mp4", vec![1, 2, 3])
-            .await;
+        let result = service.transcribe("s1", "video/mp4", vec![1, 2, 3]).await;
         assert!(result.is_err());
     }
 
@@ -281,13 +279,9 @@ mod tests {
                 Err(AppError::internal("upstream transcription failed"))
             }
         }
-        let service = TranscriptionService::with_api(
-            Arc::new(FailingApi),
-            TranscriptionProvider::Whisper,
-        );
-        let result = service
-            .transcribe("s1", "audio/wav", vec![1])
-            .await;
+        let service =
+            TranscriptionService::with_api(Arc::new(FailingApi), TranscriptionProvider::Whisper);
+        let result = service.transcribe("s1", "audio/wav", vec![1]).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("upstream"));
     }

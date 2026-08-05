@@ -235,11 +235,9 @@ impl WorkbenchManager {
             None => {
                 return WorkbenchSurfaceResult {
                     ok: false,
-                    message: Some(
-                        "The native Workbench surface no longer exists.".to_string(),
-                    ),
+                    message: Some("The native Workbench surface no longer exists.".to_string()),
                     surface_id: None,
-                }
+                };
             }
         };
 
@@ -706,9 +704,8 @@ impl Default for ArtifactPreviewLeaseBroker {
 
 use crate::error::TauriResult;
 use crate::ipc::{
-    ArtifactPreviewLeaseCreateRequest, ArtifactPreviewLeasePayload,
-    WorkbenchNavigationRequest, WorkbenchSurfaceCreateRequest,
-    WorkbenchSurfaceRectRequest,
+    ArtifactPreviewLeaseCreateRequest, ArtifactPreviewLeasePayload, WorkbenchNavigationRequest,
+    WorkbenchSurfaceCreateRequest, WorkbenchSurfaceRectRequest,
 };
 use crate::state::AppState;
 use std::time::SystemTime;
@@ -720,10 +717,7 @@ pub async fn create_workbench_surface(
     request: WorkbenchSurfaceCreateRequest,
 ) -> TauriResult<WorkbenchSurfaceResult> {
     let kind = SurfaceKind::from_str(&request.kind).ok_or_else(|| {
-        crate::error::TauriError::bad_request(format!(
-            "Unsupported surface kind: {}",
-            request.kind
-        ))
+        crate::error::TauriError::bad_request(format!("Unsupported surface kind: {}", request.kind))
     })?;
 
     let mode = request
@@ -745,9 +739,7 @@ pub async fn create_workbench_surface(
             if !workbench.lease_broker_mut().authorizes_surface(&grant) {
                 return Ok(WorkbenchSurfaceResult {
                     ok: false,
-                    message: Some(
-                        "The artifact preview lease is not authorized.".to_string(),
-                    ),
+                    message: Some("The artifact preview lease is not authorized.".to_string()),
                     surface_id: None,
                 });
             }
@@ -806,11 +798,9 @@ pub async fn navigate_workbench_surface(
         None => {
             return Ok(WorkbenchSurfaceResult {
                 ok: false,
-                message: Some(
-                    "The native Workbench surface no longer exists.".to_string(),
-                ),
+                message: Some("The native Workbench surface no longer exists.".to_string()),
                 surface_id: None,
-            })
+            });
         }
     };
 
@@ -833,12 +823,9 @@ pub async fn navigate_workbench_surface(
         _ => {
             return Ok(WorkbenchSurfaceResult {
                 ok: false,
-                message: Some(format!(
-                    "Unsupported navigation action: {}",
-                    request.action
-                )),
+                message: Some(format!("Unsupported navigation action: {}", request.action)),
                 surface_id: None,
-            })
+            });
         }
     }
 
@@ -887,10 +874,7 @@ pub async fn create_artifact_preview_lease(
     // generate a lease ID and issue it locally. In production, this would call
     // the gateway's lease creation endpoint.
     let lease_id = format!("apl-{}", uuid::Uuid::new_v4().simple());
-    let launch_url = format!(
-        "http://p-{}.localhost:0/",
-        uuid::Uuid::new_v4().simple()
-    );
+    let launch_url = format!("http://p-{}.localhost:0/", uuid::Uuid::new_v4().simple());
     let expected_origin = launch_url.trim_end_matches('/').to_string();
     let expires_at = Instant::now() + Duration::from_secs(3600); // 1 hour
 

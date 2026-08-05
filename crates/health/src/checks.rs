@@ -28,10 +28,9 @@ impl HealthCheck for ConfigCheck {
                 }
                 match opensquilla_core::config::Config::from_file(path) {
                     Ok(_) => SubsystemHealth::ok("config"),
-                    Err(e) => SubsystemHealth::degraded(
-                        "config",
-                        format!("Config file invalid: {e}"),
-                    ),
+                    Err(e) => {
+                        SubsystemHealth::degraded("config", format!("Config file invalid: {e}"))
+                    }
                 }
             }
             None => SubsystemHealth::ok("config"),

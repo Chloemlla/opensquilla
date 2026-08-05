@@ -145,8 +145,7 @@ impl TokenEstimator for HeuristicEstimator {
                 other_chars += 1;
             }
         }
-        let tokens = (cjk_chars as f64 / self.cjk_ratio)
-            + (other_chars as f64 / self.latin_ratio);
+        let tokens = (cjk_chars as f64 / self.cjk_ratio) + (other_chars as f64 / self.latin_ratio);
         tokens.ceil() as u64
     }
 }
@@ -165,10 +164,9 @@ pub struct TiktokenEstimator {
 impl TiktokenEstimator {
     /// Create a tiktoken estimator using the cl100k_base encoding.
     pub fn new() -> Result<Self, String> {
-        let bpe = tiktoken_rs::get_bpe_from_tokenizer(
-            tiktoken_rs::tokenizer::Tokenizer::Cl100kBase,
-        )
-        .map_err(|e| e.to_string())?;
+        let bpe =
+            tiktoken_rs::get_bpe_from_tokenizer(tiktoken_rs::tokenizer::Tokenizer::Cl100kBase)
+                .map_err(|e| e.to_string())?;
         Ok(Self { bpe })
     }
 }
@@ -225,7 +223,8 @@ pub fn lookup_model_window(model: &str) -> ModelWindow {
         (200_000, 4_096, false)
     } else if lower.starts_with("claude-3-haiku") {
         (200_000, 4_096, false)
-    } else if lower.starts_with("claude-4") || lower.starts_with("claude-sonnet-4")
+    } else if lower.starts_with("claude-4")
+        || lower.starts_with("claude-sonnet-4")
         || lower.starts_with("claude-opus-4")
     {
         (200_000, 64_000, true)
@@ -450,8 +449,11 @@ impl RequestProof {
             .saturating_sub(generation_budget);
 
         // Separate system messages (always kept) from the conversation.
-        let mut system_msgs: Vec<ChatMessage> =
-            messages.iter().filter(|m| m.role == MessageRole::System).cloned().collect();
+        let mut system_msgs: Vec<ChatMessage> = messages
+            .iter()
+            .filter(|m| m.role == MessageRole::System)
+            .cloned()
+            .collect();
         let mut convo: Vec<ChatMessage> = messages
             .iter()
             .filter(|m| m.role != MessageRole::System)
@@ -461,16 +463,20 @@ impl RequestProof {
         // Estimate the conversation tokens; trim from the front (oldest) if
         // needed, but always preserve the last turn (most recent user/assistant
         // pair) so the model has something to respond to.
-        let mut convo_tokens: u64 =
-            convo.iter().map(|m| self.estimator.estimate_message(m)).sum();
+        let mut convo_tokens: u64 = convo
+            .iter()
+            .map(|m| self.estimator.estimate_message(m))
+            .sum();
 
         let mut dropped = 0usize;
         // Keep at least the last message.
         while convo_tokens > available && convo.len() > 1 {
             // Never drop the last message.
             let removed = convo.remove(0);
-            convo_tokens =
-                convo.iter().map(|m| self.estimator.estimate_message(m)).sum();
+            convo_tokens = convo
+                .iter()
+                .map(|m| self.estimator.estimate_message(m))
+                .sum();
             // If we removed a tool result, also drop the orphaned preceding
             // assistant tool-call to keep pairs intact.
             if removed.role == MessageRole::Tool {
@@ -617,9 +623,11 @@ mod tests {
         // System message preserved.
         assert!(trimmed.iter().any(|m| m.role == MessageRole::System));
         // Last user message preserved.
-        assert!(trimmed
-            .iter()
-            .any(|m| m.role == MessageRole::User && m.text_content() == "Final question"));
+        assert!(
+            trimmed
+                .iter()
+                .any(|m| m.role == MessageRole::User && m.text_content() == "Final question")
+        );
         // max_tokens clamped.
         assert!(new_config.max_tokens <= 4096);
         let _ = big;
@@ -643,8 +651,14 @@ mod tests {
     #[test]
     fn test_lookup_known_models() {
         assert_eq!(lookup_model_window("gpt-4o").context_window, 128_000);
-        assert_eq!(lookup_model_window("claude-3-5-sonnet-20241022").context_window, 200_000);
-        assert_eq!(lookup_model_window("deepseek-reasoner").reasoning_model, true);
+        assert_eq!(
+            lookup_model_window("claude-3-5-sonnet-20241022").context_window,
+            200_000
+        );
+        assert_eq!(
+            lookup_model_window("deepseek-reasoner").reasoning_model,
+            true
+        );
         assert!(lookup_model_window("unknown-model").context_window > 0);
     }
 

@@ -78,10 +78,12 @@ impl Gauge {
         let mut current = self.get();
         loop {
             let next = f64_to_bits(current + v);
-            match self
-                .value
-                .compare_exchange_weak(f64_to_bits(current), next, Ordering::Relaxed, Ordering::Relaxed)
-            {
+            match self.value.compare_exchange_weak(
+                f64_to_bits(current),
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => break,
                 Err(actual) => current = f64::from_bits(actual),
             }
@@ -206,7 +208,12 @@ impl MetricsRegistry {
 
     /// Get (or create) a histogram with the given name, help text, and bucket
     /// boundaries. When `buckets` is empty, [`DEFAULT_BUCKETS`] are used.
-    pub fn histogram(&self, name: &'static str, help: &'static str, buckets: Vec<f64>) -> Histogram {
+    pub fn histogram(
+        &self,
+        name: &'static str,
+        help: &'static str,
+        buckets: Vec<f64>,
+    ) -> Histogram {
         let mut histograms = self.histograms.lock().unwrap_or_else(|e| e.into_inner());
         histograms
             .entry(name.to_string())
@@ -269,7 +276,10 @@ impl MetricsRegistry {
 
     /// The number of registered counters.
     pub fn counter_count(&self) -> usize {
-        self.counters.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.counters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 }
 

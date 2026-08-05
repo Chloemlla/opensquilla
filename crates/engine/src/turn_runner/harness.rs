@@ -166,7 +166,10 @@ impl HarnessStage {
 
     /// The metrics from the most recent execution, if any.
     pub fn last_metrics(&self) -> Option<StageMetrics> {
-        self.last_metrics.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.last_metrics
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Derive the session lock key for a turn.
@@ -191,10 +194,7 @@ impl HarnessStage {
                 stage: stage.to_string(),
             });
         }
-        let tool_results = ctx
-            .messages
-            .iter()
-            .filter(|m| m.role == MessageRole::Tool);
+        let tool_results = ctx.messages.iter().filter(|m| m.role == MessageRole::Tool);
         let tool_calls: Vec<&str> = ctx
             .messages
             .iter()
@@ -249,29 +249,31 @@ impl Stage for HarnessStage {
         let session_key = Self::session_key_for(&ctx.turn_id);
         let lock_started = Instant::now();
         let lock_wait_ms;
-        let guard = match tokio::time::timeout(self.config.lock_timeout, self.locks.acquire(&session_key)).await
-        {
-            Ok(guard) => {
-                lock_wait_ms = lock_started.elapsed().as_millis() as u64;
-                guard
-            }
-            Err(_) => {
-                warn!(
-                    turn_id = %ctx.turn_id,
-                    session = %session_key,
-                    timeout_ms = self.config.lock_timeout.as_millis(),
-                    "harness: timed out acquiring session lock"
-                );
-                return Ok(StageOutput::Error(StageError {
-                    message: format!(
-                        "Timed out acquiring session lock after {}ms",
-                        self.config.lock_timeout.as_millis()
-                    ),
-                    code: Some("SESSION_LOCK_TIMEOUT".to_string()),
-                    stage: self.name().to_string(),
-                }));
-            }
-        };
+        let guard =
+            match tokio::time::timeout(self.config.lock_timeout, self.locks.acquire(&session_key))
+                .await
+            {
+                Ok(guard) => {
+                    lock_wait_ms = lock_started.elapsed().as_millis() as u64;
+                    guard
+                }
+                Err(_) => {
+                    warn!(
+                        turn_id = %ctx.turn_id,
+                        session = %session_key,
+                        timeout_ms = self.config.lock_timeout.as_millis(),
+                        "harness: timed out acquiring session lock"
+                    );
+                    return Ok(StageOutput::Error(StageError {
+                        message: format!(
+                            "Timed out acquiring session lock after {}ms",
+                            self.config.lock_timeout.as_millis()
+                        ),
+                        code: Some("SESSION_LOCK_TIMEOUT".to_string()),
+                        stage: self.name().to_string(),
+                    }));
+                }
+            };
         trace!(
             turn_id = %ctx.turn_id,
             session = %session_key,
@@ -468,10 +470,7 @@ mod tests {
     struct MockGenerator;
     #[async_trait]
     impl TurnGenerator for MockGenerator {
-        async fn generate(
-            &self,
-            _messages: &[Message],
-        ) -> Result<Vec<Message>> {
+        async fn generate(&self, _messages: &[Message]) -> Result<Vec<Message>> {
             Ok(vec![Message::assistant("ok")])
         }
         fn model_name(&self) -> &str {

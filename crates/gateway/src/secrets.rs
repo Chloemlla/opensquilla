@@ -4,13 +4,13 @@
 //! keyed by provider name; secret material is never logged and is masked in
 //! all responses.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A stored secret descriptor. The actual value is kept separately and never
 /// serialized into responses.
@@ -48,7 +48,9 @@ impl SecretsStore {
             masked_preview: masked,
         };
         self.records.lock().insert(key.to_string(), record);
-        self.values.lock().insert(key.to_string(), value.to_string());
+        self.values
+            .lock()
+            .insert(key.to_string(), value.to_string());
     }
 
     /// Get the actual secret value (for internal use only, not via RPC).
@@ -94,7 +96,14 @@ fn mask(value: &str) -> String {
         return "*".repeat(len);
     }
     let first: String = value.chars().take(2).collect();
-    let last: String = value.chars().rev().take(2).collect::<Vec<_>>().into_iter().rev().collect();
+    let last: String = value
+        .chars()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     format!("{first}{}{last}", "*".repeat(len.saturating_sub(4)))
 }
 
@@ -123,11 +132,10 @@ pub fn register_secrets_handlers(registry: &mut RpcRegistry, store: SecretsStore
                     .ok_or_else(|| AppError::bad_request("Missing 'value' parameter"))?;
 
                 store.set(key, &provider, value);
-                let record = store.get_record(key).ok_or_else(|| {
-                    AppError::internal("Failed to store secret")
-                })?;
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                let record = store
+                    .get_record(key)
+                    .ok_or_else(|| AppError::internal("Failed to store secret"))?;
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -252,7 +260,9 @@ mod tests {
             .await
             .unwrap();
 
-        let r = registry.dispatch("secrets.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("secrets.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 2);
 
@@ -261,7 +271,9 @@ mod tests {
             .await;
         assert!(r.unwrap().is_ok());
 
-        let r = registry.dispatch("secrets.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("secrets.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
     }

@@ -308,11 +308,12 @@ impl SessionLifecycleManager {
             session.history.push(record);
         }
 
-        let event = SessionEvent::new(transition.event_kind(), session_id)
-            .with_payload(serde_json::json!({
+        let event = SessionEvent::new(transition.event_kind(), session_id).with_payload(
+            serde_json::json!({
                 "from": from.to_string(),
                 "to": to.to_string(),
-            }));
+            }),
+        );
         self.broadcaster.publish(event);
 
         for hook in self.hooks.iter() {
@@ -493,10 +494,7 @@ mod tests {
             }
         }
         let broadcaster = SessionEventBroadcaster::new();
-        let mgr = SessionLifecycleManager::with_hooks(
-            broadcaster,
-            vec![Arc::new(RejectPause)],
-        );
+        let mgr = SessionLifecycleManager::with_hooks(broadcaster, vec![Arc::new(RejectPause)]);
         mgr.register("s1").unwrap();
         mgr.activate("s1").unwrap();
         assert!(mgr.pause("s1").is_err());

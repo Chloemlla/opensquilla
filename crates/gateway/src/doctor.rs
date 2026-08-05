@@ -3,14 +3,14 @@
 //! Provides `rpc_doctor` for unified health checks across subsystems, backed
 //! by the recovery crate's [`HealthCheck`] manager.
 
-use std::sync::Arc;
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
 use opensquilla_recovery::health::{HealthCheck, HealthCheckResult, HealthStatus};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A shared health-check service.
 #[derive(Clone)]
@@ -117,8 +117,7 @@ pub fn register_doctor_handlers(registry: &mut RpcRegistry, service: DoctorServi
             async move {
                 let result = service.check.run_full_check().await;
                 let report = from_result(result, service.diagnostics_enabled());
-                Ok(serde_json::to_value(report)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -131,8 +130,7 @@ pub fn register_doctor_handlers(registry: &mut RpcRegistry, service: DoctorServi
             async move {
                 let result = service.check.quick_check().await;
                 let report = from_result(result, service.diagnostics_enabled());
-                Ok(serde_json::to_value(report)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -197,7 +195,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_doctor_handlers(&mut registry, service);
 
-        let r = registry.dispatch("doctor.quick", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("doctor.quick", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["status"].as_str().is_some());
         assert!(resp["components"].is_array());
@@ -224,7 +224,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_doctor_handlers(&mut registry, service);
 
-        let r = registry.dispatch("doctor.uptime", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("doctor.uptime", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["uptime_seconds"].as_u64().is_some());
     }

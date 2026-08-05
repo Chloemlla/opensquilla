@@ -4,16 +4,16 @@
 //! during the initial setup flow, layered on top of the onboarding crate's
 //! `SetupFlow` state machine and `ConfigStorage`.
 
-use std::sync::Arc;
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
 use opensquilla_onboarding::flow::{OnboardingError, SetupFlow, SetupState};
-use opensquilla_onboarding::providers::{discover_providers, get_provider, ProviderSpec};
+use opensquilla_onboarding::providers::{ProviderSpec, discover_providers, get_provider};
 use opensquilla_onboarding::storage::ConfigStorage;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A shared onboarding session holding the active setup flow.
 #[derive(Clone)]
@@ -38,9 +38,9 @@ impl OnboardingSession {
     /// Run a closure with mutable access to the active flow.
     fn with_flow<R>(&self, f: impl FnOnce(&mut SetupFlow) -> R) -> Result<R, AppError> {
         let mut guard = self.flow.lock();
-        let flow = guard
-            .as_mut()
-            .ok_or_else(|| AppError::bad_request("No active onboarding flow. Call onboarding.start first."))?;
+        let flow = guard.as_mut().ok_or_else(|| {
+            AppError::bad_request("No active onboarding flow. Call onboarding.start first.")
+        })?;
         Ok(f(flow))
     }
 }
@@ -294,23 +294,33 @@ mod tests {
         register_onboarding_handlers(&mut registry, session);
 
         // Start
-        let r = registry.dispatch("onboarding.start", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("onboarding.start", serde_json::Value::Null)
+            .await;
         assert!(r.unwrap().is_ok());
 
         // Select provider
         let r = registry
-            .dispatch("onboarding.select_provider", serde_json::json!({"provider": "openai"}))
+            .dispatch(
+                "onboarding.select_provider",
+                serde_json::json!({"provider": "openai"}),
+            )
             .await;
         assert!(r.unwrap().is_ok());
 
         // Set API key
         let r = registry
-            .dispatch("onboarding.set_api_key", serde_json::json!({"api_key": "sk-test"}))
+            .dispatch(
+                "onboarding.set_api_key",
+                serde_json::json!({"api_key": "sk-test"}),
+            )
             .await;
         assert!(r.unwrap().is_ok());
 
         // Advance should succeed now
-        let r = registry.dispatch("onboarding.advance", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("onboarding.advance", serde_json::Value::Null)
+            .await;
         assert!(r.unwrap().is_ok());
     }
 
@@ -319,7 +329,9 @@ mod tests {
         let session = OnboardingSession::new();
         let mut registry = RpcRegistry::new();
         register_onboarding_handlers(&mut registry, session);
-        let r = registry.dispatch("onboarding.providers", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("onboarding.providers", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["count"].as_u64().unwrap() > 0);
     }
@@ -329,7 +341,9 @@ mod tests {
         let session = OnboardingSession::new();
         let mut registry = RpcRegistry::new();
         register_onboarding_handlers(&mut registry, session);
-        let r = registry.dispatch("onboarding.status", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("onboarding.status", serde_json::Value::Null)
+            .await;
         assert!(r.unwrap().is_err());
     }
 }

@@ -3,7 +3,9 @@
 //! Git operations via `tokio::process::Command`. All operations are
 //! scoped to a specific working directory for security.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -84,8 +86,10 @@ impl GitTool {
         });
 
         if result.status.success() {
-            Ok(ToolOutput::success(if stdout.is_empty() { stderr } else { stdout })
-                .with_data(data))
+            Ok(
+                ToolOutput::success(if stdout.is_empty() { stderr } else { stdout })
+                    .with_data(data),
+            )
         } else {
             let msg = if stderr.is_empty() {
                 format!("Git command failed with exit code {}", exit_code)
@@ -128,7 +132,9 @@ impl Tool for GitTool {
                     ),
                     (
                         "target_dir".to_string(),
-                        ParameterDefinition::string("Target directory name (for clone) or working directory"),
+                        ParameterDefinition::string(
+                            "Target directory name (for clone) or working directory",
+                        ),
                     ),
                     (
                         "message".to_string(),
@@ -136,7 +142,10 @@ impl Tool for GitTool {
                     ),
                     (
                         "files".to_string(),
-                        ParameterDefinition::array("Files to add (for add operation)", ParameterDefinition::string("file path")),
+                        ParameterDefinition::array(
+                            "Files to add (for add operation)",
+                            ParameterDefinition::string("file path"),
+                        ),
                     ),
                     (
                         "branch".to_string(),
@@ -144,8 +153,10 @@ impl Tool for GitTool {
                     ),
                     (
                         "max_count".to_string(),
-                        ParameterDefinition::integer("Maximum number of log entries (for log operation)")
-                            .default(serde_json::json!(10)),
+                        ParameterDefinition::integer(
+                            "Maximum number of log entries (for log operation)",
+                        )
+                        .default(serde_json::json!(10)),
                     ),
                     (
                         "working_dir".to_string(),
@@ -190,7 +201,11 @@ impl Tool for GitTool {
             "add" => {
                 let files: Vec<String> = params["files"]
                     .as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if files.is_empty() {
                     let args = vec!["add".to_string(), ".".to_string()];
@@ -205,11 +220,7 @@ impl Tool for GitTool {
                 let message = params["message"]
                     .as_str()
                     .ok_or_else(|| ToolError::invalid_args("Missing 'message' for commit"))?;
-                let args = vec![
-                    "commit".to_string(),
-                    "-m".to_string(),
-                    message.to_string(),
-                ];
+                let args = vec!["commit".to_string(), "-m".to_string(), message.to_string()];
                 self.run_git(&args, working_dir).await
             }
             "push" => {
@@ -246,7 +257,10 @@ impl Tool for GitTool {
                 let args = vec!["checkout".to_string(), branch.to_string()];
                 self.run_git(&args, working_dir).await
             }
-            other => Err(ToolError::invalid_args(format!("Unknown git operation: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown git operation: {}",
+                other
+            ))),
         }
     }
 }

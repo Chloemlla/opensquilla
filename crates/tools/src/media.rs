@@ -5,7 +5,9 @@
 //! - PDF text extraction via the `lopdf` crate
 //! - Text-to-speech via HTTP API (e.g., ElevenLabs)
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use base64::Engine;
 use serde_json::Value;
@@ -40,7 +42,10 @@ impl ImageTool {
             path
         };
         let canonical = resolved.canonicalize().map_err(|e| {
-            ToolError::new("PATH_INVALID", format!("Cannot access path '{}': {}", path_str, e))
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
         })?;
         if !canonical.starts_with(&self.allowed_base) {
             return Err(ToolError::new(
@@ -56,14 +61,16 @@ impl ImageTool {
         let reader = image::ImageReader::open(path)
             .map_err(|e| ToolError::new("IMAGE_ERROR", format!("Failed to open image: {}", e)))?;
 
-        let format = reader.format().map(|f| format!("{:?}", f)).unwrap_or_default();
+        let format = reader
+            .format()
+            .map(|f| format!("{:?}", f))
+            .unwrap_or_default();
         let (width, height) = reader.into_dimensions().map_err(|e| {
             ToolError::new("IMAGE_ERROR", format!("Failed to read dimensions: {}", e))
         })?;
 
-        let metadata = std::fs::metadata(path).map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read metadata: {}", e))
-        })?;
+        let metadata = std::fs::metadata(path)
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read metadata: {}", e)))?;
 
         let data = serde_json::json!({
             "width": width,
@@ -73,8 +80,10 @@ impl ImageTool {
             "path": path.to_string_lossy(),
         });
 
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-            .with_data(data))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
     }
 
     /// Resize an image to the given dimensions.
@@ -153,8 +162,7 @@ impl ImageTool {
             "output_path": output_path.to_string_lossy(),
         });
 
-        Ok(ToolOutput::success(format!("Converted image to {} format", format))
-            .with_data(data))
+        Ok(ToolOutput::success(format!("Converted image to {} format", format)).with_data(data))
     }
 }
 
@@ -170,7 +178,11 @@ impl Tool for ImageTool {
                     (
                         "operation".to_string(),
                         ParameterDefinition::required_string("The operation to perform")
-                            .enum_values(vec!["info".to_string(), "resize".to_string(), "convert".to_string()]),
+                            .enum_values(vec![
+                                "info".to_string(),
+                                "resize".to_string(),
+                                "convert".to_string(),
+                            ]),
                     ),
                     (
                         "path".to_string(),
@@ -178,15 +190,21 @@ impl Tool for ImageTool {
                     ),
                     (
                         "width".to_string(),
-                        ParameterDefinition::integer("Target width in pixels (required for resize)"),
+                        ParameterDefinition::integer(
+                            "Target width in pixels (required for resize)",
+                        ),
                     ),
                     (
                         "height".to_string(),
-                        ParameterDefinition::integer("Target height in pixels (required for resize)"),
+                        ParameterDefinition::integer(
+                            "Target height in pixels (required for resize)",
+                        ),
                     ),
                     (
                         "format".to_string(),
-                        ParameterDefinition::string("Target format (required for convert: png, jpeg, gif, webp, bmp)"),
+                        ParameterDefinition::string(
+                            "Target format (required for convert: png, jpeg, gif, webp, bmp)",
+                        ),
                     ),
                     (
                         "output_path".to_string(),
@@ -221,18 +239,19 @@ impl Tool for ImageTool {
                 let path_clone = path.clone();
                 tokio::task::spawn_blocking(move || Self::image_info(&path_clone))
                     .await
-                    .map_err(|e| ToolError::new(
-                        "IMAGE_ERROR",
-                        format!("Image info task failed: {}", e),
-                    ))?
+                    .map_err(|e| {
+                        ToolError::new("IMAGE_ERROR", format!("Image info task failed: {}", e))
+                    })?
             }
             "resize" => {
                 let width = params["width"]
                     .as_i64()
-                    .ok_or_else(|| ToolError::invalid_args("Missing 'width' for resize"))? as u32;
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'width' for resize"))?
+                    as u32;
                 let height = params["height"]
                     .as_i64()
-                    .ok_or_else(|| ToolError::invalid_args("Missing 'height' for resize"))? as u32;
+                    .ok_or_else(|| ToolError::invalid_args("Missing 'height' for resize"))?
+                    as u32;
                 let output = params["output_path"].as_str().unwrap_or(&path_str);
                 let output_path = self.resolve_path(output)?;
                 let path_clone = path.clone();
@@ -241,10 +260,9 @@ impl Tool for ImageTool {
                     Self::resize_image(&path_clone, width, height, &output_path_clone)
                 })
                 .await
-                .map_err(|e| ToolError::new(
-                    "IMAGE_ERROR",
-                    format!("Image resize task failed: {}", e),
-                ))?
+                .map_err(|e| {
+                    ToolError::new("IMAGE_ERROR", format!("Image resize task failed: {}", e))
+                })?
             }
             "convert" => {
                 let format = params["format"]
@@ -261,12 +279,14 @@ impl Tool for ImageTool {
                     Self::convert_image(&path_clone, &format, &output_path_clone)
                 })
                 .await
-                .map_err(|e| ToolError::new(
-                    "IMAGE_ERROR",
-                    format!("Image convert task failed: {}", e),
-                ))?
+                .map_err(|e| {
+                    ToolError::new("IMAGE_ERROR", format!("Image convert task failed: {}", e))
+                })?
             }
-            other => Err(ToolError::invalid_args(format!("Unknown operation: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown operation: {}",
+                other
+            ))),
         }
     }
 }
@@ -296,7 +316,10 @@ impl PdfTool {
             path
         };
         let canonical = resolved.canonicalize().map_err(|e| {
-            ToolError::new("PATH_INVALID", format!("Cannot access path '{}': {}", path_str, e))
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
         })?;
         if !canonical.starts_with(&self.allowed_base) {
             return Err(ToolError::new(
@@ -352,7 +375,11 @@ impl Tool for PdfTool {
         if metadata.len() > self.max_pdf_size {
             return Err(ToolError::new(
                 "FILE_TOO_LARGE",
-                format!("PDF too large: {} bytes (max {})", metadata.len(), self.max_pdf_size),
+                format!(
+                    "PDF too large: {} bytes (max {})",
+                    metadata.len(),
+                    self.max_pdf_size
+                ),
             ));
         }
 
@@ -390,10 +417,9 @@ impl Tool for PdfTool {
                 Ok((content, page_count, pages_extracted))
             })
             .await
-            .map_err(|e| ToolError::new(
-                "PDF_ERROR",
-                format!("PDF extraction task failed: {}", e),
-            ))??;
+            .map_err(|e| {
+                ToolError::new("PDF_ERROR", format!("PDF extraction task failed: {}", e))
+            })??;
 
         let data = serde_json::json!({
             "path": path_str,
@@ -596,7 +622,10 @@ impl Tool for MediaTool {
             "image" => self.image.execute(params).await,
             "pdf" => self.pdf.execute(params).await,
             "tts" => self.tts.execute(params).await,
-            other => Err(ToolError::invalid_args(format!("Unknown media type: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown media type: {}",
+                other
+            ))),
         }
     }
 }

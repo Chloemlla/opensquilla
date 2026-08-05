@@ -79,7 +79,12 @@ pub fn mac_code_signature_is_adhoc(diagnostic: &str) -> bool {
 
 /// Select the secret-storage backend per the Electron policy.
 pub fn backend_for_policy(input: &SecretStoragePolicyInput) -> SecretStorageBackend {
-    let mode = input.env_mode.as_deref().unwrap_or("").trim().to_lowercase();
+    let mode = input
+        .env_mode
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
     match mode.as_str() {
         "plain" | "plaintext" | "none" => return SecretStorageBackend::Plain,
         "safe" | "safe-storage" | "safestorage" => return SecretStorageBackend::SafeStorage,
@@ -257,8 +262,7 @@ impl SecretStore {
             entries.insert(namespace.to_string(), blob);
         }
         let result = self.flush();
-        self.audit
-            .record("write", namespace, result.is_ok());
+        self.audit.record("write", namespace, result.is_ok());
         result
     }
 
@@ -410,7 +414,10 @@ impl SecretStore {
         key: &str,
         value: &str,
     ) -> std::io::Result<()> {
-        self.set(&format!("{CHANNEL_SECRET_PREFIX}{channel_name}:{key}"), value)
+        self.set(
+            &format!("{CHANNEL_SECRET_PREFIX}{channel_name}:{key}"),
+            value,
+        )
     }
 
     /// Retrieve a channel secret.
@@ -519,7 +526,8 @@ fn decrypt(key: &[u8], blob: &[u8]) -> Result<Vec<u8>, String> {
     let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|e| e.to_string())?;
     mac.update(nonce);
     mac.update(ciphertext);
-    mac.verify_slice(tag).map_err(|_| "integrity check failed".to_string())?;
+    mac.verify_slice(tag)
+        .map_err(|_| "integrity check failed".to_string())?;
 
     Ok(xor_keystream(key, nonce, ciphertext))
 }
@@ -620,9 +628,7 @@ pub fn open_shared(config_dir: &Path, app_packaged: bool) -> std::io::Result<Sha
     };
     let store = SecretStore::open(config_dir, &policy)?;
     // Surface the chosen backend in the audit log for traceability.
-    store
-        .audit
-        .record("flush", "*", true);
+    store.audit.record("flush", "*", true);
     Ok(Arc::new(store))
 }
 
@@ -779,10 +785,8 @@ mod tests {
     }
 
     fn tempdir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "opensquilla-secret-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-secret-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

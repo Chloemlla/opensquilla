@@ -21,10 +21,10 @@
 //! estimation before returning an [`ImageGenerationResult`].
 
 use crate::types::{ProviderError, ProviderResult};
-use crate::util::{check_status, with_retry, RateLimiter, RetryConfig};
+use crate::util::{RateLimiter, RetryConfig, check_status, with_retry};
 use futures::StreamExt;
-use reqwest::multipart::{Form, Part};
 use reqwest::Client;
+use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -378,7 +378,9 @@ impl ImageGenerationResult {
 
     /// A `data:` URL synthesized from the inline base64 payload.
     pub fn data_url(&self) -> Option<String> {
-        self.b64_json.as_deref().map(|b| format!("data:image/png;base64,{b}"))
+        self.b64_json
+            .as_deref()
+            .map(|b| format!("data:image/png;base64,{b}"))
     }
 
     /// Whether the result carries neither bytes nor a URL.
@@ -576,7 +578,10 @@ impl ImageGenerationProvider {
         if let Some(cost) = self.config.cost_override {
             return Some(cost);
         }
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let size = params.size.unwrap_or(self.config.default_size);
         let quality = params.quality.unwrap_or(self.config.default_quality);
         estimate_image_cost(model, size, quality, params.n.max(1))
@@ -610,7 +615,10 @@ impl ImageGenerationProvider {
             "Generating image"
         );
 
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let size = params.size.unwrap_or(self.config.default_size);
         let quality = params.quality.unwrap_or(self.config.default_quality);
 
@@ -629,15 +637,11 @@ impl ImageGenerationProvider {
             )
             .await?;
 
-        let cost = params
-            .cost
-            .or(self.config.cost_override)
-            .or(response.cost);
-        let first = response
-            .images
-            .into_iter()
-            .next()
-            .ok_or_else(|| ProviderError::Provider("Image generation returned no images".into()))?;
+        let cost = params.cost.or(self.config.cost_override).or(response.cost);
+        let first =
+            response.images.into_iter().next().ok_or_else(|| {
+                ProviderError::Provider("Image generation returned no images".into())
+            })?;
 
         info!(
             target = "provider",
@@ -659,7 +663,10 @@ impl ImageGenerationProvider {
         prompt: &str,
     ) -> ProviderResult<ImageGenerationResult> {
         let params = ImageGenerationParams::default();
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let size = params.size.unwrap_or(self.config.default_size);
         let quality = params.quality.unwrap_or(self.config.default_quality);
         let n = params.n.max(1);
@@ -695,11 +702,10 @@ impl ImageGenerationProvider {
         };
 
         let cost = self.config.cost_override.or(response.cost);
-        let first = response
-            .images
-            .into_iter()
-            .next()
-            .ok_or_else(|| ProviderError::Provider("Image generation returned no images".into()))?;
+        let first =
+            response.images.into_iter().next().ok_or_else(|| {
+                ProviderError::Provider("Image generation returned no images".into())
+            })?;
         Ok(first.into_result(model.to_string(), cost))
     }
 
@@ -712,7 +718,10 @@ impl ImageGenerationProvider {
         prompt: &str,
     ) -> ProviderResult<ImageGenerationResult> {
         let params = ImageGenerationParams::default();
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let size = params.size.unwrap_or(self.config.default_size);
         let quality = params.quality.unwrap_or(self.config.default_quality);
         let n = params.n.max(1);
@@ -748,11 +757,10 @@ impl ImageGenerationProvider {
         };
 
         let cost = self.config.cost_override.or(response.cost);
-        let first = response
-            .images
-            .into_iter()
-            .next()
-            .ok_or_else(|| ProviderError::Provider("Image generation returned no images".into()))?;
+        let first =
+            response.images.into_iter().next().ok_or_else(|| {
+                ProviderError::Provider("Image generation returned no images".into())
+            })?;
         Ok(first.into_result(model.to_string(), cost))
     }
 
@@ -866,7 +874,16 @@ impl ImageGenerationProvider {
         seed: Option<u64>,
         response_format: ImageResponseFormat,
     ) -> ProviderResult<ImageGenerationResponse> {
-        let body = build_openai_body(prompt, model, size, quality, style, n, seed, response_format);
+        let body = build_openai_body(
+            prompt,
+            model,
+            size,
+            quality,
+            style,
+            n,
+            seed,
+            response_format,
+        );
         let resp = self
             .client
             .post(self.endpoint("/images/generations"))
@@ -950,7 +967,16 @@ impl ImageGenerationProvider {
         seed: Option<u64>,
         negative_prompt: Option<&str>,
         output_format: Option<&str>,
-    ) -> ProviderResult<ImageGenerationResponse> {        let form = build_stability_form(prompt, size, quality, n, seed, negative_prompt, output_format)?;
+    ) -> ProviderResult<ImageGenerationResponse> {
+        let form = build_stability_form(
+            prompt,
+            size,
+            quality,
+            n,
+            seed,
+            negative_prompt,
+            output_format,
+        )?;
         let url = format!(
             "{}/v2beta/stable-image/generate/{}",
             self.config.base_url.trim_end_matches('/'),
@@ -1166,7 +1192,10 @@ impl ImageGenerationProvider {
     }
 
     /// Poll a Replicate prediction until it reaches a terminal state.
-    async fn poll_replicate(&self, initial: &serde_json::Value) -> ProviderResult<serde_json::Value> {
+    async fn poll_replicate(
+        &self,
+        initial: &serde_json::Value,
+    ) -> ProviderResult<serde_json::Value> {
         let status = initial.get("status").and_then(|v| v.as_str()).unwrap_or("");
         if matches!(status, "succeeded" | "failed" | "canceled") {
             return Ok(initial.clone());
@@ -1215,7 +1244,9 @@ impl ImageGenerationProvider {
                 _ => {}
             }
         }
-        Err(ProviderError::Timeout("Replicate prediction timed out".into()))
+        Err(ProviderError::Timeout(
+            "Replicate prediction timed out".into(),
+        ))
     }
 
     // --- Prodia ----------------------------------------------------------
@@ -1312,7 +1343,10 @@ impl ImageGenerationProvider {
         prompt: &str,
         params: &ImageGenerationParams,
     ) -> ProviderResult<ImageGenerationResult> {
-        let model = params.model.as_deref().unwrap_or(&self.config.default_model);
+        let model = params
+            .model
+            .as_deref()
+            .unwrap_or(&self.config.default_model);
         let size = params.size.unwrap_or(self.config.default_size);
         let body = build_chat_completions_image_body(prompt, model, size);
 
@@ -1340,11 +1374,10 @@ impl ImageGenerationProvider {
             self.config.default_quality,
             params.n.max(1),
         ));
-        let first = response
-            .images
-            .into_iter()
-            .next()
-            .ok_or_else(|| ProviderError::Provider("Image generation returned no images".into()))?;
+        let first =
+            response.images.into_iter().next().ok_or_else(|| {
+                ProviderError::Provider("Image generation returned no images".into())
+            })?;
         Ok(first.into_result(model.to_string(), response.cost))
     }
 
@@ -1377,8 +1410,9 @@ impl ImageGenerationProvider {
 
         let data: serde_json::Value =
             serde_json::from_str(&text).map_err(ProviderError::Serialization)?;
-        let image_url = extract_qwen_token_plan_image_url(&data)
-            .ok_or_else(|| ProviderError::Provider("Image generation provider returned no images".into()))?;
+        let image_url = extract_qwen_token_plan_image_url(&data).ok_or_else(|| {
+            ProviderError::Provider("Image generation provider returned no images".into())
+        })?;
         let (_mime, image_bytes) = download_generated_image(&self.client, &image_url).await?;
         Ok(ImageGenerationResult {
             url: image_url,
@@ -1609,7 +1643,8 @@ pub fn qwen_wire_size(size: ImageSize) -> String {
 /// Parse an OpenAI `/images/generations` (or `/images/edits`) JSON response.
 pub fn parse_openai_json(text: &str, model: &str) -> ProviderResult<ImageGenerationResponse> {
     validate_content_safety(text)?;
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
     let images: Vec<GeneratedImage> = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -1645,7 +1680,8 @@ pub fn parse_openai_json(text: &str, model: &str) -> ProviderResult<ImageGenerat
 /// Parse a Stability AI JSON envelope (`{"image": "<base64>", "seed": ...}`).
 pub fn parse_stability_json(text: &str, model: &str) -> ProviderResult<ImageGenerationResponse> {
     validate_content_safety(text)?;
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
     let b64 = data.get("image").and_then(|v| v.as_str()).map(String::from);
     if b64.is_none() {
         return Err(ProviderError::Provider(
@@ -1720,9 +1756,11 @@ pub fn parse_chat_completions_image(
     model: &str,
 ) -> ProviderResult<ImageGenerationResponse> {
     validate_content_safety(text)?;
-    let data: serde_json::Value = serde_json::from_str(text).map_err(ProviderError::Serialization)?;
-    let image_url = extract_openrouter_image_url(&data)
-        .ok_or_else(|| ProviderError::Provider("Image generation provider returned no images".into()))?;
+    let data: serde_json::Value =
+        serde_json::from_str(text).map_err(ProviderError::Serialization)?;
+    let image_url = extract_openrouter_image_url(&data).ok_or_else(|| {
+        ProviderError::Provider("Image generation provider returned no images".into())
+    })?;
 
     let image = match decode_data_url(&image_url) {
         Ok((_mime, bytes)) => GeneratedImage {
@@ -1916,11 +1954,7 @@ fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
         }
         let marker = bytes[i + 1];
         // Standalone markers carry no length field.
-        if marker == 0xd8
-            || marker == 0xd9
-            || (0xd0..=0xd7).contains(&marker)
-            || marker == 0x01
-        {
+        if marker == 0xd8 || marker == 0xd9 || (0xd0..=0xd7).contains(&marker) || marker == 0x01 {
             i += 2;
             continue;
         }
@@ -1977,8 +2011,7 @@ pub fn validate_image_bytes(bytes: &[u8]) -> Result<(u32, u32), String> {
     if bytes.is_empty() {
         return Err("image is empty".into());
     }
-    image_dimensions(bytes)
-        .ok_or_else(|| "image bytes are not a recognized image format".into())
+    image_dimensions(bytes).ok_or_else(|| "image bytes are not a recognized image format".into())
 }
 
 /// Validate that `bytes` decodes to an image close to the requested size.
@@ -2036,7 +2069,12 @@ pub fn validate_image_mime(bytes: &[u8], expected_mime: &str) -> Result<(), Stri
 // ---------------------------------------------------------------------------
 
 /// Estimate the total cost in USD for generating `n` images.
-pub fn estimate_image_cost(model: &str, size: ImageSize, quality: ImageQuality, n: u32) -> Option<f64> {
+pub fn estimate_image_cost(
+    model: &str,
+    size: ImageSize,
+    quality: ImageQuality,
+    n: u32,
+) -> Option<f64> {
     let per = per_image_cost(model, size, quality)?;
     Some(per * n.max(1) as f64)
 }
@@ -2211,11 +2249,26 @@ mod tests {
 
     #[test]
     fn provider_enum_roundtrip() {
-        assert_eq!(ImageGenProvider::from_str("openai"), Some(ImageGenProvider::OpenAi));
-        assert_eq!(ImageGenProvider::from_str("StabilityAi"), Some(ImageGenProvider::StabilityAi));
-        assert_eq!(ImageGenProvider::from_str("replicate"), Some(ImageGenProvider::Replicate));
-        assert_eq!(ImageGenProvider::from_str("prodia"), Some(ImageGenProvider::Prodia));
-        assert_eq!(ImageGenProvider::from_str("local"), Some(ImageGenProvider::Local));
+        assert_eq!(
+            ImageGenProvider::from_str("openai"),
+            Some(ImageGenProvider::OpenAi)
+        );
+        assert_eq!(
+            ImageGenProvider::from_str("StabilityAi"),
+            Some(ImageGenProvider::StabilityAi)
+        );
+        assert_eq!(
+            ImageGenProvider::from_str("replicate"),
+            Some(ImageGenProvider::Replicate)
+        );
+        assert_eq!(
+            ImageGenProvider::from_str("prodia"),
+            Some(ImageGenProvider::Prodia)
+        );
+        assert_eq!(
+            ImageGenProvider::from_str("local"),
+            Some(ImageGenProvider::Local)
+        );
         assert_eq!(ImageGenProvider::from_str("nope"), None);
         assert_eq!(ImageGenProvider::OpenAi.as_str(), "openai");
     }
@@ -2354,14 +2407,22 @@ mod tests {
 
     #[test]
     fn openai_quality_string_model_specific() {
-        assert_eq!(openai_quality_string("gpt-image-1", ImageQuality::Hd), "high");
+        assert_eq!(
+            openai_quality_string("gpt-image-1", ImageQuality::Hd),
+            "high"
+        );
         assert_eq!(openai_quality_string("dall-e-3", ImageQuality::Hd), "hd");
-        assert_eq!(openai_quality_string("gpt-image-1", ImageQuality::Standard), "medium");
+        assert_eq!(
+            openai_quality_string("gpt-image-1", ImageQuality::Standard),
+            "medium"
+        );
     }
 
     #[test]
     fn build_openai_edit_form_basic() {
-        let form = build_openai_edit_form(b"img", None, "fix it", "gpt-image-1", ImageSize::Square, 1).unwrap();
+        let form =
+            build_openai_edit_form(b"img", None, "fix it", "gpt-image-1", ImageSize::Square, 1)
+                .unwrap();
         assert!(form_has_field(&form, "prompt"));
         assert!(form_has_field(&form, "image"));
         assert!(!form_has_field(&form, "mask"));
@@ -2369,7 +2430,15 @@ mod tests {
 
     #[test]
     fn build_openai_edit_form_with_mask() {
-        let form = build_openai_edit_form(b"img", Some(b"mask"), "fix it", "dall-e-2", ImageSize::Square, 1).unwrap();
+        let form = build_openai_edit_form(
+            b"img",
+            Some(b"mask"),
+            "fix it",
+            "dall-e-2",
+            ImageSize::Square,
+            1,
+        )
+        .unwrap();
         assert!(form_has_field(&form, "mask"));
     }
 
@@ -2414,7 +2483,15 @@ mod tests {
 
     #[test]
     fn build_replicate_input_basic() {
-        let input = build_replicate_input("a dog", ImageSize::Square, 2, Some(3), Some("ugly"), None, None);
+        let input = build_replicate_input(
+            "a dog",
+            ImageSize::Square,
+            2,
+            Some(3),
+            Some("ugly"),
+            None,
+            None,
+        );
         assert_eq!(input["width"], 1024);
         assert_eq!(input["height"], 1024);
         assert_eq!(input["num_outputs"], 2);
@@ -2424,14 +2501,30 @@ mod tests {
 
     #[test]
     fn build_replicate_input_with_image() {
-        let input = build_replicate_input("img2img", ImageSize::Square, 1, None, None, Some("data:image/png;base64,abc"), Some("data:image/png;base64,mask"));
+        let input = build_replicate_input(
+            "img2img",
+            ImageSize::Square,
+            1,
+            None,
+            None,
+            Some("data:image/png;base64,abc"),
+            Some("data:image/png;base64,mask"),
+        );
         assert_eq!(input["image"], "data:image/png;base64,abc");
         assert_eq!(input["mask"], "data:image/png;base64,mask");
     }
 
     #[test]
     fn build_prodia_body_basic() {
-        let body = build_prodia_body("a plane", "v1", ImageSize::Custom(512, 512), 1, None, None, None);
+        let body = build_prodia_body(
+            "a plane",
+            "v1",
+            ImageSize::Custom(512, 512),
+            1,
+            None,
+            None,
+            None,
+        );
         assert_eq!(body["model"], "v1");
         assert_eq!(body["width"], 512);
         assert_eq!(body["height"], 512);
@@ -2454,7 +2547,10 @@ mod tests {
         let resp = parse_openai_json(&text, "dall-e-3").unwrap();
         assert_eq!(resp.images.len(), 1);
         assert_eq!(resp.images[0].b64_json.as_deref(), Some("QUJD"));
-        assert_eq!(resp.images[0].revised_prompt.as_deref(), Some("a revised prompt"));
+        assert_eq!(
+            resp.images[0].revised_prompt.as_deref(),
+            Some("a revised prompt")
+        );
         assert_eq!(resp.images[0].seed, Some(99));
         assert_eq!(resp.images[0].bytes().unwrap(), b"ABC");
     }
@@ -2466,7 +2562,10 @@ mod tests {
         })
         .to_string();
         let resp = parse_openai_json(&text, "gpt-image-1").unwrap();
-        assert_eq!(resp.images[0].url.as_deref(), Some("https://example.com/i.png"));
+        assert_eq!(
+            resp.images[0].url.as_deref(),
+            Some("https://example.com/i.png")
+        );
         assert!(resp.images[0].b64_json.is_none());
     }
 
@@ -2641,7 +2740,10 @@ mod tests {
             serde_json::from_value::<ImageQuality>(json!("hd")).unwrap(),
             ImageQuality::Hd
         );
-        assert_eq!(serde_json::to_value(ImageQuality::Standard).unwrap(), json!("standard"));
+        assert_eq!(
+            serde_json::to_value(ImageQuality::Standard).unwrap(),
+            json!("standard")
+        );
     }
 
     #[test]
@@ -2679,25 +2781,54 @@ mod tests {
 
     #[test]
     fn cost_dalle2() {
-        assert_eq!(per_image_cost("dall-e-2", ImageSize::Square, ImageQuality::Standard), Some(0.020));
-        assert_eq!(per_image_cost("dall-e-2", ImageSize::Custom(512, 512), ImageQuality::Standard), Some(0.018));
-        assert_eq!(per_image_cost("dall-e-2", ImageSize::Custom(256, 256), ImageQuality::Standard), Some(0.016));
+        assert_eq!(
+            per_image_cost("dall-e-2", ImageSize::Square, ImageQuality::Standard),
+            Some(0.020)
+        );
+        assert_eq!(
+            per_image_cost(
+                "dall-e-2",
+                ImageSize::Custom(512, 512),
+                ImageQuality::Standard
+            ),
+            Some(0.018)
+        );
+        assert_eq!(
+            per_image_cost(
+                "dall-e-2",
+                ImageSize::Custom(256, 256),
+                ImageQuality::Standard
+            ),
+            Some(0.016)
+        );
     }
 
     #[test]
     fn cost_gpt_image() {
-        assert_eq!(per_image_cost("gpt-image-1", ImageSize::Square, ImageQuality::Standard), Some(0.12));
-        assert_eq!(per_image_cost("gpt-image-1", ImageSize::Wide, ImageQuality::Standard), Some(0.18));
+        assert_eq!(
+            per_image_cost("gpt-image-1", ImageSize::Square, ImageQuality::Standard),
+            Some(0.12)
+        );
+        assert_eq!(
+            per_image_cost("gpt-image-1", ImageSize::Wide, ImageQuality::Standard),
+            Some(0.18)
+        );
     }
 
     #[test]
     fn cost_unknown_model_is_none() {
-        assert_eq!(per_image_cost("made-up-model", ImageSize::Square, ImageQuality::Standard), None);
+        assert_eq!(
+            per_image_cost("made-up-model", ImageSize::Square, ImageQuality::Standard),
+            None
+        );
     }
 
     #[test]
     fn estimate_cost_scales_with_n() {
-        assert_eq!(estimate_image_cost("dall-e-3", ImageSize::Square, ImageQuality::Standard, 3), Some(0.12));
+        assert_eq!(
+            estimate_image_cost("dall-e-3", ImageSize::Square, ImageQuality::Standard, 3),
+            Some(0.12)
+        );
     }
 
     #[test]
@@ -2715,7 +2846,10 @@ mod tests {
         assert_eq!(p.estimate_cost_for(&params), Some(0.080));
 
         let p2 = p.with_cost_override(9.99);
-        assert_eq!(p2.estimate_cost_for(&ImageGenerationParams::default()), Some(9.99));
+        assert_eq!(
+            p2.estimate_cost_for(&ImageGenerationParams::default()),
+            Some(9.99)
+        );
         assert_eq!(p2.retry_config().max_attempts, 3);
     }
 
@@ -2779,7 +2913,10 @@ mod tests {
     #[test]
     fn extract_string_array_variants() {
         assert_eq!(extract_string_array(&json!("a")), vec!["a".to_string()]);
-        assert_eq!(extract_string_array(&json!(["a", "b"])), vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            extract_string_array(&json!(["a", "b"])),
+            vec!["a".to_string(), "b".to_string()]
+        );
         assert_eq!(extract_string_array(&json!([1, 2])), Vec::<String>::new());
         assert_eq!(extract_string_array(&json!(null)), Vec::<String>::new());
     }
@@ -2788,7 +2925,11 @@ mod tests {
 
     #[test]
     fn build_chat_completions_image_body_basic() {
-        let body = build_chat_completions_image_body("a cat", "google/gemini-2.0-flash-image-preview", ImageSize::Square);
+        let body = build_chat_completions_image_body(
+            "a cat",
+            "google/gemini-2.0-flash-image-preview",
+            ImageSize::Square,
+        );
         assert_eq!(body["model"], "google/gemini-2.0-flash-image-preview");
         assert_eq!(body["messages"][0]["content"], "a cat");
         assert_eq!(body["modalities"][0], "image");
@@ -2807,7 +2948,10 @@ mod tests {
     fn build_qwen_token_plan_body_basic() {
         let body = build_qwen_token_plan_body("a castle", "wan2.7-image", ImageSize::Square);
         assert_eq!(body["model"], "wan2.7-image");
-        assert_eq!(body["input"]["messages"][0]["content"][0]["text"], "a castle");
+        assert_eq!(
+            body["input"]["messages"][0]["content"][0]["text"],
+            "a castle"
+        );
         assert_eq!(body["parameters"]["size"], "1024*1024");
         assert_eq!(body["parameters"]["thinking_mode"], false);
     }
@@ -2826,12 +2970,18 @@ mod tests {
                 }]
             }
         });
-        assert_eq!(extract_qwen_token_plan_image_url(&data).as_deref(), Some("https://cdn/qwen.png"));
+        assert_eq!(
+            extract_qwen_token_plan_image_url(&data).as_deref(),
+            Some("https://cdn/qwen.png")
+        );
     }
 
     #[test]
     fn extract_qwen_token_plan_image_url_none() {
-        assert_eq!(extract_qwen_token_plan_image_url(&json!({"output": {}})), None);
+        assert_eq!(
+            extract_qwen_token_plan_image_url(&json!({"output": {}})),
+            None
+        );
     }
 
     #[test]
@@ -2896,10 +3046,26 @@ mod tests {
     #[tokio::test]
     async fn download_rejects_non_https_urls() {
         let client = Client::new();
-        assert!(download_generated_image(&client, "http://example.com/i.png").await.is_err());
-        assert!(download_generated_image(&client, "https://user:pw@example.com/i.png").await.is_err());
-        assert!(download_generated_image(&client, "data:image/png;base64,QUJD").await.is_err());
-        assert!(download_generated_image(&client, "not a url").await.is_err());
+        assert!(
+            download_generated_image(&client, "http://example.com/i.png")
+                .await
+                .is_err()
+        );
+        assert!(
+            download_generated_image(&client, "https://user:pw@example.com/i.png")
+                .await
+                .is_err()
+        );
+        assert!(
+            download_generated_image(&client, "data:image/png;base64,QUJD")
+                .await
+                .is_err()
+        );
+        assert!(
+            download_generated_image(&client, "not a url")
+                .await
+                .is_err()
+        );
     }
 
     // --- Serde round-trips ------------------------------------------------------
@@ -2910,7 +3076,10 @@ mod tests {
             serde_json::from_value::<ImageGenProvider>(json!("stability_ai")).unwrap(),
             ImageGenProvider::StabilityAi
         );
-        assert_eq!(serde_json::to_value(ImageGenProvider::Prodia).unwrap(), json!("prodia"));
+        assert_eq!(
+            serde_json::to_value(ImageGenProvider::Prodia).unwrap(),
+            json!("prodia")
+        );
     }
 
     #[test]

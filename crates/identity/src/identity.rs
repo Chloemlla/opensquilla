@@ -53,8 +53,8 @@ impl Identity {
     /// directories as needed.
     pub fn save(&self, path: impl AsRef<Path>) -> crate::Result<()> {
         let path = path.as_ref();
-        let contents = serde_json::to_string_pretty(self)
-            .map_err(|e| crate::Error::Parse(e.to_string()))?;
+        let contents =
+            serde_json::to_string_pretty(self).map_err(|e| crate::Error::Parse(e.to_string()))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| crate::Error::Io {
                 path: parent.to_path_buf(),

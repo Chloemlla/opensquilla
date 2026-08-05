@@ -15,11 +15,7 @@ pub trait TurnHook: Send + Sync + fmt::Debug {
     ///
     /// The returned messages will replace the original messages, allowing
     /// the hook to modify them.
-    async fn before_turn(
-        &self,
-        turn_id: &str,
-        messages: &[Message],
-    ) -> Result<Vec<Message>>;
+    async fn before_turn(&self, turn_id: &str, messages: &[Message]) -> Result<Vec<Message>>;
 
     /// Called after a turn completes, with the final messages and result.
     async fn after_turn(
@@ -38,11 +34,7 @@ pub trait TurnHook: Send + Sync + fmt::Debug {
 pub trait CompactionHook: Send + Sync + fmt::Debug {
     /// Called before compaction occurs, allowing inspection of the messages
     /// that will be compacted.
-    async fn before_compaction(
-        &self,
-        turn_id: &str,
-        message_count: usize,
-    ) -> Result<()>;
+    async fn before_compaction(&self, turn_id: &str, message_count: usize) -> Result<()>;
 
     /// Called after compaction completes, with the new message count.
     async fn after_compaction(
@@ -72,11 +64,7 @@ pub trait ToolHook: Send + Sync + fmt::Debug {
     ///
     /// The returned ToolCall will replace the original, allowing the hook
     /// to modify the call parameters.
-    async fn before_tool_call(
-        &self,
-        turn_id: &str,
-        call: &ToolCall,
-    ) -> Result<ToolCall>;
+    async fn before_tool_call(&self, turn_id: &str, call: &ToolCall) -> Result<ToolCall>;
 
     /// Called after a tool completes, with the result.
     ///
@@ -90,12 +78,7 @@ pub trait ToolHook: Send + Sync + fmt::Debug {
     ) -> Result<ToolResult>;
 
     /// Called when a tool call fails with an error.
-    async fn on_tool_error(
-        &self,
-        turn_id: &str,
-        call: &ToolCall,
-        error: &str,
-    ) -> Result<()>;
+    async fn on_tool_error(&self, turn_id: &str, call: &ToolCall, error: &str) -> Result<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,9 +146,7 @@ pub struct LoggingHook {
 impl LoggingHook {
     /// Create a new logging hook with the given name.
     pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-        }
+        Self { name: name.into() }
     }
 }
 

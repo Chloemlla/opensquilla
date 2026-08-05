@@ -114,10 +114,7 @@ mod backend {
 
         /// Verify the target binary carries a valid, strict code signature.
         async fn verify_code_signature(&self, binary: &str) -> Result<(), String> {
-            let codesign = self
-                .codesign_path
-                .as_deref()
-                .unwrap_or("codesign");
+            let codesign = self.codesign_path.as_deref().unwrap_or("codesign");
             let output = Command::new(codesign)
                 .args(["--verify", "--strict", "--deep", binary])
                 .output()
@@ -390,7 +387,8 @@ impl MacOsSandbox {
         working_dir: Option<&str>,
         policy: &SandboxPolicy,
     ) -> Result<SandboxResult, String> {
-        self.run(command, args, Some(env), working_dir, policy).await
+        self.run(command, args, Some(env), working_dir, policy)
+            .await
     }
 
     /// Check whether sandbox-exec is available on this host.

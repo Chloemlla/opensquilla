@@ -427,7 +427,9 @@ impl SkillVersion {
                         if other.major > 0 {
                             self.major == other.major && *self >= other
                         } else if other.minor > 0 {
-                            self.major == 0 && self.minor == other.minor && self.patch >= other.patch
+                            self.major == 0
+                                && self.minor == other.minor
+                                && self.patch >= other.patch
                         } else {
                             self.major == 0 && self.minor == 0 && self.patch >= other.patch
                         }
@@ -475,7 +477,8 @@ impl FromStr for SkillVersion {
             return Err(format!("invalid version '{s}'"));
         }
         let parse = |p: &str| -> Result<u64, String> {
-            p.parse::<u64>().map_err(|_| format!("invalid version '{s}'"))
+            p.parse::<u64>()
+                .map_err(|_| format!("invalid version '{s}'"))
         };
         let major = parse(parts[0])?;
         let minor = if parts.len() > 1 { parse(parts[1])? } else { 0 };
@@ -600,9 +603,15 @@ pub enum SkillDependency {
     /// Depends on another skill by id.
     Skill { id: String, version: Option<String> },
     /// Depends on a tool registered in the tool registry.
-    Tool { name: String, version: Option<String> },
+    Tool {
+        name: String,
+        version: Option<String>,
+    },
     /// Depends on an OS package.
-    Package { name: String, manager: Option<String> },
+    Package {
+        name: String,
+        manager: Option<String>,
+    },
     /// Depends on an environment variable being set.
     Env { name: String },
 }
@@ -923,7 +932,11 @@ pub struct SkillManifest {
     #[serde(default, alias = "allowed-tools")]
     pub allowed_tools: Vec<String>,
     /// Whether the model may invoke this skill directly.
-    #[serde(default, alias = "disable-model-invocation", alias = "disable_model_invocation")]
+    #[serde(
+        default,
+        alias = "disable-model-invocation",
+        alias = "disable_model_invocation"
+    )]
     pub disable_model_invocation: bool,
     /// Meta-skill DAG steps.
     #[serde(default)]
@@ -1097,10 +1110,7 @@ impl SkillSpec {
 
     /// Whether this skill is "always on" (injected regardless of relevance).
     pub fn is_always(&self) -> bool {
-        self.metadata
-            .as_ref()
-            .map(|m| m.always)
-            .unwrap_or(false)
+        self.metadata.as_ref().map(|m| m.always).unwrap_or(false)
     }
 
     /// Whether the skill is active in a given scope.
@@ -1110,20 +1120,16 @@ impl SkillSpec {
 
     /// The skill's parsed version, if any.
     pub fn version_parsed(&self) -> Option<SkillVersion> {
-        self.version.as_deref().and_then(|v| SkillVersion::from_str(v).ok())
+        self.version
+            .as_deref()
+            .and_then(|v| SkillVersion::from_str(v).ok())
     }
 
     /// All tool names the skill may use: explicit `allowed_tools`, tool
     /// requirements, and dependencies of type `Tool`.
     pub fn tool_names(&self) -> Vec<String> {
         let mut out = self.allowed_tools.clone();
-        out.extend(
-            self.requires
-                .tools
-                .iter()
-                .flatten()
-                .cloned(),
-        );
+        out.extend(self.requires.tools.iter().flatten().cloned());
         for dep in &self.dependencies {
             if let SkillDependency::Tool { name, .. } = dep {
                 out.push(name.clone());
@@ -1137,7 +1143,9 @@ impl SkillSpec {
     /// True if every skill the loader needs is present: an id, a name, and
     /// either a description or a body.
     pub fn is_valid(&self) -> bool {
-        !self.id.is_empty() && !self.name.is_empty() && (!self.description.is_empty() || !self.body.is_empty())
+        !self.id.is_empty()
+            && !self.name.is_empty()
+            && (!self.description.is_empty() || !self.body.is_empty())
     }
 
     /// Validate and return a list of human-readable problems. An empty vector
@@ -1154,10 +1162,7 @@ impl SkillSpec {
             issues.push("skill needs a description or a body".to_string());
         }
         if self.is_meta() && self.steps.is_empty() {
-            issues.push(format!(
-                "meta-skill '{}' has no steps",
-                self.id
-            ));
+            issues.push(format!("meta-skill '{}' has no steps", self.id));
         }
         if !self.is_meta() && !self.steps.is_empty() {
             issues.push(format!(
@@ -1242,11 +1247,7 @@ pub struct SkillFilter {
 impl SkillFilter {
     /// Apply this filter to a list of specs, returning matching skills.
     pub fn apply(&self, skills: &[SkillSpec]) -> Vec<SkillSpec> {
-        let mut out: Vec<SkillSpec> = skills
-            .iter()
-            .filter(|s| self.matches(s))
-            .cloned()
-            .collect();
+        let mut out: Vec<SkillSpec> = skills.iter().filter(|s| self.matches(s)).cloned().collect();
         if let Some(limit) = self.limit {
             out.truncate(limit);
         }
@@ -1336,10 +1337,7 @@ pub fn rank_skills(query: &str, skills: &[SkillSpec]) -> Vec<SkillMatch> {
             .collect();
     }
 
-    let terms: Vec<&str> = query
-        .split_whitespace()
-        .filter(|t| t.len() >= 2)
-        .collect();
+    let terms: Vec<&str> = query.split_whitespace().filter(|t| t.len() >= 2).collect();
 
     let mut results: Vec<SkillMatch> = skills
         .iter()
@@ -1386,7 +1384,11 @@ pub fn rank_skills(query: &str, skills: &[SkillSpec]) -> Vec<SkillMatch> {
                 }
                 // Trigger words in metadata also count.
                 if let Some(meta) = &s.metadata {
-                    if meta.triggers.iter().any(|t| t.to_lowercase().contains(&term)) {
+                    if meta
+                        .triggers
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&term))
+                    {
                         score += 0.3;
                         m.matched_fields.push("trigger".to_string());
                         m.matched_terms.push(term.clone());
@@ -1438,12 +1440,30 @@ mod tests {
     fn layer_from_str_loose() {
         assert_eq!(SkillLayer::from_str_loose("EXTRA"), Some(SkillLayer::Extra));
         assert_eq!(SkillLayer::from_str_loose("extra"), Some(SkillLayer::Extra));
-        assert_eq!(SkillLayer::from_str_loose("BUNDLED"), Some(SkillLayer::Bundled));
-        assert_eq!(SkillLayer::from_str_loose("builtin"), Some(SkillLayer::Bundled));
-        assert_eq!(SkillLayer::from_str_loose("managed"), Some(SkillLayer::Managed));
-        assert_eq!(SkillLayer::from_str_loose("user"), Some(SkillLayer::Personal));
-        assert_eq!(SkillLayer::from_str_loose("project"), Some(SkillLayer::Project));
-        assert_eq!(SkillLayer::from_str_loose("workspace"), Some(SkillLayer::Workspace));
+        assert_eq!(
+            SkillLayer::from_str_loose("BUNDLED"),
+            Some(SkillLayer::Bundled)
+        );
+        assert_eq!(
+            SkillLayer::from_str_loose("builtin"),
+            Some(SkillLayer::Bundled)
+        );
+        assert_eq!(
+            SkillLayer::from_str_loose("managed"),
+            Some(SkillLayer::Managed)
+        );
+        assert_eq!(
+            SkillLayer::from_str_loose("user"),
+            Some(SkillLayer::Personal)
+        );
+        assert_eq!(
+            SkillLayer::from_str_loose("project"),
+            Some(SkillLayer::Project)
+        );
+        assert_eq!(
+            SkillLayer::from_str_loose("workspace"),
+            Some(SkillLayer::Workspace)
+        );
         assert_eq!(SkillLayer::from_str_loose("nope"), None);
     }
 
@@ -1459,7 +1479,10 @@ mod tests {
     #[test]
     fn kind_alias_parsing() {
         assert_eq!(SkillKind::from_str_loose("meta"), Some(SkillKind::Meta));
-        assert_eq!(SkillKind::from_str_loose("meta_sop"), Some(SkillKind::MetaSop));
+        assert_eq!(
+            SkillKind::from_str_loose("meta_sop"),
+            Some(SkillKind::MetaSop)
+        );
         assert_eq!(SkillKind::from_str_loose("basic"), Some(SkillKind::Skill));
         assert_eq!(SkillKind::from_str_loose("workflow"), Some(SkillKind::Meta));
         let meta: SkillKind = serde_yaml::from_str("meta").unwrap();
@@ -1538,19 +1561,26 @@ steps:
         assert_eq!(manifest.kind, Some(SkillKind::Meta));
         assert_eq!(manifest.steps.len(), 2);
         assert_eq!(manifest.steps[1].step_type, StepType::ToolCall);
-        assert_eq!(
-            manifest.metadata.as_ref().unwrap().always,
-            true
-        );
+        assert_eq!(manifest.metadata.as_ref().unwrap().always, true);
     }
 
     #[test]
     fn spec_validation_issues() {
-        let s = SkillSpec::new(String::new(), "name".into(), "desc".into(), SkillLayer::Bundled);
+        let s = SkillSpec::new(
+            String::new(),
+            "name".into(),
+            "desc".into(),
+            SkillLayer::Bundled,
+        );
         assert!(!s.is_valid());
         assert!(!s.validation_issues().is_empty());
 
-        let ok = SkillSpec::new("id".into(), "name".into(), "desc".into(), SkillLayer::Bundled);
+        let ok = SkillSpec::new(
+            "id".into(),
+            "name".into(),
+            "desc".into(),
+            SkillLayer::Bundled,
+        );
         assert!(ok.is_valid());
         assert!(ok.validation_issues().is_empty());
 

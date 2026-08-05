@@ -1,11 +1,11 @@
 pub mod crash;
-pub mod repair;
-pub mod merge;
 pub mod health;
+pub mod merge;
+pub mod repair;
 
 pub use crash::{CrashRecovery, CrashReport, SessionState, SessionValidation};
-pub use repair::ConfigRepair;
-pub use merge::{MergeConflict, MergePlan, MergeResolution, MergeableSession, SessionMerge};
 pub use health::{
     HealthCheck, HealthVerifier, RecoveryReport, RecoveryVerification, SubsystemHealth,
 };
+pub use merge::{MergeConflict, MergePlan, MergeResolution, MergeableSession, SessionMerge};
+pub use repair::ConfigRepair;

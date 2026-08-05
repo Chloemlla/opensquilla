@@ -4,16 +4,16 @@
 //! open, close, and delete workspace records. Each workspace tracks a project
 //! directory and its open/closed state.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A project workspace record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,7 +41,9 @@ impl WorkspaceStore {
 
     /// Insert or replace a workspace.
     pub fn upsert(&self, workspace: Workspace) {
-        self.workspaces.lock().insert(workspace.id.clone(), workspace);
+        self.workspaces
+            .lock()
+            .insert(workspace.id.clone(), workspace);
     }
 
     /// Get a workspace by id.
@@ -140,8 +142,10 @@ pub fn register_workspaces_handlers(registry: &mut RpcRegistry, store: Workspace
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'id' parameter"))?;
                 match store.get(id) {
-                    Some(ws) => Ok(serde_json::to_value(ws)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(ws) => {
+                        Ok(serde_json::to_value(ws)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Workspace '{id}' not found"))),
                 }
             }
@@ -178,8 +182,10 @@ pub fn register_workspaces_handlers(registry: &mut RpcRegistry, store: Workspace
                     ws.last_opened_at = Some(Utc::now());
                 });
                 match updated {
-                    Some(ws) => Ok(serde_json::to_value(ws)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(ws) => {
+                        Ok(serde_json::to_value(ws)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Workspace '{id}' not found"))),
                 }
             }
@@ -200,8 +206,10 @@ pub fn register_workspaces_handlers(registry: &mut RpcRegistry, store: Workspace
                     ws.is_open = false;
                 });
                 match updated {
-                    Some(ws) => Ok(serde_json::to_value(ws)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(ws) => {
+                        Ok(serde_json::to_value(ws)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Workspace '{id}' not found"))),
                 }
             }
@@ -247,8 +255,10 @@ pub fn register_workspaces_handlers(registry: &mut RpcRegistry, store: Workspace
                     }
                 });
                 match updated {
-                    Some(ws) => Ok(serde_json::to_value(ws)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(ws) => {
+                        Ok(serde_json::to_value(ws)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Workspace '{id}' not found"))),
                 }
             }
@@ -279,11 +289,7 @@ pub fn register_workspaces_handlers(registry: &mut RpcRegistry, store: Workspace
         move |_params| {
             let store = store.clone();
             async move {
-                let open: Vec<Workspace> = store
-                    .list()
-                    .into_iter()
-                    .filter(|w| w.is_open)
-                    .collect();
+                let open: Vec<Workspace> = store.list().into_iter().filter(|w| w.is_open).collect();
                 Ok(serde_json::json!({
                     "workspaces": open,
                     "count": open.len(),
@@ -321,7 +327,9 @@ mod tests {
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["is_open"], true);
 
-        let r = registry.dispatch("workspaces.open_list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("workspaces.open_list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
 

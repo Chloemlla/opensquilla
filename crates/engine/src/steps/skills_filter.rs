@@ -250,8 +250,7 @@ impl PipelineStep for SkillsFilterStep {
 
         // Pin always-visible skills and the meta-matched workflow.
         let mut pinned: Vec<SkillSpec> = gated.iter().filter(|s| s.always).cloned().collect();
-        let mut filterable: Vec<SkillSpec> =
-            gated.iter().filter(|s| !s.always).cloned().collect();
+        let mut filterable: Vec<SkillSpec> = gated.iter().filter(|s| !s.always).cloned().collect();
 
         if let Some(hint) = ctx.get_metadata("meta_match").cloned() {
             let already = pinned.iter().any(|s| s.name == hint);
@@ -300,7 +299,14 @@ impl PipelineStep for SkillsFilterStep {
         ctx.set_metadata("skills_prompt_chars", &prompt.len().to_string());
         ctx.set_metadata("skills_rendered_count", &final_len.to_string());
         ctx.set_metadata("skills_injection_mode", &self.config.injection_mode);
-        ctx.set_metadata("filtered_skill_ids", &filtered.iter().map(|s| s.id.clone()).collect::<Vec<_>>().join(","));
+        ctx.set_metadata(
+            "filtered_skill_ids",
+            &filtered
+                .iter()
+                .map(|s| s.id.clone())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
 
         let outcome = SkillsFilterOutcome {
             total,

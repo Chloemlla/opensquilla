@@ -194,7 +194,12 @@ impl BenchmarkRunner {
 
                 let result = tokio::time::timeout(
                     Duration::from_secs(config.timeout_seconds),
-                    engine.process_message(&scenario.system_prompt, provider, model, &scenario.user_input),
+                    engine.process_message(
+                        &scenario.system_prompt,
+                        provider,
+                        model,
+                        &scenario.user_input,
+                    ),
                 )
                 .await;
 

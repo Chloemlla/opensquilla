@@ -49,20 +49,20 @@ use std::sync::LazyLock;
 use tracing::{debug, info, warn};
 
 use crate::compat_policy::{
-    adapt_parameters, needs_text_normalization, policy_for, CompatPolicy, ReasoningPolicy,
-    SystemPromptPolicy, ToolCallFormat,
+    CompatPolicy, ReasoningPolicy, SystemPromptPolicy, ToolCallFormat, adapt_parameters,
+    needs_text_normalization, policy_for,
 };
 use crate::credentials::CredentialPool;
 use crate::failures::classify as classify_error;
 use crate::live_catalog::{LiveCatalog, LiveProviderConfig};
-use crate::model_catalog::{merge_live, ModelCapabilities, ModelCatalog};
+use crate::model_catalog::{ModelCapabilities, ModelCatalog, merge_live};
 use crate::request_proof::RequestProof;
 use crate::stream::SseStream;
 use crate::text_tool_normalizer::{ToolCallNormalizer as TextToolCallNormalizer, ToolDialect};
 use crate::types::{
     ChatConfig, Provider, ProviderError, ProviderResponse, ProviderResult, StreamEvent,
 };
-use crate::util::{with_retry, RateLimiter, RetryConfig};
+use crate::util::{RateLimiter, RetryConfig, with_retry};
 
 // ===========================================================================
 // Provider enumeration
@@ -331,8 +331,10 @@ macro_rules! provider_info {
 }
 
 /// Headers shared by several providers (OpenRouter attribution).
-static OPENROUTER_HEADERS: [(&str, &str); 2] =
-    [("HTTP-Referer", "https://opensquilla.dev"), ("X-Title", "OpenSquilla")];
+static OPENROUTER_HEADERS: [(&str, &str); 2] = [
+    ("HTTP-Referer", "https://opensquilla.dev"),
+    ("X-Title", "OpenSquilla"),
+];
 
 impl OpenAIProvider {
     /// The canonical provider id string, matching the compat-policy table.
@@ -461,381 +463,1115 @@ impl OpenAIProvider {
     pub fn info(&self) -> ProviderInfo {
         match self {
             OpenAIProvider::OpenAi => provider_info!(
-                "openai", "OpenAI", "https://api.openai.com/v1", "gpt-4o",
-                &["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1", "o3-mini", "gpt-4.1", "gpt-4.1-mini"],
-                AuthHeader::Bearer, Some("OpenAI-Organization"), Some("OpenAI-Project"),
-                false, None, None, 60.0, 120, true, true, &[],
+                "openai",
+                "OpenAI",
+                "https://api.openai.com/v1",
+                "gpt-4o",
+                &[
+                    "gpt-4o",
+                    "gpt-4o-mini",
+                    "gpt-4-turbo",
+                    "gpt-3.5-turbo",
+                    "o1",
+                    "o3-mini",
+                    "gpt-4.1",
+                    "gpt-4.1-mini"
+                ],
+                AuthHeader::Bearer,
+                Some("OpenAI-Organization"),
+                Some("OpenAI-Project"),
+                false,
+                None,
+                None,
+                60.0,
+                120,
+                true,
+                true,
+                &[],
                 "OpenAI canonical API"
             ),
             OpenAIProvider::DeepSeek => provider_info!(
-                "deepseek", "DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat",
+                "deepseek",
+                "DeepSeek",
+                "https://api.deepseek.com/v1",
+                "deepseek-chat",
                 &["deepseek-chat", "deepseek-reasoner"],
-                AuthHeader::Bearer, None, None,
-                false, Some(8192), Some("reasoning_content"), 30.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                Some(8192),
+                Some("reasoning_content"),
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "DeepSeek emits reasoning via reasoning_content and tool calls as DSML text"
             ),
             OpenAIProvider::Gemini => provider_info!(
-                "gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash",
-                &["gemini-2.0-flash", "gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
-                AuthHeader::Bearer, None, None,
-                false, Some(8192), None, 15.0, 120, true, true, &[],
+                "gemini",
+                "Google Gemini",
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+                "gemini-2.0-flash",
+                &[
+                    "gemini-2.0-flash",
+                    "gemini-2.5-pro",
+                    "gemini-1.5-pro",
+                    "gemini-1.5-flash"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                Some(8192),
+                None,
+                15.0,
+                120,
+                true,
+                true,
+                &[],
                 "Google Gemini OpenAI-compat shim: system prompt prepended to first user message"
             ),
             OpenAIProvider::DashScope => provider_info!(
-                "dashscope", "Alibaba DashScope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus",
+                "dashscope",
+                "Alibaba DashScope",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "qwen-plus",
                 &["qwen-max", "qwen-plus", "qwen-turbo"],
-                AuthHeader::Bearer, None, None,
-                false, Some(8192), None, 30.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                Some(8192),
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Alibaba DashScope (Qwen) OpenAI-compat endpoint"
             ),
             OpenAIProvider::Qwen => provider_info!(
-                "qwen", "Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus",
+                "qwen",
+                "Qwen",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "qwen-plus",
                 &["qwen-max", "qwen-plus", "qwen-turbo"],
-                AuthHeader::Bearer, None, None,
-                false, Some(8192), None, 30.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                Some(8192),
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Qwen (alias of DashScope compatible mode)"
             ),
             OpenAIProvider::Moonshot => provider_info!(
-                "moonshot", "Moonshot (Kimi)", "https://api.moonshot.cn/v1", "moonshot-v1-128k",
-                &["moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k", "kimi-k2-turbo-preview", "kimi-k1.5"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                "moonshot",
+                "Moonshot (Kimi)",
+                "https://api.moonshot.cn/v1",
+                "moonshot-v1-128k",
+                &[
+                    "moonshot-v1-128k",
+                    "moonshot-v1-32k",
+                    "moonshot-v1-8k",
+                    "kimi-k2-turbo-preview",
+                    "kimi-k1.5"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Moonshot Kimi OpenAI-compat"
             ),
             OpenAIProvider::Mistral => provider_info!(
-                "mistral", "Mistral AI", "https://api.mistral.ai/v1", "mistral-large-latest",
-                &["mistral-large-latest", "mistral-small-latest", "mistral-medium-latest", "mixtral-8x7b"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                "mistral",
+                "Mistral AI",
+                "https://api.mistral.ai/v1",
+                "mistral-large-latest",
+                &[
+                    "mistral-large-latest",
+                    "mistral-small-latest",
+                    "mistral-medium-latest",
+                    "mixtral-8x7b"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Mistral La Plateforme OpenAI-compat"
             ),
             OpenAIProvider::Groq => provider_info!(
-                "groq", "Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile",
-                &["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
-                AuthHeader::Bearer, None, None,
-                false, Some(8192), None, 30.0, 120, true, true, &[],
+                "groq",
+                "Groq",
+                "https://api.groq.com/openai/v1",
+                "llama-3.3-70b-versatile",
+                &[
+                    "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant",
+                    "mixtral-8x7b-32768"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                Some(8192),
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Groq: fast inference, capped max_tokens"
             ),
             OpenAIProvider::Zhipu => provider_info!(
-                "zhipu", "Zhipu (GLM)", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus",
+                "zhipu",
+                "Zhipu (GLM)",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4-plus",
                 &["glm-4-plus", "glm-4", "glm-4-flash", "glm-4-air"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Zhipu GLM OpenAI-compat"
             ),
             OpenAIProvider::SiliconFlow => provider_info!(
-                "siliconflow", "SiliconFlow", "https://api.siliconflow.cn/v1", "Qwen/Qwen2.5-72B-Instruct",
-                &["Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "siliconflow",
+                "SiliconFlow",
+                "https://api.siliconflow.cn/v1",
+                "Qwen/Qwen2.5-72B-Instruct",
+                &[
+                    "Qwen/Qwen2.5-72B-Instruct",
+                    "deepseek-ai/DeepSeek-V3",
+                    "deepseek-ai/DeepSeek-R1"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "SiliconFlow OpenAI-compat aggregator"
             ),
             OpenAIProvider::OpenRouter => provider_info!(
-                "openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "openai/gpt-4o",
-                &["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash", "deepseek/deepseek-chat"],
-                AuthHeader::Bearer, None, None,
-                true, None, None, 30.0, 120, true, true, &OPENROUTER_HEADERS,
+                "openrouter",
+                "OpenRouter",
+                "https://openrouter.ai/api/v1",
+                "openai/gpt-4o",
+                &[
+                    "openai/gpt-4o",
+                    "anthropic/claude-3.5-sonnet",
+                    "google/gemini-2.0-flash",
+                    "deepseek/deepseek-chat"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                true,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &OPENROUTER_HEADERS,
                 "OpenRouter: requires provider-prefixed model ids"
             ),
             OpenAIProvider::Azure => provider_info!(
-                "azure", "Azure OpenAI", "https://<resource>.openai.azure.com", "gpt-4o",
+                "azure",
+                "Azure OpenAI",
+                "https://<resource>.openai.azure.com",
+                "gpt-4o",
                 &["gpt-4o", "gpt-4", "gpt-35-turbo"],
-                AuthHeader::AzureApiKey, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                AuthHeader::AzureApiKey,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Azure OpenAI: key in api-key header, deployment in path, api-version query"
             ),
             OpenAIProvider::Together => provider_info!(
-                "together", "Together AI", "https://api.together.xyz/v1", "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-                &["meta-llama/Llama-3.3-70B-Instruct-Turbo", "meta-llama/Llama-3.1-8B-Instruct-Turbo"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                "together",
+                "Together AI",
+                "https://api.together.xyz/v1",
+                "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                &[
+                    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                    "meta-llama/Llama-3.1-8B-Instruct-Turbo"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Together AI OpenAI-compat"
             ),
             OpenAIProvider::Fireworks => provider_info!(
-                "fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "accounts/fireworks/models/llama-v3p3-70b-instruct",
-                &["accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/llama-v3p1-8b-instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                "fireworks",
+                "Fireworks AI",
+                "https://api.fireworks.ai/inference/v1",
+                "accounts/fireworks/models/llama-v3p3-70b-instruct",
+                &[
+                    "accounts/fireworks/models/llama-v3p3-70b-instruct",
+                    "accounts/fireworks/models/llama-v3p1-8b-instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Fireworks AI: models use accounts/fireworks/models/ prefix"
             ),
             OpenAIProvider::Anyscale => provider_info!(
-                "anyscale", "Anyscale", "https://api.endpoints.anyscale.com/v1", "meta-llama/Llama-3.1-70B-Instruct",
-                &["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                "anyscale",
+                "Anyscale",
+                "https://api.endpoints.anyscale.com/v1",
+                "meta-llama/Llama-3.1-70B-Instruct",
+                &[
+                    "meta-llama/Llama-3.1-70B-Instruct",
+                    "meta-llama/Llama-3.1-8B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Anyscale Endpoints OpenAI-compat"
             ),
             OpenAIProvider::Lepton => provider_info!(
-                "lepton", "Lepton AI", "https://api.lepton.ai/api/v1", "llama3-8b",
+                "lepton",
+                "Lepton AI",
+                "https://api.lepton.ai/api/v1",
+                "llama3-8b",
                 &["llama3-8b", "llama3-70b"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "Lepton AI OpenAI-compat"
             ),
             OpenAIProvider::Replicate => provider_info!(
-                "replicate", "Replicate", "https://api.replicate.com/v1", "meta/meta-llama-3-70b-instruct",
-                &["meta/meta-llama-3-70b-instruct", "meta/meta-llama-3-8b-instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "replicate",
+                "Replicate",
+                "https://api.replicate.com/v1",
+                "meta/meta-llama-3-70b-instruct",
+                &[
+                    "meta/meta-llama-3-70b-instruct",
+                    "meta/meta-llama-3-8b-instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Replicate OpenAI-compatible endpoint"
             ),
             OpenAIProvider::Perplexity => provider_info!(
-                "perplexity", "Perplexity", "https://api.perplexity.ai", "llama-3.1-sonar-large-128k-online",
-                &["llama-3.1-sonar-large-128k-online", "llama-3.1-sonar-small-128k-online"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "perplexity",
+                "Perplexity",
+                "https://api.perplexity.ai",
+                "llama-3.1-sonar-large-128k-online",
+                &[
+                    "llama-3.1-sonar-large-128k-online",
+                    "llama-3.1-sonar-small-128k-online"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Perplexity OpenAI-compat"
             ),
             OpenAIProvider::Cohere => provider_info!(
-                "cohere", "Cohere", "https://api.cohere.ai/v1", "command-r-plus",
+                "cohere",
+                "Cohere",
+                "https://api.cohere.ai/v1",
+                "command-r-plus",
                 &["command-r-plus", "command-r"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Cohere OpenAI-compat"
             ),
             OpenAIProvider::Ai21 => provider_info!(
-                "ai21", "AI21 Labs", "https://api.ai21.com/studio/v1", "jamba-1-5-large",
+                "ai21",
+                "AI21 Labs",
+                "https://api.ai21.com/studio/v1",
+                "jamba-1-5-large",
                 &["jamba-1-5-large", "jamba-1-5-mini"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "AI21 Jamba OpenAI-compat"
             ),
             OpenAIProvider::Xai => provider_info!(
-                "xai", "xAI (Grok)", "https://api.x.ai/v1", "grok-2-latest",
+                "xai",
+                "xAI (Grok)",
+                "https://api.x.ai/v1",
+                "grok-2-latest",
                 &["grok-2-latest", "grok-beta", "grok-3"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "xAI Grok OpenAI-compat"
             ),
             OpenAIProvider::DeepInfra => provider_info!(
-                "deepinfra", "DeepInfra", "https://api.deepinfra.com/v1/openai", "meta-llama/Llama-3.3-70B-Instruct",
-                &["meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "deepinfra",
+                "DeepInfra",
+                "https://api.deepinfra.com/v1/openai",
+                "meta-llama/Llama-3.3-70B-Instruct",
+                &[
+                    "meta-llama/Llama-3.3-70B-Instruct",
+                    "meta-llama/Llama-3.1-8B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "DeepInfra OpenAI-compat"
             ),
             OpenAIProvider::HuggingFace => provider_info!(
-                "huggingface", "Hugging Face", "https://api-inference.huggingface.co/v1", "meta-llama/Llama-3.3-70B-Instruct",
-                &["meta-llama/Llama-3.3-70B-Instruct", "Qwen/Qwen2.5-72B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "huggingface",
+                "Hugging Face",
+                "https://api-inference.huggingface.co/v1",
+                "meta-llama/Llama-3.3-70B-Instruct",
+                &[
+                    "meta-llama/Llama-3.3-70B-Instruct",
+                    "Qwen/Qwen2.5-72B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Hugging Face Inference OpenAI-compat"
             ),
             OpenAIProvider::Novita => provider_info!(
-                "novita", "Novita AI", "https://api.novita.ai/v3/openai", "meta-llama/llama-3.1-70b-instruct",
-                &["meta-llama/llama-3.1-70b-instruct", "meta-llama/llama-3.1-8b-instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "novita",
+                "Novita AI",
+                "https://api.novita.ai/v3/openai",
+                "meta-llama/llama-3.1-70b-instruct",
+                &[
+                    "meta-llama/llama-3.1-70b-instruct",
+                    "meta-llama/llama-3.1-8b-instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Novita AI OpenAI-compat"
             ),
             OpenAIProvider::Infermatic => provider_info!(
-                "infermatic", "Infermatic", "https://api.infermatic.ai/v1", "meta-llama/Meta-Llama-3.1-70B-Instruct",
-                &["meta-llama/Meta-Llama-3.1-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "infermatic",
+                "Infermatic",
+                "https://api.infermatic.ai/v1",
+                "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                &[
+                    "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                    "meta-llama/Meta-Llama-3.1-8B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Infermatic AI OpenAI-compat"
             ),
             OpenAIProvider::ModelScope => provider_info!(
-                "modelscope", "ModelScope", "https://api-inference.modelscope.cn/v1", "Qwen/Qwen2.5-72B-Instruct",
+                "modelscope",
+                "ModelScope",
+                "https://api-inference.modelscope.cn/v1",
+                "Qwen/Qwen2.5-72B-Instruct",
                 &["Qwen/Qwen2.5-72B-Instruct", "Qwen/Qwen2.5-7B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "ModelScope OpenAI-compat"
             ),
             OpenAIProvider::Yi => provider_info!(
-                "yi", "01.AI (Yi)", "https://api.01.ai/v1", "yi-large",
+                "yi",
+                "01.AI (Yi)",
+                "https://api.01.ai/v1",
+                "yi-large",
                 &["yi-large", "yi-medium", "yi-lightning"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "01.AI Yi OpenAI-compat"
             ),
             OpenAIProvider::Baichuan => provider_info!(
-                "baichuan", "Baichuan", "https://api.baichuan-ai.com/v1", "Baichuan4",
+                "baichuan",
+                "Baichuan",
+                "https://api.baichuan-ai.com/v1",
+                "Baichuan4",
                 &["Baichuan4", "Baichuan3-Turbo"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Baichuan OpenAI-compat"
             ),
             OpenAIProvider::MiniMax => provider_info!(
-                "minimax_text", "MiniMax Text", "https://api.minimax.chat/v1", "abab6.5-chat",
+                "minimax_text",
+                "MiniMax Text",
+                "https://api.minimax.chat/v1",
+                "abab6.5-chat",
                 &["abab6.5-chat", "abab6.5s-chat", "MiniMax-Text-01"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "MiniMax text backend OpenAI-compat"
             ),
             OpenAIProvider::StepFun => provider_info!(
-                "stepfun", "StepFun", "https://api.stepfun.com/v1", "step-2-16k",
+                "stepfun",
+                "StepFun",
+                "https://api.stepfun.com/v1",
+                "step-2-16k",
                 &["step-2-16k", "step-1-8k"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "StepFun OpenAI-compat"
             ),
             OpenAIProvider::Lingyi => provider_info!(
-                "lingyi", "Lingyi (Yi large)", "https://api.lingyiwanwu.com/v1", "yi-large",
+                "lingyi",
+                "Lingyi (Yi large)",
+                "https://api.lingyiwanwu.com/v1",
+                "yi-large",
                 &["yi-large", "yi-medium"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Lingyi OpenAI-compat"
             ),
             OpenAIProvider::InternLm => provider_info!(
-                "internlm", "InternLM", "https://internlm-chat.intern-ai.org.cn/puyu/api/v1", "internlm2.5-latest",
+                "internlm",
+                "InternLM",
+                "https://internlm-chat.intern-ai.org.cn/puyu/api/v1",
+                "internlm2.5-latest",
                 &["internlm2.5-latest", "internlm2.5-7b"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "InternLM OpenAI-compat"
             ),
             OpenAIProvider::Glm => provider_info!(
-                "glm", "GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4",
+                "glm",
+                "GLM",
+                "https://open.bigmodel.cn/api/paas/v4",
+                "glm-4",
                 &["glm-4", "glm-4-flash"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "GLM OpenAI-compat"
             ),
             OpenAIProvider::Hunyuan => provider_info!(
-                "hunyuan", "Tencent Hunyuan", "https://api.hunyuan.cloud.tencent.com/v1", "hunyuan-pro",
+                "hunyuan",
+                "Tencent Hunyuan",
+                "https://api.hunyuan.cloud.tencent.com/v1",
+                "hunyuan-pro",
                 &["hunyuan-pro", "hunyuan-standard"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Tencent Hunyuan OpenAI-compat"
             ),
             OpenAIProvider::TencentHunyuan => provider_info!(
-                "tencent_hunyuan", "Tencent Hunyuan (alt)", "https://api.hunyuan.cloud.tencent.com/v1", "hunyuan-pro",
+                "tencent_hunyuan",
+                "Tencent Hunyuan (alt)",
+                "https://api.hunyuan.cloud.tencent.com/v1",
+                "hunyuan-pro",
                 &["hunyuan-pro"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Tencent Hunyuan alternate id"
             ),
             OpenAIProvider::BaiduErnie => provider_info!(
-                "baidu_ernie", "Baidu ERNIE", "https://qianfan.baidubce.com/v2", "ernie-4.0-8k-latest",
+                "baidu_ernie",
+                "Baidu ERNIE",
+                "https://qianfan.baidubce.com/v2",
+                "ernie-4.0-8k-latest",
                 &["ernie-4.0-8k-latest", "ernie-3.5-8k"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Baidu ERNIE OpenAI-compat"
             ),
             OpenAIProvider::IflytekSpark => provider_info!(
-                "iflytek_spark", "iFlytek Spark", "https://spark-api-open.xf-yun.com/v1", "4.0Ultra",
+                "iflytek_spark",
+                "iFlytek Spark",
+                "https://spark-api-open.xf-yun.com/v1",
+                "4.0Ultra",
                 &["4.0Ultra", "generalv3.5"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "iFlytek Spark OpenAI-compat"
             ),
             OpenAIProvider::SenseTime => provider_info!(
-                "sensetime", "SenseTime", "https://api.sensenova.cn/compatible-mode/v1", "SenseChat-5",
+                "sensetime",
+                "SenseTime",
+                "https://api.sensenova.cn/compatible-mode/v1",
+                "SenseChat-5",
                 &["SenseChat-5"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "SenseTime OpenAI-compat"
             ),
             OpenAIProvider::Meituan => provider_info!(
-                "meituan", "Meituan", "https://api.meituan.com/v1", "mao-1",
+                "meituan",
+                "Meituan",
+                "https://api.meituan.com/v1",
+                "mao-1",
                 &["mao-1"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Meituan OpenAI-compat"
             ),
             OpenAIProvider::Volcengine => provider_info!(
-                "volcengine", "Volcengine (Doubao)", "https://ark.cn-beijing.volces.com/api/v3", "doubao-pro-32k",
+                "volcengine",
+                "Volcengine (Doubao)",
+                "https://ark.cn-beijing.volces.com/api/v3",
+                "doubao-pro-32k",
                 &["doubao-pro-32k", "doubao-pro-4k", "doubao-lite-32k"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Volcengine Ark OpenAI-compat"
             ),
             OpenAIProvider::Lambda => provider_info!(
-                "lambda", "Lambda Labs", "https://api.lambdalabs.com/v1", "hermes3-405b",
+                "lambda",
+                "Lambda Labs",
+                "https://api.lambdalabs.com/v1",
+                "hermes3-405b",
                 &["hermes3-405b", "llama3.1-405b-instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Lambda Labs OpenAI-compat"
             ),
             OpenAIProvider::Hyperbolic => provider_info!(
-                "hyperbolic", "Hyperbolic", "https://api.hyperbolic.xyz/v1", "meta-llama/Meta-Llama-3.1-70B-Instruct",
-                &["meta-llama/Meta-Llama-3.1-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "hyperbolic",
+                "Hyperbolic",
+                "https://api.hyperbolic.xyz/v1",
+                "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                &[
+                    "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                    "meta-llama/Meta-Llama-3.1-8B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Hyperbolic OpenAI-compat"
             ),
             OpenAIProvider::Chutes => provider_info!(
-                "chutes", "Chutes AI", "https://api.chutes.ai/v1", "chutesai/Llama-3.1-8B-Instruct",
+                "chutes",
+                "Chutes AI",
+                "https://api.chutes.ai/v1",
+                "chutesai/Llama-3.1-8B-Instruct",
                 &["chutesai/Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Chutes AI OpenAI-compat"
             ),
             OpenAIProvider::Kluster => provider_info!(
-                "kluster", "Kluster", "https://api.kluster.ai/v1", "meta-llama/Meta-Llama-3.1-70B-Instruct",
-                &["meta-llama/Meta-Llama-3.1-70B-Instruct", "meta-llama/Meta-Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "kluster",
+                "Kluster",
+                "https://api.kluster.ai/v1",
+                "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                &[
+                    "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                    "meta-llama/Meta-Llama-3.1-8B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Kluster OpenAI-compat"
             ),
             OpenAIProvider::InferenceNet => provider_info!(
-                "inference_net", "Inference.net", "https://api.inference.net/v1", "meta-llama/Llama-3.1-70B-Instruct",
-                &["meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "inference_net",
+                "Inference.net",
+                "https://api.inference.net/v1",
+                "meta-llama/Llama-3.1-70B-Instruct",
+                &[
+                    "meta-llama/Llama-3.1-70B-Instruct",
+                    "meta-llama/Llama-3.1-8B-Instruct"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Inference.net OpenAI-compat"
             ),
             OpenAIProvider::NotDiamond => provider_info!(
-                "not_diamond", "Not Diamond", "https://api.not-diamond.com/v1", "not-diamond-auto",
+                "not_diamond",
+                "Not Diamond",
+                "https://api.not-diamond.com/v1",
+                "not-diamond-auto",
                 &["not-diamond-auto"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Not Diamond router OpenAI-compat"
             ),
             OpenAIProvider::LocalAi => provider_info!(
-                "localai", "LocalAI (self-hosted)", "http://localhost:8080/v1", "gpt-4",
+                "localai",
+                "LocalAI (self-hosted)",
+                "http://localhost:8080/v1",
+                "gpt-4",
                 &["gpt-4", "gpt-3.5-turbo", "llama3.1"],
-                AuthHeader::None, None, None,
-                false, None, None, 100.0, 60, true, true, &[],
+                AuthHeader::None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                100.0,
+                60,
+                true,
+                true,
+                &[],
                 "LocalAI self-hosted, no auth"
             ),
             OpenAIProvider::LlamaCpp => provider_info!(
-                "llama_cpp", "llama.cpp server", "http://localhost:8080/v1", "llama-3.1-8b",
+                "llama_cpp",
+                "llama.cpp server",
+                "http://localhost:8080/v1",
+                "llama-3.1-8b",
                 &["llama-3.1-8b", "llama-3.1-70b", "qwen2.5-7b"],
-                AuthHeader::None, None, None,
-                false, None, None, 100.0, 60, true, true, &[],
+                AuthHeader::None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                100.0,
+                60,
+                true,
+                true,
+                &[],
                 "llama.cpp server, no auth"
             ),
             OpenAIProvider::Vllm => provider_info!(
-                "vllm", "vLLM", "http://localhost:8000/v1", "meta-llama/Llama-3.1-8B-Instruct",
-                &["meta-llama/Llama-3.1-8B-Instruct", "meta-llama/Llama-3.1-70B-Instruct"],
-                AuthHeader::None, None, None,
-                false, None, None, 100.0, 60, true, true, &[],
+                "vllm",
+                "vLLM",
+                "http://localhost:8000/v1",
+                "meta-llama/Llama-3.1-8B-Instruct",
+                &[
+                    "meta-llama/Llama-3.1-8B-Instruct",
+                    "meta-llama/Llama-3.1-70B-Instruct"
+                ],
+                AuthHeader::None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                100.0,
+                60,
+                true,
+                true,
+                &[],
                 "vLLM server, no auth"
             ),
             OpenAIProvider::Voyage => provider_info!(
-                "voyage", "Voyage AI", "https://api.voyageai.com/v1", "voyage-3-large",
-                &["voyage-3-large", "voyage-3", "voyage-3-lite", "voyage-code-3"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                "voyage",
+                "Voyage AI",
+                "https://api.voyageai.com/v1",
+                "voyage-3-large",
+                &[
+                    "voyage-3-large",
+                    "voyage-3",
+                    "voyage-3-lite",
+                    "voyage-code-3"
+                ],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Voyage AI OpenAI-compat"
             ),
             OpenAIProvider::ElevenLabs => provider_info!(
-                "elevenlabs", "ElevenLabs", "https://api.elevenlabs.io/v1", "eleven_multilingual_v2",
+                "elevenlabs",
+                "ElevenLabs",
+                "https://api.elevenlabs.io/v1",
+                "eleven_multilingual_v2",
                 &["eleven_multilingual_v2", "eleven_turbo_v2_5"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "ElevenLabs OpenAI-compat"
             ),
             OpenAIProvider::Stability => provider_info!(
-                "stability", "Stability AI", "https://api.stability.ai/v1", "stable-image-ultra",
+                "stability",
+                "Stability AI",
+                "https://api.stability.ai/v1",
+                "stable-image-ultra",
                 &["stable-image-ultra", "stable-image-core"],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 20.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                20.0,
+                120,
+                true,
+                true,
+                &[],
                 "Stability AI OpenAI-compat"
             ),
             OpenAIProvider::Anthropic => provider_info!(
-                "anthropic", "Anthropic", "https://api.anthropic.com/v1", "claude-3-5-sonnet-20241022",
-                &["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
-                AuthHeader::HeaderApiKey, None, None,
-                false, Some(8192), None, 30.0, 180, true, true, &[],
+                "anthropic",
+                "Anthropic",
+                "https://api.anthropic.com/v1",
+                "claude-3-5-sonnet-20241022",
+                &[
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-5-haiku-20241022",
+                    "claude-3-opus-20240229"
+                ],
+                AuthHeader::HeaderApiKey,
+                None,
+                None,
+                false,
+                Some(8192),
+                None,
+                30.0,
+                180,
+                true,
+                true,
+                &[],
                 "Anthropic (usually the dedicated backend; OpenAI-compat entry for completeness)"
             ),
             OpenAIProvider::Custom => provider_info!(
-                "custom", "Custom OpenAI-compatible", "", "",
+                "custom",
+                "Custom OpenAI-compatible",
+                "",
+                "",
                 &[],
-                AuthHeader::Bearer, None, None,
-                false, None, None, 30.0, 120, true, true, &[],
+                AuthHeader::Bearer,
+                None,
+                None,
+                false,
+                None,
+                None,
+                30.0,
+                120,
+                true,
+                true,
+                &[],
                 "User-supplied OpenAI-compatible endpoint"
             ),
         }
@@ -1105,9 +1841,7 @@ impl ChatRequest {
 }
 
 impl From<(&ChatConfig, &[ChatMessage], &[ToolDefinition])> for ChatRequest {
-    fn from(
-        (config, messages, tools): (&ChatConfig, &[ChatMessage], &[ToolDefinition]),
-    ) -> Self {
+    fn from((config, messages, tools): (&ChatConfig, &[ChatMessage], &[ToolDefinition])) -> Self {
         ChatRequest {
             model: config.model.clone(),
             messages: messages.to_vec(),
@@ -1221,7 +1955,10 @@ impl OpenAiCompatProvider {
             config.base_url.trim_end_matches('/').to_string()
         };
         let api_key = config.api_key.clone();
-        let rps = config.requests_per_second.unwrap_or(info.requests_per_second).max(0.1);
+        let rps = config
+            .requests_per_second
+            .unwrap_or(info.requests_per_second)
+            .max(0.1);
         let timeout_secs = config.timeout_secs.unwrap_or(info.timeout_secs).max(1);
         let max_retries = config.max_retries.unwrap_or(3).max(1);
 
@@ -1491,7 +2228,11 @@ impl OpenAiCompatProvider {
                     .header("Content-Type", "application/json");
                 req = this.apply_auth(req, &key);
                 req = this.apply_headers(req);
-                let resp = req.json(&body).send().await.map_err(ProviderError::Network)?;
+                let resp = req
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(ProviderError::Network)?;
 
                 let status = resp.status();
                 if !status.is_success() {
@@ -1569,7 +2310,11 @@ impl OpenAiCompatProvider {
             .header("Content-Type", "application/json");
         req = self.apply_auth(req, &key);
         req = self.apply_headers(req);
-        let resp = req.json(&body).send().await.map_err(ProviderError::Network)?;
+        let resp = req
+            .json(&body)
+            .send()
+            .await
+            .map_err(ProviderError::Network)?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -1586,7 +2331,9 @@ impl OpenAiCompatProvider {
         }
 
         let policy = self.policy.clone();
-        let stream = SseStream::new(resp, move |data: &str| parse_openai_sse_event(data, &policy));
+        let stream = SseStream::new(resp, move |data: &str| {
+            parse_openai_sse_event(data, &policy)
+        });
         Ok(Box::new(stream))
     }
 
@@ -1715,7 +2462,13 @@ impl Provider for OpenAiCompatProvider {
 /// non-streaming request with no tools. The full variant is
 /// [`build_chat_request_full`].
 pub fn build_chat_request(messages: &[ChatMessage], config: &ChatConfig) -> serde_json::Value {
-    build_chat_request_with_policy(config, messages, &[], false, &CompatPolicy::default_openai())
+    build_chat_request_with_policy(
+        config,
+        messages,
+        &[],
+        false,
+        &CompatPolicy::default_openai(),
+    )
 }
 
 /// Build a full chat completion request body with tools and streaming.
@@ -1823,8 +2576,7 @@ fn convert_messages(
                 SystemPromptPolicy::SeparateField => {
                     // Emitted as the top-level `system` field instead.
                 }
-                SystemPromptPolicy::PrependToFirstUser
-                | SystemPromptPolicy::MergeIntoFirstUser => {
+                SystemPromptPolicy::PrependToFirstUser | SystemPromptPolicy::MergeIntoFirstUser => {
                     // Folded into the first user message below.
                 }
             }
@@ -1870,11 +2622,7 @@ fn message_to_openai(msg: &ChatMessage) -> serde_json::Value {
             let tool_call_id = msg
                 .tool_call_id
                 .clone()
-                .or_else(|| {
-                    msg.tool_result
-                        .as_ref()
-                        .map(|tr| tr.tool_use_id.clone())
-                })
+                .or_else(|| msg.tool_result.as_ref().map(|tr| tr.tool_use_id.clone()))
                 .unwrap_or_default();
             entry.insert("tool_call_id".into(), serde_json::json!(tool_call_id));
             entry.insert("content".into(), serde_json::json!(content));
@@ -1908,9 +2656,10 @@ fn message_to_openai(msg: &ChatMessage) -> serde_json::Value {
 
 /// Convert content blocks into a string or a content-block array.
 fn convert_content_blocks(blocks: &[ContentBlock]) -> serde_json::Value {
-    if blocks.iter().all(|b| {
-        matches!(b, ContentBlock::Text(_) | ContentBlock::Reasoning(_))
-    }) {
+    if blocks
+        .iter()
+        .all(|b| matches!(b, ContentBlock::Text(_) | ContentBlock::Reasoning(_)))
+    {
         let text = blocks
             .iter()
             .filter_map(|b| match b {
@@ -1927,9 +2676,7 @@ fn convert_content_blocks(blocks: &[ContentBlock]) -> serde_json::Value {
         .iter()
         .filter_map(|b| match b {
             ContentBlock::Text(t) => Some(serde_json::json!({"type": "text", "text": t})),
-            ContentBlock::Reasoning(t) => {
-                Some(serde_json::json!({"type": "text", "text": t}))
-            }
+            ContentBlock::Reasoning(t) => Some(serde_json::json!({"type": "text", "text": t})),
             // ToolUse / ToolResult blocks belong in tool_calls / role=tool
             // messages, not the content array.
             ContentBlock::ToolUse(_) | ContentBlock::ToolResult(_) => None,
@@ -2074,7 +2821,11 @@ fn parse_message_tool_calls(message: &serde_json::Value) -> Vec<ToolCall> {
         return calls;
     };
     for tc in arr {
-        let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let id = tc
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let name = tc
             .get("function")
             .and_then(|f| f.get("name"))
@@ -2113,10 +2864,7 @@ fn extract_reasoning_content(message: &serde_json::Value) -> Option<String> {
 /// Extract token usage from a response object.
 fn parse_usage(data: &serde_json::Value) -> Usage {
     let u = data.get("usage").unwrap_or(&serde_json::Value::Null);
-    let input = u
-        .get("prompt_tokens")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let input = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
     let output = u
         .get("completion_tokens")
         .and_then(|v| v.as_u64())
@@ -2137,14 +2885,8 @@ fn dialect_for_policy(policy: &CompatPolicy) -> ToolDialect {
 /// Strip text-embedded tool-call markup from a response, leaving clean text.
 fn strip_text_tool_calls(text: &str, dialect: ToolDialect) -> String {
     match dialect {
-        ToolDialect::DeepSeekDsml => DSML_BLOCK_RE
-            .replace_all(text, "")
-            .trim()
-            .to_string(),
-        ToolDialect::Xml => XML_TOOL_CALL_RE
-            .replace_all(text, "")
-            .trim()
-            .to_string(),
+        ToolDialect::DeepSeekDsml => DSML_BLOCK_RE.replace_all(text, "").trim().to_string(),
+        ToolDialect::Xml => XML_TOOL_CALL_RE.replace_all(text, "").trim().to_string(),
         ToolDialect::JsonBlock => JSON_BLOCK_RE.replace_all(text, "").trim().to_string(),
         _ => text.trim().to_string(),
     }
@@ -2249,7 +2991,11 @@ pub fn parse_openai_sse_event(
         // Tool-call deltas.
         if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
             for tc in tool_calls {
-                let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let name = tc
                     .get("function")
                     .and_then(|f| f.get("name"))
@@ -2263,7 +3009,11 @@ pub fn parse_openai_sse_event(
                     .unwrap_or("")
                     .to_string();
                 if !id.is_empty() || !name.is_empty() || !args.is_empty() {
-                    return Some(Ok(StreamEvent::ToolCall { id, name, arguments: args }));
+                    return Some(Ok(StreamEvent::ToolCall {
+                        id,
+                        name,
+                        arguments: args,
+                    }));
                 }
             }
         }
@@ -2452,7 +3202,11 @@ pub fn seed_catalog(catalog: &ModelCatalog, provider: OpenAIProvider) -> usize {
 }
 
 /// Merge a live-fetched model list into a catalog under this provider's id.
-pub fn merge_live_models(catalog: &ModelCatalog, provider: OpenAIProvider, live: Vec<ModelCapabilities>) {
+pub fn merge_live_models(
+    catalog: &ModelCatalog,
+    provider: OpenAIProvider,
+    live: Vec<ModelCapabilities>,
+) {
     merge_live(catalog, provider.as_str(), live);
 }
 
@@ -2471,7 +3225,12 @@ pub fn sse_deltas(data: &str) -> Vec<crate::stream_assembly::SseDelta> {
 ///
 /// Handles the Azure deployment path and custom endpoints that already carry
 /// the full `/chat/completions` suffix.
-pub fn resolve_chat_url(provider: OpenAIProvider, base_url: &str, model: &str, api_version: Option<&str>) -> String {
+pub fn resolve_chat_url(
+    provider: OpenAIProvider,
+    base_url: &str,
+    model: &str,
+    api_version: Option<&str>,
+) -> String {
     let base = base_url.trim_end_matches('/');
     match provider {
         OpenAIProvider::Azure => {
@@ -2597,21 +3356,34 @@ mod tests {
             OpenAIProvider::Custom,
         ] {
             let id = provider.as_str();
-            assert_eq!(OpenAIProvider::from_str_id(id), Some(provider), "round trip {id}");
+            assert_eq!(
+                OpenAIProvider::from_str_id(id),
+                Some(provider),
+                "round trip {id}"
+            );
         }
     }
 
     #[test]
     fn provider_from_str_falls_back_to_custom() {
-        assert_eq!(provider_from_id("not-a-real-provider"), OpenAIProvider::Custom);
+        assert_eq!(
+            provider_from_id("not-a-real-provider"),
+            OpenAIProvider::Custom
+        );
         assert_eq!(provider_from_id("minimax"), OpenAIProvider::MiniMax);
         assert_eq!(provider_from_id("minimax_text"), OpenAIProvider::MiniMax);
     }
 
     #[test]
     fn provider_base_urls() {
-        assert_eq!(OpenAIProvider::OpenAi.default_base_url(), "https://api.openai.com/v1");
-        assert_eq!(OpenAIProvider::DeepSeek.default_base_url(), "https://api.deepseek.com/v1");
+        assert_eq!(
+            OpenAIProvider::OpenAi.default_base_url(),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            OpenAIProvider::DeepSeek.default_base_url(),
+            "https://api.deepseek.com/v1"
+        );
         assert_eq!(
             OpenAIProvider::Gemini.default_base_url(),
             "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -2620,7 +3392,10 @@ mod tests {
             OpenAIProvider::DashScope.default_base_url(),
             "https://dashscope.aliyuncs.com/compatible-mode/v1"
         );
-        assert_eq!(OpenAIProvider::OpenRouter.default_base_url(), "https://openrouter.ai/api/v1");
+        assert_eq!(
+            OpenAIProvider::OpenRouter.default_base_url(),
+            "https://openrouter.ai/api/v1"
+        );
         assert_eq!(
             OpenAIProvider::SiliconFlow.default_base_url(),
             "https://api.siliconflow.cn/v1"
@@ -2631,7 +3406,10 @@ mod tests {
     fn provider_auth_shapes() {
         assert_eq!(OpenAIProvider::OpenAi.auth_header(), AuthHeader::Bearer);
         assert_eq!(OpenAIProvider::Azure.auth_header(), AuthHeader::AzureApiKey);
-        assert_eq!(OpenAIProvider::Anthropic.auth_header(), AuthHeader::HeaderApiKey);
+        assert_eq!(
+            OpenAIProvider::Anthropic.auth_header(),
+            AuthHeader::HeaderApiKey
+        );
         assert_eq!(OpenAIProvider::LocalAi.auth_header(), AuthHeader::None);
         assert!(OpenAIProvider::LocalAi.is_local());
         assert!(OpenAIProvider::Vllm.is_local());
@@ -2660,8 +3438,16 @@ mod tests {
             OpenAIProvider::Fireworks,
             OpenAIProvider::Perplexity,
         ] {
-            assert!(!p.default_models().is_empty(), "{} has no models", p.as_str());
-            assert!(!p.default_model().is_empty(), "{} has no default model", p.as_str());
+            assert!(
+                !p.default_models().is_empty(),
+                "{} has no models",
+                p.as_str()
+            );
+            assert!(
+                !p.default_model().is_empty(),
+                "{} has no default model",
+                p.as_str()
+            );
         }
     }
 
@@ -2696,9 +3482,13 @@ mod tests {
     #[test]
     fn chat_url_standard_and_azure() {
         let provider = OpenAiCompatProvider::from_config(
-            OpenAiConfig::new(OpenAIProvider::OpenAi, "k").with_base_url("https://api.openai.com/v1"),
+            OpenAiConfig::new(OpenAIProvider::OpenAi, "k")
+                .with_base_url("https://api.openai.com/v1"),
         );
-        assert_eq!(provider.chat_url("gpt-4o"), "https://api.openai.com/v1/chat/completions");
+        assert_eq!(
+            provider.chat_url("gpt-4o"),
+            "https://api.openai.com/v1/chat/completions"
+        );
 
         let azure = OpenAiCompatProvider::from_config(
             OpenAiConfig::new(OpenAIProvider::Azure, "k")
@@ -2768,12 +3558,16 @@ mod tests {
                 "properties": {"city": {"type": "string"}}
             }),
         }];
-        let body = build_chat_request_full(&chat_config("gpt-4o"), &sample_messages(), &tools, false);
+        let body =
+            build_chat_request_full(&chat_config("gpt-4o"), &sample_messages(), &tools, false);
         let arr = body["tools"].as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["type"], "function");
         assert_eq!(arr[0]["function"]["name"], "get_weather");
-        assert_eq!(arr[0]["function"]["parameters"]["properties"]["city"]["type"], "string");
+        assert_eq!(
+            arr[0]["function"]["parameters"]["properties"]["city"]["type"],
+            "string"
+        );
     }
 
     #[test]
@@ -2782,7 +3576,11 @@ mod tests {
         messages.push(ChatMessage {
             role: MessageRole::Assistant,
             content: vec![ContentBlock::Text("calling".into())],
-            tool_calls: Some(vec![ToolCall::new("call_1", "get_weather", serde_json::json!({"city": "NYC"}))]),
+            tool_calls: Some(vec![ToolCall::new(
+                "call_1",
+                "get_weather",
+                serde_json::json!({"city": "NYC"}),
+            )]),
             tool_call_id: None,
             tool_result: None,
             name: None,
@@ -2888,7 +3686,10 @@ mod tests {
 
     #[test]
     fn map_openrouter_prefix() {
-        assert_eq!(map_model(OpenAIProvider::OpenRouter, "gpt-4o"), "openai/gpt-4o");
+        assert_eq!(
+            map_model(OpenAIProvider::OpenRouter, "gpt-4o"),
+            "openai/gpt-4o"
+        );
         assert_eq!(
             map_model(OpenAIProvider::OpenRouter, "anthropic/claude-3-5-sonnet"),
             "anthropic/claude-3-5-sonnet"
@@ -3010,7 +3811,10 @@ mod tests {
         });
         let resp = parse_chat_response(&data, &CompatPolicy::default_openai());
         assert_eq!(resp.content, "Answer");
-        assert_eq!(resp.reasoning_content.as_deref(), Some("Thinking deeply..."));
+        assert_eq!(
+            resp.reasoning_content.as_deref(),
+            Some("Thinking deeply...")
+        );
     }
 
     #[test]
@@ -3071,7 +3875,9 @@ mod tests {
     #[test]
     fn parse_sse_text_delta() {
         let data = r#"{"choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"},"finish_reason":null}]}"#;
-        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai()).unwrap().unwrap();
+        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai())
+            .unwrap()
+            .unwrap();
         match event {
             StreamEvent::Text { text } => assert_eq!(text, "Hel"),
             _ => panic!("expected Text"),
@@ -3081,7 +3887,9 @@ mod tests {
     #[test]
     fn parse_sse_reasoning_delta() {
         let data = r#"{"choices":[{"index":0,"delta":{"reasoning_content":"step 1"},"finish_reason":null}]}"#;
-        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai()).unwrap().unwrap();
+        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai())
+            .unwrap()
+            .unwrap();
         match event {
             StreamEvent::Reasoning { reasoning } => assert_eq!(reasoning, "step 1"),
             _ => panic!("expected Reasoning"),
@@ -3091,9 +3899,15 @@ mod tests {
     #[test]
     fn parse_sse_tool_call_delta() {
         let data = r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"get_weather","arguments":"{\"city\":"}}]},"finish_reason":null}]}"#;
-        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai()).unwrap().unwrap();
+        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai())
+            .unwrap()
+            .unwrap();
         match event {
-            StreamEvent::ToolCall { id, name, arguments } => {
+            StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
                 assert_eq!(id, "call_1");
                 assert_eq!(name, "get_weather");
                 assert_eq!(arguments, r#"{"city":"#);
@@ -3105,7 +3919,9 @@ mod tests {
     #[test]
     fn parse_sse_finish_reason() {
         let data = r#"{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
-        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai()).unwrap().unwrap();
+        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai())
+            .unwrap()
+            .unwrap();
         match event {
             StreamEvent::Done { stop_reason, .. } => {
                 assert_eq!(stop_reason.as_deref(), Some("stop"));
@@ -3117,7 +3933,9 @@ mod tests {
     #[test]
     fn parse_sse_final_usage_chunk() {
         let data = r#"{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}}"#;
-        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai()).unwrap().unwrap();
+        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai())
+            .unwrap()
+            .unwrap();
         match event {
             StreamEvent::Done { usage, .. } => {
                 let usage = usage.unwrap();
@@ -3131,7 +3949,9 @@ mod tests {
     #[test]
     fn parse_sse_error_object() {
         let data = r#"{"error":{"message":"boom","type":"server_error"}}"#;
-        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai()).unwrap().unwrap();
+        let event = parse_openai_sse_event(data, &CompatPolicy::default_openai())
+            .unwrap()
+            .unwrap();
         match event {
             StreamEvent::Error { message } => assert!(message.contains("boom")),
             _ => panic!("expected Error"),
@@ -3151,11 +3971,19 @@ mod tests {
     #[test]
     fn map_http_error_status_codes() {
         assert!(matches!(
-            map_http_error(StatusCode::UNAUTHORIZED, r#"{"error":{"message":"bad key"}}"#, "openai"),
+            map_http_error(
+                StatusCode::UNAUTHORIZED,
+                r#"{"error":{"message":"bad key"}}"#,
+                "openai"
+            ),
             ProviderError::Auth(_)
         ));
         assert!(matches!(
-            map_http_error(StatusCode::TOO_MANY_REQUESTS, r#"{"error":{"message":"slow down"}}"#, "openai"),
+            map_http_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                r#"{"error":{"message":"slow down"}}"#,
+                "openai"
+            ),
             ProviderError::RateLimited(_)
         ));
         assert!(matches!(
@@ -3189,8 +4017,14 @@ mod tests {
             extract_error_message(r#"{"error":{"message":"msg1"}}"#).as_deref(),
             Some("msg1")
         );
-        assert_eq!(extract_error_message(r#"{"message":"msg2"}"#).as_deref(), Some("msg2"));
-        assert_eq!(extract_error_message(r#"just a string"#).as_deref(), Some("just a string"));
+        assert_eq!(
+            extract_error_message(r#"{"message":"msg2"}"#).as_deref(),
+            Some("msg2")
+        );
+        assert_eq!(
+            extract_error_message(r#"just a string"#).as_deref(),
+            Some("just a string")
+        );
         assert_eq!(extract_error_message("not json at all {"), None);
     }
 
@@ -3244,8 +4078,7 @@ mod tests {
         // A live fetch against an unreachable host should fail gracefully and
         // fall back to the static model list.
         let provider = OpenAiCompatProvider::from_config(
-            OpenAiConfig::new(OpenAIProvider::OpenAi, "k")
-                .with_base_url("http://127.0.0.1:1/v1"),
+            OpenAiConfig::new(OpenAIProvider::OpenAi, "k").with_base_url("http://127.0.0.1:1/v1"),
         );
         let models = provider.list_models().await.unwrap();
         assert!(!models.is_empty());
@@ -3257,8 +4090,7 @@ mod tests {
         // Point at a closed localhost port so the request fails fast with a
         // connection error, proving the wiring reaches the transport layer.
         let provider = OpenAiCompatProvider::from_config(
-            OpenAiConfig::new(OpenAIProvider::OpenAi, "k")
-                .with_base_url("http://127.0.0.1:1/v1"),
+            OpenAiConfig::new(OpenAIProvider::OpenAi, "k").with_base_url("http://127.0.0.1:1/v1"),
         );
         let cfg = chat_config("gpt-4o");
         let stream = provider.stream_chat(&cfg, &sample_messages(), &[]).await;
@@ -3278,7 +4110,12 @@ mod tests {
     #[test]
     fn resolve_chat_url_helper() {
         assert_eq!(
-            resolve_chat_url(OpenAIProvider::OpenAi, "https://api.openai.com/v1", "gpt-4o", None),
+            resolve_chat_url(
+                OpenAIProvider::OpenAi,
+                "https://api.openai.com/v1",
+                "gpt-4o",
+                None
+            ),
             "https://api.openai.com/v1/chat/completions"
         );
         assert_eq!(
@@ -3317,16 +4154,20 @@ mod tests {
         let provider =
             OpenAiCompatProvider::from_config(OpenAiConfig::new(OpenAIProvider::OpenRouter, "k"));
         assert_eq!(provider.policy.extra_headers.len(), 2);
-        assert!(provider
-            .policy
-            .extra_headers
-            .iter()
-            .any(|(n, _)| *n == "HTTP-Referer"));
-        assert!(provider
-            .policy
-            .extra_headers
-            .iter()
-            .any(|(n, _)| *n == "X-Title"));
+        assert!(
+            provider
+                .policy
+                .extra_headers
+                .iter()
+                .any(|(n, _)| *n == "HTTP-Referer")
+        );
+        assert!(
+            provider
+                .policy
+                .extra_headers
+                .iter()
+                .any(|(n, _)| *n == "X-Title")
+        );
     }
 
     #[test]
@@ -3360,7 +4201,8 @@ mod tests {
                 .with_param("seed", serde_json::json!(42))
                 .with_header("X-Custom", "yes"),
         );
-        let body = provider.build_request_body(&chat_config("gpt-4o"), &sample_messages(), &[], false);
+        let body =
+            provider.build_request_body(&chat_config("gpt-4o"), &sample_messages(), &[], false);
         assert_eq!(body["seed"], 42);
         assert_eq!(
             provider.extra_headers.get("X-Custom").map(String::as_str),
@@ -3380,20 +4222,36 @@ mod tests {
             ("mistral", OpenAIProvider::Mistral, "mistral-large-latest"),
             ("groq", OpenAIProvider::Groq, "llama-3.3-70b-versatile"),
             ("zhipu", OpenAIProvider::Zhipu, "glm-4-plus"),
-            ("siliconflow", OpenAIProvider::SiliconFlow, "Qwen/Qwen2.5-72B-Instruct"),
+            (
+                "siliconflow",
+                OpenAIProvider::SiliconFlow,
+                "Qwen/Qwen2.5-72B-Instruct",
+            ),
             ("openrouter", OpenAIProvider::OpenRouter, "openai/gpt-4o"),
             ("azure", OpenAIProvider::Azure, "gpt-4o"),
-            ("together", OpenAIProvider::Together, "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+            (
+                "together",
+                OpenAIProvider::Together,
+                "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            ),
             (
                 "fireworks",
                 OpenAIProvider::Fireworks,
                 "accounts/fireworks/models/llama-v3p3-70b-instruct",
             ),
-            ("perplexity", OpenAIProvider::Perplexity, "llama-3.1-sonar-large-128k-online"),
+            (
+                "perplexity",
+                OpenAIProvider::Perplexity,
+                "llama-3.1-sonar-large-128k-online",
+            ),
         ];
         for (id, provider, default_model) in required {
             assert_eq!(provider.as_str(), id, "{id} id mismatch");
-            assert_eq!(provider.default_model(), default_model, "{id} default model");
+            assert_eq!(
+                provider.default_model(),
+                default_model,
+                "{id} default model"
+            );
             assert!(!provider.default_models().is_empty(), "{id} has no models");
 
             let cfg = chat_config(default_model);
@@ -3411,7 +4269,10 @@ mod tests {
     fn sse_delta_bridge() {
         let deltas = sse_deltas(r#"{"choices":[{"index":0,"delta":{"content":"Hi"}}]}"#);
         assert_eq!(deltas.len(), 1);
-        assert!(matches!(deltas[0], crate::stream_assembly::SseDelta::Text(_)));
+        assert!(matches!(
+            deltas[0],
+            crate::stream_assembly::SseDelta::Text(_)
+        ));
 
         // A chunk carrying only a role marker yields no deltas.
         let empty = sse_deltas(r#"{"choices":[{"index":0,"delta":{"role":"assistant"}}]}"#);

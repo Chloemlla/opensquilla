@@ -295,7 +295,11 @@ pub struct ReqFrame {
 
 impl ReqFrame {
     /// Create a new request frame.
-    pub fn new(id: impl Into<String>, method: impl Into<String>, params: Option<serde_json::Value>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        method: impl Into<String>,
+        params: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             frame_type: FRAME_REQ.to_string(),
             id: id.into(),
@@ -778,7 +782,12 @@ mod tests {
 
     #[test]
     fn test_event_frame_roundtrip() {
-        let event = make_event("session.message", Some(serde_json::json!({"text": "hi"})), Some(7), None);
+        let event = make_event(
+            "session.message",
+            Some(serde_json::json!({"text": "hi"})),
+            Some(7),
+            None,
+        );
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"type\":\"event\""));
         let parsed: WsEventFrame = serde_json::from_str(&json).unwrap();

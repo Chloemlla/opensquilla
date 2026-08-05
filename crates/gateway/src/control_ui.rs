@@ -18,9 +18,9 @@
 use std::path::{Path, PathBuf};
 
 use axum::{
-    http::{header, HeaderValue, Uri},
-    response::Response,
     Router,
+    http::{HeaderValue, Uri, header},
+    response::Response,
 };
 use opensquilla_core::error::AppError;
 use tower_http::services::{ServeDir, ServeFile};

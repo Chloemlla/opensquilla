@@ -402,11 +402,9 @@ mod tests {
     async fn test_filter_rejects_kinds() {
         use SessionEventKind as K;
         let bus = SessionStreamBus::with_capacity(16);
-        let mut rx = bus
-            .subscribe()
-            .with_filter(StreamFilter {
-                kinds: Some(&[K::TurnStarted, K::TurnCompleted]),
-            });
+        let mut rx = bus.subscribe().with_filter(StreamFilter {
+            kinds: Some(&[K::TurnStarted, K::TurnCompleted]),
+        });
         bus.publish_event(K::Created, "s1");
         bus.publish_event(K::TurnStarted, "s1");
         let update = rx.recv().await.unwrap();
@@ -428,7 +426,10 @@ mod tests {
         let bus = SessionStreamBus::with_capacity(16);
         let mut stream = bus.subscribe().into_stream();
         bus.publish_event(SessionEventKind::Created, "s1");
-        let item = futures::StreamExt::next(&mut stream).await.unwrap().unwrap();
+        let item = futures::StreamExt::next(&mut stream)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(item.session_id, "s1");
     }
 

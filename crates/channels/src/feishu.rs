@@ -31,7 +31,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::warn;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -132,7 +132,10 @@ impl FeishuChannel {
     async fn request_tenant_token(&self) -> Result<TenantToken, String> {
         let resp = self
             .client
-            .post(format!("{}/auth/v3/tenant_access_token/internal", self.api_base))
+            .post(format!(
+                "{}/auth/v3/tenant_access_token/internal",
+                self.api_base
+            ))
             .json(&json!({"app_id": self.app_id, "app_secret": self.app_secret}))
             .send()
             .await
@@ -155,7 +158,9 @@ impl FeishuChannel {
             .to_string();
         let expire_secs = body["expire"].as_i64().unwrap_or(DEFAULT_TOKEN_EXPIRE_SECS);
         let expires_at = Utc::now()
-            .checked_add_signed(chrono::Duration::seconds(expire_secs - TOKEN_EXPIRE_MARGIN_SECS))
+            .checked_add_signed(chrono::Duration::seconds(
+                expire_secs - TOKEN_EXPIRE_MARGIN_SECS,
+            ))
             .unwrap_or_else(|| Utc::now() + chrono::Duration::hours(2));
         Ok(TenantToken { token, expires_at })
     }
@@ -220,15 +225,32 @@ impl FeishuChannel {
     }
 
     /// Send a rich-text (post) message.
-    pub async fn send_post_message(&self, receive_id: &str, title: &str, text: &str) -> Result<(), String> {
-        let mut msg = OutgoingMessage::new(receive_id.to_string(), ChannelType::Feishu, text.to_string());
+    pub async fn send_post_message(
+        &self,
+        receive_id: &str,
+        title: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        let mut msg = OutgoingMessage::new(
+            receive_id.to_string(),
+            ChannelType::Feishu,
+            text.to_string(),
+        );
         msg.metadata = json!({"msg_type": "post", "post_title": title});
         self.send_feishu_message(&msg).await
     }
 
     /// Send an image by `image_key`.
-    pub async fn send_image_message(&self, receive_id: &str, image_key: &str) -> Result<(), String> {
-        let mut msg = OutgoingMessage::new(receive_id.to_string(), ChannelType::Feishu, image_key.to_string());
+    pub async fn send_image_message(
+        &self,
+        receive_id: &str,
+        image_key: &str,
+    ) -> Result<(), String> {
+        let mut msg = OutgoingMessage::new(
+            receive_id.to_string(),
+            ChannelType::Feishu,
+            image_key.to_string(),
+        );
         msg.metadata = json!({"msg_type": "image"});
         self.send_feishu_message(&msg).await
     }
@@ -242,7 +264,12 @@ impl FeishuChannel {
     }
 
     /// Build an interactive card JSON body.
-    pub fn build_interactive_card(&self, title: &str, text: &str, buttons: &[(String, String)]) -> Value {
+    pub fn build_interactive_card(
+        &self,
+        title: &str,
+        text: &str,
+        buttons: &[(String, String)],
+    ) -> Value {
         let mut elements = vec![json!({"tag": "div", "text": {"tag": "lark_md", "content": text}})];
         if !buttons.is_empty() {
             let actions: Vec<Value> = buttons
@@ -323,7 +350,13 @@ impl FeishuChannel {
     /// The signature is `base64(HMAC-SHA256(token, timestamp + nonce + body))`
     /// carried in the `X-Lark-Signature` header. Returns `true` when no
     /// verification token is configured (verification disabled).
-    pub fn verify_event_signature(&self, timestamp: &str, nonce: &str, body: &str, signature: &str) -> bool {
+    pub fn verify_event_signature(
+        &self,
+        timestamp: &str,
+        nonce: &str,
+        body: &str,
+        signature: &str,
+    ) -> bool {
         let Some(token) = &self.verification_token else {
             return true;
         };
@@ -380,7 +413,13 @@ fn feishu_error(body: &Value) -> String {
 }
 
 /// Pure HMAC-SHA256 event signature verification.
-pub fn verify_feishu_signature(token: &str, timestamp: &str, nonce: &str, body: &str, signature: &str) -> bool {
+pub fn verify_feishu_signature(
+    token: &str,
+    timestamp: &str,
+    nonce: &str,
+    body: &str,
+    signature: &str,
+) -> bool {
     let string_to_sign = format!("{}{}{}", timestamp, nonce, body);
     let mut mac = HmacSha256::new_from_slice(token.as_bytes()).expect("HMAC accepts any key size");
     mac.update(string_to_sign.as_bytes());
@@ -410,7 +449,10 @@ fn parse_event_callback(payload: &Value) -> Option<IncomingMessage> {
         .get("message_type")
         .and_then(|v| v.as_str())
         .unwrap_or("text");
-    let content_str = message.get("content").and_then(|v| v.as_str()).unwrap_or("{}");
+    let content_str = message
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("{}");
     let content: Value = serde_json::from_str(content_str).unwrap_or(Value::Null);
 
     let text = match message_type {
@@ -446,7 +488,10 @@ fn parse_event_callback(payload: &Value) -> Option<IncomingMessage> {
         .and_then(|s| s.get("sender_type"))
         .and_then(|v| v.as_str())
         .map(String::from);
-    let thread_id = message.get("message_id").and_then(|v| v.as_str()).map(String::from);
+    let thread_id = message
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let timestamp = message
         .get("create_time")
         .and_then(|v| v.as_str())
@@ -632,7 +677,10 @@ mod tests {
         let msg = parse_event_callback(&payload).expect("should parse");
         assert_eq!(msg.text, "[image]");
         assert_eq!(msg.attachments.len(), 1);
-        assert_eq!(msg.attachments[0].data.as_ref().unwrap()["image_key"], "img_v2_xxx");
+        assert_eq!(
+            msg.attachments[0].data.as_ref().unwrap()["image_key"],
+            "img_v2_xxx"
+        );
     }
 
     #[test]
@@ -676,7 +724,10 @@ mod tests {
         assert_eq!(card["header"]["title"]["content"], "Title");
         assert_eq!(card["elements"][0]["text"]["content"], "Body text");
         assert_eq!(card["elements"][2]["tag"], "action");
-        assert_eq!(card["elements"][2]["actions"][0]["value"]["value"], "ok-value");
+        assert_eq!(
+            card["elements"][2]["actions"][0]["value"]["value"],
+            "ok-value"
+        );
     }
 
     #[test]
@@ -718,9 +769,27 @@ mod tests {
             mac.update(string_to_sign.as_bytes());
             base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes())
         };
-        assert!(verify_feishu_signature(token, "1700000000", "nonce", body, &sign));
-        assert!(!verify_feishu_signature(token, "1700000001", "nonce", body, &sign));
-        assert!(!verify_feishu_signature("wrong", "1700000000", "nonce", body, &sign));
+        assert!(verify_feishu_signature(
+            token,
+            "1700000000",
+            "nonce",
+            body,
+            &sign
+        ));
+        assert!(!verify_feishu_signature(
+            token,
+            "1700000001",
+            "nonce",
+            body,
+            &sign
+        ));
+        assert!(!verify_feishu_signature(
+            "wrong",
+            "1700000000",
+            "nonce",
+            body,
+            &sign
+        ));
     }
 
     #[test]

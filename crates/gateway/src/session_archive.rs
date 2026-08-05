@@ -104,8 +104,7 @@ impl SessionArchiver {
     /// Create an archiver using the default archive directory under the data
     /// local dir.
     pub fn default_path() -> Result<Self, AppError> {
-        let base = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."));
+        let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
         Self::new(base.join(DEFAULT_ARCHIVE_DIR))
     }
 
@@ -133,7 +132,9 @@ impl SessionArchiver {
             .map_err(|e| AppError::internal(format!("Failed to write archive: {e}")))?;
 
         let meta = snapshot.meta.clone();
-        self.index.write().insert(session_id.to_string(), meta.clone());
+        self.index
+            .write()
+            .insert(session_id.to_string(), meta.clone());
         info!(session_id = %session_id, path = %path.display(), "Session archived");
         Ok(meta)
     }
@@ -232,7 +233,10 @@ mod tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("opensquilla-archive-test-{tag}-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!(
+            "opensquilla-archive-test-{tag}-{}",
+            uuid::Uuid::new_v4()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -259,12 +263,8 @@ mod tests {
     fn test_archive_overwrites() {
         let dir = temp_dir("overwrite");
         let archiver = SessionArchiver::new(&dir).unwrap();
-        archiver
-            .archive("s1", serde_json::json!({"v": 1}))
-            .unwrap();
-        archiver
-            .archive("s1", serde_json::json!({"v": 2}))
-            .unwrap();
+        archiver.archive("s1", serde_json::json!({"v": 1})).unwrap();
+        archiver.archive("s1", serde_json::json!({"v": 2})).unwrap();
         let restored = archiver.restore("s1").unwrap();
         assert_eq!(restored.payload["v"], 2);
         assert_eq!(archiver.len(), 1);
@@ -275,9 +275,7 @@ mod tests {
     fn test_delete_archive() {
         let dir = temp_dir("delete");
         let archiver = SessionArchiver::new(&dir).unwrap();
-        archiver
-            .archive("s1", serde_json::json!({}))
-            .unwrap();
+        archiver.archive("s1", serde_json::json!({})).unwrap();
         assert!(archiver.delete("s1").unwrap());
         assert!(!archiver.delete("s1").unwrap());
         assert!(archiver.restore("s1").is_err());

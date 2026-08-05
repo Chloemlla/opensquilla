@@ -183,15 +183,10 @@ impl CommandRegistry {
     /// existing registration.
     pub fn register(&mut self, command: Command) -> Result<(), String> {
         if self.commands.contains_key(&command.name) {
-            return Err(format!(
-                "command '/{}' is already registered",
-                command.name
-            ));
+            return Err(format!("command '/{}' is already registered", command.name));
         }
         for alias in &command.aliases {
-            if self.commands.contains_key(alias)
-                || self.alias_index.contains_key(alias)
-            {
+            if self.commands.contains_key(alias) || self.alias_index.contains_key(alias) {
                 return Err(format!(
                     "alias '/{}' collides with an existing registration",
                     alias
@@ -209,9 +204,11 @@ impl CommandRegistry {
 
     /// Look up a command by canonical name (without leading slash).
     pub fn get(&self, name: &str) -> Option<&Command> {
-        self.commands
-            .get(name)
-            .or_else(|| self.alias_index.get(name).and_then(|n| self.commands.get(n)))
+        self.commands.get(name).or_else(|| {
+            self.alias_index
+                .get(name)
+                .and_then(|n| self.commands.get(n))
+        })
     }
 
     /// Resolve a command invocation string such as `/clear` or `/help`.
@@ -277,7 +274,9 @@ mod tests {
             .unwrap();
         registry
             .register(
-                Command::new("model", "Switch model").category(CommandCategory::Model).remote(),
+                Command::new("model", "Switch model")
+                    .category(CommandCategory::Model)
+                    .remote(),
             )
             .unwrap();
         registry
@@ -324,7 +323,11 @@ mod tests {
         let mut registry = CommandRegistry::new();
         registry.register(Command::new("clear", "a")).unwrap();
         assert!(registry.register(Command::new("clear", "b")).is_err());
-        assert!(registry.register(Command::new("clr", "c").alias("clear")).is_err());
+        assert!(
+            registry
+                .register(Command::new("clr", "c").alias("clear"))
+                .is_err()
+        );
     }
 
     #[test]

@@ -179,8 +179,7 @@ impl SessionServicesBuilder {
         let memory = match self.memory {
             Some(m) => m,
             None => Arc::new(
-                MemoryHandle::in_memory()
-                    .expect("in-memory memory store should always construct"),
+                MemoryHandle::in_memory().expect("in-memory memory store should always construct"),
             ),
         };
         SessionServices {
@@ -327,10 +326,7 @@ mod tests {
         registry.set("s1", custom);
 
         assert_eq!(
-            registry
-                .get("s1")
-                .providers
-                .available_models(),
+            registry.get("s1").providers.available_models(),
             vec!["custom-model".to_string()]
         );
         // Unknown session falls back to default.

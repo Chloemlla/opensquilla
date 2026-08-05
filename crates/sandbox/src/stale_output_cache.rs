@@ -331,8 +331,8 @@ impl StaleOutputCache {
 
     async fn persist_index_impl(&self) -> Result<(), String> {
         let index = self.index.read().await;
-        let json = serde_json::to_vec(&*index)
-            .map_err(|e| format!("index serialization failed: {e}"))?;
+        let json =
+            serde_json::to_vec(&*index).map_err(|e| format!("index serialization failed: {e}"))?;
         if let Some(parent) = self.index_path().parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -354,10 +354,10 @@ impl StaleOutputCache {
         if !path.exists() {
             return Ok(());
         }
-        let content = std::fs::read_to_string(&path)
-            .map_err(|e| format!("index read failed: {e}"))?;
-        let entries: HashMap<String, CacheEntry> = serde_json::from_str(&content)
-            .map_err(|e| format!("index parse failed: {e}"))?;
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| format!("index read failed: {e}"))?;
+        let entries: HashMap<String, CacheEntry> =
+            serde_json::from_str(&content).map_err(|e| format!("index parse failed: {e}"))?;
         // Only keep entries whose files still exist; drop the rest. Uses
         // try_write so a cache constructed inside a running runtime never
         // blocks the current thread.

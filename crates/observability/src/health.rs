@@ -192,9 +192,7 @@ impl HealthRegistry {
         let issues = aggregate_issues(&components);
         let status = overall_status(&components);
 
-        let uptime = (Utc::now() - self.start_time)
-            .num_seconds()
-            .max(0) as u64;
+        let uptime = (Utc::now() - self.start_time).num_seconds().max(0) as u64;
 
         HealthReport {
             status,
@@ -245,9 +243,15 @@ fn aggregate_issues(components: &[ComponentHealth]) -> Vec<HealthIssue> {
 
 /// Compute the overall status from component health results.
 fn overall_status(components: &[ComponentHealth]) -> HealthStatus {
-    if components.iter().any(|c| c.status == HealthStatus::Unhealthy) {
+    if components
+        .iter()
+        .any(|c| c.status == HealthStatus::Unhealthy)
+    {
         HealthStatus::Unhealthy
-    } else if components.iter().any(|c| c.status == HealthStatus::Degraded) {
+    } else if components
+        .iter()
+        .any(|c| c.status == HealthStatus::Degraded)
+    {
         HealthStatus::Degraded
     } else {
         HealthStatus::Healthy

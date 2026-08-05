@@ -97,11 +97,7 @@ pub struct TurnData {
 
 impl TurnData {
     /// Create a new turn payload.
-    pub fn new(
-        session_id: SessionId,
-        agent_id: Uuid,
-        messages: Vec<Message>,
-    ) -> Self {
+    pub fn new(session_id: SessionId, agent_id: Uuid, messages: Vec<Message>) -> Self {
         Self {
             turn_id: None,
             session_id,
@@ -320,8 +316,12 @@ impl TurnCapture {
     pub fn capture_batch(&self, turns: Vec<TurnData>) -> CoreResult<TurnCaptureStats> {
         let mut stats = TurnCaptureStats::default();
         for turn in turns {
-            match self.capture_turn(turn.session_id, turn.agent_id, &turn.messages, turn.metadata)
-            {
+            match self.capture_turn(
+                turn.session_id,
+                turn.agent_id,
+                &turn.messages,
+                turn.metadata,
+            ) {
                 Ok(ids) => {
                     stats.turns_captured += 1;
                     stats.memories_created += ids.len() as u64;
@@ -439,7 +439,10 @@ impl TurnCapture {
                 touched += 1;
             }
         }
-        debug!("Updated memory index for {}: {} memories touched", turn_id, touched);
+        debug!(
+            "Updated memory index for {}: {} memories touched",
+            turn_id, touched
+        );
         Ok(touched)
     }
 
@@ -506,10 +509,9 @@ impl TurnCapture {
                             truncate(&result.content, self.config.max_content_len)
                         ));
                     } else if !text.is_empty() {
-                        signals.tool_results.push(truncate(
-                            &text,
-                            self.config.max_content_len,
-                        ));
+                        signals
+                            .tool_results
+                            .push(truncate(&text, self.config.max_content_len));
                     }
                 }
                 MessageRole::System => {
@@ -790,19 +792,27 @@ mod tests {
         let agent = Uuid::new_v4();
         let session = SessionId::new();
         let turns = vec![
-            TurnData::new(session, agent, vec![
-                user("Turn one: remember I like rust"),
-                assistant("Noted."),
-            ]),
-            TurnData::new(session, agent, vec![
-                user("Turn two: remember I prefer tokio"),
-                assistant("Noted."),
-            ]),
+            TurnData::new(
+                session,
+                agent,
+                vec![user("Turn one: remember I like rust"), assistant("Noted.")],
+            ),
+            TurnData::new(
+                session,
+                agent,
+                vec![
+                    user("Turn two: remember I prefer tokio"),
+                    assistant("Noted."),
+                ],
+            ),
         ];
         let stats = capture.capture_batch(turns).unwrap();
         assert_eq!(stats.turns_captured, 2);
         assert!(stats.memories_created >= 4);
-        assert_eq!(store.list_memories(&agent, None, 100, 0).unwrap().len(), stats.memories_created as usize);
+        assert_eq!(
+            store.list_memories(&agent, None, 100, 0).unwrap().len(),
+            stats.memories_created as usize
+        );
     }
 
     #[test]
@@ -816,10 +826,26 @@ mod tests {
             tool_message("search_files", "found 3 files"),
         ];
         let points = capture.extract_key_points(session, &messages);
-        assert!(points.iter().any(|p| p.category == KeyPointCategory::UserIntent));
-        assert!(points.iter().any(|p| p.category == KeyPointCategory::ToolCall));
-        assert!(points.iter().any(|p| p.category == KeyPointCategory::Preference));
-        assert!(points.iter().any(|p| p.category == KeyPointCategory::ToolResult));
+        assert!(
+            points
+                .iter()
+                .any(|p| p.category == KeyPointCategory::UserIntent)
+        );
+        assert!(
+            points
+                .iter()
+                .any(|p| p.category == KeyPointCategory::ToolCall)
+        );
+        assert!(
+            points
+                .iter()
+                .any(|p| p.category == KeyPointCategory::Preference)
+        );
+        assert!(
+            points
+                .iter()
+                .any(|p| p.category == KeyPointCategory::ToolResult)
+        );
     }
 
     #[test]
@@ -828,10 +854,7 @@ mod tests {
         let capture = TurnCapture::new(store.clone());
         let agent = Uuid::new_v4();
         let session = SessionId::new();
-        let messages = vec![
-            user("I prefer dark mode"),
-            assistant("Got it."),
-        ];
+        let messages = vec![user("I prefer dark mode"), assistant("Got it.")];
         let ids = capture
             .capture_turn_detailed(session, agent, &messages, serde_json::json!({}))
             .unwrap();
@@ -846,11 +869,10 @@ mod tests {
         let capture = TurnCapture::new(store.clone());
         let agent = Uuid::new_v4();
         let session = SessionId::new();
-        let messages = vec![
-            user("remember something"),
-            assistant("ok"),
-        ];
-        capture.capture_turn(session, agent, &messages, serde_json::json!({})).unwrap();
+        let messages = vec![user("remember something"), assistant("ok")];
+        capture
+            .capture_turn(session, agent, &messages, serde_json::json!({}))
+            .unwrap();
         let touched = capture.update_memory_index(&session.to_string()).unwrap();
         assert!(touched >= 1);
     }

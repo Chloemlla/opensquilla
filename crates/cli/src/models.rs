@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use opensquilla_core::config::Config;
-use opensquilla_provider::model_catalog::{seed_static, ModelCatalog};
+use opensquilla_provider::model_catalog::{ModelCatalog, seed_static};
 
 use crate::util;
 
@@ -143,9 +143,5 @@ fn print_capabilities(catalog: &ModelCatalog, backend: &str, model: &str) {
 }
 
 fn yes_no(b: bool) -> &'static str {
-    if b {
-        "yes"
-    } else {
-        "no"
-    }
+    if b { "yes" } else { "no" }
 }

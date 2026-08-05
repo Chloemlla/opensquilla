@@ -58,9 +58,9 @@ pub async fn start_gateway_inner(
     // If the gateway is already running, return its current status.
     if state.is_gateway_running().await {
         let url = state.gateway_url().await;
-        let port = url.as_ref().and_then(|u| {
-            u.rsplit(':').next().and_then(|p| p.parse::<u16>().ok())
-        });
+        let port = url
+            .as_ref()
+            .and_then(|u| u.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()));
         return Ok(GatewayStatusResponse {
             running: true,
             url,
@@ -244,16 +244,19 @@ pub async fn stop_gateway_inner(
 
 /// Query the current gateway status.
 #[tauri::command]
-pub async fn gateway_status(
-    state: State<'_, AppState>,
-) -> TauriResult<GatewayStatusResponse> {
+pub async fn gateway_status(state: State<'_, AppState>) -> TauriResult<GatewayStatusResponse> {
     let running = state.is_gateway_running().await;
     let url = state.gateway_url().await;
-    let port = url.as_ref().and_then(|u| {
-        u.rsplit(':').next().and_then(|p| p.parse::<u16>().ok())
-    });
+    let port = url
+        .as_ref()
+        .and_then(|u| u.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()));
 
-    Ok(GatewayStatusResponse { running, url, port, error: None })
+    Ok(GatewayStatusResponse {
+        running,
+        url,
+        port,
+        error: None,
+    })
 }
 
 /// Restart the gateway (stop then start).
@@ -271,9 +274,7 @@ pub async fn restart_gateway(
 /// This is a convenience command for the frontend to discover the gateway's
 /// WebSocket endpoint for direct WS connections.
 #[tauri::command]
-pub async fn get_gateway_url(
-    state: State<'_, AppState>,
-) -> TauriResult<Option<String>> {
+pub async fn get_gateway_url(state: State<'_, AppState>) -> TauriResult<Option<String>> {
     Ok(state.gateway_url().await)
 }
 

@@ -165,8 +165,11 @@ pub enum CompactionEvent {
 /// [`ExtractiveSummarizer`] is the built-in fallback.
 #[async_trait::async_trait]
 pub trait SessionSummarizer: Send + Sync {
-    async fn summarize(&self, entries: &[TranscriptEntry], session: &Session)
-        -> Result<String, String>;
+    async fn summarize(
+        &self,
+        entries: &[TranscriptEntry],
+        session: &Session,
+    ) -> Result<String, String>;
 }
 
 /// Deterministic, dependency-free summarizer that extracts the first line of
@@ -469,7 +472,10 @@ impl CompactionPlanner {
             }
             _ => {
                 let split = n.saturating_sub(keep);
-                (un_compacted[..split].to_vec(), un_compacted[split..].to_vec())
+                (
+                    un_compacted[..split].to_vec(),
+                    un_compacted[split..].to_vec(),
+                )
             }
         };
 
@@ -540,10 +546,7 @@ impl CompactionExecutor {
 
     /// Snapshot of events recorded since construction.
     pub fn recent_events(&self) -> Vec<CompactionEvent> {
-        self.events
-            .lock()
-            .map(|e| e.clone())
-            .unwrap_or_default()
+        self.events.lock().map(|e| e.clone()).unwrap_or_default()
     }
 
     fn record(&self, event: CompactionEvent) {
@@ -730,7 +733,10 @@ impl CompactionExecutor {
             CompactionStrategy::KeepLast => {
                 let keep = count.min(n);
                 let split = n.saturating_sub(keep);
-                (un_compacted[..split].to_vec(), un_compacted[split..].to_vec())
+                (
+                    un_compacted[..split].to_vec(),
+                    un_compacted[split..].to_vec(),
+                )
             }
             CompactionStrategy::TruncateToBudget => {
                 let mut to_compact = Vec::new();
@@ -962,9 +968,7 @@ mod tests {
             .with_threshold(100)
             .with_target_budget(1024)
             .with_keep_last(2);
-        let strategy = planner
-            .select_strategy(&session, &entries, 1024)
-            .unwrap();
+        let strategy = planner.select_strategy(&session, &entries, 1024).unwrap();
         // KeepLast keeps 2 entries (1000 tokens) which fits under 1024 and is
         // less destructive than Summarize for this tiny case... but Summarize
         // fits too, so it should win. Either way it must not be DropOldest.
@@ -1016,15 +1020,16 @@ mod tests {
         assert_eq!(report.tokens_after, 200);
 
         // Oldest three entries should now be marked compacted.
-        let entries = executor
-            .storage
-            .list_by_session(&session.id)
-            .unwrap();
+        let entries = executor.storage.list_by_session(&session.id).unwrap();
         let compacted_count = entries.iter().filter(|e| e.compacted).count();
         assert_eq!(compacted_count, 3);
 
         // An active summary should exist with the marker text.
-        let summary = executor.storage.get_active_summary(&session.id).unwrap().unwrap();
+        let summary = executor
+            .storage
+            .get_active_summary(&session.id)
+            .unwrap()
+            .unwrap();
         assert!(summary.summary.contains("compacted 3 entries"));
     }
 
@@ -1063,13 +1068,12 @@ mod tests {
         storage.create_session(&session).unwrap();
         seed_entries(&storage, &session.id, 6, 100);
 
-        let executor = CompactionExecutor::new(storage)
-            .with_planner(
-                CompactionPlanner::new()
-                    .with_threshold(50)
-                    .with_target_budget(400)
-                    .with_keep_last(1),
-            );
+        let executor = CompactionExecutor::new(storage).with_planner(
+            CompactionPlanner::new()
+                .with_threshold(50)
+                .with_target_budget(400)
+                .with_keep_last(1),
+        );
         let report = executor.summarize(&session.id).await.unwrap();
         assert_eq!(report.status, "completed");
         assert!(report.entries_compacted > 0);
@@ -1077,10 +1081,18 @@ mod tests {
 
         // Event recording captured the run.
         let events = executor.recent_events();
-        assert!(events.iter().any(|e| matches!(e, CompactionEvent::Completed { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, CompactionEvent::Completed { .. }))
+        );
 
         // Context state should reference the new summary.
-        let ctx = executor.storage.get_context_state(&session.id).unwrap().unwrap();
+        let ctx = executor
+            .storage
+            .get_context_state(&session.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(ctx.active_summary_id, report.summary_id);
     }
 

@@ -170,20 +170,14 @@ impl SseDelta {
                         let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
                         match block_type {
                             "text" => {
-                                let text = block
-                                    .get("text")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
+                                let text = block.get("text").and_then(|v| v.as_str()).unwrap_or("");
                                 if !text.is_empty() {
                                     return Some(SseDelta::Text(text.to_string()));
                                 }
                             }
                             "tool_use" => {
                                 let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                let name = block
-                                    .get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
+                                let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
                                 if !id.is_empty() || !name.is_empty() {
                                     return Some(SseDelta::ToolCallBegin {
                                         id: id.to_string(),
@@ -200,10 +194,7 @@ impl SseDelta {
                         let delta_type = delta.get("type").and_then(|v| v.as_str()).unwrap_or("");
                         match delta_type {
                             "text_delta" => {
-                                let text = delta
-                                    .get("text")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("");
+                                let text = delta.get("text").and_then(|v| v.as_str()).unwrap_or("");
                                 if !text.is_empty() {
                                     return Some(SseDelta::Text(text.to_string()));
                                 }
@@ -244,8 +235,7 @@ impl SseDelta {
                 }
                 "response.output_item.added" => {
                     if let Some(item) = value.get("item") {
-                        let item_type =
-                            item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                        let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
                         if item_type == "function_call" {
                             let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
                             let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -476,7 +466,10 @@ mod tests {
     #[test]
     fn test_reasoning_then_text_flushes_reasoning() {
         let mut asm = StreamAssembler::new();
-        assert!(asm.push_delta(&SseDelta::Reasoning("think".into())).is_empty());
+        assert!(
+            asm.push_delta(&SseDelta::Reasoning("think".into()))
+                .is_empty()
+        );
         let blocks = asm.push_delta(&SseDelta::Text("answer".into()));
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
@@ -491,15 +484,17 @@ mod tests {
     #[test]
     fn test_tool_call_assembly_across_deltas() {
         let mut asm = StreamAssembler::new();
-        assert!(asm
-            .push_delta(&SseDelta::ToolCallBegin {
+        assert!(
+            asm.push_delta(&SseDelta::ToolCallBegin {
                 id: "call_1".into(),
                 name: "get_weather".into(),
             })
-            .is_empty());
-        assert!(asm
-            .push_delta(&SseDelta::ToolCallDelta(r#"{"loc"#.into()))
-            .is_empty());
+            .is_empty()
+        );
+        assert!(
+            asm.push_delta(&SseDelta::ToolCallDelta(r#"{"loc"#.into()))
+                .is_empty()
+        );
         let blocks = asm.push_delta(&SseDelta::ToolCallDelta(r#"ation":"NYC"}"#.into()));
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
@@ -531,7 +526,10 @@ mod tests {
     #[test]
     fn test_finalize_flushes_pending_buffers() {
         let mut asm = StreamAssembler::new();
-        assert!(asm.push_delta(&SseDelta::Text("pending ".into())).is_empty());
+        assert!(
+            asm.push_delta(&SseDelta::Text("pending ".into()))
+                .is_empty()
+        );
         let blocks = asm.push_delta(&SseDelta::Reasoning("reason".into()));
         assert_eq!(blocks.len(), 1); // the pending text is flushed
         let blocks = asm.finalize();
@@ -603,7 +601,8 @@ mod tests {
 
     #[test]
     fn test_from_json_deepseek_reasoning() {
-        let data = r#"{"choices":[{"delta":{"reasoning_content":"thinking"},"finish_reason":null}]}"#;
+        let data =
+            r#"{"choices":[{"delta":{"reasoning_content":"thinking"},"finish_reason":null}]}"#;
         assert_eq!(
             SseDelta::from_json(data),
             Some(SseDelta::Reasoning("thinking".into()))
@@ -639,7 +638,8 @@ mod tests {
 
     #[test]
     fn test_from_json_anthropic_deltas() {
-        let data = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#;
+        let data =
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#;
         assert_eq!(SseDelta::from_json(data), Some(SseDelta::Text("Hi".into())));
 
         let data = r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{}}}"#;
@@ -667,7 +667,10 @@ mod tests {
     #[test]
     fn test_from_json_openai_responses_api() {
         let data = r#"{"type":"response.output_text.delta","delta":"Hello"}"#;
-        assert_eq!(SseDelta::from_json(data), Some(SseDelta::Text("Hello".into())));
+        assert_eq!(
+            SseDelta::from_json(data),
+            Some(SseDelta::Text("Hello".into()))
+        );
 
         let data = r#"{"type":"response.reasoning_summary_text.delta","delta":"think"}"#;
         assert_eq!(

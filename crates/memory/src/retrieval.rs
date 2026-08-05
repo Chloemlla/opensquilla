@@ -62,12 +62,7 @@ impl RetrievalEngine {
     }
 
     /// Search by FTS5 full-text search only.
-    pub fn search_fts(
-        &self,
-        query: &str,
-        limit: u64,
-        offset: u64,
-    ) -> CoreResult<Vec<MemoryEntry>> {
+    pub fn search_fts(&self, query: &str, limit: u64, offset: u64) -> CoreResult<Vec<MemoryEntry>> {
         self.store.search_fts(query, limit, offset)
     }
 
@@ -85,9 +80,11 @@ impl RetrievalEngine {
             .filter_map(|(memory_id, emb)| {
                 let similarity = cosine_similarity(query_embedding, &emb);
                 if similarity > 0.0 {
-                    self.store.get_memory(&memory_id).ok().flatten().map(|entry| {
-                        (entry, similarity)
-                    })
+                    self.store
+                        .get_memory(&memory_id)
+                        .ok()
+                        .flatten()
+                        .map(|entry| (entry, similarity))
                 } else {
                     None
                 }
@@ -145,9 +142,8 @@ impl RetrievalEngine {
                     // Access frequency boost.
                     let access_boost = (entry.access_count as f64).ln_1p() * 0.1;
 
-                    let combined_score = (alpha * vec_score + (1.0 - alpha) * fts_score)
-                        * time_boost
-                        + access_boost;
+                    let combined_score =
+                        (alpha * vec_score + (1.0 - alpha) * fts_score) * time_boost + access_boost;
 
                     Some((entry, combined_score))
                 } else {
@@ -202,10 +198,7 @@ impl RetrievalEngine {
             .iter()
             .map(|(_, s)| *s)
             .fold(f64::MIN, f64::max);
-        let max_bm25 = bm25_scored
-            .iter()
-            .map(|(_, s)| *s)
-            .fold(f64::MIN, f64::max);
+        let max_bm25 = bm25_scored.iter().map(|(_, s)| *s).fold(f64::MIN, f64::max);
 
         for (entry, score) in vector_scored {
             let normalized = if max_vec > 0.0 { score / max_vec } else { 0.0 };
@@ -363,7 +356,11 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
         return 0.0;
     }
 
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| *x as f64 * *y as f64).sum();
+    let dot: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| *x as f64 * *y as f64)
+        .sum();
     let norm_a: f64 = a.iter().map(|x| *x as f64 * *x as f64).sum::<f64>().sqrt();
     let norm_b: f64 = b.iter().map(|x| *x as f64 * *x as f64).sum::<f64>().sqrt();
 
@@ -428,8 +425,12 @@ mod tests {
         let store = MemoryStore::in_memory().unwrap();
         let engine = RetrievalEngine::new(store.clone());
         let agent_id = Uuid::new_v4();
-        store.insert_memory(&make_entry(agent_id, "Rust async runtime")).unwrap();
-        store.insert_memory(&make_entry(agent_id, "Python scripting")).unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "Rust async runtime"))
+            .unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "Python scripting"))
+            .unwrap();
 
         let results = engine.search_fts("rust", 10, 0).unwrap();
         assert!(!results.is_empty());
@@ -440,11 +441,21 @@ mod tests {
         let store = MemoryStore::in_memory().unwrap();
         let engine = RetrievalEngine::new(store.clone());
         let agent_id = Uuid::new_v4();
-        store.insert_memory(&make_entry(agent_id, "memory management in rust")).unwrap();
-        store.insert_memory(&make_entry(agent_id, "async tokio runtime")).unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "memory management in rust"))
+            .unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "async tokio runtime"))
+            .unwrap();
 
         let results = engine
-            .search("rust memory", None, Some(&agent_id), &MemoryFilters::default(), 10)
+            .search(
+                "rust memory",
+                None,
+                Some(&agent_id),
+                &MemoryFilters::default(),
+                10,
+            )
             .unwrap();
         // BM25 should find at least one hit.
         assert!(!results.is_empty());
@@ -457,8 +468,12 @@ mod tests {
         let engine = RetrievalEngine::new(store.clone());
         let agent_a = Uuid::new_v4();
         let agent_b = Uuid::new_v4();
-        store.insert_memory(&make_entry(agent_a, "tokio async")).unwrap();
-        store.insert_memory(&make_entry(agent_b, "tokio async")).unwrap();
+        store
+            .insert_memory(&make_entry(agent_a, "tokio async"))
+            .unwrap();
+        store
+            .insert_memory(&make_entry(agent_b, "tokio async"))
+            .unwrap();
 
         let filters = MemoryFilters {
             agent_id: Some(agent_a),

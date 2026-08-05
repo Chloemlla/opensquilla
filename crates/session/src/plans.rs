@@ -227,7 +227,10 @@ impl PlanStateMachine {
         };
 
         self.storage.insert_plan_revision(&revision)?;
-        info!("Created plan revision {} for session {}", revision.id, session_id);
+        info!(
+            "Created plan revision {} for session {}",
+            revision.id, session_id
+        );
         Ok(revision)
     }
 
@@ -340,7 +343,8 @@ impl PlanStateMachine {
             return Err(CoreError::InvalidInput(PlanError::NotActive.to_string()));
         }
 
-        self.storage.update_plan_status(plan_id, &PlanStatus::Superseded)?;
+        self.storage
+            .update_plan_status(plan_id, &PlanStatus::Superseded)?;
 
         let steps = parse_plan(&revision_text);
         let mut metadata = serde_json::json!({
@@ -364,7 +368,10 @@ impl PlanStateMachine {
             metadata,
         };
         self.storage.insert_plan_revision(&revision)?;
-        info!("Revised plan: new revision {} (v{})", revision.id, revision.version);
+        info!(
+            "Revised plan: new revision {} (v{})",
+            revision.id, revision.version
+        );
         Ok(revision)
     }
 
@@ -386,10 +393,14 @@ impl PlanStateMachine {
     pub fn cancel_plan(&self, revision_id: &Uuid) -> CoreResult<PlanRevision> {
         let current = self.get_revision(revision_id)?;
         if current.status == PlanStatus::Completed {
-            return Err(CoreError::InvalidInput(PlanError::AlreadyCompleted.to_string()));
+            return Err(CoreError::InvalidInput(
+                PlanError::AlreadyCompleted.to_string(),
+            ));
         }
         if current.status == PlanStatus::Cancelled {
-            return Err(CoreError::InvalidInput(PlanError::AlreadyCancelled.to_string()));
+            return Err(CoreError::InvalidInput(
+                PlanError::AlreadyCancelled.to_string(),
+            ));
         }
         self.storage
             .update_plan_status(revision_id, &PlanStatus::Cancelled)?;
@@ -426,7 +437,12 @@ impl PlanStateMachine {
     /// Load a revision plus its parsed steps.
     pub fn snapshot(&self, revision_id: &Uuid) -> CoreResult<PlanSnapshot> {
         let revision = self.get_revision(revision_id)?;
-        let steps = steps_from_value(revision.metadata.get("steps").unwrap_or(&serde_json::Value::Null));
+        let steps = steps_from_value(
+            revision
+                .metadata
+                .get("steps")
+                .unwrap_or(&serde_json::Value::Null),
+        );
         Ok(PlanSnapshot { revision, steps })
     }
 
@@ -498,7 +514,9 @@ impl PlanStateMachine {
         {
             let step = find_mut_step(&mut snapshot.steps, step_id)?;
             if step.status == PlanStepStatus::Completed {
-                return Err(CoreError::InvalidInput("Cannot reject a completed step".into()));
+                return Err(CoreError::InvalidInput(
+                    "Cannot reject a completed step".into(),
+                ));
             }
             step.status = PlanStepStatus::Rejected;
             step.approved_at = None;
@@ -728,11 +746,7 @@ impl PlanStateMachine {
 
     fn save_snapshot(&self, snapshot: &PlanSnapshot) -> CoreResult<()> {
         let mut revision = snapshot.revision.clone();
-        let mut meta = revision
-            .metadata
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let mut meta = revision.metadata.as_object().cloned().unwrap_or_default();
         meta.insert("steps".to_string(), steps_to_value(&snapshot.steps));
         revision.metadata = serde_json::Value::Object(meta);
         self.storage.update_plan_revision(&revision)
@@ -740,12 +754,9 @@ impl PlanStateMachine {
 }
 
 fn find_mut_step<'a>(steps: &'a mut [PlanStep], step_id: &str) -> CoreResult<&'a mut PlanStep> {
-    steps
-        .iter_mut()
-        .find(|s| s.id == step_id)
-        .ok_or_else(|| {
-            CoreError::InvalidInput(PlanError::StepNotFound(step_id.to_string()).to_string())
-        })
+    steps.iter_mut().find(|s| s.id == step_id).ok_or_else(|| {
+        CoreError::InvalidInput(PlanError::StepNotFound(step_id.to_string()).to_string())
+    })
 }
 
 /// Append an approval record to a snapshot's metadata before it is saved.
@@ -835,7 +846,11 @@ mod tests {
         m.activate_plan(&plan.id).unwrap();
 
         let revised = m
-            .revise_plan(&plan.id, "- revised approach\n- extra step", Some("scope change"))
+            .revise_plan(
+                &plan.id,
+                "- revised approach\n- extra step",
+                Some("scope change"),
+            )
             .unwrap();
         assert_eq!(revised.version, 2);
         assert_eq!(revised.parent_revision_id, Some(plan.id));
@@ -885,9 +900,7 @@ mod tests {
     fn step_ops_require_active_plan() {
         let m = machine();
         let session_id = Uuid::new_v4();
-        let plan = m
-            .create_plan_from_goal(session_id, "- step")
-            .unwrap();
+        let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         // Draft plan: approvals are not allowed.
         assert!(m.approve_step(&plan.id, "1", None).is_err());
     }
@@ -922,18 +935,14 @@ mod tests {
         assert!(report.duration_ms >= 0);
 
         // Finishing an already-finished run fails.
-        assert!(m
-            .complete_run(&run.id, serde_json::Value::Null)
-            .is_err());
+        assert!(m.complete_run(&run.id, serde_json::Value::Null).is_err());
     }
 
     #[test]
     fn run_fail_and_cancel() {
         let m = machine();
         let session_id = Uuid::new_v4();
-        let plan = m
-            .create_plan_from_goal(session_id, "- step")
-            .unwrap();
+        let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         m.activate_plan(&plan.id).unwrap();
 
         let run = m.create_run(&plan.id).unwrap();
@@ -952,9 +961,7 @@ mod tests {
     fn list_revisions_orders_newest_first() {
         let m = machine();
         let session_id = Uuid::new_v4();
-        let plan = m
-            .create_plan_from_goal(session_id, "- step")
-            .unwrap();
+        let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         m.activate_plan(&plan.id).unwrap();
         m.revise_plan(&plan.id, "- revised", None).unwrap();
 

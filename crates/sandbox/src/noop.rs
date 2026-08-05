@@ -45,7 +45,8 @@ impl NoopSandbox {
         working_dir: Option<&str>,
         policy: &SandboxPolicy,
     ) -> Result<SandboxResult, String> {
-        self.run(command, args, Some(env), working_dir, policy).await
+        self.run(command, args, Some(env), working_dir, policy)
+            .await
     }
 
     /// The noop sandbox is always "available".
@@ -254,7 +255,7 @@ async fn kill_process_group(child_id: Option<u32>) {
     #[cfg(unix)]
     {
         if let Some(id) = child_id {
-            use nix::sys::signal::{killpg, Signal};
+            use nix::sys::signal::{Signal, killpg};
             use nix::unistd::Pid;
             let _ = killpg(Pid::from_raw(id as i32), Signal::SIGKILL);
         }

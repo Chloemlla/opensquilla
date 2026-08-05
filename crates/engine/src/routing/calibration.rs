@@ -14,7 +14,7 @@
 //! * the adjusted `confidence_threshold` stays within `[0.3, 0.7]`
 //! * the stored threshold adjustment stays within `[-0.20, 0.20]`
 
-use crate::routing::{normalize_text_tier, TEXT_TIERS};
+use crate::routing::{TEXT_TIERS, normalize_text_tier};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -99,7 +99,11 @@ fn finite_float(value: &serde_json::Value) -> Option<f64> {
 pub fn effective_threshold(base: f64, state: Option<&CalibrationState>) -> f64 {
     match state {
         None => base,
-        Some(state) => clamp(base + state.threshold_adjust, THRESHOLD_FLOOR, THRESHOLD_CEIL),
+        Some(state) => clamp(
+            base + state.threshold_adjust,
+            THRESHOLD_FLOOR,
+            THRESHOLD_CEIL,
+        ),
     }
 }
 
@@ -130,7 +134,10 @@ fn stage_applied(trail: &serde_json::Value, stage: &str) -> bool {
     };
     arr.iter().any(|entry| {
         entry.get("stage").and_then(|v| v.as_str()) == Some(stage)
-            && entry.get("applied").and_then(|v| v.as_bool()).unwrap_or(false)
+            && entry
+                .get("applied")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
     })
 }
 
@@ -146,11 +153,9 @@ fn record_signals(record: &serde_json::Value) -> (bool, bool, bool) {
     let flags = record.get("flags");
     let source = record.get("source").and_then(|v| v.as_str());
 
-    let gated = trail
-        .map_or(false, |t| stage_applied(t, "confidence_gate"))
+    let gated = trail.map_or(false, |t| stage_applied(t, "confidence_gate"))
         || flags.map_or(false, |f| flag_present(f, "confidence_gate_applied"));
-    let complained = trail
-        .map_or(false, |t| stage_applied(t, "complaint_upgrade"))
+    let complained = trail.map_or(false, |t| stage_applied(t, "complaint_upgrade"))
         || flags.map_or(false, |f| flag_present(f, "complaint_upgrade_applied"));
     let pinned = source == Some("router_control_hold")
         || flags.map_or(false, |f| flag_present(f, "router_control_hold_applied"))
@@ -325,7 +330,9 @@ pub fn save_calibration(
     state: &CalibrationState,
     path: Option<&Path>,
 ) -> Result<PathBuf, opensquilla_core::error::Error> {
-    let path = path.map(|p| p.to_path_buf()).unwrap_or_else(calibration_path);
+    let path = path
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(calibration_path);
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;

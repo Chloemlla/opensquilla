@@ -12,33 +12,31 @@
 //! - [`session_source`]— session-derived memory documents
 //! - [`profile_import`]— external config import (JSON/YAML/TOML + LLM)
 
-pub mod types;
-pub mod store;
-pub mod embedding;
-pub mod retrieval;
-pub mod manager;
-pub mod sync;
 pub mod dream;
-pub mod turn_capture;
-pub mod session_source;
+pub mod embedding;
+pub mod manager;
 pub mod profile_import;
+pub mod retrieval;
+pub mod session_source;
+pub mod store;
+pub mod sync;
+pub mod turn_capture;
+pub mod types;
 
-pub use store::MemoryStore;
-pub use embedding::{EmbeddingProvider, EmbeddingConfig};
-pub use retrieval::RetrievalEngine;
+pub use dream::{DreamConfig, DreamConsolidator, DreamEngine, DreamEvent, DreamSummary};
+pub use embedding::{EmbeddingConfig, EmbeddingProvider};
 pub use manager::MemoryManager;
-pub use sync::{SyncManager, SyncConfig, SyncStats, FileWatcher};
-pub use dream::{DreamEngine, DreamConfig, DreamEvent, DreamSummary, DreamConsolidator};
-pub use turn_capture::{
-    TurnCapture, TurnCaptureConfig, TurnSignals, TurnData, TurnCaptureStats,
-};
-pub use session_source::{
-    SessionSource, SessionSourceConfig, SessionMemoryDoc, SessionMemorySource, MemoryDocument,
-};
 pub use profile_import::{
-    ProfileImporter, ProfileImporterConfig, ImportSource, ExtractedMemory, ImportSummary,
-    ImportResult, ImportPlan, ConfigType, ProfileDetector,
+    ConfigType, ExtractedMemory, ImportPlan, ImportResult, ImportSource, ImportSummary,
+    ProfileDetector, ProfileImporter, ProfileImporterConfig,
 };
+pub use retrieval::RetrievalEngine;
+pub use session_source::{
+    MemoryDocument, SessionMemoryDoc, SessionMemorySource, SessionSource, SessionSourceConfig,
+};
+pub use store::MemoryStore;
+pub use sync::{FileWatcher, SyncConfig, SyncManager, SyncStats};
+pub use turn_capture::{TurnCapture, TurnCaptureConfig, TurnCaptureStats, TurnData, TurnSignals};
 
 // Re-export the canonical types at the crate root for convenience.
-pub use types::{MemoryEntry, MemoryChunk, MemoryQuery, MemorySearchResult, MemoryFilters};
+pub use types::{MemoryChunk, MemoryEntry, MemoryFilters, MemoryQuery, MemorySearchResult};

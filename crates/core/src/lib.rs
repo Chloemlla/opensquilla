@@ -49,4 +49,6 @@ pub use model::{
     ProviderSpec,
 };
 
-pub use events::{ContentBlockDelta, GatewayEvent, MessageDelta, StreamEvent, ToolEvent, TurnEvent};
+pub use events::{
+    ContentBlockDelta, GatewayEvent, MessageDelta, StreamEvent, ToolEvent, TurnEvent,
+};

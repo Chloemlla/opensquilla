@@ -266,7 +266,10 @@ impl SessionNamer {
         let first = first_message_text(entries);
         template
             .replace("{session_id}", &session.id.to_string())
-            .replace("{short_id}", &session.id.to_string()[..8.min(session.id.to_string().len())])
+            .replace(
+                "{short_id}",
+                &session.id.to_string()[..8.min(session.id.to_string().len())],
+            )
             .replace("{agent_id}", &session.agent_id.to_string())
             .replace(
                 "{created_at}",
@@ -274,10 +277,7 @@ impl SessionNamer {
             )
             .replace("{first_message}", &first)
             .replace("{message_count}", &session.message_count.to_string())
-            .replace(
-                "{mode}",
-                &format!("{:?}", session.mode).to_lowercase(),
-            )
+            .replace("{mode}", &format!("{:?}", session.mode).to_lowercase())
     }
 }
 
@@ -294,7 +294,14 @@ fn first_message_text(entries: &[TranscriptEntry]) -> String {
     }
     entries
         .first()
-        .map(|e| e.content.lines().next().unwrap_or(&e.content).trim().to_string())
+        .map(|e| {
+            e.content
+                .lines()
+                .next()
+                .unwrap_or(&e.content)
+                .trim()
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
@@ -369,23 +376,26 @@ mod tests {
     }
 
     fn seed_session(namer: &SessionNamer, name: &str, messages: &[&str]) -> Uuid {
-        let session = namer.storage.create_session(&Session {
-            id: Uuid::new_v4(),
-            agent_id: Uuid::new_v4(),
-            name: name.to_string(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            last_active_at: Utc::now(),
-            status: SessionStatus::Active,
-            mode: SessionMode::Chat,
-            system_prompt: String::new(),
-            total_tokens: 0,
-            total_cost_usd: 0.0,
-            message_count: messages.len() as u64,
-            parent_session_id: None,
-            fork_event: None,
-            metadata: serde_json::Value::Null,
-        }).unwrap();
+        let session = namer
+            .storage
+            .create_session(&Session {
+                id: Uuid::new_v4(),
+                agent_id: Uuid::new_v4(),
+                name: name.to_string(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                last_active_at: Utc::now(),
+                status: SessionStatus::Active,
+                mode: SessionMode::Chat,
+                system_prompt: String::new(),
+                total_tokens: 0,
+                total_cost_usd: 0.0,
+                message_count: messages.len() as u64,
+                parent_session_id: None,
+                fork_event: None,
+                metadata: serde_json::Value::Null,
+            })
+            .unwrap();
         for (i, msg) in messages.iter().enumerate() {
             let entry = TranscriptEntry {
                 id: Uuid::new_v4(),

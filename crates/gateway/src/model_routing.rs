@@ -182,10 +182,7 @@ impl ModelRouter {
 
         // 1. Per-session hold.
         if let Some(hold) = self.store.get_hold(&request.session_id) {
-            let expired = hold
-                .expires_at
-                .map(|exp| Utc::now() > exp)
-                .unwrap_or(false);
+            let expired = hold.expires_at.map(|exp| Utc::now() > exp).unwrap_or(false);
             if !expired {
                 let outcome = RouteOutcome {
                     session_id: request.session_id.clone(),
@@ -282,10 +279,7 @@ impl ModelRouter {
     }
 
     /// Resolve the highest-priority matching rule, if any.
-    fn best_rule(
-        &self,
-        request: &RouteRequest,
-    ) -> Option<(&RoutingRule, usize)> {
+    fn best_rule(&self, request: &RouteRequest) -> Option<(&RoutingRule, usize)> {
         let config = self.config.read();
         let mut best: Option<(&RoutingRule, usize)> = None;
         for (idx, rule) in config.rules.iter().enumerate() {
@@ -442,7 +436,13 @@ mod tests {
     #[test]
     fn test_route_hold_overrides() {
         let router = default_router();
-        router.hold_session("s1", "claude-sonnet-4", Some("anthropic".into()), "test", None);
+        router.hold_session(
+            "s1",
+            "claude-sonnet-4",
+            Some("anthropic".into()),
+            "test",
+            None,
+        );
         let request = RouteRequest {
             session_id: "s1".into(),
             requested_model: Some("gpt-4o".into()),

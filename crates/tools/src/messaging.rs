@@ -10,11 +10,13 @@
 //! `send_message` implementation so delivery failures surface to the caller
 //! (rather than the fire-and-forget `ChannelManager::send`).
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
-use opensquilla_channels::manager::ChannelManager;
 use opensquilla_channels::Channel;
 use opensquilla_channels::OutgoingMessage;
+use opensquilla_channels::manager::ChannelManager;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -47,7 +49,9 @@ impl Tool for SendMessageTool {
                 HashMap::from([
                     (
                         "channel_id".to_string(),
-                        ParameterDefinition::required_string("The registered channel ID to send to"),
+                        ParameterDefinition::required_string(
+                            "The registered channel ID to send to",
+                        ),
                     ),
                     (
                         "text".to_string(),
@@ -100,10 +104,12 @@ impl Tool for SendMessageTool {
         // Deliver through the channel's real send_message so delivery errors
         // (auth, rate limit, network) are returned to the caller instead of
         // being silently logged by the fire-and-forget manager path.
-        handle
-            .send_message(&message)
-            .await
-            .map_err(|e| ToolError::new("SEND_FAILED", format!("Failed to send to '{}': {}", channel_id, e)))?;
+        handle.send_message(&message).await.map_err(|e| {
+            ToolError::new(
+                "SEND_FAILED",
+                format!("Failed to send to '{}': {}", channel_id, e),
+            )
+        })?;
 
         let data = serde_json::json!({
             "channel_id": channel_id,

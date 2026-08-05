@@ -208,11 +208,7 @@ impl InputStage {
             return None;
         }
         let result = self.injection_guard.scan(text);
-        if result.detected {
-            Some(result)
-        } else {
-            None
-        }
+        if result.detected { Some(result) } else { None }
     }
 
     /// Detect prompt-injection patterns in the input.
@@ -402,23 +398,22 @@ impl Stage for InputStage {
             .unwrap_or_default();
 
         #[cfg(feature = "safety")]
-        let (injection_detected, injection_severity, injection_pattern) = if let Some(result) =
-            self.detect_injection(&input_text)
-        {
-            tracing::warn!(
-                turn_id = %ctx.turn_id,
-                severity = ?result.severity,
-                pattern = ?result.pattern,
-                "input stage: prompt-injection pattern detected"
-            );
-            (
-                true,
-                Some(format!("{:?}", result.severity)),
-                result.pattern.clone(),
-            )
-        } else {
-            (false, None, None)
-        };
+        let (injection_detected, injection_severity, injection_pattern) =
+            if let Some(result) = self.detect_injection(&input_text) {
+                tracing::warn!(
+                    turn_id = %ctx.turn_id,
+                    severity = ?result.severity,
+                    pattern = ?result.pattern,
+                    "input stage: prompt-injection pattern detected"
+                );
+                (
+                    true,
+                    Some(format!("{:?}", result.severity)),
+                    result.pattern.clone(),
+                )
+            } else {
+                (false, None, None)
+            };
 
         #[cfg(not(feature = "safety"))]
         let (injection_detected, injection_severity, injection_pattern) = (false, None, None);

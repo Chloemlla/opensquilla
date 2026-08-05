@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 /// A notification published whenever the approval queue changes state.
@@ -238,14 +238,19 @@ impl ApprovalQueue {
             detail: reason.to_string(),
         });
 
-        info!("Approval request submitted: {} for operation '{}'", id, operation);
+        info!(
+            "Approval request submitted: {} for operation '{}'",
+            id, operation
+        );
         Ok(id)
     }
 
     /// Approve a pending request.
     pub async fn approve(&self, request_id: &str) -> Result<(), String> {
         let mut pending = self.pending.lock().await;
-        let request = pending.get_mut(request_id).ok_or("Approval request not found")?;
+        let request = pending
+            .get_mut(request_id)
+            .ok_or("Approval request not found")?;
 
         if request.status != ApprovalStatus::Pending {
             return Err(format!(
@@ -285,14 +290,17 @@ impl ApprovalQueue {
         rejected_by: &str,
     ) -> Result<(), String> {
         let mut pending = self.pending.lock().await;
-        let request = pending.get_mut(request_id).ok_or("Approval request not found")?;
+        let request = pending
+            .get_mut(request_id)
+            .ok_or("Approval request not found")?;
 
         if request.status != ApprovalStatus::Pending {
             return Err(format!("Request {} is not pending", request_id));
         }
 
         request.status = ApprovalStatus::Rejected;
-        let op_hash = self.compute_operation_hash(&request.operation, &request.command, &request.args);
+        let op_hash =
+            self.compute_operation_hash(&request.operation, &request.command, &request.args);
 
         let entry = RejectionEntry {
             request_id: request_id.to_string(),
@@ -438,7 +446,9 @@ impl ApprovalQueue {
     /// Check if an operation has been rejected and is still within its
     /// cooldown window (post-rejection guard).
     pub async fn is_rejected(&self, operation: &str, command: &str, args: &[String]) -> bool {
-        self.cooldown_remaining(operation, command, args).await.is_some()
+        self.cooldown_remaining(operation, command, args)
+            .await
+            .is_some()
     }
 
     /// The number of seconds remaining before a rejected operation may be
@@ -453,7 +463,9 @@ impl ApprovalQueue {
         let op_hash = self.compute_operation_hash(operation, command, args);
         let guard = self.rejection_guard.lock().await;
         if let Some(entry) = guard.get(&op_hash) {
-            let elapsed = Utc::now().signed_duration_since(entry.rejected_at).num_seconds();
+            let elapsed = Utc::now()
+                .signed_duration_since(entry.rejected_at)
+                .num_seconds();
             if elapsed < entry.cooldown_secs as i64 {
                 return Some(entry.cooldown_secs.saturating_sub(elapsed.max(0) as u64));
             }

@@ -14,7 +14,7 @@
 //! - **Ledger**: every transition is recorded in `delivery_ledger` for audit.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 use sha2::{Digest, Sha256};
 use std::future::Future;
 use std::path::Path;
@@ -171,8 +171,8 @@ impl DeliveryStore {
         .map_err(|e| format!("Schema init: {e}"))?;
 
         let now = Utc::now().to_rfc3339();
-        let expires = (Utc::now() + chrono::Duration::seconds(DEFAULT_FENCING_LIFETIME_SECS))
-            .to_rfc3339();
+        let expires =
+            (Utc::now() + chrono::Duration::seconds(DEFAULT_FENCING_LIFETIME_SECS)).to_rfc3339();
         db.execute(
             "INSERT OR REPLACE INTO delivery_fencing (token, instance_id, acquired_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
             params![token, instance_id, now, expires],
@@ -212,7 +212,8 @@ impl DeliveryStore {
         let mut stmt = db
             .prepare("SELECT expires_at FROM delivery_fencing WHERE token = ?1")
             .map_err(|e| format!("Query: {e}"))?;
-        let result: Result<String, _> = stmt.query_row(params![self.fencing_token], |row| row.get(0));
+        let result: Result<String, _> =
+            stmt.query_row(params![self.fencing_token], |row| row.get(0));
         match result {
             Ok(expires) => {
                 let expires_at = DateTime::parse_from_rfc3339(&expires)
@@ -241,8 +242,7 @@ impl DeliveryStore {
                 }
             }
         }
-        let expires = (now + chrono::Duration::seconds(DEFAULT_FENCING_LIFETIME_SECS))
-            .to_rfc3339();
+        let expires = (now + chrono::Duration::seconds(DEFAULT_FENCING_LIFETIME_SECS)).to_rfc3339();
         db.execute(
             "INSERT OR REPLACE INTO delivery_fencing (token, instance_id, acquired_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
             params![self.fencing_token, self.instance_id, now.to_rfc3339(), expires],
@@ -253,8 +253,8 @@ impl DeliveryStore {
 
     /// Renew the fencing token, extending its expiry.
     pub async fn renew_fencing(&self) -> Result<(), String> {
-        let expires = (Utc::now() + chrono::Duration::seconds(DEFAULT_FENCING_LIFETIME_SECS))
-            .to_rfc3339();
+        let expires =
+            (Utc::now() + chrono::Duration::seconds(DEFAULT_FENCING_LIFETIME_SECS)).to_rfc3339();
         let db = self.db.lock().await;
         db.execute(
             "UPDATE delivery_fencing SET expires_at = ?1 WHERE token = ?2",
@@ -280,8 +280,13 @@ impl DeliveryStore {
     /// Enqueue a plain-text message (legacy API). Stores the text as a JSON
     /// string payload.
     pub async fn enqueue(&self, channel_id: &str, message: &str) -> Result<String, String> {
-        self.enqueue_payload(channel_id, "custom", serde_json::Value::String(message.to_string()), None)
-            .await
+        self.enqueue_payload(
+            channel_id,
+            "custom",
+            serde_json::Value::String(message.to_string()),
+            None,
+        )
+        .await
     }
 
     /// Enqueue an outgoing message for delivery.
@@ -342,7 +347,13 @@ impl DeliveryStore {
         )
         .map_err(|e| format!("Enqueue: {e}"))?;
 
-        self.log_ledger(&db, &id, channel_id, "enqueued", "Message enqueued for delivery")?;
+        self.log_ledger(
+            &db,
+            &id,
+            channel_id,
+            "enqueued",
+            "Message enqueued for delivery",
+        )?;
         Ok(id)
     }
 
@@ -352,7 +363,11 @@ impl DeliveryStore {
     ///
     /// Claims pending/retryable entries, and reclaims `delivering` entries
     /// whose lease (`claimed_at`) is older than the lease timeout.
-    pub async fn claim_next(&self, worker_id: &str, batch_size: usize) -> Result<Vec<OutboxEntry>, String> {
+    pub async fn claim_next(
+        &self,
+        worker_id: &str,
+        batch_size: usize,
+    ) -> Result<Vec<OutboxEntry>, String> {
         let now = Utc::now().to_rfc3339();
         let stale = (Utc::now() - chrono::Duration::seconds(self.lease_secs)).to_rfc3339();
         let db = self.db.lock().await;
@@ -383,7 +398,13 @@ impl DeliveryStore {
                 .map_err(|e| format!("Claim update: {e}"))?;
             if updated > 0 {
                 if let Ok(entry) = Self::load_entry(&db, &id) {
-                    self.log_ledger(&db, &id, &entry.channel_id, "claimed", "Entry claimed by worker")?;
+                    self.log_ledger(
+                        &db,
+                        &id,
+                        &entry.channel_id,
+                        "claimed",
+                        "Entry claimed by worker",
+                    )?;
                     entries.push(entry);
                 }
             }
@@ -392,7 +413,11 @@ impl DeliveryStore {
     }
 
     /// Claim a single entry by id (used for targeted retries).
-    pub async fn claim_by_id(&self, id: &str, worker_id: &str) -> Result<Option<OutboxEntry>, String> {
+    pub async fn claim_by_id(
+        &self,
+        id: &str,
+        worker_id: &str,
+    ) -> Result<Option<OutboxEntry>, String> {
         let now = Utc::now().to_rfc3339();
         let db = self.db.lock().await;
         let updated = db
@@ -406,7 +431,13 @@ impl DeliveryStore {
             return Ok(None);
         }
         let entry = Self::load_entry(&db, id)?;
-        self.log_ledger(&db, id, &entry.channel_id, "claimed", "Entry claimed by worker")?;
+        self.log_ledger(
+            &db,
+            id,
+            &entry.channel_id,
+            "claimed",
+            "Entry claimed by worker",
+        )?;
         Ok(Some(entry))
     }
 
@@ -422,7 +453,13 @@ impl DeliveryStore {
             params![now, id],
         )
         .map_err(|e| format!("Mark delivered: {e}"))?;
-        self.log_ledger(&db, id, &entry.channel_id, "delivered", "Message delivered successfully")?;
+        self.log_ledger(
+            &db,
+            id,
+            &entry.channel_id,
+            "delivered",
+            "Message delivered successfully",
+        )?;
         Ok(())
     }
 
@@ -442,13 +479,20 @@ impl DeliveryStore {
             warn!("Outbox entry {id} dead-lettered after {attempts} attempts: {error}");
         } else {
             let delay = retry_delay(attempts, DEFAULT_BASE_RETRY_SECS, DEFAULT_MAX_RETRY_SECS);
-            let next = (Utc::now() + chrono::Duration::from_std(delay).unwrap_or_default()).to_rfc3339();
+            let next =
+                (Utc::now() + chrono::Duration::from_std(delay).unwrap_or_default()).to_rfc3339();
             db.execute(
                 "UPDATE delivery_outbox SET status = 'pending', attempts = ?1, last_error = ?2, next_retry_at = ?3, worker_id = NULL, claimed_at = NULL WHERE id = ?4",
                 params![attempts, error, next, id],
             )
             .map_err(|e| format!("Requeue: {e}"))?;
-            self.log_ledger(&db, id, &entry.channel_id, "retry", &format!("{error}; retry in {}s", delay.as_secs()))?;
+            self.log_ledger(
+                &db,
+                id,
+                &entry.channel_id,
+                "retry",
+                &format!("{error}; retry in {}s", delay.as_secs()),
+            )?;
             debug("requeued with backoff", id, attempts);
         }
         Ok(())
@@ -503,7 +547,10 @@ impl DeliveryStore {
     pub async fn list_by_channel(&self, channel_id: &str) -> Result<Vec<OutboxEntry>, String> {
         let db = self.db.lock().await;
         let mut stmt = db
-            .prepare(&format!("{} WHERE channel_id = ?1 ORDER BY created_at DESC", Self::SELECT_COLS))
+            .prepare(&format!(
+                "{} WHERE channel_id = ?1 ORDER BY created_at DESC",
+                Self::SELECT_COLS
+            ))
             .map_err(|e| format!("Query: {e}"))?;
         stmt.query_map(params![channel_id], Self::map_row)
             .map_err(|e| format!("Query rows: {e}"))?
@@ -515,7 +562,10 @@ impl DeliveryStore {
     pub async fn list_by_status(&self, status: DeliveryStatus) -> Result<Vec<OutboxEntry>, String> {
         let db = self.db.lock().await;
         let mut stmt = db
-            .prepare(&format!("{} WHERE status = ?1 ORDER BY created_at DESC", Self::SELECT_COLS))
+            .prepare(&format!(
+                "{} WHERE status = ?1 ORDER BY created_at DESC",
+                Self::SELECT_COLS
+            ))
             .map_err(|e| format!("Query: {e}"))?;
         stmt.query_map(params![status.as_str()], Self::map_row)
             .map_err(|e| format!("Query rows: {e}"))?
@@ -559,7 +609,9 @@ impl DeliveryStore {
             .map_err(|e| format!("Stats query: {e}"))?;
         let mut counts = serde_json::Map::new();
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
             .map_err(|e| format!("Stats rows: {e}"))?;
         for row in rows {
             if let Ok((status, count)) = row {
@@ -592,8 +644,7 @@ impl DeliveryStore {
 
     // -- internals ----------------------------------------------------------
 
-    const SELECT_COLS: &'static str =
-        "SELECT id, channel_id, channel_type, payload, status, created_at, delivered_at, \
+    const SELECT_COLS: &'static str = "SELECT id, channel_id, channel_type, payload, status, created_at, delivered_at, \
          attempts, max_attempts, next_retry_at, last_error, dedup_key, worker_id FROM delivery_outbox";
 
     fn map_row(row: &Row) -> rusqlite::Result<OutboxEntry> {
@@ -686,9 +737,8 @@ pub fn retry_delay(attempts: u32, base_secs: u64, max_secs: u64) -> Duration {
 
 /// The dispatch function used by an [`OutboxWorker`]: turn a claimed entry
 /// into a send future.
-pub type SendEntry = dyn Fn(&OutboxEntry) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
-    + Send
-    + Sync;
+pub type SendEntry =
+    dyn Fn(&OutboxEntry) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync;
 
 /// A background task that drains the outbox and dispatches entries through a
 /// send function.
@@ -710,9 +760,9 @@ impl OutboxWorker {
     pub fn new(
         store: Arc<DeliveryStore>,
         send: impl Fn(&OutboxEntry) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
         worker_id: impl Into<String>,
     ) -> Self {
         Self::with_options(store, send, worker_id, Duration::from_secs(1), 32)
@@ -722,9 +772,9 @@ impl OutboxWorker {
     pub fn with_options(
         store: Arc<DeliveryStore>,
         send: impl Fn(&OutboxEntry) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
         worker_id: impl Into<String>,
         poll_interval: Duration,
         max_batch: usize,
@@ -816,7 +866,11 @@ mod tests {
     }
 
     fn outgoing(channel_id: &str) -> OutgoingMessage {
-        OutgoingMessage::new(channel_id.to_string(), ChannelType::Slack, "hello".to_string())
+        OutgoingMessage::new(
+            channel_id.to_string(),
+            ChannelType::Slack,
+            "hello".to_string(),
+        )
     }
 
     #[test]
@@ -855,7 +909,10 @@ mod tests {
         let (store, _) = temp_store();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let id = store.enqueue_outgoing("c1", &outgoing("c1"), None).await.unwrap();
+            let id = store
+                .enqueue_outgoing("c1", &outgoing("c1"), None)
+                .await
+                .unwrap();
             let claimed = store.claim_next("worker1", 10).await.unwrap();
             assert_eq!(claimed.len(), 1);
             assert_eq!(claimed[0].status, DeliveryStatus::Delivering);

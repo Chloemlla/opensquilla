@@ -114,7 +114,11 @@ impl ModelCatalog {
         let entry = self.entry_for(provider);
         let mut models = entry.models.write().unwrap();
         models.insert(caps.model.clone(), caps);
-        debug!(target = "provider", provider = provider, "Upserted model metadata");
+        debug!(
+            target = "provider",
+            provider = provider,
+            "Upserted model metadata"
+        );
     }
 
     /// Insert or update multiple models for a provider at once, refreshing the
@@ -192,7 +196,8 @@ impl ModelCatalog {
     ) -> Vec<ModelCapabilities> {
         let entry = self.entry_for(provider);
         let models = entry.models.read().unwrap();
-        let mut v: Vec<ModelCapabilities> = models.values().filter(|c| predicate(c)).cloned().collect();
+        let mut v: Vec<ModelCapabilities> =
+            models.values().filter(|c| predicate(c)).cloned().collect();
         v.sort_by(|a, b| a.model.cmp(&b.model));
         v
     }
@@ -233,47 +238,297 @@ pub fn seed_static(catalog: &ModelCatalog, provider: &str) -> usize {
 pub fn static_models_for(provider: &str) -> Vec<ModelCapabilities> {
     match provider {
         "openai" | "openai_compat" => vec![
-            cap("gpt-4o", Some(128_000), Some(16_384), true, true, false, false, 2.5, 10.0),
-            cap("gpt-4o-mini", Some(128_000), Some(16_384), true, true, false, false, 0.15, 0.6),
-            cap("gpt-4-turbo", Some(128_000), Some(4_096), true, true, false, false, 10.0, 30.0),
-            cap("o1", Some(200_000), Some(100_000), true, true, false, true, 15.0, 60.0),
-            cap("o3-mini", Some(200_000), Some(100_000), true, false, false, true, 1.1, 4.4),
+            cap(
+                "gpt-4o",
+                Some(128_000),
+                Some(16_384),
+                true,
+                true,
+                false,
+                false,
+                2.5,
+                10.0,
+            ),
+            cap(
+                "gpt-4o-mini",
+                Some(128_000),
+                Some(16_384),
+                true,
+                true,
+                false,
+                false,
+                0.15,
+                0.6,
+            ),
+            cap(
+                "gpt-4-turbo",
+                Some(128_000),
+                Some(4_096),
+                true,
+                true,
+                false,
+                false,
+                10.0,
+                30.0,
+            ),
+            cap(
+                "o1",
+                Some(200_000),
+                Some(100_000),
+                true,
+                true,
+                false,
+                true,
+                15.0,
+                60.0,
+            ),
+            cap(
+                "o3-mini",
+                Some(200_000),
+                Some(100_000),
+                true,
+                false,
+                false,
+                true,
+                1.1,
+                4.4,
+            ),
         ],
         "anthropic" => vec![
-            cap("claude-3-5-sonnet-20241022", Some(200_000), Some(8_192), true, true, false, false, 3.0, 15.0),
-            cap("claude-3-5-haiku-20241022", Some(200_000), Some(8_192), true, true, false, false, 0.8, 4.0),
-            cap("claude-3-opus-20240229", Some(200_000), Some(4_096), true, true, false, false, 15.0, 75.0),
+            cap(
+                "claude-3-5-sonnet-20241022",
+                Some(200_000),
+                Some(8_192),
+                true,
+                true,
+                false,
+                false,
+                3.0,
+                15.0,
+            ),
+            cap(
+                "claude-3-5-haiku-20241022",
+                Some(200_000),
+                Some(8_192),
+                true,
+                true,
+                false,
+                false,
+                0.8,
+                4.0,
+            ),
+            cap(
+                "claude-3-opus-20240229",
+                Some(200_000),
+                Some(4_096),
+                true,
+                true,
+                false,
+                false,
+                15.0,
+                75.0,
+            ),
         ],
         "deepseek" => vec![
-            cap("deepseek-chat", Some(128_000), Some(8_192), true, false, false, false, 0.14, 0.28),
-            cap("deepseek-reasoner", Some(128_000), Some(32_768), true, false, false, true, 0.55, 2.19),
+            cap(
+                "deepseek-chat",
+                Some(128_000),
+                Some(8_192),
+                true,
+                false,
+                false,
+                false,
+                0.14,
+                0.28,
+            ),
+            cap(
+                "deepseek-reasoner",
+                Some(128_000),
+                Some(32_768),
+                true,
+                false,
+                false,
+                true,
+                0.55,
+                2.19,
+            ),
         ],
         "gemini" => vec![
-            cap("gemini-2.0-flash", Some(1_000_000), Some(8_192), true, true, true, false, 0.1, 0.4),
-            cap("gemini-1.5-pro", Some(2_000_000), Some(8_192), true, true, true, false, 1.25, 5.0),
-            cap("gemini-1.5-flash", Some(1_000_000), Some(8_192), true, true, true, false, 0.075, 0.3),
+            cap(
+                "gemini-2.0-flash",
+                Some(1_000_000),
+                Some(8_192),
+                true,
+                true,
+                true,
+                false,
+                0.1,
+                0.4,
+            ),
+            cap(
+                "gemini-1.5-pro",
+                Some(2_000_000),
+                Some(8_192),
+                true,
+                true,
+                true,
+                false,
+                1.25,
+                5.0,
+            ),
+            cap(
+                "gemini-1.5-flash",
+                Some(1_000_000),
+                Some(8_192),
+                true,
+                true,
+                true,
+                false,
+                0.075,
+                0.3,
+            ),
         ],
         "ollama" => vec![
-            cap("llama3.1", Some(128_000), Some(4_096), true, false, false, false, 0.0, 0.0),
-            cap("qwen2.5", Some(131_072), Some(8_192), true, false, false, false, 0.0, 0.0),
-            cap("mistral", Some(32_000), Some(4_096), true, false, false, false, 0.0, 0.0),
+            cap(
+                "llama3.1",
+                Some(128_000),
+                Some(4_096),
+                true,
+                false,
+                false,
+                false,
+                0.0,
+                0.0,
+            ),
+            cap(
+                "qwen2.5",
+                Some(131_072),
+                Some(8_192),
+                true,
+                false,
+                false,
+                false,
+                0.0,
+                0.0,
+            ),
+            cap(
+                "mistral",
+                Some(32_000),
+                Some(4_096),
+                true,
+                false,
+                false,
+                false,
+                0.0,
+                0.0,
+            ),
         ],
         "groq" => vec![
-            cap("llama-3.3-70b-versatile", Some(128_000), Some(32_768), true, false, false, false, 0.59, 0.79),
-            cap("llama-3.1-8b-instant", Some(128_000), Some(8_192), true, false, false, false, 0.05, 0.08),
+            cap(
+                "llama-3.3-70b-versatile",
+                Some(128_000),
+                Some(32_768),
+                true,
+                false,
+                false,
+                false,
+                0.59,
+                0.79,
+            ),
+            cap(
+                "llama-3.1-8b-instant",
+                Some(128_000),
+                Some(8_192),
+                true,
+                false,
+                false,
+                false,
+                0.05,
+                0.08,
+            ),
         ],
         "mistral" => vec![
-            cap("mistral-large-latest", Some(128_000), Some(8_192), true, false, false, false, 2.0, 6.0),
-            cap("mistral-small-latest", Some(32_000), Some(8_192), true, false, false, false, 0.2, 0.6),
+            cap(
+                "mistral-large-latest",
+                Some(128_000),
+                Some(8_192),
+                true,
+                false,
+                false,
+                false,
+                2.0,
+                6.0,
+            ),
+            cap(
+                "mistral-small-latest",
+                Some(32_000),
+                Some(8_192),
+                true,
+                false,
+                false,
+                false,
+                0.2,
+                0.6,
+            ),
         ],
         "moonshot" => vec![
-            cap("moonshot-v1-128k", Some(128_000), Some(8_192), true, false, false, false, 0.83, 2.49),
-            cap("kimi-k1.5", Some(128_000), Some(8_192), true, false, false, true, 0.55, 2.19),
+            cap(
+                "moonshot-v1-128k",
+                Some(128_000),
+                Some(8_192),
+                true,
+                false,
+                false,
+                false,
+                0.83,
+                2.49,
+            ),
+            cap(
+                "kimi-k1.5",
+                Some(128_000),
+                Some(8_192),
+                true,
+                false,
+                false,
+                true,
+                0.55,
+                2.19,
+            ),
         ],
         "qwen" | "dashscope" => vec![
-            cap("qwen-max", Some(131_072), Some(8_192), true, true, false, false, 1.6, 6.4),
-            cap("qwen-plus", Some(131_072), Some(8_192), true, true, false, false, 0.4, 1.2),
-            cap("qwen-turbo", Some(131_072), Some(8_192), true, true, false, false, 0.05, 0.2),
+            cap(
+                "qwen-max",
+                Some(131_072),
+                Some(8_192),
+                true,
+                true,
+                false,
+                false,
+                1.6,
+                6.4,
+            ),
+            cap(
+                "qwen-plus",
+                Some(131_072),
+                Some(8_192),
+                true,
+                true,
+                false,
+                false,
+                0.4,
+                1.2,
+            ),
+            cap(
+                "qwen-turbo",
+                Some(131_072),
+                Some(8_192),
+                true,
+                true,
+                false,
+                false,
+                0.05,
+                0.2,
+            ),
         ],
         _ => Vec::new(),
     }
@@ -331,7 +586,11 @@ pub fn merge_live(catalog: &ModelCatalog, provider: &str, live: Vec<ModelCapabil
                 supports_streaming: l.supports_streaming || s.supports_streaming,
                 input_price_per_million: l.input_price_per_million.or(s.input_price_per_million),
                 output_price_per_million: l.output_price_per_million.or(s.output_price_per_million),
-                tags: if l.tags.is_empty() { s.tags.clone() } else { l.tags },
+                tags: if l.tags.is_empty() {
+                    s.tags.clone()
+                } else {
+                    l.tags
+                },
             };
             merged.push(m);
         } else {
@@ -339,7 +598,11 @@ pub fn merge_live(catalog: &ModelCatalog, provider: &str, live: Vec<ModelCapabil
         }
     }
     if merged.is_empty() {
-        warn!(target = "provider", provider = provider, "Live merge produced no models");
+        warn!(
+            target = "provider",
+            provider = provider,
+            "Live merge produced no models"
+        );
     }
     catalog.upsert_many(provider, merged);
 }
@@ -353,7 +616,17 @@ mod tests {
         let cat = ModelCatalog::new();
         cat.upsert(
             "openai",
-            cap("gpt-4o", Some(128_000), Some(16_384), true, true, false, false, 2.5, 10.0),
+            cap(
+                "gpt-4o",
+                Some(128_000),
+                Some(16_384),
+                true,
+                true,
+                false,
+                false,
+                2.5,
+                10.0,
+            ),
         );
         let m = cat.get("openai", "gpt-4o").unwrap();
         assert_eq!(m.context_window, Some(128_000));
@@ -382,7 +655,10 @@ mod tests {
     #[test]
     fn test_ttl_stale() {
         let cat = ModelCatalog::with_ttl(Duration::from_millis(10));
-        cat.upsert("p", cap("m", None, None, false, false, false, false, 0.0, 0.0));
+        cat.upsert(
+            "p",
+            cap("m", None, None, false, false, false, false, 0.0, 0.0),
+        );
         assert!(!cat.is_stale("p"));
         std::thread::sleep(Duration::from_millis(20));
         assert!(cat.is_stale("p"));

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::CoreError;
 use opensquilla_core::result::CoreResult;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{Connection, Transaction, params};
 use serde_json;
 use std::sync::Mutex;
 use tracing::info;
@@ -38,7 +38,10 @@ impl SessionStorage {
     }
 
     fn initialize_tables(&self) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         // 1. sessions — session metadata, routing, token tracking, cost
         // 2. transcript_entries — message records (role, content, tool calls, reasoning)
@@ -393,8 +396,13 @@ impl SessionStorage {
     where
         F: FnOnce(&Transaction) -> CoreResult<T>,
     {
-        let mut conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        let tx = conn.transaction().map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
         let result = f(&tx)?;
         tx.commit().map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(result)
@@ -403,7 +411,10 @@ impl SessionStorage {
     // --- Session CRUD ---
 
     pub fn create_session(&self, session: &Session) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO sessions (id, agent_id, name, created_at, updated_at, last_active_at,
              status, mode, system_prompt, total_tokens, total_cost_usd, message_count,
@@ -432,11 +443,16 @@ impl SessionStorage {
     }
 
     pub fn get_session(&self, id: &Uuid) -> CoreResult<Option<Session>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
-            .prepare("SELECT id, agent_id, name, created_at, updated_at, last_active_at,
+            .prepare(
+                "SELECT id, agent_id, name, created_at, updated_at, last_active_at,
                        status, mode, system_prompt, total_tokens, total_cost_usd, message_count,
-                       parent_session_id, fork_event, metadata FROM sessions WHERE id = ?1")
+                       parent_session_id, fork_event, metadata FROM sessions WHERE id = ?1",
+            )
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let mut rows = stmt
@@ -454,8 +470,10 @@ impl SessionStorage {
                     last_active_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
-                    status: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or(SessionStatus::Active),
-                    mode: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or(SessionMode::Chat),
+                    status: serde_json::from_str(&row.get::<_, String>(6)?)
+                        .unwrap_or(SessionStatus::Active),
+                    mode: serde_json::from_str(&row.get::<_, String>(7)?)
+                        .unwrap_or(SessionMode::Chat),
                     system_prompt: row.get(8)?,
                     total_tokens: row.get::<_, i64>(9)? as u64,
                     total_cost_usd: row.get(10)?,
@@ -478,7 +496,10 @@ impl SessionStorage {
     }
 
     pub fn update_session(&self, session: &Session) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE sessions SET name = ?1, updated_at = ?2, last_active_at = ?3,
              status = ?4, mode = ?5, system_prompt = ?6, total_tokens = ?7,
@@ -503,16 +524,25 @@ impl SessionStorage {
     }
 
     pub fn delete_session(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM sessions WHERE id = ?1", params![id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM sessions WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     /// List sessions across all agents, newest-first. Used by the manager's
     /// unfiltered `list()` path.
     pub fn list_all_sessions(&self, limit: u64, offset: u64) -> CoreResult<Vec<Session>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, agent_id, name, created_at, updated_at, last_active_at,
@@ -532,8 +562,16 @@ impl SessionStorage {
         Ok(sessions)
     }
 
-    pub fn list_sessions(&self, agent_id: &Uuid, limit: u64, offset: u64) -> CoreResult<Vec<Session>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+    pub fn list_sessions(
+        &self,
+        agent_id: &Uuid,
+        limit: u64,
+        offset: u64,
+    ) -> CoreResult<Vec<Session>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, agent_id, name, created_at, updated_at, last_active_at,
@@ -545,34 +583,39 @@ impl SessionStorage {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let sessions = stmt
-            .query_map(params![agent_id.to_string(), limit as i64, offset as i64], |row| {
-                Ok(Session {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
-                    agent_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    name: row.get(2)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    last_active_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    status: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or(SessionStatus::Active),
-                    mode: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or(SessionMode::Chat),
-                    system_prompt: row.get(8)?,
-                    total_tokens: row.get::<_, i64>(9)? as u64,
-                    total_cost_usd: row.get(10)?,
-                    message_count: row.get::<_, i64>(11)? as u64,
-                    parent_session_id: row
-                        .get::<_, Option<String>>(12)?
-                        .and_then(|s| Uuid::parse_str(&s).ok()),
-                    fork_event: row.get(13)?,
-                    metadata: serde_json::from_str(&row.get::<_, String>(14)?)
-                        .unwrap_or(serde_json::Value::Null),
-                })
-            })
+            .query_map(
+                params![agent_id.to_string(), limit as i64, offset as i64],
+                |row| {
+                    Ok(Session {
+                        id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                        agent_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                        name: row.get(2)?,
+                        created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        last_active_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        status: serde_json::from_str(&row.get::<_, String>(6)?)
+                            .unwrap_or(SessionStatus::Active),
+                        mode: serde_json::from_str(&row.get::<_, String>(7)?)
+                            .unwrap_or(SessionMode::Chat),
+                        system_prompt: row.get(8)?,
+                        total_tokens: row.get::<_, i64>(9)? as u64,
+                        total_cost_usd: row.get(10)?,
+                        message_count: row.get::<_, i64>(11)? as u64,
+                        parent_session_id: row
+                            .get::<_, Option<String>>(12)?
+                            .and_then(|s| Uuid::parse_str(&s).ok()),
+                        fork_event: row.get(13)?,
+                        metadata: serde_json::from_str(&row.get::<_, String>(14)?)
+                            .unwrap_or(serde_json::Value::Null),
+                    })
+                },
+            )
             .map_err(|e| CoreError::Storage(e.to_string()))?
             .filter_map(|r| r.ok())
             .collect();
@@ -583,7 +626,10 @@ impl SessionStorage {
     // --- Transcript CRUD ---
 
     pub fn insert_transcript_entry(&self, entry: &TranscriptEntry) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO transcript_entries (id, session_id, role, content, created_at,
              token_count, metadata, compacted)
@@ -609,7 +655,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<TranscriptEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, role, content, created_at, token_count, metadata, compacted
@@ -619,21 +668,24 @@ impl SessionStorage {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let entries = stmt
-            .query_map(params![session_id.to_string(), limit as i64, offset as i64], |row| {
-                Ok(TranscriptEntry {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
-                    session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    role: row.get(2)?,
-                    content: row.get(3)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    token_count: row.get::<_, i64>(5)? as u64,
-                    metadata: serde_json::from_str(&row.get::<_, String>(6)?)
-                        .unwrap_or(serde_json::Value::Null),
-                    compacted: row.get::<_, i64>(7)? != 0,
-                })
-            })
+            .query_map(
+                params![session_id.to_string(), limit as i64, offset as i64],
+                |row| {
+                    Ok(TranscriptEntry {
+                        id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                        session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                        role: row.get(2)?,
+                        content: row.get(3)?,
+                        created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        token_count: row.get::<_, i64>(5)? as u64,
+                        metadata: serde_json::from_str(&row.get::<_, String>(6)?)
+                            .unwrap_or(serde_json::Value::Null),
+                        compacted: row.get::<_, i64>(7)? != 0,
+                    })
+                },
+            )
             .map_err(|e| CoreError::Storage(e.to_string()))?
             .filter_map(|r| r.ok())
             .collect();
@@ -646,7 +698,10 @@ impl SessionStorage {
         session_id: &Uuid,
         up_to: &DateTime<Utc>,
     ) -> CoreResult<u64> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let count = conn
             .execute(
                 "UPDATE transcript_entries SET compacted = 1
@@ -659,7 +714,10 @@ impl SessionStorage {
 
     /// Get a single transcript entry by id.
     pub fn get_transcript_entry(&self, id: &Uuid) -> CoreResult<Option<TranscriptEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, role, content, created_at, token_count, metadata, compacted
@@ -677,7 +735,10 @@ impl SessionStorage {
     }
 
     pub fn delete_transcript_entry(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM transcript_entries WHERE id = ?1",
             params![id.to_string()],
@@ -689,7 +750,10 @@ impl SessionStorage {
     /// `list_by_session`: full transcript history (both active and compacted
     /// entries) for a session in chronological order.
     pub fn list_by_session(&self, session_id: &Uuid) -> CoreResult<Vec<TranscriptEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, role, content, created_at, token_count, metadata, compacted
@@ -708,7 +772,10 @@ impl SessionStorage {
     // --- Summary CRUD ---
 
     pub fn insert_summary(&self, summary: &SessionSummary) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_summaries (id, session_id, summary, created_at, token_count, is_active)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -726,7 +793,10 @@ impl SessionStorage {
     }
 
     pub fn get_active_summary(&self, session_id: &Uuid) -> CoreResult<Option<SessionSummary>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, summary, created_at, token_count, is_active
@@ -758,7 +828,10 @@ impl SessionStorage {
     }
 
     pub fn deactivate_summaries(&self, session_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE session_summaries SET is_active = 0 WHERE session_id = ?1",
             params![session_id.to_string()],
@@ -774,7 +847,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<SessionSummary>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, summary, created_at, token_count, is_active
@@ -794,7 +870,10 @@ impl SessionStorage {
     }
 
     pub fn delete_summary(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM session_summaries WHERE id = ?1",
             params![id.to_string()],
@@ -806,7 +885,10 @@ impl SessionStorage {
     // --- Plan Revision CRUD ---
 
     pub fn insert_plan_revision(&self, plan: &PlanRevision) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO plan_revisions (id, session_id, plan, status, created_at, version, parent_revision_id, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -826,7 +908,10 @@ impl SessionStorage {
     }
 
     pub fn get_latest_plan(&self, session_id: &Uuid) -> CoreResult<Option<PlanRevision>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, plan, status, created_at, version, parent_revision_id, metadata
@@ -841,7 +926,8 @@ impl SessionStorage {
                     id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
                     session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
                     plan: row.get(2)?,
-                    status: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or(PlanStatus::Draft),
+                    status: serde_json::from_str(&row.get::<_, String>(3)?)
+                        .unwrap_or(PlanStatus::Draft),
                     created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
@@ -863,7 +949,10 @@ impl SessionStorage {
     }
 
     pub fn get_plan_revision(&self, revision_id: &Uuid) -> CoreResult<Option<PlanRevision>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, plan, status, created_at, version, parent_revision_id, metadata
@@ -877,7 +966,8 @@ impl SessionStorage {
                     id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
                     session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
                     plan: row.get(2)?,
-                    status: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or(PlanStatus::Draft),
+                    status: serde_json::from_str(&row.get::<_, String>(3)?)
+                        .unwrap_or(PlanStatus::Draft),
                     created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
@@ -899,7 +989,10 @@ impl SessionStorage {
     }
 
     pub fn update_plan_status(&self, id: &Uuid, status: &PlanStatus) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE plan_revisions SET status = ?1 WHERE id = ?2",
             params![
@@ -915,7 +1008,10 @@ impl SessionStorage {
     /// step-level state, which is encoded in `metadata["steps"]`). Status
     /// changes should go through [`update_plan_status`].
     pub fn update_plan_revision(&self, revision: &PlanRevision) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE plan_revisions SET plan = ?1, metadata = ?2, parent_revision_id = ?3
              WHERE id = ?4",
@@ -937,7 +1033,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<PlanRevision>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, plan, status, created_at, version, parent_revision_id, metadata
@@ -957,7 +1056,10 @@ impl SessionStorage {
     }
 
     pub fn delete_plan_revision(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM plan_revisions WHERE id = ?1",
             params![id.to_string()],
@@ -977,7 +1079,10 @@ impl SessionStorage {
         model: &str,
         provider: &str,
     ) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO usage_entries (id, session_id, timestamp, prompt_tokens, completion_tokens,
              cost_nanodollars, model, provider)
@@ -1003,7 +1108,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<crate::usage_ledger::UsageEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, timestamp, prompt_tokens, completion_tokens,
@@ -1014,20 +1122,23 @@ impl SessionStorage {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let entries = stmt
-            .query_map(params![session_id.to_string(), limit as i64, offset as i64], |row| {
-                Ok(crate::usage_ledger::UsageEntry {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
-                    session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    prompt_tokens: row.get::<_, i64>(3)? as u64,
-                    completion_tokens: row.get::<_, i64>(4)? as u64,
-                    cost_nanodollars: row.get::<_, i64>(5)? as u64,
-                    model: row.get(6)?,
-                    provider: row.get(7)?,
-                })
-            })
+            .query_map(
+                params![session_id.to_string(), limit as i64, offset as i64],
+                |row| {
+                    Ok(crate::usage_ledger::UsageEntry {
+                        id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                        session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                        timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        prompt_tokens: row.get::<_, i64>(3)? as u64,
+                        completion_tokens: row.get::<_, i64>(4)? as u64,
+                        cost_nanodollars: row.get::<_, i64>(5)? as u64,
+                        model: row.get(6)?,
+                        provider: row.get(7)?,
+                    })
+                },
+            )
             .map_err(|e| CoreError::Storage(e.to_string()))?
             .filter_map(|r| r.ok())
             .collect();
@@ -1042,7 +1153,10 @@ impl SessionStorage {
         &self,
         session_id: &Uuid,
     ) -> CoreResult<crate::usage_ledger::UsageSummary> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT
@@ -1133,8 +1247,14 @@ impl SessionStorage {
 
     // --- Compacted Transcript Entry CRUD (table 3) ---
 
-    pub fn insert_compacted_transcript_entry(&self, entry: &CompactedTranscriptEntry) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+    pub fn insert_compacted_transcript_entry(
+        &self,
+        entry: &CompactedTranscriptEntry,
+    ) -> CoreResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO compacted_transcript_entries
              (id, session_id, original_entry_id, role, content, token_count,
@@ -1161,7 +1281,10 @@ impl SessionStorage {
         &self,
         id: &Uuid,
     ) -> CoreResult<Option<CompactedTranscriptEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, original_entry_id, role, content, token_count,
@@ -1179,7 +1302,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<CompactedTranscriptEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, original_entry_id, role, content, token_count,
@@ -1195,7 +1321,10 @@ impl SessionStorage {
     }
 
     pub fn delete_compacted_transcript_entry(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM compacted_transcript_entries WHERE id = ?1",
             params![id.to_string()],
@@ -1213,7 +1342,8 @@ impl SessionStorage {
                 Ok(CompactedTranscriptEntry {
                     id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
                     session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    original_entry_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    original_entry_id: Uuid::parse_str(&row.get::<_, String>(2)?)
+                        .unwrap_or_default(),
                     role: row.get(3)?,
                     content: row.get(4)?,
                     token_count: row.get::<_, i64>(5)? as u64,
@@ -1243,7 +1373,8 @@ impl SessionStorage {
                 Ok(CompactedTranscriptEntry {
                     id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
                     session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    original_entry_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    original_entry_id: Uuid::parse_str(&row.get::<_, String>(2)?)
+                        .unwrap_or_default(),
                     role: row.get(3)?,
                     content: row.get(4)?,
                     token_count: row.get::<_, i64>(5)? as u64,
@@ -1265,7 +1396,10 @@ impl SessionStorage {
     // --- Session Context State CRUD (table 5) ---
 
     pub fn upsert_context_state(&self, state: &SessionContextState) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_context_states
              (id, session_id, active_summary_id, retained_after, context_tokens,
@@ -1296,7 +1430,10 @@ impl SessionStorage {
 
     /// `get_context_state` for a session.
     pub fn get_context_state(&self, session_id: &Uuid) -> CoreResult<Option<SessionContextState>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, active_summary_id, retained_after, context_tokens,
@@ -1332,7 +1469,10 @@ impl SessionStorage {
     }
 
     pub fn delete_context_state(&self, session_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM session_context_states WHERE session_id = ?1",
             params![session_id.to_string()],
@@ -1344,7 +1484,10 @@ impl SessionStorage {
     // --- Plan Run CRUD (table 7) ---
 
     pub fn insert_plan_run(&self, run: &PlanRun) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO plan_runs
              (id, plan_revision_id, session_id, status, started_at, completed_at,
@@ -1366,7 +1509,10 @@ impl SessionStorage {
     }
 
     pub fn get_plan_run(&self, id: &Uuid) -> CoreResult<Option<PlanRun>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, plan_revision_id, session_id, status, started_at, completed_at,
@@ -1389,7 +1535,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<PlanRun>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, plan_revision_id, session_id, status, started_at, completed_at,
@@ -1409,7 +1558,10 @@ impl SessionStorage {
     }
 
     pub fn list_plan_runs_by_session(&self, session_id: &Uuid) -> CoreResult<Vec<PlanRun>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, plan_revision_id, session_id, status, started_at, completed_at,
@@ -1431,7 +1583,10 @@ impl SessionStorage {
         status: &PlanRunStatus,
         completed_at: Option<&DateTime<Utc>>,
     ) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE plan_runs SET status = ?1, completed_at = COALESCE(?2, completed_at) WHERE id = ?3",
             params![
@@ -1445,15 +1600,24 @@ impl SessionStorage {
     }
 
     pub fn delete_plan_run(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM plan_runs WHERE id = ?1", params![id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM plan_runs WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     /// Update a plan run's result payload (used when a run succeeds or fails).
     pub fn update_plan_run_result(&self, id: &Uuid, result: &serde_json::Value) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE plan_runs SET result = ?1 WHERE id = ?2",
             params![result.to_string(), id.to_string()],
@@ -1465,7 +1629,10 @@ impl SessionStorage {
     // --- Agent Task CRUD (table 8) ---
 
     pub fn insert_agent_task(&self, task: &AgentTask) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO agent_tasks
              (id, session_id, parent_task_id, kind, status, created_at, started_at,
@@ -1490,7 +1657,10 @@ impl SessionStorage {
     }
 
     pub fn get_agent_task(&self, id: &Uuid) -> CoreResult<Option<AgentTask>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, parent_task_id, kind, status, created_at, started_at,
@@ -1508,7 +1678,10 @@ impl SessionStorage {
     }
 
     pub fn list_agent_tasks_by_session(&self, session_id: &Uuid) -> CoreResult<Vec<AgentTask>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, parent_task_id, kind, status, created_at, started_at,
@@ -1525,7 +1698,10 @@ impl SessionStorage {
     }
 
     pub fn list_agent_tasks_by_status(&self, status: &TaskStatus) -> CoreResult<Vec<AgentTask>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, parent_task_id, kind, status, created_at, started_at,
@@ -1534,7 +1710,10 @@ impl SessionStorage {
             )
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         let tasks = stmt
-            .query_map(params![serde_json::to_string(status).unwrap_or_default()], agent_task_mapper)
+            .query_map(
+                params![serde_json::to_string(status).unwrap_or_default()],
+                agent_task_mapper,
+            )
             .map_err(|e| CoreError::Storage(e.to_string()))?
             .filter_map(|r| r.ok())
             .collect();
@@ -1550,7 +1729,10 @@ impl SessionStorage {
         output: Option<&serde_json::Value>,
         error: Option<&str>,
     ) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE agent_tasks SET
                 status = ?1,
@@ -1573,16 +1755,25 @@ impl SessionStorage {
     }
 
     pub fn delete_agent_task(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM agent_tasks WHERE id = ?1", params![id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM agent_tasks WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     // --- Project Workspace CRUD (table 9) ---
 
     pub fn insert_project_workspace(&self, ws: &ProjectWorkspace) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO project_workspaces (id, session_id, name, root_path, created_at, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -1600,7 +1791,10 @@ impl SessionStorage {
     }
 
     pub fn get_project_workspace(&self, id: &Uuid) -> CoreResult<Option<ProjectWorkspace>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, name, root_path, created_at, metadata
@@ -1631,7 +1825,10 @@ impl SessionStorage {
         &self,
         session_id: &Uuid,
     ) -> CoreResult<Vec<ProjectWorkspace>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, name, root_path, created_at, metadata
@@ -1657,17 +1854,28 @@ impl SessionStorage {
     }
 
     pub fn update_project_workspace(&self, ws: &ProjectWorkspace) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE project_workspaces SET name = ?1, root_path = ?2, metadata = ?3 WHERE id = ?4",
-            params![ws.name, ws.root_path, ws.metadata.to_string(), ws.id.to_string()],
+            params![
+                ws.name,
+                ws.root_path,
+                ws.metadata.to_string(),
+                ws.id.to_string()
+            ],
         )
         .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     pub fn delete_project_workspace(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM project_workspaces WHERE id = ?1",
             params![id.to_string()],
@@ -1763,7 +1971,10 @@ impl SessionStorage {
     }
 
     pub fn get_usage_event(&self, id: &Uuid) -> CoreResult<Option<UsageEvent>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, timestamp, provider, model, request_id,
@@ -1798,7 +2009,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<UsageEvent>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, timestamp, provider, model, request_id,
@@ -1830,7 +2044,10 @@ impl SessionStorage {
     }
 
     pub fn list_usage_event_items(&self, usage_event_id: &Uuid) -> CoreResult<Vec<UsageEventItem>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, usage_event_id, session_id, kind, units, cost_nanodollars, metadata
@@ -1857,21 +2074,33 @@ impl SessionStorage {
     }
 
     pub fn delete_usage_event(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM usage_event_items WHERE usage_event_id = ?1",
             params![id.to_string()],
         )
         .map_err(|e| CoreError::Storage(e.to_string()))?;
-        conn.execute("DELETE FROM usage_events WHERE id = ?1", params![id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM usage_events WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     // --- Usage Ledger State CRUD (table 12) ---
 
-    pub fn get_usage_ledger_state(&self, session_id: &Uuid) -> CoreResult<Option<UsageLedgerState>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+    pub fn get_usage_ledger_state(
+        &self,
+        session_id: &Uuid,
+    ) -> CoreResult<Option<UsageLedgerState>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT session_id, last_event_id, last_event_seq, total_cost_nanodollars,
@@ -1902,7 +2131,10 @@ impl SessionStorage {
     }
 
     pub fn delete_usage_ledger_state(&self, session_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM usage_ledger_state WHERE session_id = ?1",
             params![session_id.to_string()],
@@ -1914,7 +2146,10 @@ impl SessionStorage {
     // --- Session Lock CRUD (table 13) ---
 
     pub fn acquire_session_lock(&self, lock: &SessionLock) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_locks (session_id, owner, acquired_at, expires_at, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -1936,7 +2171,10 @@ impl SessionStorage {
     }
 
     pub fn get_session_lock(&self, session_id: &Uuid) -> CoreResult<Option<SessionLock>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT session_id, owner, acquired_at, expires_at, metadata
@@ -1966,7 +2204,10 @@ impl SessionStorage {
     }
 
     pub fn release_session_lock(&self, session_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM session_locks WHERE session_id = ?1",
             params![session_id.to_string()],
@@ -1978,7 +2219,10 @@ impl SessionStorage {
     // --- Session Attachment CRUD (table 14) ---
 
     pub fn insert_session_attachment(&self, att: &SessionAttachment) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_attachments
              (id, session_id, name, content_type, size_bytes, storage_uri, created_at, metadata)
@@ -1999,7 +2243,10 @@ impl SessionStorage {
     }
 
     pub fn get_session_attachment(&self, id: &Uuid) -> CoreResult<Option<SessionAttachment>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, name, content_type, size_bytes, storage_uri, created_at,
@@ -2028,8 +2275,14 @@ impl SessionStorage {
         }
     }
 
-    pub fn list_session_attachments(&self, session_id: &Uuid) -> CoreResult<Vec<SessionAttachment>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+    pub fn list_session_attachments(
+        &self,
+        session_id: &Uuid,
+    ) -> CoreResult<Vec<SessionAttachment>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, name, content_type, size_bytes, storage_uri, created_at,
@@ -2058,7 +2311,10 @@ impl SessionStorage {
     }
 
     pub fn delete_session_attachment(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM session_attachments WHERE id = ?1",
             params![id.to_string()],
@@ -2070,7 +2326,10 @@ impl SessionStorage {
     // --- Session Fork CRUD (table 15) ---
 
     pub fn insert_session_fork(&self, fork: &SessionFork) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_forks
              (id, source_session_id, child_session_id, fork_event, created_at, metadata)
@@ -2089,7 +2348,10 @@ impl SessionStorage {
     }
 
     pub fn get_session_fork(&self, id: &Uuid) -> CoreResult<Option<SessionFork>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, source_session_id, child_session_id, fork_event, created_at, metadata
@@ -2100,8 +2362,10 @@ impl SessionStorage {
             .query_map(params![id.to_string()], |row| {
                 Ok(SessionFork {
                     id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
-                    source_session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    child_session_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    source_session_id: Uuid::parse_str(&row.get::<_, String>(1)?)
+                        .unwrap_or_default(),
+                    child_session_id: Uuid::parse_str(&row.get::<_, String>(2)?)
+                        .unwrap_or_default(),
                     fork_event: row.get(3)?,
                     created_at: parse_dt(row.get::<_, String>(4)?),
                     metadata: serde_json::from_str(&row.get::<_, String>(5)?)
@@ -2116,8 +2380,14 @@ impl SessionStorage {
         }
     }
 
-    pub fn list_session_forks_by_source(&self, source_session_id: &Uuid) -> CoreResult<Vec<SessionFork>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+    pub fn list_session_forks_by_source(
+        &self,
+        source_session_id: &Uuid,
+    ) -> CoreResult<Vec<SessionFork>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, source_session_id, child_session_id, fork_event, created_at, metadata
@@ -2128,8 +2398,10 @@ impl SessionStorage {
             .query_map(params![source_session_id.to_string()], |row| {
                 Ok(SessionFork {
                     id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
-                    source_session_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
-                    child_session_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    source_session_id: Uuid::parse_str(&row.get::<_, String>(1)?)
+                        .unwrap_or_default(),
+                    child_session_id: Uuid::parse_str(&row.get::<_, String>(2)?)
+                        .unwrap_or_default(),
                     fork_event: row.get(3)?,
                     created_at: parse_dt(row.get::<_, String>(4)?),
                     metadata: serde_json::from_str(&row.get::<_, String>(5)?)
@@ -2143,16 +2415,25 @@ impl SessionStorage {
     }
 
     pub fn delete_session_fork(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM session_forks WHERE id = ?1", params![id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM session_forks WHERE id = ?1",
+            params![id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     // --- Routing Decision CRUD (table 16) ---
 
     pub fn insert_routing_decision(&self, decision: &RoutingDecision) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO routing_decisions
              (id, session_id, turn, provider, model, reason, created_at, metadata)
@@ -2173,7 +2454,10 @@ impl SessionStorage {
     }
 
     pub fn get_routing_decision(&self, id: &Uuid) -> CoreResult<Option<RoutingDecision>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, turn, provider, model, reason, created_at, metadata
@@ -2196,7 +2480,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<RoutingDecision>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, turn, provider, model, reason, created_at, metadata
@@ -2216,7 +2503,10 @@ impl SessionStorage {
     }
 
     pub fn delete_routing_decision(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM routing_decisions WHERE id = ?1",
             params![id.to_string()],
@@ -2228,7 +2518,10 @@ impl SessionStorage {
     // --- Session Metadata CRUD (table 17) ---
 
     pub fn set_session_metadata(&self, meta: &SessionMetadata) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_metadata (session_id, key, value, updated_at)
              VALUES (?1, ?2, ?3, ?4)
@@ -2251,7 +2544,10 @@ impl SessionStorage {
         session_id: &Uuid,
         key: &str,
     ) -> CoreResult<Option<SessionMetadata>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT session_id, key, value, updated_at FROM session_metadata
@@ -2276,7 +2572,10 @@ impl SessionStorage {
     }
 
     pub fn list_session_metadata(&self, session_id: &Uuid) -> CoreResult<Vec<SessionMetadata>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT session_id, key, value, updated_at FROM session_metadata
@@ -2299,7 +2598,10 @@ impl SessionStorage {
     }
 
     pub fn delete_session_metadata(&self, session_id: &Uuid, key: &str) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM session_metadata WHERE session_id = ?1 AND key = ?2",
             params![session_id.to_string(), key],
@@ -2311,7 +2613,10 @@ impl SessionStorage {
     // --- Session Tag CRUD (table 18) ---
 
     pub fn add_session_tag(&self, tag: &SessionTag) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO session_tags (session_id, tag, created_at)
              VALUES (?1, ?2, ?3)
@@ -2327,7 +2632,10 @@ impl SessionStorage {
     }
 
     pub fn list_session_tags(&self, session_id: &Uuid) -> CoreResult<Vec<SessionTag>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT session_id, tag, created_at FROM session_tags
@@ -2349,7 +2657,10 @@ impl SessionStorage {
     }
 
     pub fn list_sessions_for_tag(&self, tag: &str) -> CoreResult<Vec<Uuid>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT session_id FROM session_tags WHERE tag = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -2364,7 +2675,10 @@ impl SessionStorage {
     }
 
     pub fn remove_session_tag(&self, session_id: &Uuid, tag: &str) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM session_tags WHERE session_id = ?1 AND tag = ?2",
             params![session_id.to_string(), tag],
@@ -2376,7 +2690,10 @@ impl SessionStorage {
     // --- Compaction History CRUD (table 19) ---
 
     pub fn insert_compaction_history(&self, history: &CompactionHistory) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO compaction_history
              (id, session_id, compaction_id, entries_compacted, tokens_before, tokens_after,
@@ -2401,7 +2718,10 @@ impl SessionStorage {
     }
 
     pub fn get_compaction_history(&self, id: &Uuid) -> CoreResult<Option<CompactionHistory>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, compaction_id, entries_compacted, tokens_before,
@@ -2425,7 +2745,10 @@ impl SessionStorage {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<CompactionHistory>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, session_id, compaction_id, entries_compacted, tokens_before,
@@ -2446,7 +2769,10 @@ impl SessionStorage {
     }
 
     pub fn delete_compaction_history(&self, id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "DELETE FROM compaction_history WHERE id = ?1",
             params![id.to_string()],
@@ -2677,8 +3003,7 @@ fn plan_run_mapper(row: &rusqlite::Row) -> rusqlite::Result<PlanRun> {
         id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
         plan_revision_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
         session_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap_or_default(),
-        status: serde_json::from_str(&row.get::<_, String>(3)?)
-            .unwrap_or(PlanRunStatus::Pending),
+        status: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or(PlanRunStatus::Pending),
         started_at: parse_dt(row.get::<_, String>(4)?),
         completed_at: row
             .get::<_, Option<String>>(5)?
@@ -2687,8 +3012,7 @@ fn plan_run_mapper(row: &rusqlite::Row) -> rusqlite::Result<PlanRun> {
         agent_task_id: row
             .get::<_, Option<String>>(6)?
             .and_then(|s| Uuid::parse_str(&s).ok()),
-        result: serde_json::from_str(&row.get::<_, String>(7)?)
-            .unwrap_or(serde_json::Value::Null),
+        result: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or(serde_json::Value::Null),
     })
 }
 
@@ -2725,7 +3049,8 @@ fn routing_decision_mapper(row: &rusqlite::Row) -> rusqlite::Result<RoutingDecis
         model: row.get(4)?,
         reason: row.get(5)?,
         created_at: parse_dt(row.get::<_, String>(6)?),
-        metadata: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or(serde_json::Value::Null),
+        metadata: serde_json::from_str(&row.get::<_, String>(7)?)
+            .unwrap_or(serde_json::Value::Null),
     })
 }
 

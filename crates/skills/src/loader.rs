@@ -22,8 +22,8 @@
 
 use crate::eligibility::EligibilityChecker;
 use crate::types::{
-    rank_skills, SkillFilter, SkillKind, SkillLayer, SkillManifest, SkillMatch, SkillScope,
-    SkillSpec, SkillVisibility,
+    SkillFilter, SkillKind, SkillLayer, SkillManifest, SkillMatch, SkillScope, SkillSpec,
+    SkillVisibility, rank_skills,
 };
 use dashmap::DashMap;
 use notify::{Event, RecursiveMode, Watcher};
@@ -539,13 +539,7 @@ impl SkillLoader {
         })?;
 
         let path = source_path.unwrap_or_default();
-        let spec = manifest_to_spec(
-            manifest,
-            layer,
-            path.clone(),
-            body,
-            frontmatter,
-        )?;
+        let spec = manifest_to_spec(manifest, layer, path.clone(), body, frontmatter)?;
 
         let mut warnings = Vec::new();
         if spec.description.is_empty() {
@@ -608,8 +602,7 @@ impl SkillLoader {
         all.into_iter()
             .filter(|s| {
                 filter.matches(s)
-                    && (!filter.eligible_only
-                        || checker.is_eligible(&s.requires).unwrap_or(false))
+                    && (!filter.eligible_only || checker.is_eligible(&s.requires).unwrap_or(false))
             })
             .collect()
     }
@@ -719,13 +712,11 @@ impl SkillLoader {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
 
-        let mut watcher = notify::recommended_watcher(
-            move |res: Result<Event, notify::Error>| {
-                if let Ok(event) = res {
-                    let _ = tx.send(event);
-                }
-            },
-        )
+        let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+            if let Ok(event) = res {
+                let _ = tx.send(event);
+            }
+        })
         .map_err(|e| format!("Failed to create watcher: {e}"))?;
 
         let dirs = self.all_layer_dirs();
@@ -794,13 +785,16 @@ impl SkillLoader {
                         // path that exists was created or modified. This is
                         // robust regardless of the exact notify event kind.
                         let is_remove = !path.exists();
-                        let layer =
-                            determine_layer_from_path(&path, &layer_dirs).unwrap_or(SkillLayer::Extra);
+                        let layer = determine_layer_from_path(&path, &layer_dirs)
+                            .unwrap_or(SkillLayer::Extra);
                         if is_remove {
                             // Find and remove any skill whose source is this file.
                             let ids: Vec<String> = skills
                                 .iter()
-                                .filter(|s| s.value().source_path.as_deref() == Some(path.to_str().unwrap_or("")))
+                                .filter(|s| {
+                                    s.value().source_path.as_deref()
+                                        == Some(path.to_str().unwrap_or(""))
+                                })
                                 .map(|s| s.key().clone())
                                 .collect();
                             for id in ids {
@@ -1112,11 +1106,10 @@ pub fn manifest_to_spec(
 fn string_from_value(value: Option<serde_json::Value>) -> Option<String> {
     match value {
         Some(serde_json::Value::String(s)) => Some(s),
-        Some(serde_json::Value::Object(map)) => {
-            map.get("name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        }
+        Some(serde_json::Value::Object(map)) => map
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
         _ => None,
     }
 }
@@ -1232,8 +1225,14 @@ metadata:
         assert_eq!(spec.id, "my-skill");
         assert_eq!(spec.layer, SkillLayer::Personal);
         assert_eq!(spec.tags, vec!["a".to_string(), "b".to_string()]);
-        assert_eq!(spec.requires.os.as_deref(), Some(&vec!["linux".to_string(), "macos".to_string()]));
-        assert_eq!(spec.requires.binaries.as_deref(), Some(&vec!["git".to_string()]));
+        assert_eq!(
+            spec.requires.os.as_deref(),
+            Some(&vec!["linux".to_string(), "macos".to_string()])
+        );
+        assert_eq!(
+            spec.requires.binaries.as_deref(),
+            Some(&vec!["git".to_string()])
+        );
         assert!(spec.is_always());
         assert!(spec.body.contains("# Body"));
         assert!(warnings.is_empty());
@@ -1319,11 +1318,7 @@ metadata:
         let dir = temp_dir("bad");
         let bad = dir.join("badsyntax");
         std::fs::create_dir_all(&bad).unwrap();
-        std::fs::write(
-            bad.join("SKILL.md"),
-            "---\nid: [unclosed\nname: x\n---\n",
-        )
-        .unwrap();
+        std::fs::write(bad.join("SKILL.md"), "---\nid: [unclosed\nname: x\n---\n").unwrap();
         let loader = SkillLoader::new();
         loader.register_layer_dir(SkillLayer::Personal, dir.clone());
         rt.block_on(async {
@@ -1360,8 +1355,18 @@ metadata:
         rt.block_on(async {
             loader
                 .register_skills(vec![
-                    SkillSpec::new("git".into(), "Git".into(), "version control".into(), SkillLayer::Bundled),
-                    SkillSpec::new("web".into(), "Web".into(), "search online".into(), SkillLayer::Bundled),
+                    SkillSpec::new(
+                        "git".into(),
+                        "Git".into(),
+                        "version control".into(),
+                        SkillLayer::Bundled,
+                    ),
+                    SkillSpec::new(
+                        "web".into(),
+                        "Web".into(),
+                        "search online".into(),
+                        SkillLayer::Bundled,
+                    ),
                 ])
                 .await;
             let hits = loader.search("git", 5);
@@ -1387,7 +1392,12 @@ metadata:
             };
             loader
                 .register_skills(vec![
-                    SkillSpec::new("plain".into(), "Plain".into(), "d".into(), SkillLayer::Bundled),
+                    SkillSpec::new(
+                        "plain".into(),
+                        "Plain".into(),
+                        "d".into(),
+                        SkillLayer::Bundled,
+                    ),
                     needs_binary,
                 ])
                 .await;

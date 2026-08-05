@@ -152,10 +152,7 @@ impl BootSequenceBuilder {
     }
 
     /// Override the PID lock file path.
-    pub fn with_pid_lock_path(
-        mut self,
-        path: impl Into<std::path::PathBuf>,
-    ) -> Self {
+    pub fn with_pid_lock_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.pid_lock_path = Some(path.into());
         self
     }
@@ -275,7 +272,10 @@ impl BootSequence {
 
     fn migrate_database(&self) -> Result<(), AppError> {
         if self.skip_migrations {
-            info!(stage = BootStage::MigrateDatabase.name(), "Migrations skipped");
+            info!(
+                stage = BootStage::MigrateDatabase.name(),
+                "Migrations skipped"
+            );
             return Ok(());
         }
         // The session crate's `SessionStorage::new` initializes its own
@@ -317,7 +317,10 @@ impl BootSequence {
     }
 
     fn start_scheduler(&self) {
-        info!(stage = BootStage::StartScheduler.name(), "Scheduler started");
+        info!(
+            stage = BootStage::StartScheduler.name(),
+            "Scheduler started"
+        );
     }
 
     async fn start_gateway(&mut self) -> Result<(), AppError> {

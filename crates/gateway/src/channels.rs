@@ -3,15 +3,15 @@
 //! Provides `rpc_channels` for channel management CRUD, backed by the
 //! channels crate's [`ChannelManager`] and its [`ChannelConfig`] type.
 
-use std::sync::Arc;
 use opensquilla_channels::manager::ChannelManager;
 use opensquilla_channels::types::{ChannelConfig, ChannelType, OutgoingMessage};
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// Stored channel descriptor. We keep a parallel config registry because
 /// `ChannelManager` owns the live handles and does not expose their configs.
@@ -47,7 +47,9 @@ impl ChannelsService {
 
     /// Upsert a channel record.
     pub fn upsert(&self, record: ChannelRecord) {
-        self.records.lock().insert(record.channel_id.clone(), record);
+        self.records
+            .lock()
+            .insert(record.channel_id.clone(), record);
     }
 
     /// Get a channel record by id.
@@ -123,7 +125,10 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                     .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
-                let config = params.get("config").cloned().unwrap_or(serde_json::Value::Null);
+                let config = params
+                    .get("config")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
 
                 if service.get(&channel_id).is_some() {
                     return Err(AppError::bad_request(format!(
@@ -139,8 +144,7 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                     config,
                 };
                 service.upsert(record.clone());
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -208,8 +212,7 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                     record.channel_type = type_str.to_string();
                 }
                 service.upsert(record.clone());
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -262,11 +265,8 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                 }
 
                 let channel_type = parse_channel_type(&record.channel_type)?;
-                let message = OutgoingMessage::new(
-                    channel_id.to_string(),
-                    channel_type,
-                    text.to_string(),
-                );
+                let message =
+                    OutgoingMessage::new(channel_id.to_string(), channel_type, text.to_string());
                 service
                     .manager()
                     .send(channel_id, &message)
@@ -300,7 +300,10 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                     .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
-                let config_value = params.get("config").cloned().unwrap_or(serde_json::Value::Null);
+                let config_value = params
+                    .get("config")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
 
                 let cfg = ChannelConfig {
                     channel_type,
@@ -374,7 +377,9 @@ mod tests {
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["name"], "Test Channel");
 
-        let r = registry.dispatch("channels.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("channels.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
 
@@ -403,7 +408,10 @@ mod tests {
             "channel_id": "ch-1",
             "channel_type": "terminal",
         });
-        registry.dispatch("channels.create", params.clone()).await.unwrap();
+        registry
+            .dispatch("channels.create", params.clone())
+            .await
+            .unwrap();
         let r = registry.dispatch("channels.create", params).await;
         assert!(r.unwrap().is_err());
     }

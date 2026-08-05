@@ -154,7 +154,9 @@ impl DesktopRuntime {
         let gateway_config = self.gateway_config.clone();
         let addr: SocketAddr = format!("{}:{}", gateway_config.host, gateway_config.port)
             .parse()
-            .map_err(|e| crate::DesktopError::Config(format!("invalid gateway bind address: {e}")))?;
+            .map_err(|e| {
+                crate::DesktopError::Config(format!("invalid gateway bind address: {e}"))
+            })?;
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
@@ -169,9 +171,7 @@ impl DesktopRuntime {
                     let _ = shutdown_rx.await;
                 })
                 .await
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
-                    Box::new(e)
-                })
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
         });
 
         self.bound_addr = Some(addr);

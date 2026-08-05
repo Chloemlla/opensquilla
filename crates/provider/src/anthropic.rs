@@ -14,12 +14,10 @@
 use async_trait::async_trait;
 use futures::Stream;
 use futures::StreamExt;
-use opensquilla_core::types::{
-    ChatMessage, ContentBlock, Role, ToolCall, ToolDefinition, Usage,
-};
+use opensquilla_core::types::{ChatMessage, ContentBlock, Role, ToolCall, ToolDefinition, Usage};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -234,10 +232,7 @@ fn build_system_payload(system: &str, extra: &HashMap<String, Value>) -> Value {
             if text.is_empty() {
                 continue;
             }
-            let cache = bp
-                .get("cache")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let cache = bp.get("cache").and_then(|v| v.as_bool()).unwrap_or(false);
             let mut block = json!({"type": "text", "text": text});
             if cache {
                 block["cache_control"] = json!({"type": "ephemeral"});
@@ -697,7 +692,10 @@ impl AnthropicProvider {
         if !self.config.api_key.is_empty() {
             match self.config.auth_style {
                 AuthHeaderStyle::Bearer => {
-                    headers.push(("Authorization".into(), format!("Bearer {}", self.config.api_key)));
+                    headers.push((
+                        "Authorization".into(),
+                        format!("Bearer {}", self.config.api_key),
+                    ));
                 }
                 AuthHeaderStyle::XApiKey => {
                     headers.push(("x-api-key".into(), self.config.api_key.clone()));
@@ -963,7 +961,9 @@ impl AnthropicStream {
     }
 
     /// Create a stream from a raw byte stream. Exposed for tests.
-    fn from_body(body: futures::stream::BoxStream<'static, Result<bytes::Bytes, reqwest::Error>>) -> Self {
+    fn from_body(
+        body: futures::stream::BoxStream<'static, Result<bytes::Bytes, reqwest::Error>>,
+    ) -> Self {
         Self {
             body,
             buffer: Vec::new(),
@@ -1070,11 +1070,7 @@ impl AnthropicStream {
                     Some("input_json_delta") => {
                         let index = value["index"].as_i64().unwrap_or(-1);
                         let partial = delta["partial_json"].as_str().unwrap_or("").to_string();
-                        let (id, name) = self
-                            .tool_ids
-                            .get(&index)
-                            .cloned()
-                            .unwrap_or_default();
+                        let (id, name) = self.tool_ids.get(&index).cloned().unwrap_or_default();
                         out.push(Ok(StreamEvent::ToolCall {
                             id,
                             name,
@@ -1285,7 +1281,10 @@ mod tests {
             ChatMessage::system("You are helpful."),
             ChatMessage::user("Hello"),
         ];
-        assert_eq!(extract_system(&messages), Some("You are helpful.".to_string()));
+        assert_eq!(
+            extract_system(&messages),
+            Some("You are helpful.".to_string())
+        );
         assert_eq!(extract_system(&[ChatMessage::user("x")]), None);
     }
 
@@ -1339,7 +1338,10 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0]["name"], "get_weather");
         assert_eq!(tools[0]["description"], "Get weather for a city");
-        assert_eq!(tools[0]["input_schema"]["properties"]["city"]["type"], "string");
+        assert_eq!(
+            tools[0]["input_schema"]["properties"]["city"]["type"],
+            "string"
+        );
     }
 
     #[test]
@@ -1350,8 +1352,7 @@ mod tests {
             input_schema: json!({"type": "object"}),
         };
         let mut cfg = chat_config("claude-3-5-sonnet-20241022");
-        cfg.extra
-            .insert("tool_cache_control".into(), json!([0]));
+        cfg.extra.insert("tool_cache_control".into(), json!([0]));
         let body = build_anthropic_request(
             &[ChatMessage::user("hi")],
             &[tool],
@@ -1359,7 +1360,10 @@ mod tests {
             &anthropic_config(),
             false,
         );
-        assert_eq!(body["tools"][0]["cache_control"], json!({"type": "ephemeral"}));
+        assert_eq!(
+            body["tools"][0]["cache_control"],
+            json!({"type": "ephemeral"})
+        );
     }
 
     #[test]
@@ -1446,8 +1450,7 @@ mod tests {
         let msg = ChatMessage {
             role: Role::Tool,
             content: vec![ContentBlock::ToolResult(ToolResult::success(
-                "toolu_1",
-                "70F",
+                "toolu_1", "70F",
             ))],
             name: None,
             tool_call_id: Some("toolu_1".into()),
@@ -1516,7 +1519,10 @@ mod tests {
         let resp = parse_anthropic_response(&data);
         assert_eq!(resp.content.len(), 1);
         assert_eq!(resp.content[0].content.len(), 2);
-        assert!(matches!(resp.content[0].content[0], ContentBlock::Reasoning(_)));
+        assert!(matches!(
+            resp.content[0].content[0],
+            ContentBlock::Reasoning(_)
+        ));
         assert_eq!(resp.content[0].text_content(), "Hello");
         assert_eq!(resp.usage.input_tokens, 10);
         assert_eq!(resp.usage.output_tokens, 20);
@@ -1579,7 +1585,8 @@ mod tests {
 
     #[test]
     fn test_parse_anthropic_sse_thinking_delta() {
-        let data = r#"{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}"#;
+        let data =
+            r#"{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}"#;
         let event = parse_anthropic_sse_event(data);
         assert!(event.is_some());
         match event.unwrap() {
@@ -1622,7 +1629,11 @@ mod tests {
             .unwrap();
         assert_eq!(evs.len(), 1);
         match &evs[0] {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "toolu_1");
                 assert_eq!(name, "get_weather");
                 assert!(arguments.is_empty());
@@ -1633,7 +1644,11 @@ mod tests {
             .process_line(r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"loc\""}}"#)
             .unwrap();
         match &evs[0] {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "toolu_1");
                 assert_eq!(name, "get_weather");
                 assert_eq!(arguments, r#"{"loc"#);

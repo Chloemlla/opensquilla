@@ -192,7 +192,11 @@ impl PipelineStep for AttachmentLoaderStep {
                     total_bytes += bytes.len() as u64;
                     loaded += 1;
                     // Text blocks carry a labeled rendering of the attachment.
-                    let label = if att.name.is_empty() { att.id.clone() } else { att.name.clone() };
+                    let label = if att.name.is_empty() {
+                        att.id.clone()
+                    } else {
+                        att.name.clone()
+                    };
                     let text = match String::from_utf8(bytes) {
                         Ok(text) => {
                             format!(
@@ -204,8 +208,7 @@ impl PipelineStep for AttachmentLoaderStep {
                         Err(_) => {
                             format!(
                                 "[attachment: {label} ({}) — {} bytes, binary content]",
-                                att.mime_type,
-                                total_bytes
+                                att.mime_type, total_bytes
                             )
                         }
                     };

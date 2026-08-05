@@ -109,7 +109,9 @@ pub struct ScopeRegistry {
 impl ScopeRegistry {
     /// Create a new registry.
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Register a scope requirement for an exact method name.
@@ -255,8 +257,14 @@ mod tests {
 
     #[test]
     fn test_implied_scopes() {
-        assert_eq!(Scope::Admin.implied_scopes(), vec![Scope::Admin, Scope::User, Scope::ReadOnly]);
-        assert_eq!(Scope::User.implied_scopes(), vec![Scope::User, Scope::ReadOnly]);
+        assert_eq!(
+            Scope::Admin.implied_scopes(),
+            vec![Scope::Admin, Scope::User, Scope::ReadOnly]
+        );
+        assert_eq!(
+            Scope::User.implied_scopes(),
+            vec![Scope::User, Scope::ReadOnly]
+        );
         assert_eq!(Scope::ReadOnly.implied_scopes(), vec![Scope::ReadOnly]);
     }
 
@@ -295,17 +303,19 @@ mod tests {
         // Read-only principal is denied for user-scoped methods.
         assert!(reg.authorize(&read_only, "chat.send", Scope::User).is_err());
         // Read-only principal can call read-only methods.
-        assert!(reg
-            .authorize(&read_only, "session.list", Scope::User)
-            .is_ok());
+        assert!(
+            reg.authorize(&read_only, "session.list", Scope::User)
+                .is_ok()
+        );
         // Admin can do anything user-scoped.
         let admin = Principal::new(Scope::Admin);
         assert!(reg.authorize(&admin, "chat.send", Scope::User).is_ok());
         // Secrets are admin-only.
         assert!(reg.authorize(&user, "secrets.list", Scope::User).is_err());
-        assert!(reg
-            .authorize(&admin, "secrets.set_key", Scope::User)
-            .is_ok());
+        assert!(
+            reg.authorize(&admin, "secrets.set_key", Scope::User)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -313,10 +323,14 @@ mod tests {
         let reg = ScopeRegistry::new();
         let read_only = Principal::new(Scope::ReadOnly);
         // Unknown method falls back to the provided default.
-        assert!(reg.authorize(&read_only, "unknown.method", Scope::User).is_err());
-        assert!(reg
-            .authorize(&read_only, "unknown.method", Scope::ReadOnly)
-            .is_ok());
+        assert!(
+            reg.authorize(&read_only, "unknown.method", Scope::User)
+                .is_err()
+        );
+        assert!(
+            reg.authorize(&read_only, "unknown.method", Scope::ReadOnly)
+                .is_ok()
+        );
     }
 
     #[test]

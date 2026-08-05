@@ -4,16 +4,16 @@
 //! records are held in memory; workspace checks verify the existence of
 //! expected project files on disk.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use opensquilla_core::types::AgentId;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// An agent record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,8 +129,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                     metadata,
                 };
                 store.upsert(agent.clone());
-                Ok(serde_json::to_value(agent)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(agent).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -179,9 +178,9 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                     .get("id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'id' parameter"))?;
-                let mut agent = store.get(id).ok_or_else(|| {
-                    AppError::not_found(format!("Agent '{id}' not found"))
-                })?;
+                let mut agent = store
+                    .get(id)
+                    .ok_or_else(|| AppError::not_found(format!("Agent '{id}' not found")))?;
                 if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
                     agent.name = name.to_string();
                 }
@@ -196,8 +195,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                 }
                 agent.updated_at = Utc::now();
                 store.upsert(agent.clone());
-                Ok(serde_json::to_value(agent)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(agent).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -271,8 +269,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                 files: checks,
                 all_present,
             };
-            Ok(serde_json::to_value(result)
-                .map_err(|e| AppError::internal(e.to_string()))?)
+            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
         }
     }));
 }
@@ -302,7 +299,9 @@ mod tests {
             .await;
         assert!(r.unwrap().is_ok());
 
-        let r = registry.dispatch("agents.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("agents.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
 

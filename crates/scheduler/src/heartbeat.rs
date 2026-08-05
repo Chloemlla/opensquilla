@@ -16,10 +16,10 @@
 //! This is the Rust port of the Python `scheduler/heartbeat.py` module.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -153,8 +153,7 @@ impl HeartbeatStore {
 
     /// Create an in-memory heartbeat store (for testing).
     pub fn in_memory() -> Result<Self, HeartbeatError> {
-        let conn =
-            Connection::open_in_memory().map_err(|e| HeartbeatError::Open(e.to_string()))?;
+        let conn = Connection::open_in_memory().map_err(|e| HeartbeatError::Open(e.to_string()))?;
         let store = Self {
             conn: std::sync::Mutex::new(conn),
         };
@@ -472,8 +471,7 @@ impl HeartbeatRunner {
         };
 
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(Duration::from_secs(runner.interval_secs));
+            let mut ticker = tokio::time::interval(Duration::from_secs(runner.interval_secs));
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             info!(
                 instance = %runner.instance_id,
@@ -677,7 +675,12 @@ mod tests {
         let handle = runner.start();
         assert!(handle.is_running());
         tokio::time::sleep(Duration::from_millis(1100)).await;
-        let heartbeat = runner.store.lock().await.get(&runner.instance_id()).unwrap();
+        let heartbeat = runner
+            .store
+            .lock()
+            .await
+            .get(&runner.instance_id())
+            .unwrap();
         assert!(heartbeat.is_some());
         handle.stop();
         assert!(!handle.is_running());

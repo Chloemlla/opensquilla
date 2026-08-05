@@ -82,8 +82,12 @@ impl BraveSearch {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return match status.as_u16() {
-                401 => Err(SearchError::AuthError("Invalid Brave Search API key".to_string())),
-                429 => Err(SearchError::RateLimited("Brave Search rate limit exceeded".to_string())),
+                401 => Err(SearchError::AuthError(
+                    "Invalid Brave Search API key".to_string(),
+                )),
+                429 => Err(SearchError::RateLimited(
+                    "Brave Search rate limit exceeded".to_string(),
+                )),
                 _ => Err(SearchError::NetworkError(format!(
                     "Brave Search returned {status}: {body}"
                 ))),
@@ -130,7 +134,10 @@ impl BraveSearch {
         let total = Some(results.len() as u64);
         let has_more = results.len() >= request.options.max_results;
 
-        debug!("Brave Search returned {} results in {elapsed}ms", results.len());
+        debug!(
+            "Brave Search returned {} results in {elapsed}ms",
+            results.len()
+        );
 
         Ok(SearchResponse {
             results,
@@ -146,8 +153,9 @@ impl SearchProvider for BraveSearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+    > {
         Box::pin(self.search_web(request))
     }
 

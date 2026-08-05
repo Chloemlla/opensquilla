@@ -36,21 +36,41 @@ impl SchedulerEngine {
         let reaper = Arc::new(SessionReaper::new(store.clone()));
 
         Self {
-            store, handlers, ops, executor, reaper,
-            tick_loop: None, reaper_tick_loop: None,
-            tick_handle: None, reaper_tick_handle: None,
-            check_interval_secs: 10, reaper_interval_secs: 3600, running: false,
+            store,
+            handlers,
+            ops,
+            executor,
+            reaper,
+            tick_loop: None,
+            reaper_tick_loop: None,
+            tick_handle: None,
+            reaper_tick_handle: None,
+            check_interval_secs: 10,
+            reaper_interval_secs: 3600,
+            running: false,
         }
     }
 
-    pub fn with_check_interval(mut self, secs: u64) -> Self { self.check_interval_secs = secs; self }
-    pub fn with_reaper_interval(mut self, secs: u64) -> Self { self.reaper_interval_secs = secs; self }
+    pub fn with_check_interval(mut self, secs: u64) -> Self {
+        self.check_interval_secs = secs;
+        self
+    }
+    pub fn with_reaper_interval(mut self, secs: u64) -> Self {
+        self.reaper_interval_secs = secs;
+        self
+    }
 
     /// Start the scheduler engine.
     pub fn start(&mut self) {
-        if self.running { warn!("Scheduler engine is already running"); return; }
+        if self.running {
+            warn!("Scheduler engine is already running");
+            return;
+        }
 
-        info!("Starting scheduler engine (check: {}s, reaper: {}s)", self.check_interval_secs, self.reaper_interval_secs);
+        info!(
+            "Starting scheduler engine (check: {}s, reaper: {}s)",
+            self.check_interval_secs, self.reaper_interval_secs
+        );
 
         let tick_loop = TickLoop::new("scheduler", self.check_interval_secs);
         let executor = self.executor.clone();
@@ -80,7 +100,10 @@ impl SchedulerEngine {
             async move {
                 let result = reaper.run_cycle().await;
                 if result.cleaned_executions > 0 || result.cleaned_jobs > 0 {
-                    info!("Reaper: cleaned {} executions, {} jobs in {}ms", result.cleaned_executions, result.cleaned_jobs, result.duration_ms);
+                    info!(
+                        "Reaper: cleaned {} executions, {} jobs in {}ms",
+                        result.cleaned_executions, result.cleaned_jobs, result.duration_ms
+                    );
                 }
             }
         });
@@ -95,25 +118,48 @@ impl SchedulerEngine {
 
     /// Stop the scheduler engine.
     pub fn stop(&mut self) {
-        if !self.running { warn!("Scheduler engine is not running"); return; }
+        if !self.running {
+            warn!("Scheduler engine is not running");
+            return;
+        }
         info!("Stopping scheduler engine...");
-        if let Some(ref h) = self.tick_handle { h.stop(); }
-        if let Some(ref h) = self.reaper_tick_handle { h.stop(); }
+        if let Some(ref h) = self.tick_handle {
+            h.stop();
+        }
+        if let Some(ref h) = self.reaper_tick_handle {
+            h.stop();
+        }
         self.running = false;
         info!("Scheduler engine stopped");
     }
 
-    pub fn is_running(&self) -> bool { self.running }
-    pub fn ops(&self) -> &JobOps { &self.ops }
-    pub fn handlers(&self) -> &HandlerRegistry { &self.handlers }
-    pub fn reaper(&self) -> &SessionReaper { &self.reaper }
-    pub fn check_interval_secs(&self) -> u64 { self.check_interval_secs }
+    pub fn is_running(&self) -> bool {
+        self.running
+    }
+    pub fn ops(&self) -> &JobOps {
+        &self.ops
+    }
+    pub fn handlers(&self) -> &HandlerRegistry {
+        &self.handlers
+    }
+    pub fn reaper(&self) -> &SessionReaper {
+        &self.reaper
+    }
+    pub fn check_interval_secs(&self) -> u64 {
+        self.check_interval_secs
+    }
 
     /// Get the underlying job store (for advanced operations).
-    pub fn store(&self) -> &Arc<Mutex<JobStore>> { &self.store }
+    pub fn store(&self) -> &Arc<Mutex<JobStore>> {
+        &self.store
+    }
 
-    pub async fn get_stats(&self) -> Result<SchedulerStats, crate::ops::OpsError> { self.ops.get_stats().await }
-    pub async fn run_reaper_cycle(&self) -> ReaperResult { self.reaper.run_cycle().await }
+    pub async fn get_stats(&self) -> Result<SchedulerStats, crate::ops::OpsError> {
+        self.ops.get_stats().await
+    }
+    pub async fn run_reaper_cycle(&self) -> ReaperResult {
+        self.reaper.run_cycle().await
+    }
 }
 
 /// Builder for constructing a SchedulerEngine with custom configuration.
@@ -136,23 +182,46 @@ impl SchedulerBuilder {
         }
     }
 
-    pub fn with_store(mut self, store: JobStore) -> Self { self.store = Some(store); self }
-    pub fn with_db_path(mut self, path: impl Into<String>) -> Self { self.db_path = Some(path.into()); self }
-    pub fn with_handler(mut self, handler: Box<dyn crate::handlers::CronJobHandler>) -> Self { self.handlers.register(handler); self }
-    pub fn with_check_interval(mut self, secs: u64) -> Self { self.check_interval_secs = secs; self }
-    pub fn with_reaper_interval(mut self, secs: u64) -> Self { self.reaper_interval_secs = secs; self }
+    pub fn with_store(mut self, store: JobStore) -> Self {
+        self.store = Some(store);
+        self
+    }
+    pub fn with_db_path(mut self, path: impl Into<String>) -> Self {
+        self.db_path = Some(path.into());
+        self
+    }
+    pub fn with_handler(mut self, handler: Box<dyn crate::handlers::CronJobHandler>) -> Self {
+        self.handlers.register(handler);
+        self
+    }
+    pub fn with_check_interval(mut self, secs: u64) -> Self {
+        self.check_interval_secs = secs;
+        self
+    }
+    pub fn with_reaper_interval(mut self, secs: u64) -> Self {
+        self.reaper_interval_secs = secs;
+        self
+    }
 
     pub fn build(self) -> Result<SchedulerEngine, Box<dyn std::error::Error>> {
-        let store = if let Some(store) = self.store { store }
-        else if let Some(path) = self.db_path { JobStore::open(&path)? }
-        else { JobStore::in_memory()? };
+        let store = if let Some(store) = self.store {
+            store
+        } else if let Some(path) = self.db_path {
+            JobStore::open(&path)?
+        } else {
+            JobStore::in_memory()?
+        };
         Ok(SchedulerEngine::new(store, self.handlers)
             .with_check_interval(self.check_interval_secs)
             .with_reaper_interval(self.reaper_interval_secs))
     }
 }
 
-impl Default for SchedulerBuilder { fn default() -> Self { Self::new() } }
+impl Default for SchedulerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -161,8 +230,8 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_start_stop() {
         let store = JobStore::in_memory().unwrap();
-        let mut engine = SchedulerEngine::new(store, HandlerRegistry::with_defaults())
-            .with_check_interval(60);
+        let mut engine =
+            SchedulerEngine::new(store, HandlerRegistry::with_defaults()).with_check_interval(60);
         assert!(!engine.is_running());
         engine.start();
         assert!(engine.is_running());
@@ -172,7 +241,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_scheduler_builder() {
-        let engine = SchedulerBuilder::new().with_check_interval(30).with_reaper_interval(7200).build().unwrap();
+        let engine = SchedulerBuilder::new()
+            .with_check_interval(30)
+            .with_reaper_interval(7200)
+            .build()
+            .unwrap();
         assert_eq!(engine.check_interval_secs(), 30);
     }
 

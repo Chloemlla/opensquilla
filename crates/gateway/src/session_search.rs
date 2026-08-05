@@ -75,7 +75,10 @@ impl SessionSearchIndex {
         let mut guard = self.messages.write();
         // Replace an existing message with the same id to keep the index
         // consistent on re-indexing.
-        if let Some(existing) = guard.iter_mut().find(|m| m.message_id == message.message_id) {
+        if let Some(existing) = guard
+            .iter_mut()
+            .find(|m| m.message_id == message.message_id)
+        {
             *existing = message;
         } else {
             guard.push(message);
@@ -109,11 +112,7 @@ impl SessionSearchIndex {
     ///
     /// Returns hits ranked by term frequency, optionally restricted to a
     /// single session.
-    pub fn search(
-        &self,
-        query: &str,
-        options: SessionSearchOptions,
-    ) -> SessionSearchResult {
+    pub fn search(&self, query: &str, options: SessionSearchOptions) -> SessionSearchResult {
         let started = std::time::Instant::now();
         let terms: Vec<String> = tokenize(query);
 
@@ -138,7 +137,11 @@ impl SessionSearchIndex {
                 .then_with(|| b.1.timestamp.cmp(&a.1.timestamp))
         });
 
-        let limit = if options.limit == 0 { 50 } else { options.limit };
+        let limit = if options.limit == 0 {
+            50
+        } else {
+            options.limit
+        };
         let hits: Vec<SessionSearchHit> = scored
             .into_iter()
             .take(limit)
@@ -189,9 +192,7 @@ fn score_message(message: &IndexedMessage, terms: &[String]) -> f64 {
     let mut score = 0.0;
     for term in terms {
         // Count occurrences of the term in the content.
-        let occurrences = body
-            .match_indices(term)
-            .count();
+        let occurrences = body.match_indices(term).count();
         if occurrences > 0 {
             // Weight by exact-boundary hits more than substring hits.
             score += occurrences as f64;
@@ -207,10 +208,7 @@ fn score_message(message: &IndexedMessage, terms: &[String]) -> f64 {
 /// Build a snippet around the first term occurrence.
 fn build_snippet(content: &str, terms: &[String]) -> String {
     let lower = content.to_lowercase();
-    let first = terms
-        .iter()
-        .find_map(|t| lower.find(t))
-        .unwrap_or(0);
+    let first = terms.iter().find_map(|t| lower.find(t)).unwrap_or(0);
     let start = first.saturating_sub(40);
     let end = (first + 120).min(content.len());
     let mut snippet = content[start..end].to_string();
@@ -224,11 +222,7 @@ fn build_snippet(content: &str, terms: &[String]) -> String {
 }
 
 /// Convenience: search all sessions.
-pub fn search_all(
-    index: &SessionSearchIndex,
-    query: &str,
-    limit: usize,
-) -> SessionSearchResult {
+pub fn search_all(index: &SessionSearchIndex, query: &str, limit: usize) -> SessionSearchResult {
     index.search(
         query,
         SessionSearchOptions {
@@ -301,7 +295,12 @@ mod tests {
         let result = search_all(&index, "API key", 10);
         assert!(result.total >= 1);
         assert!(result.hits.iter().any(|h| h.session_id == "s1"));
-        assert!(!result.hits.iter().any(|h| h.session_id == "s2" && h.role == "user"));
+        assert!(
+            !result
+                .hits
+                .iter()
+                .any(|h| h.session_id == "s2" && h.role == "user")
+        );
     }
 
     #[test]

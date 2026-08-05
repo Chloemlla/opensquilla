@@ -4,15 +4,15 @@
 //! (routing decision records) for inspecting and controlling the model
 //! routing layer.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A per-session routing hold. When a session is held, the router pins the
 /// model/provider instead of running the normal selection strategy.
@@ -212,7 +212,9 @@ pub fn register_routing_handlers(registry: &mut RpcRegistry, store: RoutingStore
                 let selected_provider = params
                     .get("selected_provider")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| AppError::bad_request("Missing 'selected_provider' parameter"))?;
+                    .ok_or_else(|| {
+                        AppError::bad_request("Missing 'selected_provider' parameter")
+                    })?;
                 let requested_model = params
                     .get("requested_model")
                     .and_then(|v| v.as_str())
@@ -244,8 +246,10 @@ pub fn register_routing_handlers(registry: &mut RpcRegistry, store: RoutingStore
                     decided_at: Utc::now(),
                 };
                 store.record_decision(decision.clone());
-                Ok(serde_json::to_value(decision)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(
+                    serde_json::to_value(decision)
+                        .map_err(|e| AppError::internal(e.to_string()))?,
+                )
             }
         }
     }));

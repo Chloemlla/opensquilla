@@ -90,7 +90,10 @@ pub fn is_valid_transition(from: &AgentState, to: &AgentState) -> bool {
             WaitingForTool | WaitingForUser | Completed | Idle | Stopped | Error(_)
         ),
         (WaitingForTool, _) => {
-            matches!(to, Thinking | Completed | WaitingForUser | Stopped | Error(_))
+            matches!(
+                to,
+                Thinking | Completed | WaitingForUser | Stopped | Error(_)
+            )
         }
         (WaitingForUser, _) => matches!(to, Idle | Thinking | Stopped | Error(_)),
         (Processing, _) => matches!(to, Idle | Paused | Completed | Stopped | Error(_)),
@@ -736,7 +739,9 @@ impl FromStr for GitOperation {
             "tag" => Ok(GitOperation::Tag),
             "show" => Ok(GitOperation::Show),
             "merge" => Ok(GitOperation::Merge),
-            other => Err(Error::InvalidInput(format!("Unknown git operation '{other}'"))),
+            other => Err(Error::InvalidInput(format!(
+                "Unknown git operation '{other}'"
+            ))),
         }
     }
 }
@@ -1007,7 +1012,9 @@ impl Agent {
                 } else if lower.contains("timeout") || lower.contains("timed out") {
                     RecoveryAction::Retry { delay_ms: 250 }
                 } else {
-                    RecoveryAction::FailOver { message: msg.clone() }
+                    RecoveryAction::FailOver {
+                        message: msg.clone(),
+                    }
                 }
             }
             AgentError::Timeout { .. } => RecoveryAction::Retry { delay_ms: 500 },
@@ -1302,11 +1309,7 @@ impl Agent {
     /// Extra arguments are appended after the operation's default argument
     /// vector (see [`git_args_for`]).
     #[instrument(skip(self, args), fields(agent_id = %self.id, op = %op.as_str()))]
-    pub async fn git_operation(
-        &self,
-        op: GitOperation,
-        args: &[String],
-    ) -> Result<GitResult> {
+    pub async fn git_operation(&self, op: GitOperation, args: &[String]) -> Result<GitResult> {
         if !self.config.allow_subprocess {
             return Err(Error::InvalidInput(
                 "Git operations require subprocess execution".to_string(),
@@ -1467,7 +1470,12 @@ impl Agent {
             let output_tokens = estimate_message_tokens(&response);
             let model = self.generator.model_name().to_string();
             let provider = self.generator.provider_name().to_string();
-            self.track_usage(UsageEvent::new(model, provider, input_tokens, output_tokens));
+            self.track_usage(UsageEvent::new(
+                model,
+                provider,
+                input_tokens,
+                output_tokens,
+            ));
 
             let calls = crate::turn_control::pending_tool_calls(&response);
 
@@ -1586,9 +1594,7 @@ impl Agent {
     /// Drops the oldest non-system messages beyond a truncated budget and
     /// inserts a summary placeholder. Returns the strategy that was applied,
     /// or `None` when no compaction was needed.
-    pub fn compact_history(
-        &mut self,
-    ) -> Option<crate::compaction_control::CompactionStrategy> {
+    pub fn compact_history(&mut self) -> Option<crate::compaction_control::CompactionStrategy> {
         use crate::compaction_control::{CompactionDecision, CompactionInput, decide_compaction};
         let input = CompactionInput {
             token_count: self.estimate_context_tokens(),
@@ -1650,7 +1656,8 @@ impl Agent {
         use crate::thinking::{count_reasoning_blocks, sanitize_for_provider};
         if matches!(
             support,
-            crate::thinking::ReasoningSupport::Supported | crate::thinking::ReasoningSupport::Streaming
+            crate::thinking::ReasoningSupport::Supported
+                | crate::thinking::ReasoningSupport::Streaming
         ) {
             return 0;
         }
@@ -1670,7 +1677,9 @@ impl Agent {
     /// Read a workspace file as UTF-8 text.
     pub async fn read_workspace_file(&self, path: &str) -> Result<String> {
         let resolved = self.resolve_workspace_path(path);
-        tokio::fs::read_to_string(&resolved).await.map_err(Error::Io)
+        tokio::fs::read_to_string(&resolved)
+            .await
+            .map_err(Error::Io)
     }
 
     /// Write UTF-8 text to a workspace file, creating parents as needed.
@@ -1682,7 +1691,9 @@ impl Agent {
         if let Some(parent) = resolved.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(Error::Io)?;
         }
-        tokio::fs::write(&resolved, content).await.map_err(Error::Io)
+        tokio::fs::write(&resolved, content)
+            .await
+            .map_err(Error::Io)
     }
 
     /// List the entries in a workspace directory.
@@ -1710,7 +1721,9 @@ impl Agent {
             ));
         }
         let resolved = self.resolve_workspace_path(path);
-        tokio::fs::create_dir_all(&resolved).await.map_err(Error::Io)
+        tokio::fs::create_dir_all(&resolved)
+            .await
+            .map_err(Error::Io)
     }
 
     /// Initialize a git repository in the workspace.
@@ -1790,7 +1803,9 @@ impl ToolDispatchExecutor {
             opensquilla_tools::ToolRegistry::with_builtins()
                 .map_err(|e| Error::ToolExecution(e.to_string()))?,
         );
-        let engine = Arc::new(opensquilla_tools::DispatchEngine::new_with_defaults(registry));
+        let engine = Arc::new(opensquilla_tools::DispatchEngine::new_with_defaults(
+            registry,
+        ));
         Ok(Self::new(engine))
     }
 
@@ -1800,7 +1815,9 @@ impl ToolDispatchExecutor {
             opensquilla_tools::ToolRegistry::with_builtins_in(working_dir)
                 .map_err(|e| Error::ToolExecution(e.to_string()))?,
         );
-        let engine = Arc::new(opensquilla_tools::DispatchEngine::new_with_defaults(registry));
+        let engine = Arc::new(opensquilla_tools::DispatchEngine::new_with_defaults(
+            registry,
+        ));
         Ok(Self::new(engine))
     }
 
@@ -1856,9 +1873,7 @@ pub struct AgentRegistry {
 impl AgentRegistry {
     /// Create a new empty agent registry.
     pub fn new() -> Self {
-        Self {
-            agents: Vec::new(),
-        }
+        Self { agents: Vec::new() }
     }
 
     /// Register a new agent in the registry.
@@ -1975,7 +1990,10 @@ mod tests {
     impl crate::runtime::ToolExecutor for MockToolExecutor {
         async fn execute(&self, call: &ToolCall) -> Result<ToolResult> {
             self.calls.lock().unwrap().push(call.name.clone());
-            Ok(ToolResult::success(&call.id, format!("result of {}", call.name)))
+            Ok(ToolResult::success(
+                &call.id,
+                format!("result of {}", call.name),
+            ))
         }
     }
 
@@ -2097,7 +2115,12 @@ mod tests {
         let outcome = futures::executor::block_on(agent.generate_turn(&ctx));
 
         assert!(outcome.is_success());
-        assert!(outcome.messages().iter().any(|m| m.text_content() == "done"));
+        assert!(
+            outcome
+                .messages()
+                .iter()
+                .any(|m| m.text_content() == "done")
+        );
         assert_eq!(agent.turn_count(), 1);
         assert_eq!(agent.get_state(), &AgentState::Completed);
     }
@@ -2115,10 +2138,12 @@ mod tests {
         assert!(outcome.is_success());
         // The tool result message should be appended after the assistant's
         // tool-call message.
-        assert!(outcome
-            .messages()
-            .iter()
-            .any(|m| m.role == MessageRole::Tool));
+        assert!(
+            outcome
+                .messages()
+                .iter()
+                .any(|m| m.role == MessageRole::Tool)
+        );
         // The executor ran the tool call.
         assert_eq!(executor.calls.lock().unwrap().as_slice(), ["read_file"]);
     }
@@ -2128,8 +2153,7 @@ mod tests {
         let executor = Arc::new(MockToolExecutor::default());
         let mut config = AgentConfig::default();
         config.allow_tool_execution = false;
-        let mut agent =
-            Agent::with_config("a1", Box::new(MockGenerator::tool_call()), config);
+        let mut agent = Agent::with_config("a1", Box::new(MockGenerator::tool_call()), config);
         agent.initialize();
         agent.set_tool_executor(executor.clone());
 
@@ -2165,7 +2189,11 @@ mod tests {
         // With no executor configured every call becomes a "no executor"
         // error, but the third call should be the budget error because it
         // exceeds the per-round limit.
-        let agent = Agent::with_config("a2", Box::new(MockGenerator::text("hi")), AgentConfig::default());
+        let agent = Agent::with_config(
+            "a2",
+            Box::new(MockGenerator::text("hi")),
+            AgentConfig::default(),
+        );
         let results = futures::executor::block_on(agent.tool_call_loop(&ctx, &calls));
         assert_eq!(results.len(), 3);
         assert!(results[2].is_error);
@@ -2174,7 +2202,11 @@ mod tests {
 
     #[test]
     fn test_execute_tool_call_requires_executor() {
-        let agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), AgentConfig::default());
+        let agent = Agent::with_config(
+            "a1",
+            Box::new(MockGenerator::text("hi")),
+            AgentConfig::default(),
+        );
         let call = ToolCall::new("c1", "read_file", json!({}));
         let result = futures::executor::block_on(agent.execute_tool_call(&call));
         assert!(result.is_error);
@@ -2186,8 +2218,7 @@ mod tests {
         let executor = Arc::new(MockToolExecutor::default());
         let mut config = AgentConfig::default();
         config.allow_subprocess = false;
-        let mut agent =
-            Agent::with_config("a1", Box::new(MockGenerator::text("hi")), config);
+        let mut agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), config);
         agent.set_tool_executor(executor.clone());
 
         let call = ToolCall::new("c1", "exec_command", json!({"cmd": "ls"}));
@@ -2199,7 +2230,11 @@ mod tests {
 
     #[test]
     fn test_process_tool_results_builds_message() {
-        let agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), AgentConfig::default());
+        let agent = Agent::with_config(
+            "a1",
+            Box::new(MockGenerator::text("hi")),
+            AgentConfig::default(),
+        );
         let results = vec![
             ToolResult::success("c1", "out 1"),
             ToolResult::error("c2", "bad thing"),
@@ -2222,14 +2257,20 @@ mod tests {
     #[test]
     fn test_git_args_for_operations() {
         assert_eq!(git_args_for(GitOperation::Status), ["status", "--short"]);
-        assert_eq!(git_args_for(GitOperation::Log), ["log", "--oneline", "-n", "20"]);
+        assert_eq!(
+            git_args_for(GitOperation::Log),
+            ["log", "--oneline", "-n", "20"]
+        );
         assert_eq!(git_args_for(GitOperation::Commit), ["commit"]);
         assert_eq!(git_args_for(GitOperation::Remote), ["remote", "-v"]);
     }
 
     #[test]
     fn test_git_operation_from_str() {
-        assert_eq!("status".parse::<GitOperation>().unwrap(), GitOperation::Status);
+        assert_eq!(
+            "status".parse::<GitOperation>().unwrap(),
+            GitOperation::Status
+        );
         assert_eq!("log".parse::<GitOperation>().unwrap(), GitOperation::Log);
         assert!("bogus".parse::<GitOperation>().is_err());
     }
@@ -2302,7 +2343,12 @@ mod tests {
         assert!(outcome.is_success());
         assert_eq!(agent.turn_count(), 1);
         assert_eq!(agent.get_state(), &AgentState::Completed);
-        assert!(agent.conversation().iter().any(|m| m.text_content() == "done"));
+        assert!(
+            agent
+                .conversation()
+                .iter()
+                .any(|m| m.text_content() == "done")
+        );
     }
 
     #[test]
@@ -2313,7 +2359,12 @@ mod tests {
         agent.set_tool_executor(executor.clone());
         let outcome = futures::executor::block_on(agent.run_turn(vec![Message::user("hello")]));
         assert!(outcome.is_success());
-        assert!(agent.conversation().iter().any(|m| m.role == MessageRole::Tool));
+        assert!(
+            agent
+                .conversation()
+                .iter()
+                .any(|m| m.role == MessageRole::Tool)
+        );
         let calls = executor.calls.lock().unwrap();
         assert!(!calls.is_empty());
         assert_eq!(calls[0], "read_file");
@@ -2334,7 +2385,9 @@ mod tests {
         config.context_window_tokens = 100;
         let mut agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), config);
         for i in 0..10 {
-            agent.add_message(Message::user(format!("a fairly long message body number {i}")));
+            agent.add_message(Message::user(format!(
+                "a fairly long message body number {i}"
+            )));
         }
         assert!(agent.should_compact());
     }
@@ -2366,7 +2419,12 @@ mod tests {
         let dropped = agent.trim_history_to_budget(50);
         assert!(dropped > 0);
         // The system message is preserved.
-        assert!(agent.conversation().iter().any(|m| m.role == MessageRole::System));
+        assert!(
+            agent
+                .conversation()
+                .iter()
+                .any(|m| m.role == MessageRole::System)
+        );
     }
 
     #[test]
@@ -2445,7 +2503,10 @@ mod tests {
     #[test]
     fn test_git_operation_from_str_new() {
         assert_eq!("init".parse::<GitOperation>().unwrap(), GitOperation::Init);
-        assert_eq!("merge".parse::<GitOperation>().unwrap(), GitOperation::Merge);
+        assert_eq!(
+            "merge".parse::<GitOperation>().unwrap(),
+            GitOperation::Merge
+        );
         assert_eq!("show".parse::<GitOperation>().unwrap(), GitOperation::Show);
     }
 }

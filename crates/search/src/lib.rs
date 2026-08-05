@@ -13,4 +13,6 @@ pub mod tavily;
 pub mod types;
 
 pub use registry::SearchRegistry;
-pub use types::{SearchError, SearchOptions, SearchProvider, SearchRequest, SearchResult, SearchResponse};
+pub use types::{
+    SearchError, SearchOptions, SearchProvider, SearchRequest, SearchResponse, SearchResult,
+};

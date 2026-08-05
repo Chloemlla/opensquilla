@@ -3,15 +3,17 @@
 //! Provides `rpc_cron` for scheduled-task management, backed by the
 //! scheduler crate's [`JobOps`] CRUD facade over a SQLite [`JobStore`].
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use opensquilla_scheduler::engine::SchedulerEngine;
-use opensquilla_scheduler::types::{CronJob, JobExecution, JobStatus, ScheduleKind, SchedulerStats};
+use opensquilla_scheduler::types::{
+    CronJob, JobExecution, JobStatus, ScheduleKind, SchedulerStats,
+};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A shared scheduler handle. Wraps an [`SchedulerEngine`] behind a Mutex so
 /// that concurrent RPC calls serialize on the ops facade.
@@ -101,7 +103,9 @@ fn ops_err(e: opensquilla_scheduler::ops::OpsError) -> AppError {
     use opensquilla_scheduler::ops::OpsError;
     match e {
         OpsError::JobNotFound(id) => AppError::not_found(format!("Job {id} not found")),
-        OpsError::HandlerNotFound(h) => AppError::bad_request(format!("Handler '{h}' not registered")),
+        OpsError::HandlerNotFound(h) => {
+            AppError::bad_request(format!("Handler '{h}' not registered"))
+        }
         OpsError::InvalidSchedule(msg) => AppError::bad_request(msg),
         OpsError::Store(s) => AppError::internal(format!("Scheduler store error: {s}")),
     }
@@ -128,7 +132,10 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                     .ok_or_else(|| AppError::bad_request("Missing 'handler' parameter"))?
                     .to_string();
                 let kind = parse_schedule(&params)?;
-                let payload = params.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+                let payload = params
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let tags: std::collections::HashMap<String, String> = params
                     .get("tags")
                     .and_then(|v| v.as_object())
@@ -159,8 +166,15 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                 let job = engine
                     .ops()
                     .create_job(
-                        name, kind, handler_name, payload, tags,
-                        agent_id, session_id, max_retries, retry_delay_secs,
+                        name,
+                        kind,
+                        handler_name,
+                        payload,
+                        tags,
+                        agent_id,
+                        session_id,
+                        max_retries,
+                        retry_delay_secs,
                     )
                     .await
                     .map_err(ops_err)?;
@@ -197,7 +211,11 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                     .map(parse_status)
                     .transpose()?;
                 let engine = handle.engine.lock().await;
-                let jobs = engine.ops().list_jobs(status_filter).await.map_err(ops_err)?;
+                let jobs = engine
+                    .ops()
+                    .list_jobs(status_filter)
+                    .await
+                    .map_err(ops_err)?;
                 let views: Vec<CronJobView> = jobs.iter().map(CronJobView::from).collect();
                 Ok(serde_json::json!({
                     "jobs": views,
@@ -214,7 +232,10 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
             let handle = handle.clone();
             async move {
                 let id = parse_job_id(&params)?;
-                let name = params.get("name").and_then(|v| v.as_str()).map(String::from);
+                let name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let kind = if params.get("cron").is_some()
                     || params.get("every").is_some()
                     || params.get("at").is_some()
@@ -223,15 +244,29 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                 } else {
                     None
                 };
-                let handler_name = params.get("handler").and_then(|v| v.as_str()).map(String::from);
+                let handler_name = params
+                    .get("handler")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let payload = params.get("payload").cloned();
-                let max_retries = params.get("max_retries").and_then(|v| v.as_u64()).map(|n| n as u32);
+                let max_retries = params
+                    .get("max_retries")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32);
                 let retry_delay_secs = params.get("retry_delay_secs").and_then(|v| v.as_u64());
 
                 let engine = handle.engine.lock().await;
                 let job = engine
                     .ops()
-                    .update_job(id, name, kind, handler_name, payload, max_retries, retry_delay_secs)
+                    .update_job(
+                        id,
+                        name,
+                        kind,
+                        handler_name,
+                        payload,
+                        max_retries,
+                        retry_delay_secs,
+                    )
                     .await
                     .map_err(ops_err)?;
                 Ok(serde_json::to_value(CronJobView::from(&job))
@@ -304,8 +339,7 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
             async move {
                 let engine = handle.engine.lock().await;
                 let stats: SchedulerStats = engine.ops().get_stats().await.map_err(ops_err)?;
-                Ok(serde_json::to_value(stats)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(stats).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -385,11 +419,15 @@ mod tests {
             .await;
         assert!(r.unwrap().is_ok());
 
-        let r = registry.dispatch("cron.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("cron.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
 
-        let r = registry.dispatch("cron.stats", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("cron.stats", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["total_jobs"], 1);
     }
@@ -405,13 +443,21 @@ mod tests {
             "handler": "heartbeat",
             "every": 30u64,
         });
-        let resp = registry.dispatch("cron.create", params).await.unwrap().unwrap();
+        let resp = registry
+            .dispatch("cron.create", params)
+            .await
+            .unwrap()
+            .unwrap();
         let id = resp["id"].as_str().unwrap().to_string();
 
-        let r = registry.dispatch("cron.pause", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("cron.pause", serde_json::json!({"id": id}))
+            .await;
         assert!(r.unwrap().is_ok());
 
-        let r = registry.dispatch("cron.resume", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("cron.resume", serde_json::json!({"id": id}))
+            .await;
         assert!(r.unwrap().is_ok());
     }
 

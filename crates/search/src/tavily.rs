@@ -69,7 +69,9 @@ impl TavilySearch {
             let body_text = response.text().await.unwrap_or_default();
             return match status.as_u16() {
                 401 => Err(SearchError::AuthError("Invalid Tavily API key".to_string())),
-                429 => Err(SearchError::RateLimited("Tavily rate limit exceeded".to_string())),
+                429 => Err(SearchError::RateLimited(
+                    "Tavily rate limit exceeded".to_string(),
+                )),
                 _ => Err(SearchError::NetworkError(format!(
                     "Tavily returned {status}: {body_text}"
                 ))),
@@ -114,8 +116,9 @@ impl SearchProvider for TavilySearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+    > {
         Box::pin(self.search_web(request))
     }
 

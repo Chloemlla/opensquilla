@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use tracing::{debug, info};
+use tracing_subscriber::Layer;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::Layer;
 
 use opensquilla_core::config::Config;
 
@@ -52,7 +52,9 @@ pub fn init_logger(level: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize the global logger from the application config.
 pub fn init_logger_from_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    let level = config.get("log.level").unwrap_or_else(|| "info".to_string());
+    let level = config
+        .get("log.level")
+        .unwrap_or_else(|| "info".to_string());
     let json_format = config
         .get("log.json")
         .unwrap_or_else(|| "false".to_string())
@@ -76,8 +78,8 @@ pub fn init_logger_with_config(config: &LoggerConfig) -> Result<(), Box<dyn std:
         return Ok(());
     }
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.level));
 
     let mut layers = Vec::new();
 
@@ -129,8 +131,7 @@ pub fn init_logger_with_config(config: &LoggerConfig) -> Result<(), Box<dyn std:
         layers.push(file_layer.boxed());
     }
 
-    let subscriber = tracing_subscriber::Registry::default()
-        .with(layers);
+    let subscriber = tracing_subscriber::Registry::default().with(layers);
 
     subscriber.init();
 
@@ -138,7 +139,11 @@ pub fn init_logger_with_config(config: &LoggerConfig) -> Result<(), Box<dyn std:
         "Logger initialized (level={}, json={}, file={})",
         config.level,
         config.json_format,
-        config.log_file.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".to_string())
+        config
+            .log_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "none".to_string())
     );
 
     Ok(())
@@ -160,7 +165,9 @@ impl Logger {
 
     /// Create a logger from the application config.
     pub fn from_config(config: &Config) -> Self {
-        let level = config.get("log.level").unwrap_or_else(|| "info".to_string());
+        let level = config
+            .get("log.level")
+            .unwrap_or_else(|| "info".to_string());
         let json_format = config
             .get("log.json")
             .unwrap_or_else(|| "false".to_string())

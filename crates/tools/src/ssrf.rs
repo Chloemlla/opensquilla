@@ -22,8 +22,8 @@ use crate::registry::ToolError;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
-use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::TokioAsyncResolver;
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 /// Configuration for SSRF protection.
 #[derive(Clone, Debug)]
@@ -115,9 +115,7 @@ impl SsrfProtection {
         }
 
         // If an allowlist is configured, the host must match it.
-        if !self.config.allowlist.is_empty()
-            && !self.matches_list(host, &self.config.allowlist)
-        {
+        if !self.config.allowlist.is_empty() && !self.matches_list(host, &self.config.allowlist) {
             return Err(ToolError::new(
                 "SSRF_BLOCKED",
                 format!("Host '{}' is not on the SSRF allowlist", host),
@@ -167,10 +165,7 @@ impl SsrfProtection {
                     );
                     Err(ToolError::new(
                         "SSRF_BLOCKED",
-                        format!(
-                            "DNS resolution failed for '{}' (fail-closed): {}",
-                            host, e
-                        ),
+                        format!("DNS resolution failed for '{}' (fail-closed): {}", host, e),
                     ))
                 } else {
                     tracing::warn!(
@@ -241,10 +236,7 @@ impl SsrfProtection {
                 if self.config.block_link_local && v6.is_unicast_link_local() {
                     return Err(ToolError::new(
                         "SSRF_BLOCKED",
-                        format!(
-                            "URL '{}' resolves to link-local address {}",
-                            url_str, v6
-                        ),
+                        format!("URL '{}' resolves to link-local address {}", url_str, v6),
                     ));
                 }
                 // IPv6-mapped IPv4 addresses: re-check the embedded IPv4 against
@@ -376,9 +368,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_allowlist_blocks_unlisted_host() {
-        let cfg = SsrfConfigBuilder::new()
-            .allow("example.com")
-            .build();
+        let cfg = SsrfConfigBuilder::new().allow("example.com").build();
         let ssrf = SsrfProtection::with_config(cfg);
         let result = ssrf.check_url("http://unlisted.example.org/").await;
         assert!(result.is_err());
@@ -395,7 +385,10 @@ mod tests {
         // error must NOT be an allowlist block.
         let result = ssrf.check_url("http://api.example.com/").await;
         if let Err(e) = &result {
-            assert_ne!(e.message, "Host 'api.example.com' is not on the SSRF allowlist");
+            assert_ne!(
+                e.message,
+                "Host 'api.example.com' is not on the SSRF allowlist"
+            );
         }
     }
 

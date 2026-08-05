@@ -7,7 +7,7 @@ pub mod inventory;
 pub mod plan;
 
 pub use execute::{dry_run, execute};
-pub use inventory::{scan_install, InventoryItem, InventoryItemKind};
+pub use inventory::{InventoryItem, InventoryItemKind, scan_install};
 pub use plan::{UninstallAction, UninstallActionKind, UninstallPlan};
 
 /// Error type for uninstall operations.

@@ -94,10 +94,21 @@ pub fn build_tray_menu<R: Runtime>(
     let new_session = MenuItem::with_id(app, ID_NEW_SESSION, "New Session", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, ID_SETTINGS, "Settings", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let status = MenuItem::with_id(app, ID_STATUS, icon_state.status_label(), false, None::<&str>)?;
+    let status = MenuItem::with_id(
+        app,
+        ID_STATUS,
+        icon_state.status_label(),
+        false,
+        None::<&str>,
+    )?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let check_updates =
-        MenuItem::with_id(app, ID_CHECK_UPDATES, "Check for Updates", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(
+        app,
+        ID_CHECK_UPDATES,
+        "Check for Updates",
+        true,
+        None::<&str>,
+    )?;
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, ID_QUIT, "Quit OpenSquilla", true, None::<&str>)?;
 
@@ -121,7 +132,10 @@ pub fn build_tray_menu<R: Runtime>(
 ///
 /// Looks up the `main-tray` tray icon (the id assigned in `main.rs`) and
 /// replaces its menu with a fresh one reflecting `icon_state`.
-pub fn rebuild_menu<R: Runtime>(app: &AppHandle<R>, icon_state: TrayIconState) -> tauri::Result<()> {
+pub fn rebuild_menu<R: Runtime>(
+    app: &AppHandle<R>,
+    icon_state: TrayIconState,
+) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
     };
@@ -169,10 +183,22 @@ mod tests {
 
     #[test]
     fn maps_menu_ids_to_events() {
-        assert_eq!(TrayEvent::from_menu_id(ID_SHOW_HIDE), Some(TrayEvent::ShowHide));
-        assert_eq!(TrayEvent::from_menu_id(ID_NEW_SESSION), Some(TrayEvent::NewSession));
-        assert_eq!(TrayEvent::from_menu_id(ID_SETTINGS), Some(TrayEvent::Settings));
-        assert_eq!(TrayEvent::from_menu_id(ID_CHECK_UPDATES), Some(TrayEvent::CheckUpdates));
+        assert_eq!(
+            TrayEvent::from_menu_id(ID_SHOW_HIDE),
+            Some(TrayEvent::ShowHide)
+        );
+        assert_eq!(
+            TrayEvent::from_menu_id(ID_NEW_SESSION),
+            Some(TrayEvent::NewSession)
+        );
+        assert_eq!(
+            TrayEvent::from_menu_id(ID_SETTINGS),
+            Some(TrayEvent::Settings)
+        );
+        assert_eq!(
+            TrayEvent::from_menu_id(ID_CHECK_UPDATES),
+            Some(TrayEvent::CheckUpdates)
+        );
         assert_eq!(TrayEvent::from_menu_id(ID_QUIT), Some(TrayEvent::Quit));
         assert_eq!(TrayEvent::from_menu_id(ID_STATUS), None);
         assert_eq!(TrayEvent::from_menu_id("bogus"), None);

@@ -28,13 +28,22 @@ impl JobExecutor {
         let retry_delay = job.retry_delay_secs;
 
         tokio::spawn(async move {
-            info!("Executing job '{}' (id: {}, handler: {}, max_retries: {})", job_name, job_id, handler_name, max_retries);
+            info!(
+                "Executing job '{}' (id: {}, handler: {}, max_retries: {})",
+                job_name, job_id, handler_name, max_retries
+            );
             let mut attempt = 0u32;
 
             loop {
                 let handler = match handlers.get(&handler_name) {
                     Some(h) => h,
-                    None => { error!("Handler '{}' not found for job '{}'", handler_name, job_name); break; }
+                    None => {
+                        error!(
+                            "Handler '{}' not found for job '{}'",
+                            handler_name, job_name
+                        );
+                        break;
+                    }
                 };
 
                 let mut execution = JobExecution::new(job_id, attempt);
@@ -47,40 +56,73 @@ impl JobExecutor {
 
                 if result.success {
                     execution.complete(result.result.unwrap_or_default());
-                    info!("Job '{}' completed in {}ms (attempt {})", job_name, duration_ms, attempt);
+                    info!(
+                        "Job '{}' completed in {}ms (attempt {})",
+                        job_name, duration_ms, attempt
+                    );
                 } else {
-                    execution.fail(result.error.clone().unwrap_or_else(|| "Unknown error".to_string()));
-                    warn!("Job '{}' failed: {:?} (attempt {}/{})", job_name, result.error, attempt + 1, max_retries + 1);
+                    execution.fail(
+                        result
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "Unknown error".to_string()),
+                    );
+                    warn!(
+                        "Job '{}' failed: {:?} (attempt {}/{})",
+                        job_name,
+                        result.error,
+                        attempt + 1,
+                        max_retries + 1
+                    );
                 }
 
                 // Save execution result
-                { let s = store.lock().await; let _ = s.insert_execution(&execution); }
+                {
+                    let s = store.lock().await;
+                    let _ = s.insert_execution(&execution);
+                }
 
                 // Mark job as run
                 {
                     let s = store.lock().await;
                     let next_run = match &job.kind {
-                        crate::types::ScheduleKind::Cron(expr) =>
-                            crate::parser::CronParser::new(expr).ok().and_then(|p| p.next_after(chrono::Utc::now())),
-                        crate::types::ScheduleKind::At(_) => { let _ = s.update_job_status(&job_id, JobStatus::Completed); None }
-                        crate::types::ScheduleKind::Every(secs) =>
-                            Some(chrono::Utc::now() + chrono::Duration::seconds(*secs as i64)),
+                        crate::types::ScheduleKind::Cron(expr) => {
+                            crate::parser::CronParser::new(expr)
+                                .ok()
+                                .and_then(|p| p.next_after(chrono::Utc::now()))
+                        }
+                        crate::types::ScheduleKind::At(_) => {
+                            let _ = s.update_job_status(&job_id, JobStatus::Completed);
+                            None
+                        }
+                        crate::types::ScheduleKind::Every(secs) => {
+                            Some(chrono::Utc::now() + chrono::Duration::seconds(*secs as i64))
+                        }
                     };
                     let _ = s.mark_job_run(&job_id, next_run);
                 }
 
-                if result.success { break; }
+                if result.success {
+                    break;
+                }
 
                 attempt += 1;
                 if attempt > max_retries {
-                    error!("Job '{}' failed after {} attempts. Auto-disabling.", job_name, max_retries + 1);
+                    error!(
+                        "Job '{}' failed after {} attempts. Auto-disabling.",
+                        job_name,
+                        max_retries + 1
+                    );
                     let s = store.lock().await;
                     let _ = s.update_job_status(&job_id, JobStatus::Failed);
                     break;
                 }
 
                 let backoff_secs = compute_backoff(attempt, retry_delay);
-                debug!("Retrying job '{}' in {}s (attempt {}/{})", job_name, backoff_secs, attempt, max_retries);
+                debug!(
+                    "Retrying job '{}' in {}s (attempt {}/{})",
+                    job_name, backoff_secs, attempt, max_retries
+                );
                 tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
             }
         })
@@ -89,7 +131,9 @@ impl JobExecutor {
     /// Execute multiple due jobs concurrently.
     pub async fn execute_due_jobs(&self, jobs: Vec<CronJob>) -> Vec<tokio::task::JoinHandle<()>> {
         let mut handles = Vec::with_capacity(jobs.len());
-        for job in jobs { handles.push(self.execute_job(job).await); }
+        for job in jobs {
+            handles.push(self.execute_job(job).await);
+        }
         handles
     }
 }
@@ -113,8 +157,12 @@ mod tests {
     struct TestHandler;
     #[async_trait]
     impl CronJobHandler for TestHandler {
-        fn name(&self) -> &str { "test" }
-        async fn execute(&self, _job: &CronJob) -> HandlerResult { HandlerResult::success("test ok") }
+        fn name(&self) -> &str {
+            "test"
+        }
+        async fn execute(&self, _job: &CronJob) -> HandlerResult {
+            HandlerResult::success("test ok")
+        }
     }
 
     #[tokio::test]

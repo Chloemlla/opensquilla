@@ -72,7 +72,9 @@ impl EvalMetrics {
 
         let avg_latency_ms = latencies.iter().sum::<u64>() as f64 / total_runs as f64;
         let p = |percentile: f64| -> f64 {
-            if latencies.is_empty() { return 0.0; }
+            if latencies.is_empty() {
+                return 0.0;
+            }
             let idx = ((latencies.len() - 1) as f64 * percentile).round() as usize;
             latencies[idx] as f64
         };
@@ -96,20 +98,29 @@ impl EvalMetrics {
 
         let precision = if true_positives + false_positives > 0 {
             true_positives as f64 / (true_positives + false_positives) as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let recall = if true_positives + false_negatives > 0 {
             true_positives as f64 / (true_positives + false_negatives) as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let f1 = if precision + recall > 0.0 {
             2.0 * precision * recall / (precision + recall)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         // Per-scenario breakdown
         let mut per_scenario: HashMap<String, Vec<&BenchmarkRun>> = HashMap::new();
         for run in runs {
-            per_scenario.entry(run.scenario.clone()).or_default().push(run);
+            per_scenario
+                .entry(run.scenario.clone())
+                .or_default()
+                .push(run);
         }
 
         let per_scenario_metrics: HashMap<String, ScenarioMetrics> = per_scenario
@@ -120,14 +131,23 @@ impl EvalMetrics {
                 let failed = total - passed;
                 let avg_latency = if total > 0 {
                     runs.iter().map(|r| r.duration_ms).sum::<u64>() as f64 / total as f64
-                } else { 0.0 };
-                (name, ScenarioMetrics {
-                    runs: total,
-                    passed,
-                    failed,
-                    pass_rate: if total > 0 { passed as f64 / total as f64 } else { 0.0 },
-                    avg_latency_ms: avg_latency,
-                })
+                } else {
+                    0.0
+                };
+                (
+                    name,
+                    ScenarioMetrics {
+                        runs: total,
+                        passed,
+                        failed,
+                        pass_rate: if total > 0 {
+                            passed as f64 / total as f64
+                        } else {
+                            0.0
+                        },
+                        avg_latency_ms: avg_latency,
+                    },
+                )
             })
             .collect();
 
@@ -156,14 +176,19 @@ impl EvalMetrics {
     /// Merge two metrics objects by averaging.
     pub fn merge(&self, other: &EvalMetrics) -> EvalMetrics {
         let total_runs = self.total_runs + other.total_runs;
-        if total_runs == 0 { return Self::default(); }
+        if total_runs == 0 {
+            return Self::default();
+        }
 
         let successful_runs = self.successful_runs + other.successful_runs;
         let failed_runs = self.failed_runs + other.failed_runs;
 
         let weighted_avg = |a: f64, b: f64| {
-            if total_runs == 0 { 0.0 }
-            else { (a * self.total_runs as f64 + b * other.total_runs as f64) / total_runs as f64 }
+            if total_runs == 0 {
+                0.0
+            } else {
+                (a * self.total_runs as f64 + b * other.total_runs as f64) / total_runs as f64
+            }
         };
 
         Self {
@@ -180,9 +205,13 @@ impl EvalMetrics {
             p95_latency_ms: weighted_avg(self.p95_latency_ms, other.p95_latency_ms),
             p99_latency_ms: weighted_avg(self.p99_latency_ms, other.p99_latency_ms),
             max_latency_ms: self.max_latency_ms.max(other.max_latency_ms),
-            min_latency_ms: if self.min_latency_ms == 0 { other.min_latency_ms }
-                           else if other.min_latency_ms == 0 { self.min_latency_ms }
-                           else { self.min_latency_ms.min(other.min_latency_ms) },
+            min_latency_ms: if self.min_latency_ms == 0 {
+                other.min_latency_ms
+            } else if other.min_latency_ms == 0 {
+                self.min_latency_ms
+            } else {
+                self.min_latency_ms.min(other.min_latency_ms)
+            },
             total_prompt_tokens: self.total_prompt_tokens + other.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens + other.total_completion_tokens,
             total_tokens: self.total_tokens + other.total_tokens,
@@ -249,25 +278,40 @@ impl MetricsCollector {
 
 /// Calculate accuracy from predictions and ground truth labels.
 pub fn accuracy(predictions: &[bool], ground_truth: &[bool]) -> f64 {
-    if predictions.is_empty() || predictions.len() != ground_truth.len() { return 0.0; }
-    let correct = predictions.iter().zip(ground_truth.iter())
-        .filter(|(p, g)| p == g).count();
+    if predictions.is_empty() || predictions.len() != ground_truth.len() {
+        return 0.0;
+    }
+    let correct = predictions
+        .iter()
+        .zip(ground_truth.iter())
+        .filter(|(p, g)| p == g)
+        .count();
     correct as f64 / predictions.len() as f64
 }
 
 /// Calculate precision, recall, and F1 from confusion matrix counts.
-pub fn precision_recall_f1(true_positives: u64, false_positives: u64, false_negatives: u64) -> (f64, f64, f64) {
+pub fn precision_recall_f1(
+    true_positives: u64,
+    false_positives: u64,
+    false_negatives: u64,
+) -> (f64, f64, f64) {
     let precision = if true_positives + false_positives > 0 {
         true_positives as f64 / (true_positives + false_positives) as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let recall = if true_positives + false_negatives > 0 {
         true_positives as f64 / (true_positives + false_negatives) as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     (precision, recall, f1)
 }
@@ -285,7 +329,11 @@ mod tests {
             prompt_tokens: 10,
             completion_tokens: 20,
             success,
-            error: if success { None } else { Some("fail".to_string()) },
+            error: if success {
+                None
+            } else {
+                Some("fail".to_string())
+            },
             timestamp: Utc::now(),
         }
     }

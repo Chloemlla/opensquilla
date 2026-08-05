@@ -33,16 +33,13 @@ use crate::qq::QQChannel;
 use crate::slack::SlackChannel;
 use crate::telegram::TelegramChannel;
 use crate::terminal::TerminalChannel;
-use crate::types::{
-    ChannelConfig, ChannelHandle, ChannelType, IncomingMessage, OutgoingMessage,
-};
-use crate::wecom::WeComChannel;
+use crate::types::{ChannelConfig, ChannelHandle, ChannelType, IncomingMessage, OutgoingMessage};
 use crate::websocket::WebSocketChannel;
+use crate::wecom::WeComChannel;
 
 /// A start hook that launches a channel's background event loop.
-pub type StartHook = Arc<
-    dyn Fn() -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync,
->;
+pub type StartHook =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
 /// A stop hook that shuts down a channel's background event loop.
 pub type StopHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
@@ -154,10 +151,8 @@ impl ManagedChannel {
 pub struct ChannelManager {
     channels: DashMap<String, ChannelHandle>,
     managed: DashMap<String, ManagedChannel>,
-    message_handlers: DashMap<
-        String,
-        Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>,
-    >,
+    message_handlers:
+        DashMap<String, Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>>,
     outbox: Arc<std::sync::Mutex<Option<Arc<DeliveryStore>>>>,
     outbox_worker: Arc<std::sync::Mutex<Option<Arc<OutboxWorker>>>>,
     tool_channels: DashSet<String>,
@@ -425,27 +420,28 @@ impl ChannelManager {
         poll_interval: Duration,
     ) -> Result<(), String> {
         let channels = self.channels.clone();
-        let send = move |entry: &OutboxEntry| -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-            let channels = channels.clone();
-            let channel_id = entry.channel_id.clone();
-            // Extract owned data before the async block so the returned future
-            // is 'static (the outbox worker requires a Send + 'static send fn).
-            let msg = match entry.to_outgoing() {
-                Some(msg) => msg,
-                None => {
-                    return Box::pin(async move {
-                        Err(format!("Invalid outbox payload for {channel_id}"))
-                    });
-                }
+        let send =
+            move |entry: &OutboxEntry| -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+                let channels = channels.clone();
+                let channel_id = entry.channel_id.clone();
+                // Extract owned data before the async block so the returned future
+                // is 'static (the outbox worker requires a Send + 'static send fn).
+                let msg = match entry.to_outgoing() {
+                    Some(msg) => msg,
+                    None => {
+                        return Box::pin(async move {
+                            Err(format!("Invalid outbox payload for {channel_id}"))
+                        });
+                    }
+                };
+                Box::pin(async move {
+                    let channel = channels
+                        .get(&channel_id)
+                        .ok_or_else(|| format!("Channel not found: {channel_id}"))?;
+                    let channel = channel.clone();
+                    channel.send_message(&msg).await
+                })
             };
-            Box::pin(async move {
-                let channel = channels
-                    .get(&channel_id)
-                    .ok_or_else(|| format!("Channel not found: {channel_id}"))?;
-                let channel = channel.clone();
-                channel.send_message(&msg).await
-            })
-        };
         let worker = OutboxWorker::new(
             store.clone(),
             send,
@@ -547,7 +543,11 @@ impl ChannelManager {
     }
 
     /// Send a message immediately, bypassing any installed outbox.
-    pub fn send_immediate(&self, channel_id: &str, message: &OutgoingMessage) -> Result<(), String> {
+    pub fn send_immediate(
+        &self,
+        channel_id: &str,
+        message: &OutgoingMessage,
+    ) -> Result<(), String> {
         let channel = self
             .channels
             .get(channel_id)
@@ -732,7 +732,8 @@ mod tests {
     async fn test_send_fires_and_forget() {
         let manager = ChannelManager::new();
         manager.init_channel(slack_config()).unwrap();
-        let msg = OutgoingMessage::new("slack-c1".to_string(), ChannelType::Slack, "hi".to_string());
+        let msg =
+            OutgoingMessage::new("slack-c1".to_string(), ChannelType::Slack, "hi".to_string());
         manager.send("slack-c1", &msg).unwrap();
         assert!(manager.send("missing", &msg).is_err());
     }

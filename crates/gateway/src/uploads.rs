@@ -154,9 +154,9 @@ impl UploadManager {
         self.check_active(upload_id)?;
         let total = {
             let mut guard = self.progress.write();
-            let progress = guard.get_mut(upload_id).ok_or_else(|| {
-                AppError::not_found(format!("Unknown upload '{upload_id}'"))
-            })?;
+            let progress = guard
+                .get_mut(upload_id)
+                .ok_or_else(|| AppError::not_found(format!("Unknown upload '{upload_id}'")))?;
             progress.bytes_received = progress
                 .bytes_received
                 .checked_add(chunk.len() as u64)
@@ -186,12 +186,10 @@ impl UploadManager {
         }
 
         // Run the virus scanner on the staged file before finalizing.
-        self.scanner
-            .scan(&staged)
-            .map_err(|e| {
-                let _ = self.fail(upload_id, "Virus scan rejected the upload");
-                e
-            })?;
+        self.scanner.scan(&staged).map_err(|e| {
+            let _ = self.fail(upload_id, "Virus scan rejected the upload");
+            e
+        })?;
 
         let safe = sanitize_filename(final_name);
         let final_path = self.dir.join(format!("{upload_id}-{safe}"));
@@ -333,8 +331,8 @@ pub async fn handle_upload(
         let mut file_handle = UploadFileHandle::create(&staged)?;
         let mut chunks = field.chunk();
         while let Some(chunk_result) = chunks.next().await {
-            let chunk =
-                chunk_result.map_err(|e| AppError::bad_request(format!("Chunk read error: {e}")))?;
+            let chunk = chunk_result
+                .map_err(|e| AppError::bad_request(format!("Chunk read error: {e}")))?;
             file_handle.write_chunk(&chunk)?;
         }
         file_handle.flush()?;
@@ -367,10 +365,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "opensquilla-upload-test-{tag}-{}",
-            Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-upload-test-{tag}-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -381,7 +377,10 @@ mod tests {
         let manager = UploadManager::new(&dir).unwrap();
         let (id, staged) = manager.begin().unwrap();
         assert!(staged.ends_with(format!("{id}.part").as_str()));
-        assert_eq!(manager.progress(&id).unwrap().status, UploadStatus::InProgress);
+        assert_eq!(
+            manager.progress(&id).unwrap().status,
+            UploadStatus::InProgress
+        );
 
         let mut file = std::fs::File::create(&staged).unwrap();
         manager.write_chunk(&id, &mut file, b"hello").unwrap();
@@ -393,7 +392,10 @@ mod tests {
         assert!(final_path.exists());
         let contents = std::fs::read_to_string(&final_path).unwrap();
         assert_eq!(contents, "hello world");
-        assert_eq!(manager.progress(&id).unwrap().status, UploadStatus::Completed);
+        assert_eq!(
+            manager.progress(&id).unwrap().status,
+            UploadStatus::Completed
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -405,7 +407,10 @@ mod tests {
         assert!(staged.exists());
         manager.cancel(&id).unwrap();
         assert!(!staged.exists());
-        assert_eq!(manager.progress(&id).unwrap().status, UploadStatus::Cancelled);
+        assert_eq!(
+            manager.progress(&id).unwrap().status,
+            UploadStatus::Cancelled
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -17,7 +17,7 @@
 //! no I/O of its own.
 
 use crate::eligibility::EligibilityChecker;
-use crate::types::{rank_skills, SkillMatch, SkillScope, SkillSpec};
+use crate::types::{SkillMatch, SkillScope, SkillSpec, rank_skills};
 use std::collections::HashSet;
 
 /// The rendering format for the injected skills block.
@@ -213,10 +213,7 @@ impl SkillInjector {
 
     /// Render the `<available_skills>` XML block for a list of skills.
     pub fn render_skills_block(&self, skills: &[&SkillSpec]) -> String {
-        let entries: Vec<String> = skills
-            .iter()
-            .map(|s| self.render_entry(s))
-            .collect();
+        let entries: Vec<String> = skills.iter().map(|s| self.render_entry(s)).collect();
         self.wrap_block(entries)
     }
 
@@ -267,7 +264,11 @@ To use a skill, reference it by its id in your response.
 
     /// Select the skills that should be injected for a given context, without
     /// rendering. Honors pinning, disabling, eligibility, and relevance.
-    pub fn select_skills(&self, skills: &[SkillSpec], context: &InjectionContext) -> Vec<SkillSpec> {
+    pub fn select_skills(
+        &self,
+        skills: &[SkillSpec],
+        context: &InjectionContext,
+    ) -> Vec<SkillSpec> {
         let mut candidates: Vec<SkillSpec> = skills
             .iter()
             .filter(|s| !s.disabled || self.config.include_disabled)
@@ -305,7 +306,11 @@ To use a skill, reference it by its id in your response.
     }
 
     /// Rank skills by relevance to the context (dynamic activation).
-    pub fn rank_for_context(&self, skills: &[SkillSpec], context: &InjectionContext) -> Vec<SkillMatch> {
+    pub fn rank_for_context(
+        &self,
+        skills: &[SkillSpec],
+        context: &InjectionContext,
+    ) -> Vec<SkillMatch> {
         let text = context.text();
         if text.trim().is_empty() {
             // No context: rank by layer priority and pin status.
@@ -418,7 +423,11 @@ To use a skill, reference it by its id in your response.
     // Internals
     // -----------------------------------------------------------------------
 
-    fn render_within_budget_impl(&self, skills: &[SkillSpec], context: &InjectionContext) -> String {
+    fn render_within_budget_impl(
+        &self,
+        skills: &[SkillSpec],
+        context: &InjectionContext,
+    ) -> String {
         let mut sorted: Vec<&SkillSpec> = skills.iter().collect();
         sorted.sort_by(|a, b| {
             let a_pinned = context.pinned.contains(&a.id) || a.is_always();
@@ -470,14 +479,20 @@ To use a skill, reference it by its id in your response.
         }
         if self.config.include_metadata && !skill.tags.is_empty() {
             let tags: Vec<&str> = skill.tags.iter().map(|t| t.as_str()).collect();
-            entry.push_str(&format!("    <tags>{}</tags>\n", escape_xml(&tags.join(", "))));
+            entry.push_str(&format!(
+                "    <tags>{}</tags>\n",
+                escape_xml(&tags.join(", "))
+            ));
         }
         if self.config.include_metadata {
             if let Some(ref license) = skill.license {
                 entry.push_str(&format!("    <license>{}</license>\n", escape_xml(license)));
             }
             if let Some(ref homepage) = skill.homepage {
-                entry.push_str(&format!("    <homepage>{}</homepage>\n", escape_xml(homepage)));
+                entry.push_str(&format!(
+                    "    <homepage>{}</homepage>\n",
+                    escape_xml(homepage)
+                ));
             }
         }
 
@@ -635,7 +650,9 @@ pub fn escape_xml(s: &str) -> String {
 
 /// Escape Markdown emphasis characters.
 pub fn escape_md(s: &str) -> String {
-    s.replace('*', "\\*").replace('_', "\\_").replace('`', "\\`")
+    s.replace('*', "\\*")
+        .replace('_', "\\_")
+        .replace('`', "\\`")
 }
 
 #[cfg(test)]
@@ -644,7 +661,12 @@ mod tests {
     use crate::types::SkillLayer;
 
     fn spec(id: &str, layer: SkillLayer, description: &str) -> SkillSpec {
-        let mut s = SkillSpec::new(id.to_string(), id.to_string(), description.to_string(), layer);
+        let mut s = SkillSpec::new(
+            id.to_string(),
+            id.to_string(),
+            description.to_string(),
+            layer,
+        );
         s.version = Some("1.0.0".to_string());
         s.tags = vec!["test".to_string()];
         s
@@ -676,7 +698,13 @@ mod tests {
     fn token_budget_truncates() {
         let injector = SkillInjector::with_token_budget(200);
         let skills: Vec<SkillSpec> = (0..20)
-            .map(|i| spec(&format!("skill-{i}"), SkillLayer::Bundled, &format!("Skill number {i} with a longer description to consume tokens")))
+            .map(|i| {
+                spec(
+                    &format!("skill-{i}"),
+                    SkillLayer::Bundled,
+                    &format!("Skill number {i} with a longer description to consume tokens"),
+                )
+            })
             .collect();
         let block = injector.render_within_budget(&skills);
         let tokens = injector.estimate_tokens(&block);

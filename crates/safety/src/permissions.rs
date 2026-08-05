@@ -188,9 +188,7 @@ impl PermissionMatrix {
             return Some(*level);
         }
         // Fall back to default
-        self.permissions
-            .get(permission_name)
-            .map(|p| p.risk_level)
+        self.permissions.get(permission_name).map(|p| p.risk_level)
     }
 
     /// Check if a permission is safe to execute without confirmation.
@@ -220,8 +218,7 @@ impl PermissionMatrix {
 
     /// Register a new custom permission.
     pub fn register(&mut self, permission: Permission) {
-        self.permissions
-            .insert(permission.name.clone(), permission);
+        self.permissions.insert(permission.name.clone(), permission);
     }
 
     /// List all registered permissions.
@@ -401,9 +398,10 @@ impl PermissionMatrix {
     pub fn check_permission(&self, action: &str, context: &PermissionContext) -> PermissionCheck {
         let risk = self.classify_action(action);
         let (required, reason) = match risk {
-            RiskLevel::Safe => {
-                (PermissionAction::Allow, "Action is classified as safe".to_string())
-            }
+            RiskLevel::Safe => (
+                PermissionAction::Allow,
+                "Action is classified as safe".to_string(),
+            ),
             RiskLevel::Confirm => {
                 if context.elevated {
                     (
@@ -418,8 +416,8 @@ impl PermissionMatrix {
                 }
             }
             RiskLevel::AdminOnly => {
-                let admin = context.elevated
-                    || context.user_role.trim().eq_ignore_ascii_case("admin");
+                let admin =
+                    context.elevated || context.user_role.trim().eq_ignore_ascii_case("admin");
                 if admin {
                     (
                         PermissionAction::Allow,
@@ -495,26 +493,61 @@ fn classify_action_heuristic(action: &str) -> RiskLevel {
         return RiskLevel::Confirm;
     }
     // Destructive operations are admin-only.
-    if contains_any(&lower, &["delete", "remove", "drop", "truncate", "purge", "wipe"]) {
+    if contains_any(
+        &lower,
+        &["delete", "remove", "drop", "truncate", "purge", "wipe"],
+    ) {
         return RiskLevel::AdminOnly;
     }
     // Process/subprocess execution is admin-only.
-    if contains_any(&lower, &["execute", "exec", "spawn", "subprocess", "shell", "run_command"]) {
+    if contains_any(
+        &lower,
+        &[
+            "execute",
+            "exec",
+            "spawn",
+            "subprocess",
+            "shell",
+            "run_command",
+        ],
+    ) {
         return RiskLevel::AdminOnly;
     }
     // Configuration mutation is admin-only.
-    if contains_any(&lower, &["configure", "config.set", "install", "uninstall", "modify_config"]) {
+    if contains_any(
+        &lower,
+        &[
+            "configure",
+            "config.set",
+            "install",
+            "uninstall",
+            "modify_config",
+        ],
+    ) {
         return RiskLevel::AdminOnly;
     }
     // Mutating / sending operations require confirmation.
     if contains_any(
         &lower,
-        &["write", "edit", "create", "append", "update", "send", "post", "upload", "delete_data"],
+        &[
+            "write",
+            "edit",
+            "create",
+            "append",
+            "update",
+            "send",
+            "post",
+            "upload",
+            "delete_data",
+        ],
     ) {
         return RiskLevel::Confirm;
     }
     // Pure reads and info are safe.
-    if contains_any(&lower, &["read", "list", "get", "info", "query", "search", "status"]) {
+    if contains_any(
+        &lower,
+        &["read", "list", "get", "info", "query", "search", "status"],
+    ) {
         return RiskLevel::Safe;
     }
     RiskLevel::Confirm
@@ -575,11 +608,26 @@ mod expansion_tests {
     #[test]
     fn test_classify_action_heuristic() {
         let matrix = PermissionMatrix::new();
-        assert_eq!(matrix.classify_action("file.delete_all"), RiskLevel::AdminOnly);
-        assert_eq!(matrix.classify_action("network.send_message"), RiskLevel::Confirm);
-        assert_eq!(matrix.classify_action("network.list_endpoints"), RiskLevel::Safe);
-        assert_eq!(matrix.classify_action("subprocess.spawn"), RiskLevel::AdminOnly);
-        assert_eq!(matrix.classify_action("completely.unknown.thing"), RiskLevel::Confirm);
+        assert_eq!(
+            matrix.classify_action("file.delete_all"),
+            RiskLevel::AdminOnly
+        );
+        assert_eq!(
+            matrix.classify_action("network.send_message"),
+            RiskLevel::Confirm
+        );
+        assert_eq!(
+            matrix.classify_action("network.list_endpoints"),
+            RiskLevel::Safe
+        );
+        assert_eq!(
+            matrix.classify_action("subprocess.spawn"),
+            RiskLevel::AdminOnly
+        );
+        assert_eq!(
+            matrix.classify_action("completely.unknown.thing"),
+            RiskLevel::Confirm
+        );
     }
 
     #[test]

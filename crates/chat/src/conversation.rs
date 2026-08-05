@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use opensquilla_core::types::{Message, MessageRole, SessionId};
 use serde::{Deserialize, Serialize};
 
-use crate::history::{trim_history, HistoryTrimOptions};
+use crate::history::{HistoryTrimOptions, trim_history};
 use crate::source::SessionSource;
 
 /// A conversation wrapper with metadata and source tracking.

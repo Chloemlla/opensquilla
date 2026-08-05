@@ -17,11 +17,11 @@
 //!    implements both encryption and decryption without an SDK.
 
 use crate::types::{Channel, ChannelConfig, ChannelType, MessageAttachment, OutgoingMessage};
-use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use reqwest::multipart::{Form, Part};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha1::Digest;
 use std::sync::Arc;
 use std::time::Duration;
@@ -144,7 +144,10 @@ impl WeComChannel {
             .and_then(|v| v.as_str())
             .ok_or_else(|| format!("WeCom token error: {body}"))?
             .to_string();
-        let expires_in = body.get("expires_in").and_then(|v| v.as_i64()).unwrap_or(7200);
+        let expires_in = body
+            .get("expires_in")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(7200);
         let expires_at = Utc::now()
             .checked_add_signed(chrono::Duration::seconds(expires_in - 300))
             .unwrap_or_else(|| Utc::now() + chrono::Duration::hours(2));
@@ -203,7 +206,11 @@ impl WeComChannel {
     }
 
     /// Send a news (article card) application message.
-    pub async fn send_news_message(&self, touser: &str, articles: Vec<Value>) -> Result<(), String> {
+    pub async fn send_news_message(
+        &self,
+        touser: &str,
+        articles: Vec<Value>,
+    ) -> Result<(), String> {
         let body = MessageBuilder::news_message(touser, &self.agent_id, articles);
         self.send_app_message(touser, body).await
     }
@@ -222,20 +229,19 @@ impl WeComChannel {
         description: &str,
         url: &str,
     ) -> Result<(), String> {
-        let body = MessageBuilder::textcard_message(
-            touser,
-            &self.agent_id,
-            title,
-            description,
-            url,
-        );
+        let body =
+            MessageBuilder::textcard_message(touser, &self.agent_id, title, description, url);
         self.send_app_message(touser, body).await
     }
 
     // -- group robot webhook ------------------------------------------------
 
     /// Send a payload to a group-robot webhook URL.
-    pub async fn send_robot_payload(&self, webhook_url: &str, payload: Value) -> Result<(), String> {
+    pub async fn send_robot_payload(
+        &self,
+        webhook_url: &str,
+        payload: Value,
+    ) -> Result<(), String> {
         let resp = self
             .client
             .post(webhook_url)
@@ -266,8 +272,11 @@ impl WeComChannel {
             .await
             .clone()
             .ok_or("No robot webhook_url configured")?;
-        self.send_robot_payload(&url, json!({"msgtype": "text", "text": {"content": content}}))
-            .await
+        self.send_robot_payload(
+            &url,
+            json!({"msgtype": "text", "text": {"content": content}}),
+        )
+        .await
     }
 
     // -- media --------------------------------------------------------------
@@ -285,10 +294,7 @@ impl WeComChannel {
         let resp = self
             .client
             .post(format!("{}/media/upload", self.api_base))
-            .query(&[
-                ("access_token", &token),
-                ("type", media_type.to_string()),
-            ])
+            .query(&[("access_token", &token), ("type", media_type.to_string())])
             .multipart(form)
             .send()
             .await
@@ -467,12 +473,8 @@ pub fn encrypt_wecom_payload(
 
 /// Decrypt a WeCom callback payload (thin wrapper over
 /// [`crate::webhook::decrypt_wecom_payload`]).
-pub fn decrypt_wecom_encrypted(
-    encoding_aes_key: &str,
-    ciphertext: &str,
-) -> Result<String, String> {
-    crate::webhook::decrypt_wecom_payload(encoding_aes_key, ciphertext)
-        .map_err(|e| e.to_string())
+pub fn decrypt_wecom_encrypted(encoding_aes_key: &str, ciphertext: &str) -> Result<String, String> {
+    crate::webhook::decrypt_wecom_payload(encoding_aes_key, ciphertext).map_err(|e| e.to_string())
 }
 
 /// Escape a string for inclusion in an XML CDATA-free text node.
@@ -598,7 +600,10 @@ impl Channel for WeComChannel {
         // Prefer group-robot webhook when configured.
         if let Some(url) = self.robot_webhook.lock().await.clone() {
             return self
-                .send_robot_payload(&url, json!({"msgtype": "text", "text": {"content": message.text}}))
+                .send_robot_payload(
+                    &url,
+                    json!({"msgtype": "text", "text": {"content": message.text}}),
+                )
                 .await;
         }
 
@@ -610,14 +615,17 @@ impl Channel for WeComChannel {
             };
             if let Some(data) = &att.data {
                 if let Some(base64_str) = data.get("base64").and_then(|v| v.as_str()) {
-                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(base64_str) {
+                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(base64_str)
+                    {
                         let name = data
                             .get("file_name")
                             .and_then(|v| v.as_str())
                             .unwrap_or("file.bin");
                         let media_id = self.upload_media(media_type, name, &bytes).await?;
                         if media_type == "image" {
-                            return self.send_image_message(&message.channel_id, &media_id).await;
+                            return self
+                                .send_image_message(&message.channel_id, &media_id)
+                                .await;
                         }
                         return self.send_file_message(&message.channel_id, &media_id).await;
                     }
@@ -625,7 +633,8 @@ impl Channel for WeComChannel {
             }
         }
 
-        self.send_text_message(&message.channel_id, &message.text).await
+        self.send_text_message(&message.channel_id, &message.text)
+            .await
     }
 
     async fn send_typing(&self, _channel_id: &str) -> Result<(), String> {
@@ -671,7 +680,12 @@ mod tests {
         let nonce = "1372623149";
         let encrypt = "9jq3f4x...";
         let sig = compute_wecom_signature(token, timestamp, nonce, encrypt);
-        let mut parts = vec![token.to_string(), timestamp.to_string(), nonce.to_string(), encrypt.to_string()];
+        let mut parts = vec![
+            token.to_string(),
+            timestamp.to_string(),
+            nonce.to_string(),
+            encrypt.to_string(),
+        ];
         parts.sort();
         let joined = parts.join("");
         let expected = hex::encode(sha1::Sha1::digest(joined.as_bytes()));
@@ -714,7 +728,12 @@ mod tests {
         assert_eq!(img["msgtype"], "image");
         assert_eq!(img["image"]["media_id"], "m1");
 
-        let articles = vec![MessageBuilder::news_article("Title", "Desc", "https://x", None)];
+        let articles = vec![MessageBuilder::news_article(
+            "Title",
+            "Desc",
+            "https://x",
+            None,
+        )];
         let news = MessageBuilder::news_message("u1", "a1", articles);
         assert_eq!(news["news"]["articles"][0]["title"], "Title");
     }
@@ -722,7 +741,9 @@ mod tests {
     #[test]
     fn test_build_callback_reply_shape() {
         let c = channel();
-        let reply = c.build_callback_reply("hello", "ww123", "1409659813", "1372623149").unwrap();
+        let reply = c
+            .build_callback_reply("hello", "ww123", "1409659813", "1372623149")
+            .unwrap();
         assert!(reply.contains("<xml>"));
         assert!(reply.contains("<Encrypt><![CDATA["));
         assert!(reply.contains("<MsgSignature><![CDATA["));

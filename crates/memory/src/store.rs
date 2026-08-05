@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use opensquilla_core::error::CoreError;
 use opensquilla_core::result::CoreResult;
 use opensquilla_core::types::MemoryId;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
@@ -69,7 +69,10 @@ impl MemoryStore {
     }
 
     fn initialize_tables(&self) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         // --- Agent-scoped memory corpus (existing schema, kept for compat) ---
         conn.execute_batch(
@@ -237,16 +240,21 @@ impl MemoryStore {
             }
         }
 
-        info!("Memory store tables initialized (memories, files, chunks, chunks_fts, embedding_cache, meta)");
+        info!(
+            "Memory store tables initialized (memories, files, chunks, chunks_fts, embedding_cache, meta)"
+        );
         Ok(())
     }
 
     // --- CRUD ---
 
     pub fn insert_memory(&self, entry: &MemoryEntry) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        let tags_json = serde_json::to_string(&entry.tags)
-            .map_err(|e| CoreError::Serialization(e))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let tags_json =
+            serde_json::to_string(&entry.tags).map_err(|e| CoreError::Serialization(e))?;
         conn.execute(
             "INSERT INTO memories (id, agent_id, content, tags, created_at, updated_at,
              accessed_at, source, memory_type, importance, importance_score, access_count,
@@ -273,7 +281,10 @@ impl MemoryStore {
     }
 
     pub fn get_memory(&self, memory_id: &MemoryId) -> CoreResult<Option<MemoryEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, agent_id, content, tags, created_at, updated_at, accessed_at,
@@ -294,9 +305,12 @@ impl MemoryStore {
     }
 
     pub fn update_memory(&self, entry: &MemoryEntry) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        let tags_json = serde_json::to_string(&entry.tags)
-            .map_err(|e| CoreError::Serialization(e))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let tags_json =
+            serde_json::to_string(&entry.tags).map_err(|e| CoreError::Serialization(e))?;
         conn.execute(
             "UPDATE memories SET content = ?1, tags = ?2, updated_at = ?3, accessed_at = ?4,
              importance = ?5, importance_score = ?6, access_count = ?7, metadata = ?8
@@ -318,9 +332,15 @@ impl MemoryStore {
     }
 
     pub fn delete_memory(&self, memory_id: &MemoryId) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM memories WHERE id = ?1", params![memory_id.0.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM memories WHERE id = ?1",
+            params![memory_id.0.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         conn.execute(
             "DELETE FROM memory_embeddings WHERE memory_id = ?1",
             params![memory_id.0.to_string()],
@@ -341,7 +361,10 @@ impl MemoryStore {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<MemoryEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         let (sql, type_filter) = if memory_type.is_some() {
             (
@@ -361,7 +384,9 @@ impl MemoryStore {
             )
         };
 
-        let mut stmt = conn.prepare(sql).map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let rows = if type_filter {
             stmt.query_map(
@@ -395,7 +420,10 @@ impl MemoryStore {
         limit: u64,
         offset: u64,
     ) -> CoreResult<Vec<MemoryEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut sql = String::from(
             "SELECT id, agent_id, content, tags, created_at, updated_at, accessed_at,
              source, memory_type, importance, importance_score, access_count, metadata
@@ -417,7 +445,9 @@ impl MemoryStore {
         }
         sql.push_str(" ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?");
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| CoreError::Storage(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
         let mut bindings: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(a) = filters.agent_id {
             bindings.push(Box::new(a.to_string()));
@@ -439,8 +469,7 @@ impl MemoryStore {
         let mut all: Vec<MemoryEntry> = Vec::new();
         for row in rows {
             if let Ok(entry) = row {
-                if !filters.tags.is_empty()
-                    && !filters.tags.iter().any(|t| entry.tags.contains(t))
+                if !filters.tags.is_empty() && !filters.tags.iter().any(|t| entry.tags.contains(t))
                 {
                     continue;
                 }
@@ -457,13 +486,11 @@ impl MemoryStore {
 
     // --- FTS5 Search ---
 
-    pub fn search_fts(
-        &self,
-        query: &str,
-        limit: u64,
-        offset: u64,
-    ) -> CoreResult<Vec<MemoryEntry>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+    pub fn search_fts(&self, query: &str, limit: u64, offset: u64) -> CoreResult<Vec<MemoryEntry>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT m.id, m.agent_id, m.content, m.tags, m.created_at, m.updated_at,
@@ -478,7 +505,9 @@ impl MemoryStore {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let rows = stmt
-            .query_map(params![query, limit as i64, offset as i64], |row| memory_from_row(row))
+            .query_map(params![query, limit as i64, offset as i64], |row| {
+                memory_from_row(row)
+            })
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -491,7 +520,10 @@ impl MemoryStore {
         query: &str,
         limit: u64,
     ) -> CoreResult<Vec<(MemoryEntry, f64)>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT m.id, m.agent_id, m.content, m.tags, m.created_at, m.updated_at,
@@ -506,16 +538,13 @@ impl MemoryStore {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let rows = stmt
-            .query_map(
-                params![query, agent_id.to_string(), limit as i64],
-                |row| {
-                    let entry = memory_from_row(row)?;
-                    // FTS5 `rank` is negative; larger (closer to zero) is a
-                    // better match. Negate so higher = better for scoring.
-                    let raw_rank: f64 = row.get::<_, f64>(13).unwrap_or(0.0);
-                    Ok((entry, -raw_rank))
-                },
-            )
+            .query_map(params![query, agent_id.to_string(), limit as i64], |row| {
+                let entry = memory_from_row(row)?;
+                // FTS5 `rank` is negative; larger (closer to zero) is a
+                // better match. Negate so higher = better for scoring.
+                let raw_rank: f64 = row.get::<_, f64>(13).unwrap_or(0.0);
+                Ok((entry, -raw_rank))
+            })
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -524,11 +553,11 @@ impl MemoryStore {
     // --- Embedding storage (per-memory) ---
 
     pub fn store_embedding(&self, memory_id: &MemoryId, embedding: &[f32]) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        let blob: Vec<u8> = embedding
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
         let dimension = embedding.len() as i64;
 
         conn.execute(
@@ -548,7 +577,10 @@ impl MemoryStore {
     }
 
     pub fn get_embedding(&self, memory_id: &MemoryId) -> CoreResult<Option<Vec<f32>>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT embedding, dimension FROM memory_embeddings WHERE memory_id = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -573,7 +605,10 @@ impl MemoryStore {
     }
 
     pub fn get_all_embeddings(&self, agent_id: &Uuid) -> CoreResult<Vec<(MemoryId, Vec<f32>)>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT m.id, me.embedding, me.dimension
@@ -613,7 +648,10 @@ impl MemoryStore {
     /// Look up a cached embedding by `(model, text)` key.
     pub fn get_cached_embedding(&self, model: &str, text: &str) -> CoreResult<Option<Vec<f32>>> {
         let key = Self::embedding_cache_key(model, text);
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT embedding FROM embedding_cache WHERE key = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -643,7 +681,10 @@ impl MemoryStore {
         let key = Self::embedding_cache_key(model, text);
         let blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
         let dim = embedding.len() as i64;
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO embedding_cache (key, embedding, dimension, model, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -655,7 +696,10 @@ impl MemoryStore {
 
     /// List cached embedding rows (newest first), for inspection / eviction.
     pub fn list_cached_embeddings(&self, limit: u64) -> CoreResult<Vec<CachedEmbedding>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT key, embedding, model, created_at FROM embedding_cache
@@ -711,7 +755,10 @@ impl MemoryStore {
 
         let id = Uuid::new_v4();
         let now = Utc::now();
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO files (id, path, checksum, size, modified_at, indexed_at, chunk_count)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)
@@ -761,7 +808,10 @@ impl MemoryStore {
 
     /// Look up an indexed file by path.
     pub fn get_file_by_path(&self, path: &str) -> CoreResult<Option<IndexedFile>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, path, checksum, size, modified_at, indexed_at, chunk_count
@@ -806,11 +856,20 @@ impl MemoryStore {
 
     /// Delete an indexed file and all of its chunks (cascade).
     pub fn delete_file(&self, file_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM chunks WHERE file_id = ?1", params![file_id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
-        conn.execute("DELETE FROM files WHERE id = ?1", params![file_id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM chunks WHERE file_id = ?1",
+            params![file_id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM files WHERE id = ?1",
+            params![file_id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
@@ -818,7 +877,10 @@ impl MemoryStore {
 
     /// Insert a chunk, returning the persisted chunk (with its generated id).
     pub fn insert_chunk(&self, chunk: &MemoryChunk, file_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let (blob, dim): (Option<Vec<u8>>, Option<i64>) = match &chunk.embedding {
             Some(emb) => {
                 let b: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
@@ -856,7 +918,10 @@ impl MemoryStore {
 
     /// Retrieve all chunks belonging to a file, ordered by chunk index.
     pub fn get_chunks(&self, file_id: &Uuid) -> CoreResult<Vec<MemoryChunk>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, file_id, content, embedding, chunk_index, token_count
@@ -871,7 +936,10 @@ impl MemoryStore {
 
     /// FTS5 search across chunk content.
     pub fn search_chunks_fts(&self, query: &str, limit: u64) -> CoreResult<Vec<MemoryChunk>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT c.id, c.file_id, c.content, c.embedding, c.chunk_index, c.token_count
@@ -890,16 +958,25 @@ impl MemoryStore {
 
     /// Delete a single chunk by id.
     pub fn delete_chunk(&self, chunk_id: &Uuid) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
-        conn.execute("DELETE FROM chunks WHERE id = ?1", params![chunk_id.to_string()])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM chunks WHERE id = ?1",
+            params![chunk_id.to_string()],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
 
     // --- Tags ---
 
     pub fn add_tag(&self, memory_id: &MemoryId, tag: &str) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT INTO memory_tags (id, memory_id, tag) VALUES (?1, ?2, ?3)",
             params![Uuid::new_v4().to_string(), memory_id.0.to_string(), tag],
@@ -913,8 +990,7 @@ impl MemoryStore {
                 |row| row.get(0),
             )
             .unwrap_or_else(|_| "[]".to_string());
-        let mut tags: Vec<String> =
-            serde_json::from_str(&tags_json).unwrap_or_default();
+        let mut tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
         if !tags.iter().any(|t| t == tag) {
             tags.push(tag.to_string());
             let new_json = serde_json::to_string(&tags).map_err(|e| CoreError::Serialization(e))?;
@@ -935,13 +1011,18 @@ impl MemoryStore {
                 return Ok(entry.tags);
             }
         }
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT tag FROM memory_tags WHERE memory_id = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let tags = stmt
-            .query_map(params![memory_id.0.to_string()], |row| row.get::<_, String>(0))
+            .query_map(params![memory_id.0.to_string()], |row| {
+                row.get::<_, String>(0)
+            })
             .map_err(|e| CoreError::Storage(e.to_string()))?
             .filter_map(|r| r.ok())
             .collect();
@@ -950,7 +1031,10 @@ impl MemoryStore {
     }
 
     pub fn increment_access(&self, memory_id: &MemoryId) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "UPDATE memories
              SET access_count = access_count + 1, accessed_at = ?2
@@ -969,7 +1053,10 @@ impl MemoryStore {
         min_importance: f64,
     ) -> CoreResult<u64> {
         let cutoff = (Utc::now() - ttl).to_rfc3339();
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let deleted = conn
             .execute(
                 "DELETE FROM memories
@@ -983,7 +1070,10 @@ impl MemoryStore {
     // --- Meta key/value store ---
 
     pub fn set_meta(&self, key: &str, value: &str) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO meta (key, value, updated_at) VALUES (?1, ?2, ?3)",
             params![key, value, Utc::now().to_rfc3339()],
@@ -993,7 +1083,10 @@ impl MemoryStore {
     }
 
     pub fn get_meta(&self, key: &str) -> CoreResult<Option<String>> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT value FROM meta WHERE key = ?1")
             .map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -1008,7 +1101,10 @@ impl MemoryStore {
     }
 
     pub fn delete_meta(&self, key: &str) -> CoreResult<()> {
-        let conn = self.conn.lock().map_err(|e| CoreError::Internal(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         conn.execute("DELETE FROM meta WHERE key = ?1", params![key])
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
@@ -1113,7 +1209,9 @@ mod tests {
         let store = MemoryStore::in_memory().unwrap();
         let agent_id = Uuid::new_v4();
         store.insert_memory(&make_entry(agent_id, "first")).unwrap();
-        store.insert_memory(&make_entry(agent_id, "second")).unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "second"))
+            .unwrap();
         let memories = store.list_memories(&agent_id, None, 10, 0).unwrap();
         assert_eq!(memories.len(), 2);
     }
@@ -1122,8 +1220,12 @@ mod tests {
     fn test_search_fts() {
         let store = MemoryStore::in_memory().unwrap();
         let agent_id = Uuid::new_v4();
-        store.insert_memory(&make_entry(agent_id, "Rust programming language")).unwrap();
-        store.insert_memory(&make_entry(agent_id, "Python scripting")).unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "Rust programming language"))
+            .unwrap();
+        store
+            .insert_memory(&make_entry(agent_id, "Python scripting"))
+            .unwrap();
 
         let results = store.search_fts("rust", 10, 0).unwrap();
         assert!(!results.is_empty());
@@ -1203,10 +1305,12 @@ mod tests {
     #[test]
     fn test_embedding_cache() {
         let store = MemoryStore::in_memory().unwrap();
-        assert!(store
-            .get_cached_embedding("text-embedding-3-small", "hello")
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .get_cached_embedding("text-embedding-3-small", "hello")
+                .unwrap()
+                .is_none()
+        );
         let emb = vec![0.1, 0.2, 0.3];
         store
             .set_cached_embedding("text-embedding-3-small", "hello", &emb)
@@ -1223,7 +1327,10 @@ mod tests {
         let store = MemoryStore::in_memory().unwrap();
         assert!(store.get_meta("missing").unwrap().is_none());
         store.set_meta("schema_version", "2").unwrap();
-        assert_eq!(store.get_meta("schema_version").unwrap().as_deref(), Some("2"));
+        assert_eq!(
+            store.get_meta("schema_version").unwrap().as_deref(),
+            Some("2")
+        );
         store.delete_meta("schema_version").unwrap();
         assert!(store.get_meta("schema_version").unwrap().is_none());
     }

@@ -15,7 +15,7 @@ use futures::StreamExt;
 use opensquilla_core::types::{ChatMessage, ContentBlock, Role, ToolCall, ToolDefinition, Usage};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -186,10 +186,7 @@ fn parse_ollama_tool_call(tc: &Value, index: usize) -> Option<ToolCall> {
 /// carry their `tool_calls` so the model keeps a record of what it invoked,
 /// and each `tool_result` block becomes its own `tool`-role message tagged with
 /// `tool_name` so the model can correlate the result with the call.
-fn build_ollama_messages(
-    msg: &ChatMessage,
-    tool_names: &HashMap<String, String>,
-) -> Vec<Value> {
+fn build_ollama_messages(msg: &ChatMessage, tool_names: &HashMap<String, String>) -> Vec<Value> {
     let mut text_parts: Vec<String> = Vec::new();
     let mut tool_calls: Vec<Value> = Vec::new();
     let mut images: Vec<String> = Vec::new();
@@ -534,7 +531,11 @@ impl OllamaProvider {
     }
 
     /// Embed a batch of texts via `POST /api/embed`.
-    pub async fn embed_batch(&self, model: &str, texts: &[String]) -> ProviderResult<Vec<Vec<f32>>> {
+    pub async fn embed_batch(
+        &self,
+        model: &str,
+        texts: &[String],
+    ) -> ProviderResult<Vec<Vec<f32>>> {
         let url = format!("{}/api/embed", self.config.base_url.trim_end_matches('/'));
         let resp = self
             .client
@@ -724,7 +725,9 @@ impl OllamaStream {
     }
 
     /// Create a stream from a raw byte stream. Exposed for tests.
-    fn from_body(body: futures::stream::BoxStream<'static, Result<bytes::Bytes, reqwest::Error>>) -> Self {
+    fn from_body(
+        body: futures::stream::BoxStream<'static, Result<bytes::Bytes, reqwest::Error>>,
+    ) -> Self {
         Self {
             body,
             buffer: Vec::new(),
@@ -791,11 +794,7 @@ impl OllamaStream {
             }
         }
 
-        if value
-            .get("done")
-            .and_then(|d| d.as_bool())
-            .unwrap_or(false)
-        {
+        if value.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
             let usage = Usage::new(
                 value["prompt_eval_count"].as_u64().unwrap_or(0),
                 value["eval_count"].as_u64().unwrap_or(0),
@@ -935,7 +934,10 @@ mod tests {
         let tools = body["tools"].as_array().unwrap();
         assert_eq!(tools[0]["type"], "function");
         assert_eq!(tools[0]["function"]["name"], "get_weather");
-        assert_eq!(tools[0]["function"]["parameters"]["properties"]["city"]["type"], "string");
+        assert_eq!(
+            tools[0]["function"]["parameters"]["properties"]["city"]["type"],
+            "string"
+        );
     }
 
     #[test]
@@ -957,7 +959,10 @@ mod tests {
         let msgs = body["messages"].as_array().unwrap();
         assert_eq!(msgs[0]["role"], "assistant");
         assert_eq!(msgs[0]["tool_calls"][0]["function"]["name"], "get_weather");
-        assert_eq!(msgs[0]["tool_calls"][0]["function"]["arguments"]["city"], "NYC");
+        assert_eq!(
+            msgs[0]["tool_calls"][0]["function"]["arguments"]["city"],
+            "NYC"
+        );
     }
 
     #[test]
@@ -1053,7 +1058,11 @@ mod tests {
             .unwrap();
         assert_eq!(evs.len(), 1);
         match &evs[0] {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "call_1");
                 assert_eq!(name, "get_weather");
                 assert_eq!(arguments, r#"{"city":"NYC"}"#);

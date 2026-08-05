@@ -5,7 +5,9 @@
 //!
 //! SSRF protection lives in the standalone [`crate::ssrf`] module.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use crate::ssrf::SsrfProtection;
 use async_trait::async_trait;
 use reqwest::Client;
@@ -42,7 +44,9 @@ impl SearchProvider for DuckDuckGoSearch {
             .timeout(Duration::from_secs(15))
             .user_agent("OpenSquilla/1.0")
             .build()
-            .map_err(|e| ToolError::new("HTTP_ERROR", format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| {
+                ToolError::new("HTTP_ERROR", format!("Failed to create HTTP client: {}", e))
+            })?;
 
         let encoded: String = query
             .bytes()
@@ -58,11 +62,10 @@ impl SearchProvider for DuckDuckGoSearch {
             encoded
         );
 
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ToolError::new("HTTP_ERROR", format!("Search request failed: {}", e)))?;
+        let resp =
+            client.get(&url).send().await.map_err(|e| {
+                ToolError::new("HTTP_ERROR", format!("Search request failed: {}", e))
+            })?;
 
         let text = resp
             .text()
@@ -89,10 +92,7 @@ impl SearchProvider for DuckDuckGoSearch {
                 }
                 if let Some(text) = topic["Text"].as_str() {
                     results.push(SearchResult {
-                        title: topic["FirstURL"]
-                            .as_str()
-                            .unwrap_or("Result")
-                            .to_string(),
+                        title: topic["FirstURL"].as_str().unwrap_or("Result").to_string(),
                         url: topic["FirstURL"].as_str().unwrap_or("").to_string(),
                         snippet: text.to_string(),
                     });
@@ -104,10 +104,7 @@ impl SearchProvider for DuckDuckGoSearch {
                         }
                         if let Some(text) = sub["Text"].as_str() {
                             results.push(SearchResult {
-                                title: sub["FirstURL"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .to_string(),
+                                title: sub["FirstURL"].as_str().unwrap_or("").to_string(),
                                 url: sub["FirstURL"].as_str().unwrap_or("").to_string(),
                                 snippet: text.to_string(),
                             });
@@ -231,8 +228,14 @@ impl WebFetchTool {
             .unwrap_or_default();
 
         let content_selectors = [
-            "article", "main", ".post-content", ".article-content",
-            ".entry-content", "#content", ".content", "body",
+            "article",
+            "main",
+            ".post-content",
+            ".article-content",
+            ".entry-content",
+            "#content",
+            ".content",
+            "body",
         ];
 
         let mut content = String::new();
@@ -290,8 +293,15 @@ impl Tool for WebFetchTool {
                 "web_fetch",
                 "Fetch and extract the main content from a web page URL.",
                 HashMap::from([
-                    ("url".to_string(), ParameterDefinition::required_string("The URL to fetch")),
-                    ("max_length".to_string(), ParameterDefinition::integer("Maximum content length").default(serde_json::json!(10000))),
+                    (
+                        "url".to_string(),
+                        ParameterDefinition::required_string("The URL to fetch"),
+                    ),
+                    (
+                        "max_length".to_string(),
+                        ParameterDefinition::integer("Maximum content length")
+                            .default(serde_json::json!(10000)),
+                    ),
                 ]),
             )
             .category("web")
@@ -308,18 +318,13 @@ impl Tool for WebFetchTool {
 
         self.ssrf.check_url(url).await?;
 
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    ToolError::timeout(30)
-                } else {
-                    ToolError::new("HTTP_ERROR", format!("Request failed: {}", e))
-                }
-            })?;
+        let resp = self.client.get(url).send().await.map_err(|e| {
+            if e.is_timeout() {
+                ToolError::timeout(30)
+            } else {
+                ToolError::new("HTTP_ERROR", format!("Request failed: {}", e))
+            }
+        })?;
 
         let status = resp.status().as_u16();
         let content_type = resp
@@ -337,7 +342,11 @@ impl Tool for WebFetchTool {
         if body.len() as u64 > self.max_response_size {
             return Err(ToolError::new(
                 "RESPONSE_TOO_LARGE",
-                format!("Response too large: {} bytes (max {})", body.len(), self.max_response_size),
+                format!(
+                    "Response too large: {} bytes (max {})",
+                    body.len(),
+                    self.max_response_size
+                ),
             ));
         }
 
@@ -397,11 +406,28 @@ impl Tool for HttpRequestTool {
                 "http_request",
                 "Make an arbitrary HTTP request. Supports GET, POST, PUT, DELETE, PATCH, HEAD.",
                 HashMap::from([
-                    ("method".to_string(), ParameterDefinition::string("HTTP method").default(serde_json::json!("GET"))),
-                    ("url".to_string(), ParameterDefinition::required_string("The URL to send the request to")),
-                    ("headers".to_string(), ParameterDefinition::string("HTTP headers as a JSON object")),
-                    ("body".to_string(), ParameterDefinition::string("Request body (for POST, PUT, PATCH)")),
-                    ("timeout".to_string(), ParameterDefinition::integer("Timeout in seconds").default(serde_json::json!(30))),
+                    (
+                        "method".to_string(),
+                        ParameterDefinition::string("HTTP method")
+                            .default(serde_json::json!("GET")),
+                    ),
+                    (
+                        "url".to_string(),
+                        ParameterDefinition::required_string("The URL to send the request to"),
+                    ),
+                    (
+                        "headers".to_string(),
+                        ParameterDefinition::string("HTTP headers as a JSON object"),
+                    ),
+                    (
+                        "body".to_string(),
+                        ParameterDefinition::string("Request body (for POST, PUT, PATCH)"),
+                    ),
+                    (
+                        "timeout".to_string(),
+                        ParameterDefinition::integer("Timeout in seconds")
+                            .default(serde_json::json!(30)),
+                    ),
                 ]),
             )
             .category("web")
@@ -436,12 +462,23 @@ impl Tool for HttpRequestTool {
 
         let mut req = match method.as_str() {
             "GET" => client.get(url),
-            "POST" => client.post(url).body(params["body"].as_str().unwrap_or("").to_string()),
-            "PUT" => client.put(url).body(params["body"].as_str().unwrap_or("").to_string()),
+            "POST" => client
+                .post(url)
+                .body(params["body"].as_str().unwrap_or("").to_string()),
+            "PUT" => client
+                .put(url)
+                .body(params["body"].as_str().unwrap_or("").to_string()),
             "DELETE" => client.delete(url),
-            "PATCH" => client.patch(url).body(params["body"].as_str().unwrap_or("").to_string()),
+            "PATCH" => client
+                .patch(url)
+                .body(params["body"].as_str().unwrap_or("").to_string()),
             "HEAD" => client.head(url),
-            _ => return Err(ToolError::invalid_args(format!("Unsupported HTTP method: {}", method))),
+            _ => {
+                return Err(ToolError::invalid_args(format!(
+                    "Unsupported HTTP method: {}",
+                    method
+                )));
+            }
         };
 
         for (key, val) in &headers {

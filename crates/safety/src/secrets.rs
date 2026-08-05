@@ -59,10 +59,7 @@ impl SecretRedactor {
                         if let Some(target) = caps.get(pattern.group_to_redact) {
                             let prefix = &full.as_str()[..target.start() - full.start()];
                             let suffix = &full.as_str()[target.end() - full.start()..];
-                            redacted = format!(
-                                "{}{}{}",
-                                prefix, self.redaction_string, suffix
-                            );
+                            redacted = format!("{}{}{}", prefix, self.redaction_string, suffix);
                         } else {
                             redacted = self.redaction_string.clone();
                         }
@@ -358,7 +355,14 @@ impl Default for SecretSanitizer {
 
 /// Config key-name tokens that indicate a secret-bearing key.
 const SECRET_KEY_TOKENS: &[&str] = &[
-    "api_key", "api-key", "apikey", "secret", "token", "password", "passwd", "private_key",
+    "api_key",
+    "api-key",
+    "apikey",
+    "secret",
+    "token",
+    "password",
+    "passwd",
+    "private_key",
     "credential",
 ];
 

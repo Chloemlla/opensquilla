@@ -3,12 +3,14 @@
 //! Provides `rpc_approvals` for managing the sandbox approval queue: submit,
 //! approve, reject, list pending, and inspect the rejection ledger.
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
-use opensquilla_sandbox::governance::{ApprovalQueue, ApprovalRequest, ApprovalStatus, RejectionEntry};
+use opensquilla_sandbox::governance::{
+    ApprovalQueue, ApprovalRequest, ApprovalStatus, RejectionEntry,
+};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A shared approval queue service.
 #[derive(Clone)]
@@ -319,7 +321,11 @@ mod tests {
             "command": "rm",
             "args": ["/etc/passwd"],
         });
-        let resp = registry.dispatch("approvals.submit", params).await.unwrap().unwrap();
+        let resp = registry
+            .dispatch("approvals.submit", params)
+            .await
+            .unwrap()
+            .unwrap();
         let id = resp["id"].as_str().unwrap().to_string();
 
         let r = registry
@@ -341,7 +347,9 @@ mod tests {
         assert_eq!(resp["is_rejected"], true);
 
         // Ledger should have one entry.
-        let r = registry.dispatch("approvals.ledger", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("approvals.ledger", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
     }
@@ -359,7 +367,9 @@ mod tests {
         });
         registry.dispatch("approvals.submit", params).await.unwrap();
 
-        let r = registry.dispatch("approvals.pending", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("approvals.pending", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
     }

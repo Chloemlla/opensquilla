@@ -37,9 +37,8 @@ impl DistState {
     /// Read the workspace state from a JSON file.
     pub fn read(path: impl AsRef<Path>) -> crate::Result<Self> {
         let path = path.as_ref();
-        let contents = std::fs::read_to_string(path).map_err(|e| {
-            crate::Error::Io(format!("Failed to read {}: {e}", path.display()))
-        })?;
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| crate::Error::Io(format!("Failed to read {}: {e}", path.display())))?;
         let mut state: Self = serde_json::from_str(&contents)
             .map_err(|e| crate::Error::Parse(format!("Invalid dist state: {e}")))?;
         state.updated_at = Some(opensquilla_core::time::now());
@@ -54,8 +53,8 @@ impl DistState {
     /// Write the workspace state to a JSON file.
     pub fn write_json(&self, path: impl AsRef<Path>) -> crate::Result<()> {
         let path = path.as_ref();
-        let contents = serde_json::to_string_pretty(self)
-            .map_err(|e| crate::Error::Parse(e.to_string()))?;
+        let contents =
+            serde_json::to_string_pretty(self).map_err(|e| crate::Error::Parse(e.to_string()))?;
         write_state_file(path, &contents)
     }
 
@@ -69,12 +68,10 @@ impl DistState {
 
 fn write_state_file(path: &Path, contents: &str) -> crate::Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            crate::Error::Io(format!("Failed to create {}: {e}", parent.display()))
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| crate::Error::Io(format!("Failed to create {}: {e}", parent.display())))?;
     }
-    std::fs::write(path, contents).map_err(|e| {
-        crate::Error::Io(format!("Failed to write {}: {e}", path.display()))
-    })?;
+    std::fs::write(path, contents)
+        .map_err(|e| crate::Error::Io(format!("Failed to write {}: {e}", path.display())))?;
     Ok(())
 }

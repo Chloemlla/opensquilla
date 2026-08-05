@@ -4,16 +4,16 @@
 //! CSV, JSON, HTML, Markdown, and plain text. Uses the `calamine` crate for
 //! reading existing Excel files and custom generation for other formats.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Supported artifact formats.
-const SUPPORTED_FORMATS: &[&str] = &[
-    "txt", "md", "html", "json", "csv", "yaml", "xml",
-];
+const SUPPORTED_FORMATS: &[&str] = &["txt", "md", "html", "json", "csv", "yaml", "xml"];
 
 /// Tool for generating file artifacts.
 pub struct ArtifactTool {
@@ -65,11 +65,7 @@ impl ArtifactTool {
     }
 
     /// Generate a text-based artifact (txt, md, html, json, csv, yaml, xml).
-    fn generate_text(
-        format: &str,
-        content: &str,
-        filename: &str,
-    ) -> ToolResult<(String, String)> {
+    fn generate_text(format: &str, content: &str, filename: &str) -> ToolResult<(String, String)> {
         let extension = match format {
             "txt" => "txt",
             "md" | "markdown" => "md",
@@ -98,9 +94,8 @@ impl ArtifactTool {
 
     /// Generate a CSV file from a JSON array or object.
     fn generate_csv(json_data: &str, filename: &str) -> ToolResult<(String, String)> {
-        let data: Value = serde_json::from_str(json_data).map_err(|e| {
-            ToolError::invalid_args(format!("Invalid JSON data for CSV: {}", e))
-        })?;
+        let data: Value = serde_json::from_str(json_data)
+            .map_err(|e| ToolError::invalid_args(format!("Invalid JSON data for CSV: {}", e)))?;
 
         let file_name = if filename.contains('.') {
             filename.to_string()
@@ -137,7 +132,10 @@ impl ArtifactTool {
                                 map.get(k)
                                     .map(|v| match v {
                                         Value::String(s) => {
-                                            if s.contains(',') || s.contains('"') || s.contains('\n') {
+                                            if s.contains(',')
+                                                || s.contains('"')
+                                                || s.contains('\n')
+                                            {
                                                 format!("\"{}\"", s.replace('"', "\"\""))
                                             } else {
                                                 s.clone()
@@ -233,12 +231,18 @@ impl Tool for ArtifactTool {
                 HashMap::from([
                     (
                         "format".to_string(),
-                        ParameterDefinition::required_string("The output format")
-                            .enum_values(vec![
-                                "txt".to_string(), "md".to_string(), "markdown".to_string(),
-                                "html".to_string(), "json".to_string(), "csv".to_string(),
-                                "yaml".to_string(), "xml".to_string(),
-                            ]),
+                        ParameterDefinition::required_string("The output format").enum_values(
+                            vec![
+                                "txt".to_string(),
+                                "md".to_string(),
+                                "markdown".to_string(),
+                                "html".to_string(),
+                                "json".to_string(),
+                                "csv".to_string(),
+                                "yaml".to_string(),
+                                "xml".to_string(),
+                            ],
+                        ),
                     ),
                     (
                         "content".to_string(),
@@ -246,7 +250,9 @@ impl Tool for ArtifactTool {
                     ),
                     (
                         "filename".to_string(),
-                        ParameterDefinition::required_string("The output filename (without extension, or with)"),
+                        ParameterDefinition::required_string(
+                            "The output filename (without extension, or with)",
+                        ),
                     ),
                     (
                         "title".to_string(),
@@ -302,9 +308,9 @@ impl Tool for ArtifactTool {
             })?;
         }
 
-        tokio::fs::write(&output_path, &file_content).await.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to write artifact: {}", e))
-        })?;
+        tokio::fs::write(&output_path, &file_content)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to write artifact: {}", e)))?;
 
         let data = serde_json::json!({
             "path": output_path.to_string_lossy(),
@@ -350,8 +356,16 @@ impl Tool for GenerateMarkdownTool {
                 "generate_markdown",
                 "Generate a Markdown document artifact and save it to the filesystem.",
                 HashMap::from([
-                    ("content".to_string(), ParameterDefinition::required_string("The Markdown content")),
-                    ("filename".to_string(), ParameterDefinition::required_string("The output filename (e.g., 'document.md')")),
+                    (
+                        "content".to_string(),
+                        ParameterDefinition::required_string("The Markdown content"),
+                    ),
+                    (
+                        "filename".to_string(),
+                        ParameterDefinition::required_string(
+                            "The output filename (e.g., 'document.md')",
+                        ),
+                    ),
                 ]),
             )
             .category("filesystem")
@@ -399,8 +413,16 @@ impl Tool for GenerateJsonTool {
                 "generate_json",
                 "Generate a JSON document artifact and save it to the filesystem.",
                 HashMap::from([
-                    ("content".to_string(), ParameterDefinition::required_string("The JSON content")),
-                    ("filename".to_string(), ParameterDefinition::required_string("The output filename (e.g., 'data.json')")),
+                    (
+                        "content".to_string(),
+                        ParameterDefinition::required_string("The JSON content"),
+                    ),
+                    (
+                        "filename".to_string(),
+                        ParameterDefinition::required_string(
+                            "The output filename (e.g., 'data.json')",
+                        ),
+                    ),
                 ]),
             )
             .category("filesystem")
@@ -418,9 +440,8 @@ impl Tool for GenerateJsonTool {
             .ok_or_else(|| ToolError::invalid_args("Missing 'filename' parameter"))?;
 
         // Validate JSON.
-        serde_json::from_str::<Value>(content).map_err(|e| {
-            ToolError::invalid_args(format!("Invalid JSON content: {}", e))
-        })?;
+        serde_json::from_str::<Value>(content)
+            .map_err(|e| ToolError::invalid_args(format!("Invalid JSON content: {}", e)))?;
 
         self.base
             .execute(serde_json::json!({

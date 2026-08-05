@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{DateTime, Utc};
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
@@ -235,7 +235,7 @@ impl Tracer {
                 end_time: span.end_time.clone().unwrap_or_else(Utc::now),
                 attributes,
                 events: Vec::new(), // events
-                links: Vec::new(), // links
+                links: Vec::new(),  // links
                 status,
             });
         }

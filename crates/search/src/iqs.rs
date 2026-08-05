@@ -66,8 +66,7 @@ impl IqsSearch {
         });
 
         if let Some(ref time_range) = request.options.time_range {
-            body["timeRange"] =
-                serde_json::Value::String(time_range_from_value(time_range));
+            body["timeRange"] = serde_json::Value::String(time_range_from_value(time_range));
         }
 
         let start = std::time::Instant::now();
@@ -139,8 +138,9 @@ impl SearchProvider for IqsSearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+    > {
         Box::pin(self.search_web(request))
     }
 

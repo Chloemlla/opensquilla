@@ -265,7 +265,9 @@ impl ModelSelector {
         let original_primary = self.chain[0].clone();
         let mut deduped: Vec<ProviderConfig> = vec![cfg.clone()];
         for candidate in std::iter::once(original_primary).chain(self.chain[1..].iter().cloned()) {
-            if !same_identity(&candidate, &cfg) && !deduped.iter().any(|c| same_identity(c, &candidate)) {
+            if !same_identity(&candidate, &cfg)
+                && !deduped.iter().any(|c| same_identity(c, &candidate))
+            {
                 deduped.push(candidate);
             }
         }
@@ -455,9 +457,7 @@ mod tests {
 
     #[test]
     fn test_primary_unconfigured_without_key() {
-        let s = ModelSelector::new(SelectorConfig::new(ProviderConfig::new(
-            "openai", "gpt-4o",
-        )));
+        let s = ModelSelector::new(SelectorConfig::new(ProviderConfig::new("openai", "gpt-4o")));
         assert!(!s.is_configured());
     }
 
@@ -518,9 +518,7 @@ mod tests {
             metadata: Default::default(),
         };
         registry.register(info);
-        let s = ModelSelector::new(SelectorConfig::new(
-            ProviderConfig::new("openai", "gpt-4o"),
-        ));
+        let s = ModelSelector::new(SelectorConfig::new(ProviderConfig::new("openai", "gpt-4o")));
         let result = s.list_models(&registry);
         assert_eq!(result.models.len(), 1);
         assert_eq!(result.models[0].id, "gpt-4o");

@@ -146,10 +146,12 @@ impl ProviderStatsTracker {
         {
             let mut models = self.models.write();
             let by_model = models.entry(outcome.provider.clone()).or_default();
-            let model_stats = by_model.entry(outcome.model.clone()).or_insert_with(|| ModelStats {
-                model: outcome.model.clone(),
-                ..Default::default()
-            });
+            let model_stats = by_model
+                .entry(outcome.model.clone())
+                .or_insert_with(|| ModelStats {
+                    model: outcome.model.clone(),
+                    ..Default::default()
+                });
             model_stats.request_count += 1;
             if !outcome.success {
                 model_stats.error_count += 1;
@@ -257,7 +259,12 @@ pub fn stats_payload(tracker: &ProviderStatsTracker) -> serde_json::Value {
 mod tests {
     use super::*;
 
-    fn outcome(provider: &str, model: &str, success: bool, latency_ms: u64) -> ProviderRequestOutcome {
+    fn outcome(
+        provider: &str,
+        model: &str,
+        success: bool,
+        latency_ms: u64,
+    ) -> ProviderRequestOutcome {
         ProviderRequestOutcome {
             provider: provider.to_string(),
             model: model.to_string(),
@@ -297,7 +304,10 @@ mod tests {
         tracker.record(outcome("openai", "gpt-4o-mini", true, 50));
         let models = tracker.models_for("openai");
         assert_eq!(models.len(), 2);
-        let by_name: HashMap<_, _> = models.iter().map(|m| (m.model.clone(), m.clone())).collect();
+        let by_name: HashMap<_, _> = models
+            .iter()
+            .map(|m| (m.model.clone(), m.clone()))
+            .collect();
         assert_eq!(by_name["gpt-4o"].request_count, 1);
         assert_eq!(by_name["gpt-4o-mini"].request_count, 1);
     }

@@ -26,7 +26,7 @@ use chrono::{DateTime, Utc};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -34,7 +34,7 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -388,7 +388,11 @@ impl DiscordChannel {
     }
 
     /// Send a raw message to a channel with the given payload.
-    pub async fn create_message_raw(&self, channel_id: &str, payload: Value) -> Result<Value, String> {
+    pub async fn create_message_raw(
+        &self,
+        channel_id: &str,
+        payload: Value,
+    ) -> Result<Value, String> {
         let route = format!("/channels/{}/messages", channel_id);
         let url = format!("{}{}", self.api_base, route);
         self.rate_limiter.acquire(&route).await;
@@ -402,7 +406,9 @@ impl DiscordChannel {
             .await
             .map_err(|e| format!("Discord send request: {e}"))?;
         let status = resp.status();
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             self.rate_limiter.handle_rate_limited(resp.headers()).await;
             return Err(format!("Discord rate limited (429)"));
@@ -453,7 +459,9 @@ impl DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord edit request: {e}"))?;
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if resp.status().is_success() {
             Ok(())
         } else {
@@ -473,7 +481,9 @@ impl DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord delete request: {e}"))?;
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if resp.status().is_success() {
             Ok(())
         } else {
@@ -489,7 +499,10 @@ impl DiscordChannel {
         emoji: &str,
     ) -> Result<(), String> {
         let encoded = urlencode(emoji);
-        let route = format!("/channels/{}/messages/{}/reactions/{}", channel_id, message_id, encoded);
+        let route = format!(
+            "/channels/{}/messages/{}/reactions/{}",
+            channel_id, message_id, encoded
+        );
         let url = format!("{}{}", self.api_base, route);
         self.rate_limiter.acquire(&route).await;
         let resp = self
@@ -499,7 +512,9 @@ impl DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord reaction request: {e}"))?;
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if resp.status().is_success() {
             Ok(())
         } else {
@@ -520,7 +535,9 @@ impl DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord DM request: {e}"))?;
-        self.rate_limiter.record_response(route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(route, resp.headers())
+            .await;
         let body: Value = resp
             .json()
             .await
@@ -548,11 +565,16 @@ impl DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord command registration: {e}"))?;
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(format!("Discord command registration failed: {}", resp.status()))
+            Err(format!(
+                "Discord command registration failed: {}",
+                resp.status()
+            ))
         }
     }
 
@@ -577,11 +599,16 @@ impl DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord guild command registration: {e}"))?;
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(format!("Discord guild command registration failed: {}", resp.status()))
+            Err(format!(
+                "Discord guild command registration failed: {}",
+                resp.status()
+            ))
         }
     }
 
@@ -626,8 +653,10 @@ async fn run_gateway_cycle(
             return;
         }
     };
-    let (mut sink, mut read): (SplitSink<DiscordWsStream, WsMessage>, SplitStream<DiscordWsStream>) =
-        ws_stream.split();
+    let (mut sink, mut read): (
+        SplitSink<DiscordWsStream, WsMessage>,
+        SplitStream<DiscordWsStream>,
+    ) = ws_stream.split();
 
     let last_seq: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
     let interval_ms: Arc<Mutex<u64>> = Arc::new(Mutex::new(DEFAULT_HEARTBEAT_INTERVAL_MS));
@@ -731,10 +760,7 @@ async fn run_gateway_cycle(
                     }
                     9 => {
                         // Invalid session; `d: true` allows resume, false does not.
-                        let can_resume = envelope
-                            .d
-                            .and_then(|d| d.as_bool())
-                            .unwrap_or(false);
+                        let can_resume = envelope.d.and_then(|d| d.as_bool()).unwrap_or(false);
                         error!("Discord invalid session (resume={})", can_resume);
                         if !can_resume {
                             *session.lock().await = None;
@@ -793,7 +819,11 @@ fn spawn_discord_heartbeat(
             }
             let seq = { *last_seq.lock().await };
             let payload = json!({ "op": 1, "d": seq });
-            if sink.send(WsMessage::Text(payload.to_string().into())).await.is_err() {
+            if sink
+                .send(WsMessage::Text(payload.to_string().into()))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -850,7 +880,11 @@ fn parse_dispatch_event(envelope: &GatewayEnvelope) -> Option<IncomingMessage> {
 fn parse_message_create(d: &Value) -> Option<IncomingMessage> {
     // Skip bot-authored messages to avoid feedback loops.
     let author = d.get("author");
-    if author.and_then(|a| a.get("bot")).and_then(|v| v.as_bool()).unwrap_or(false) {
+    if author
+        .and_then(|a| a.get("bot"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return None;
     }
     let channel_id = d
@@ -867,8 +901,17 @@ fn parse_message_create(d: &Value) -> Option<IncomingMessage> {
         .and_then(|a| a.get("global_name"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .or_else(|| author.and_then(|a| a.get("username")).and_then(|v| v.as_str()).map(String::from));
-    let text = d.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        .or_else(|| {
+            author
+                .and_then(|a| a.get("username"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        });
+    let text = d
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let message_id = d.get("id").and_then(|v| v.as_str()).map(String::from);
     let thread_id = d
         .get("message_reference")
@@ -919,7 +962,9 @@ fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             b' ' => out.push('+'),
             _ => out.push_str(&format!("%{:02X}", b)),
         }
@@ -963,16 +1008,24 @@ impl Channel for DiscordChannel {
             .send()
             .await
             .map_err(|e| format!("Discord typing request: {e}"))?;
-        self.rate_limiter.record_response(&route, resp.headers()).await;
+        self.rate_limiter
+            .record_response(&route, resp.headers())
+            .await;
         if resp.status().is_success() {
             Ok(())
         } else {
-            Err(format!("Failed to send typing indicator: {}", resp.status()))
+            Err(format!(
+                "Failed to send typing indicator: {}",
+                resp.status()
+            ))
         }
     }
 
     async fn set_webhook(&self, _url: &str) -> Result<(), String> {
-        Err("Discord does not use webhooks for bot messages. Use the Gateway and REST API instead.".to_string())
+        Err(
+            "Discord does not use webhooks for bot messages. Use the Gateway and REST API instead."
+                .to_string(),
+        )
     }
 }
 

@@ -140,11 +140,7 @@ impl std::fmt::Debug for ProviderHealthLedger {
             .field("max_cooldown_s", &self.max_cooldown_s)
             .field(
                 "tracked_deployments",
-                &self
-                    .strikes
-                    .lock()
-                    .map(|s| s.len())
-                    .unwrap_or(0),
+                &self.strikes.lock().map(|s| s.len()).unwrap_or(0),
             )
             .finish()
     }
@@ -344,10 +340,7 @@ impl ProviderHealthLedger {
 
     /// The number of deployments currently benched.
     pub fn benched_count(&self) -> usize {
-        self.benched_until
-            .lock()
-            .map(|b| b.len())
-            .unwrap_or(0)
+        self.benched_until.lock().map(|b| b.len()).unwrap_or(0)
     }
 
     fn cooldown_for(&self, retry_after_s: Option<f64>) -> f64 {
@@ -357,7 +350,12 @@ impl ProviderHealthLedger {
         }
     }
 
-    fn expire_locked(&self, key: &DeploymentKey, ts: f64, benched: &mut HashMap<DeploymentKey, f64>) {
+    fn expire_locked(
+        &self,
+        key: &DeploymentKey,
+        ts: f64,
+        benched: &mut HashMap<DeploymentKey, f64>,
+    ) {
         if let Some(until) = benched.get(key) {
             if *until <= ts {
                 benched.remove(key);
@@ -443,8 +441,20 @@ mod tests {
     #[test]
     fn test_success_clears_strikes() {
         let ledger = ledger().with_failure_threshold(3);
-        ledger.record_failure("a", "m", ProviderFailureKind::TransportTransient, None, Some(1.0));
-        ledger.record_failure("a", "m", ProviderFailureKind::TransportTransient, None, Some(2.0));
+        ledger.record_failure(
+            "a",
+            "m",
+            ProviderFailureKind::TransportTransient,
+            None,
+            Some(1.0),
+        );
+        ledger.record_failure(
+            "a",
+            "m",
+            ProviderFailureKind::TransportTransient,
+            None,
+            Some(2.0),
+        );
         ledger.record_success("a", "m");
         // Strikes cleared: a third failure should not bench.
         let benched = ledger.record_failure(
@@ -477,13 +487,8 @@ mod tests {
     #[test]
     fn test_non_benchable_kind() {
         let ledger = ledger();
-        let benched = ledger.record_failure(
-            "a",
-            "m",
-            ProviderFailureKind::BadRequest,
-            None,
-            Some(0.0),
-        );
+        let benched =
+            ledger.record_failure("a", "m", ProviderFailureKind::BadRequest, None, Some(0.0));
         assert!(!benched);
         assert!(!ledger.is_benched("a", "m", Some(0.0)));
     }

@@ -19,8 +19,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::attachments::{store_attachment, AttachmentMeta, AttachmentStore, AttachmentUpload};
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::attachments::{AttachmentMeta, AttachmentStore, AttachmentUpload, store_attachment};
+use crate::rpc::{RpcRegistry, rpc_handler};
 use crate::session_archive::SessionArchiver;
 use crate::session_events::{SessionEventBroadcaster, SessionEventKind};
 use crate::session_export::{ExportFormat, ExportedMessage, SessionExporter};
@@ -357,7 +357,10 @@ impl SessionStore {
         let message_id = Uuid::new_v4().to_string();
         {
             let mut transcripts = self.transcripts.lock();
-            transcripts.entry(session_id.to_string()).or_default().push(msg);
+            transcripts
+                .entry(session_id.to_string())
+                .or_default()
+                .push(msg);
         }
         {
             let mut sessions = self.sessions.lock();
@@ -479,10 +482,8 @@ impl SessionStore {
                 entry.updated_at = Utc::now();
             }
         }
-        self.broadcaster.publish_simple(
-            SessionEventKind::TurnStarted,
-            session_id,
-        );
+        self.broadcaster
+            .publish_simple(SessionEventKind::TurnStarted, session_id);
         record
     }
 
@@ -505,7 +506,11 @@ impl SessionStore {
     }
 
     /// Mark a turn as running.
-    pub fn mark_turn_running(&self, session_id: &str, turn_id: Uuid) -> Result<TurnRecord, AppError> {
+    pub fn mark_turn_running(
+        &self,
+        session_id: &str,
+        turn_id: Uuid,
+    ) -> Result<TurnRecord, AppError> {
         let mut turns = self.turns.lock();
         let list = turns
             .get_mut(session_id)
@@ -552,11 +557,7 @@ impl SessionStore {
     /// Request a compaction for a session. The record is created in the
     /// `requested` state and a background task completes it after a short
     /// delay with a summary of the transcript.
-    pub fn trigger_compaction(
-        &self,
-        session_id: &str,
-        reason: Option<String>,
-    ) -> CompactionRecord {
+    pub fn trigger_compaction(&self, session_id: &str, reason: Option<String>) -> CompactionRecord {
         let record = CompactionRecord {
             id: Uuid::new_v4(),
             session_id: session_id.to_string(),
@@ -597,9 +598,9 @@ impl SessionStore {
         input_tokens: u64,
     ) -> Result<CompactionRecord, AppError> {
         let mut compactions = self.compactions.lock();
-        let list = compactions
-            .get_mut(session_id)
-            .ok_or_else(|| AppError::not_found(format!("No compactions for session '{session_id}'")))?;
+        let list = compactions.get_mut(session_id).ok_or_else(|| {
+            AppError::not_found(format!("No compactions for session '{session_id}'"))
+        })?;
         let record = list
             .iter_mut()
             .find(|c| c.id == id)
@@ -685,7 +686,11 @@ impl SessionStore {
     // -----------------------------------------------------------------------
 
     /// Export a session transcript in the requested format.
-    pub fn export(&self, session_id: &str, format: ExportFormat) -> Result<serde_json::Value, AppError> {
+    pub fn export(
+        &self,
+        session_id: &str,
+        format: ExportFormat,
+    ) -> Result<serde_json::Value, AppError> {
         let session = self
             .get_str(session_id)
             .ok_or_else(|| AppError::not_found(format!("Session {session_id} not found")))?;
@@ -702,8 +707,7 @@ impl SessionStore {
             .collect();
         let export = SessionExporter::build_export(
             session_id,
-            serde_json::to_value(&session)
-                .map_err(|e| AppError::internal(e.to_string()))?,
+            serde_json::to_value(&session).map_err(|e| AppError::internal(e.to_string()))?,
             exported,
         );
         let content = String::from_utf8_lossy(&export.to_bytes(format)?).to_string();
@@ -795,8 +799,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                         entry = updated;
                     }
                 }
-                Ok(serde_json::to_value(entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -844,8 +847,14 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             let store = store.clone();
             async move {
                 let id = parse_session_id(&params)?;
-                let title = params.get("title").and_then(|v| v.as_str()).map(String::from);
-                let model = params.get("model").and_then(|v| v.as_str()).map(String::from);
+                let title = params
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let model = params
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let metadata: Option<HashMap<String, serde_json::Value>> = params
                     .get("metadata")
                     .and_then(|v| v.as_object())
@@ -883,8 +892,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.archive(&id)?;
-                Ok(serde_json::to_value(entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -897,8 +905,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.activate(&id)?;
-                Ok(serde_json::to_value(entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -911,8 +918,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.pause(&id)?;
-                Ok(serde_json::to_value(entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -925,8 +931,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.resume(&id)?;
-                Ok(serde_json::to_value(entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -939,8 +944,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.restore(&id)?;
-                Ok(serde_json::to_value(entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1011,8 +1015,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let session_id = parse_any_session_id(&params)?;
                 let record = store.reserve_turn(&session_id.to_string());
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1024,14 +1027,16 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             let store = store.clone();
             async move {
                 let session_id = parse_any_session_id(&params)?;
-                let message = params.get("message").and_then(|v| v.as_str()).map(String::from);
+                let message = params
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let turn_id = params
                     .get("turn_id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok());
                 let record = store.start_turn(&session_id.to_string(), message, turn_id);
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1050,8 +1055,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                 let turn_id = Uuid::parse_str(turn_id)
                     .map_err(|_| AppError::bad_request("Invalid turn_id"))?;
                 let record = store.cancel_turn(&session_id.to_string(), turn_id)?;
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1063,10 +1067,12 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             let store = store.clone();
             async move {
                 let session_id = parse_any_session_id(&params)?;
-                let reason = params.get("reason").and_then(|v| v.as_str()).map(String::from);
+                let reason = params
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let record = store.trigger_compaction(&session_id.to_string(), reason);
-                Ok(serde_json::to_value(record)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1152,9 +1158,9 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                     content_type,
                     bytes,
                 };
-                let meta = store_attachment(&store.attachments, &session_id.to_string(), upload, &dir)?;
-                Ok(serde_json::to_value(meta)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                let meta =
+                    store_attachment(&store.attachments, &session_id.to_string(), upload, &dir)?;
+                Ok(serde_json::to_value(meta).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1190,13 +1196,9 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                     .get("query")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'query' parameter"))?;
-                let limit = params
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(20) as usize;
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
                 let result = store.search_transcripts(query, limit);
-                Ok(serde_json::to_value(result)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -1226,7 +1228,9 @@ mod tests {
         assert_eq!(entry.state, "created");
 
         // List
-        let result = registry.dispatch("sessions.list", serde_json::Value::Null).await;
+        let result = registry
+            .dispatch("sessions.list", serde_json::Value::Null)
+            .await;
         let resp = result.unwrap().unwrap();
         let sessions: Vec<SessionEntry> = serde_json::from_value(resp["sessions"].clone()).unwrap();
         assert_eq!(sessions.len(), 1);
@@ -1238,7 +1242,10 @@ mod tests {
 
         // Activate then delete
         let result = registry
-            .dispatch("sessions.activate", serde_json::json!({"id": session_id.to_string()}))
+            .dispatch(
+                "sessions.activate",
+                serde_json::json!({"id": session_id.to_string()}),
+            )
             .await;
         assert!(result.unwrap().is_ok());
 
@@ -1261,26 +1268,40 @@ mod tests {
         let id = resp["id"].as_str().unwrap().to_string();
 
         // created → active → paused → active → archived → active
-        let r = registry.dispatch("sessions.activate", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.activate", serde_json::json!({"id": id}))
+            .await;
         assert_eq!(r.unwrap().unwrap()["state"], "active");
 
-        let r = registry.dispatch("sessions.pause", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.pause", serde_json::json!({"id": id}))
+            .await;
         assert_eq!(r.unwrap().unwrap()["state"], "paused");
 
         // Pausing an already-paused session is illegal.
-        let r = registry.dispatch("sessions.pause", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.pause", serde_json::json!({"id": id}))
+            .await;
         assert!(r.unwrap().is_err());
 
-        let r = registry.dispatch("sessions.resume", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.resume", serde_json::json!({"id": id}))
+            .await;
         assert_eq!(r.unwrap().unwrap()["state"], "active");
 
-        let r = registry.dispatch("sessions.archive", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.archive", serde_json::json!({"id": id}))
+            .await;
         assert_eq!(r.unwrap().unwrap()["state"], "archived");
 
-        let r = registry.dispatch("sessions.restore", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.restore", serde_json::json!({"id": id}))
+            .await;
         assert_eq!(r.unwrap().unwrap()["state"], "active");
 
-        let r = registry.dispatch("sessions.state", serde_json::json!({"id": id})).await;
+        let r = registry
+            .dispatch("sessions.state", serde_json::json!({"id": id}))
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["state"], "active");
         assert_eq!(resp["accepts_turns"], true);
@@ -1302,7 +1323,10 @@ mod tests {
 
         // Reserve a turn slot.
         let r = registry
-            .dispatch("sessions.turn.reserve", serde_json::json!({"session_id": session_id}))
+            .dispatch(
+                "sessions.turn.reserve",
+                serde_json::json!({"session_id": session_id}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["status"], "reserved");
@@ -1331,7 +1355,10 @@ mod tests {
 
         // List turns.
         let r = registry
-            .dispatch("sessions.turns.list", serde_json::json!({"session_id": session_id}))
+            .dispatch(
+                "sessions.turns.list",
+                serde_json::json!({"session_id": session_id}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
@@ -1347,7 +1374,10 @@ mod tests {
         register_session_handlers(&mut registry, store.clone());
 
         let r = registry
-            .dispatch("sessions.compaction.trigger", serde_json::json!({"session_id": "s1"}))
+            .dispatch(
+                "sessions.compaction.trigger",
+                serde_json::json!({"session_id": "s1"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["status"], "requested");
@@ -1357,7 +1387,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 
         let r = registry
-            .dispatch("sessions.compaction.status", serde_json::json!({"session_id": "s1"}))
+            .dispatch(
+                "sessions.compaction.status",
+                serde_json::json!({"session_id": "s1"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["id"].as_str().unwrap(), cid);
@@ -1365,7 +1398,10 @@ mod tests {
         assert!(resp["summary"].as_str().unwrap().contains("2 messages"));
 
         let r = registry
-            .dispatch("sessions.compaction.history", serde_json::json!({"session_id": "s1"}))
+            .dispatch(
+                "sessions.compaction.history",
+                serde_json::json!({"session_id": "s1"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
@@ -1420,13 +1456,19 @@ mod tests {
         let attachment_id = resp["attachment_id"].as_str().unwrap().to_string();
 
         let r = registry
-            .dispatch("sessions.attachments.list", serde_json::json!({"session_id": session_id}))
+            .dispatch(
+                "sessions.attachments.list",
+                serde_json::json!({"session_id": session_id}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
 
         let r = registry
-            .dispatch("sessions.attachments.delete", serde_json::json!({"attachment_id": attachment_id}))
+            .dispatch(
+                "sessions.attachments.delete",
+                serde_json::json!({"attachment_id": attachment_id}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["deleted"], true);
@@ -1437,7 +1479,10 @@ mod tests {
         let store = SessionStore::new();
         let resp = registry_create(&store).await;
         let session_id = resp["id"].as_str().unwrap().to_string();
-        store.add_message(&session_id, Message::user("How do I configure the API key?"));
+        store.add_message(
+            &session_id,
+            Message::user("How do I configure the API key?"),
+        );
         store.add_message(&session_id, Message::assistant("It goes in the TOML file."));
 
         let mut registry = RpcRegistry::new();

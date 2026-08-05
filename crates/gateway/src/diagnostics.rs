@@ -4,12 +4,12 @@
 //! gateway, including trace-level logging, prompt reporting, and decision
 //! logging.
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// Diagnostics configuration state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +53,15 @@ impl DiagnosticsService {
     }
 
     /// Update the state from a set of optional fields.
-    pub fn update(&self, enabled: Option<bool>, verbose: Option<bool>, trace: Option<bool>, prompt_report: Option<bool>, decision_log: Option<bool>, safe_log: Option<bool>) -> DiagnosticsState {
+    pub fn update(
+        &self,
+        enabled: Option<bool>,
+        verbose: Option<bool>,
+        trace: Option<bool>,
+        prompt_report: Option<bool>,
+        decision_log: Option<bool>,
+        safe_log: Option<bool>,
+    ) -> DiagnosticsState {
         let mut state = self.state.lock();
         if let Some(e) = enabled {
             state.enabled = e;
@@ -92,8 +100,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 let state = service.update(Some(enabled), None, None, None, None, None);
-                Ok(serde_json::to_value(state)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -105,8 +112,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
             let service = service.clone();
             async move {
                 let state = service.state();
-                Ok(serde_json::to_value(state)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -124,9 +130,15 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                 let decision_log = params.get("decision_log").and_then(|v| v.as_bool());
                 let safe_log = params.get("safe_log").and_then(|v| v.as_bool());
 
-                let state = service.update(enabled, verbose, trace, prompt_report, decision_log, safe_log);
-                Ok(serde_json::to_value(state)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                let state = service.update(
+                    enabled,
+                    verbose,
+                    trace,
+                    prompt_report,
+                    decision_log,
+                    safe_log,
+                );
+                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -145,8 +157,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     Some(true),
                     Some(true),
                 );
-                Ok(serde_json::to_value(state)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -165,8 +176,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     Some(false),
                     Some(false),
                 );
-                Ok(serde_json::to_value(state)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -188,7 +198,9 @@ mod tests {
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["enabled"], true);
 
-        let r = registry.dispatch("diagnostics.state", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("diagnostics.state", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["enabled"], true);
     }
@@ -199,7 +211,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_diagnostics_handlers(&mut registry, service);
 
-        let r = registry.dispatch("diagnostics.enable_all", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("diagnostics.enable_all", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["verbose"], true);
         assert_eq!(resp["trace"], true);

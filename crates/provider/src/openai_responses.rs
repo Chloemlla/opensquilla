@@ -200,15 +200,10 @@ impl OpenAiResponsesConfig {
 pub enum ContentPart {
     /// Plain text content. `is_assistant` selects `output_text` vs
     /// `input_text`, matching the Responses API's role-symmetric part types.
-    Text {
-        text: String,
-        is_assistant: bool,
-    },
+    Text { text: String, is_assistant: bool },
     /// An inline or URL image. URLs are used as-is; local data must be encoded
     /// as a `data:` URL by the caller.
-    InputImage {
-        image_url: String,
-    },
+    InputImage { image_url: String },
     /// An uploaded file part. `file_data` carries the raw bytes and
     /// `file_content_type` the MIME type.
     InputFile {
@@ -217,9 +212,7 @@ pub enum ContentPart {
         file_content_type: String,
     },
     /// A refusal part (assistant output only).
-    Refusal {
-        refusal: String,
-    },
+    Refusal { refusal: String },
 }
 
 impl ContentPart {
@@ -330,10 +323,7 @@ pub enum InputItem {
         arguments: String,
     },
     /// A function-call-output item (`type: "function_call_output"`).
-    FunctionCallOutput {
-        call_id: String,
-        output: String,
-    },
+    FunctionCallOutput { call_id: String, output: String },
 }
 
 impl InputItem {
@@ -442,8 +432,8 @@ pub fn build_responses_input_items(messages: &[ChatMessage]) -> Vec<InputItem> {
                             content: std::mem::take(&mut pending),
                         });
                     }
-                    let arguments = serde_json::to_string(&tc.input)
-                        .unwrap_or_else(|_| "{}".to_string());
+                    let arguments =
+                        serde_json::to_string(&tc.input).unwrap_or_else(|_| "{}".to_string());
                     items.push(InputItem::FunctionCall {
                         call_id: tc.id.clone(),
                         name: tc.name.clone(),
@@ -595,10 +585,7 @@ impl ResponsesTool {
             if self.tool_type == ResponsesToolType::Function {
                 obj.insert("name".into(), serde_json::json!(self.name));
                 obj.insert("description".into(), serde_json::json!(self.description));
-                obj.insert(
-                    "strict".into(),
-                    serde_json::json!(self.strict),
-                );
+                obj.insert("strict".into(), serde_json::json!(self.strict));
                 obj.insert(
                     "parameters".into(),
                     if self.parameters.is_null() {
@@ -694,22 +681,13 @@ pub enum ResponsesOutputItem {
         action: serde_json::Value,
     },
     /// A web-search item (`type: "web_search_call"`).
-    WebSearchCall {
-        id: String,
-    },
+    WebSearchCall { id: String },
     /// A file-search item (`type: "file_search_call"`).
-    FileSearchCall {
-        id: String,
-    },
+    FileSearchCall { id: String },
     /// A code-interpreter item (`type: "code_interpreter_call"`).
-    CodeInterpreterCall {
-        id: String,
-        input: String,
-    },
+    CodeInterpreterCall { id: String, input: String },
     /// An unrecognized output item type.
-    Unknown {
-        item_type: String,
-    },
+    Unknown { item_type: String },
 }
 
 impl ResponsesOutputItem {
@@ -736,7 +714,8 @@ impl ResponsesOutputItem {
                             .unwrap_or("")
                         {
                             "output_text" | "input_text" => {
-                                if let Some(t) = part.get("text").and_then(serde_json::Value::as_str)
+                                if let Some(t) =
+                                    part.get("text").and_then(serde_json::Value::as_str)
                                 {
                                     text.push(t.to_string());
                                 }
@@ -986,7 +965,10 @@ impl ResponsesRequest {
             model: config.model.clone(),
             input,
             instructions,
-            tools: tools.iter().map(ResponsesTool::from_tool_definition).collect(),
+            tools: tools
+                .iter()
+                .map(ResponsesTool::from_tool_definition)
+                .collect(),
             tool_choice,
             previous_response_id,
             store: false,
@@ -1020,7 +1002,12 @@ impl ResponsesRequest {
             if !self.tools.is_empty() {
                 obj.insert(
                     "tools".into(),
-                    serde_json::json!(self.tools.iter().map(ResponsesTool::to_json).collect::<Vec<_>>()),
+                    serde_json::json!(
+                        self.tools
+                            .iter()
+                            .map(ResponsesTool::to_json)
+                            .collect::<Vec<_>>()
+                    ),
                 );
                 obj.insert("tool_choice".into(), self.tool_choice.clone());
             }
@@ -1037,7 +1024,10 @@ impl ResponsesRequest {
                 obj.insert("stop".into(), serde_json::json!(self.stop));
             }
             if let Some(schema) = &self.output_schema {
-                let name = schema.name.clone().unwrap_or_else(|| "structured_output".into());
+                let name = schema
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "structured_output".into());
                 obj.insert(
                     "text".into(),
                     serde_json::json!({
@@ -1105,8 +1095,8 @@ impl OpenAIResponsesProvider {
         api_key: impl Into<String>,
     ) -> Self {
         let name = name.into();
-        let provider_kind =
-            OpenAiResponsesProvider::from_str(&name).unwrap_or(OpenAiResponsesProvider::OpenAiResponses);
+        let provider_kind = OpenAiResponsesProvider::from_str(&name)
+            .unwrap_or(OpenAiResponsesProvider::OpenAiResponses);
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(180))
             .build()
@@ -1229,7 +1219,10 @@ impl OpenAIResponsesProvider {
                         }
                     }
                 }
-                ResponsesOutputItem::Reasoning { summary, content: rc } => {
+                ResponsesOutputItem::Reasoning {
+                    summary,
+                    content: rc,
+                } => {
                     reasoning_text.push_str(summary);
                     for t in rc {
                         reasoning_text.push_str(t);
@@ -1365,10 +1358,7 @@ impl OpenAIResponsesProvider {
     }
 
     /// Send the request body to the Responses endpoint and normalize errors.
-    async fn post(
-        &self,
-        body: &serde_json::Value,
-    ) -> ProviderResult<reqwest::Response> {
+    async fn post(&self, body: &serde_json::Value) -> ProviderResult<reqwest::Response> {
         let mut request = self
             .client
             .post(self.responses_url())
@@ -1390,7 +1380,9 @@ impl OpenAIResponsesProvider {
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 return Err(ProviderError::RateLimited(error_text));
             }
-            return Err(ProviderError::Provider(format!("HTTP {status}: {error_text}")));
+            return Err(ProviderError::Provider(format!(
+                "HTTP {status}: {error_text}"
+            )));
         }
         Ok(resp)
     }
@@ -1547,7 +1539,10 @@ fn parse_responses_sse_value(value: &serde_json::Value) -> Option<ProviderResult
 
     match event_type {
         "response.output_text.delta" => {
-            let text = value.get("delta").and_then(serde_json::Value::as_str).unwrap_or("");
+            let text = value
+                .get("delta")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
             if text.is_empty() {
                 None
             } else {
@@ -1559,7 +1554,10 @@ fn parse_responses_sse_value(value: &serde_json::Value) -> Option<ProviderResult
         "response.reasoning.delta"
         | "response.reasoning_summary_text.delta"
         | "response.reasoning_text.delta" => {
-            let reasoning = value.get("delta").and_then(serde_json::Value::as_str).unwrap_or("");
+            let reasoning = value
+                .get("delta")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
             if reasoning.is_empty() {
                 None
             } else {
@@ -1631,7 +1629,11 @@ fn parse_responses_sse_value(value: &serde_json::Value) -> Option<ProviderResult
             let stop_reason = response
                 .get("status")
                 .and_then(serde_json::Value::as_str)
-                .or_else(|| response.get("stop_reason").and_then(serde_json::Value::as_str))
+                .or_else(|| {
+                    response
+                        .get("stop_reason")
+                        .and_then(serde_json::Value::as_str)
+                })
                 .map(String::from);
             Some(Ok(StreamEvent::Done {
                 usage: Some(usage.to_usage()),
@@ -1659,7 +1661,10 @@ fn parse_responses_sse_value(value: &serde_json::Value) -> Option<ProviderResult
 /// start event, covering function, computer, web-search, file-search, and
 /// code-interpreter items.
 fn parse_output_item_start(item: &serde_json::Value) -> Option<ProviderResult<StreamEvent>> {
-    let item_type = item.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
+    let item_type = item
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
     match item_type {
         "function_call" => {
             let id = item
@@ -1757,7 +1762,10 @@ pub fn responses_sse_value_to_delta(value: &serde_json::Value) -> Option<SseDelt
     let event_type = value.get("type").and_then(serde_json::Value::as_str)?;
     match event_type {
         "response.output_text.delta" => {
-            let text = value.get("delta").and_then(serde_json::Value::as_str).unwrap_or("");
+            let text = value
+                .get("delta")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
             if text.is_empty() {
                 None
             } else {
@@ -1767,7 +1775,10 @@ pub fn responses_sse_value_to_delta(value: &serde_json::Value) -> Option<SseDelt
         "response.reasoning.delta"
         | "response.reasoning_summary_text.delta"
         | "response.reasoning_text.delta" => {
-            let reasoning = value.get("delta").and_then(serde_json::Value::as_str).unwrap_or("");
+            let reasoning = value
+                .get("delta")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
             if reasoning.is_empty() {
                 None
             } else {
@@ -1776,9 +1787,15 @@ pub fn responses_sse_value_to_delta(value: &serde_json::Value) -> Option<SseDelt
         }
         "response.output_item.added" => {
             let item = value.get("item")?;
-            let item_type = item.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
+            let item_type = item
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
             match item_type {
-                "function_call" | "computer_call" | "web_search_call" | "file_search_call"
+                "function_call"
+                | "computer_call"
+                | "web_search_call"
+                | "file_search_call"
                 | "code_interpreter_call" => {
                     let id = item
                         .get("call_id")
@@ -1803,7 +1820,10 @@ pub fn responses_sse_value_to_delta(value: &serde_json::Value) -> Option<SseDelt
             }
         }
         "response.function_call_arguments.delta" => {
-            let delta = value.get("delta").and_then(serde_json::Value::as_str).unwrap_or("");
+            let delta = value
+                .get("delta")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
             if delta.is_empty() {
                 None
             } else {
@@ -1865,10 +1885,7 @@ mod tests {
             "get_weather",
             serde_json::json!({"city": "NYC"}),
         )));
-        let tool_msg = ChatMessage::text(
-            MessageRole::Tool,
-            "72F and sunny",
-        );
+        let tool_msg = ChatMessage::text(MessageRole::Tool, "72F and sunny");
         let tool_msg = ChatMessage {
             role: MessageRole::Tool,
             content: vec![ContentBlock::ToolResult(
@@ -2272,7 +2289,11 @@ mod tests {
         let data = r#"{"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_1","name":"get_weather"}}"#;
         let event = parse_responses_sse_event(data);
         match event.unwrap() {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "call_1");
                 assert_eq!(name, "get_weather");
                 assert!(arguments.is_empty());
@@ -2286,7 +2307,11 @@ mod tests {
         let data = r#"{"type":"response.output_item.added","item":{"type":"computer_call","call_id":"cc_1","action":{"type":"click","x":1,"y":2}}}"#;
         let event = parse_responses_sse_event(data);
         match event.unwrap() {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "cc_1");
                 assert_eq!(name, "computer_use");
                 assert!(arguments.contains("\"click\""));
@@ -2300,7 +2325,11 @@ mod tests {
         let data = r#"{"type":"response.function_call_arguments.delta","item_id":"call_1","name":"get_weather","delta":"{\"city\":"}"#;
         let event = parse_responses_sse_event(data);
         match event.unwrap() {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "call_1");
                 assert_eq!(name, "get_weather");
                 assert_eq!(arguments, r#"{"city":"#);
@@ -2314,7 +2343,11 @@ mod tests {
         let data = r#"{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"city\":\"NYC\"}"}}"#;
         let event = parse_responses_sse_event(data);
         match event.unwrap() {
-            Ok(StreamEvent::ToolCall { id, name, arguments }) => {
+            Ok(StreamEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            }) => {
                 assert_eq!(id, "call_1");
                 assert_eq!(name, "get_weather");
                 assert_eq!(arguments, r#"{"city":"NYC"}"#);
@@ -2367,7 +2400,10 @@ mod tests {
     #[test]
     fn test_responses_sse_to_delta_text() {
         let data = r#"{"type":"response.output_text.delta","delta":"hi"}"#;
-        assert_eq!(responses_sse_to_delta(data), Some(SseDelta::Text("hi".into())));
+        assert_eq!(
+            responses_sse_to_delta(data),
+            Some(SseDelta::Text("hi".into()))
+        );
     }
 
     #[test]
@@ -2375,14 +2411,21 @@ mod tests {
         let data = r#"{"type":"response.output_item.added","item":{"type":"function_call","call_id":"c","name":"f"}}"#;
         assert_eq!(
             responses_sse_to_delta(data),
-            Some(SseDelta::ToolCallBegin { id: "c".into(), name: "f".into() })
+            Some(SseDelta::ToolCallBegin {
+                id: "c".into(),
+                name: "f".into()
+            })
         );
     }
 
     #[test]
     fn test_responses_sse_to_delta_tool_delta() {
-        let data = r#"{"type":"response.function_call_arguments.delta","item_id":"c","delta":"{\"a\""}"#;
-        assert_eq!(responses_sse_to_delta(data), Some(SseDelta::ToolCallDelta("{\"a\"".into())));
+        let data =
+            r#"{"type":"response.function_call_arguments.delta","item_id":"c","delta":"{\"a\""}"#;
+        assert_eq!(
+            responses_sse_to_delta(data),
+            Some(SseDelta::ToolCallDelta("{\"a\"".into()))
+        );
     }
 
     #[test]
@@ -2410,7 +2453,10 @@ mod tests {
             Some(OpenAiResponsesProvider::ByteplusCodingPlan)
         );
         assert_eq!(OpenAiResponsesProvider::from_str("nope"), None);
-        assert_eq!(OpenAiResponsesProvider::OpenAiResponses.as_str(), "openai_responses");
+        assert_eq!(
+            OpenAiResponsesProvider::OpenAiResponses.as_str(),
+            "openai_responses"
+        );
     }
 
     #[test]
@@ -2432,27 +2478,39 @@ mod tests {
     #[test]
     fn test_config_resolves_default_base_url() {
         let cfg = OpenAiResponsesConfig::volcengine_coding_plan("key");
-        assert_eq!(cfg.resolved_base_url(), "https://ark.cn-beijing.volces.com/api/v3");
+        assert_eq!(
+            cfg.resolved_base_url(),
+            "https://ark.cn-beijing.volces.com/api/v3"
+        );
         let cfg = cfg.with_base_url("https://example.com/v2");
         assert_eq!(cfg.resolved_base_url(), "https://example.com/v2");
     }
 
     #[test]
     fn test_provider_from_config_sets_endpoint() {
-        let p = OpenAIResponsesProvider::from_config(
-            OpenAiResponsesConfig::byteplus_coding_plan("key"),
-        );
+        let p = OpenAIResponsesProvider::from_config(OpenAiResponsesConfig::byteplus_coding_plan(
+            "key",
+        ));
         assert_eq!(p.name(), "byteplus_coding_plan");
         assert_eq!(p.api_base(), "https://ark.byteplus.com/api/v3");
-        assert_eq!(p.responses_url(), "https://ark.byteplus.com/api/v3/responses");
-        assert_eq!(p.provider_kind(), OpenAiResponsesProvider::ByteplusCodingPlan);
+        assert_eq!(
+            p.responses_url(),
+            "https://ark.byteplus.com/api/v3/responses"
+        );
+        assert_eq!(
+            p.provider_kind(),
+            OpenAiResponsesProvider::ByteplusCodingPlan
+        );
     }
 
     #[test]
     fn test_new_detects_kind_from_name() {
         let p = OpenAIResponsesProvider::new("volcengine_coding_plan", "", "key");
         assert_eq!(p.name(), "volcengine_coding_plan");
-        assert_eq!(p.provider_kind(), OpenAiResponsesProvider::VolcengineCodingPlan);
+        assert_eq!(
+            p.provider_kind(),
+            OpenAiResponsesProvider::VolcengineCodingPlan
+        );
         // Non-matching names keep their label and fall back to the OpenAI kind.
         let p2 = OpenAIResponsesProvider::new("custom", "https://x", "key");
         assert_eq!(p2.name(), "custom");

@@ -5,13 +5,13 @@
 //! Each policy in the chain can approve, deny, or flag a tool execution
 //! before it reaches the actual tool implementation.
 
-use opensquilla_core::error::AppError;
 use opensquilla_core::ToolCall;
+use opensquilla_core::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The decision resulting from a policy evaluation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,7 +209,10 @@ impl PolicyChain for DenyPolicy {
         // Check session-level overrides first (allowlist takes precedence).
         if let Some(session_id) = ctx.session_id.as_str() {
             if let Some(allowed) = self.session_overrides.get(session_id) {
-                if allowed.iter().any(|a| Self::matches_pattern(a, &ctx.tool_name)) {
+                if allowed
+                    .iter()
+                    .any(|a| Self::matches_pattern(a, &ctx.tool_name))
+                {
                     return PolicyDecision::Allow;
                 }
             }
@@ -277,7 +280,10 @@ impl BudgetPolicy {
 
     /// Get the cost for a tool.
     fn tool_cost(&self, tool_name: &str) -> u64 {
-        self.tool_costs.get(tool_name).copied().unwrap_or(self.default_cost)
+        self.tool_costs
+            .get(tool_name)
+            .copied()
+            .unwrap_or(self.default_cost)
     }
 
     /// Reset the budget for a session.
@@ -315,7 +321,7 @@ impl PolicyChain for BudgetPolicy {
             Err(_) => {
                 return PolicyDecision::Deny {
                     reason: "Budget policy lock poisoned".to_string(),
-                }
+                };
             }
         };
 

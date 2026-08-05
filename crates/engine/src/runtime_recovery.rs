@@ -76,7 +76,11 @@ pub fn classify_round(messages: &[Message]) -> RoundStatus {
         .content
         .iter()
         .any(|b| matches!(b, ContentBlock::ToolUse(_)))
-        || last.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false);
+        || last
+            .tool_calls
+            .as_ref()
+            .map(|c| !c.is_empty())
+            .unwrap_or(false);
 
     if last_text.trim().is_empty() && !has_tool_calls {
         return RoundStatus::Empty;
@@ -106,7 +110,10 @@ pub fn is_empty_turn(messages: &[Message]) -> bool {
                 .content
                 .iter()
                 .any(|b| matches!(b, ContentBlock::ToolUse(_)))
-                || m.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false);
+                || m.tool_calls
+                    .as_ref()
+                    .map(|c| !c.is_empty())
+                    .unwrap_or(false);
             m.text_content().trim().is_empty() && !has_tool_calls
         })
 }
@@ -187,15 +194,15 @@ pub enum RephraseStyle {
 /// Build a rephrased version of a user prompt.
 pub fn rephrase_prompt(prompt: &str, style: RephraseStyle) -> String {
     match style {
-        RephraseStyle::Thorough => format!(
-            "{prompt}\n\n(Please answer thoroughly and completely.)"
-        ),
-        RephraseStyle::Direct => format!(
-            "{prompt}\n\n(Please give a direct answer without preamble.)"
-        ),
-        RephraseStyle::StepByStep => format!(
-            "{prompt}\n\n(Please explain your reasoning step by step.)"
-        ),
+        RephraseStyle::Thorough => {
+            format!("{prompt}\n\n(Please answer thoroughly and completely.)")
+        }
+        RephraseStyle::Direct => {
+            format!("{prompt}\n\n(Please give a direct answer without preamble.)")
+        }
+        RephraseStyle::StepByStep => {
+            format!("{prompt}\n\n(Please explain your reasoning step by step.)")
+        }
     }
 }
 

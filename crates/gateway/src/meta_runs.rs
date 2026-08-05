@@ -4,15 +4,15 @@
 //! records are persisted in an in-memory store keyed by skill id and run id,
 //! modeling the lifecycle of a meta-skill DAG execution.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// The status of a meta-skill run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,7 +131,9 @@ fn parse_run_status(s: &str) -> Result<RunStatus, AppError> {
         "succeeded" => Ok(RunStatus::Succeeded),
         "failed" => Ok(RunStatus::Failed),
         "cancelled" => Ok(RunStatus::Cancelled),
-        other => Err(AppError::bad_request(format!("Unknown run status '{other}'"))),
+        other => Err(AppError::bad_request(format!(
+            "Unknown run status '{other}'"
+        ))),
     }
 }
 
@@ -197,8 +199,10 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
 
                 let updated = store.update(run_id, |run| run.steps.push(record));
                 match updated {
-                    Some(run) => Ok(serde_json::to_value(run)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(run) => {
+                        Ok(serde_json::to_value(run)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Run {run_id} not found"))),
                 }
             }
@@ -222,7 +226,10 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
                     .map(parse_run_status)
                     .unwrap_or(Ok(RunStatus::Succeeded))?;
                 let result = params.get("result").cloned();
-                let error = params.get("error").and_then(|v| v.as_str()).map(String::from);
+                let error = params
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
                 let updated = store.update(run_id, |run| {
                     for step in run.steps.iter_mut() {
@@ -236,8 +243,10 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
                     }
                 });
                 match updated {
-                    Some(run) => Ok(serde_json::to_value(run)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(run) => {
+                        Ok(serde_json::to_value(run)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Run {run_id} not found"))),
                 }
             }
@@ -256,7 +265,10 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
                     .and_then(|v| v.as_str())
                     .map(parse_run_status)
                     .unwrap_or(Ok(RunStatus::Succeeded))?;
-                let error = params.get("error").and_then(|v| v.as_str()).map(String::from);
+                let error = params
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let outputs = params
                     .get("outputs")
                     .and_then(|v| v.as_object())
@@ -270,8 +282,10 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
                     run.outputs = outputs;
                 });
                 match updated {
-                    Some(run) => Ok(serde_json::to_value(run)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(run) => {
+                        Ok(serde_json::to_value(run)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Run {run_id} not found"))),
                 }
             }
@@ -286,8 +300,10 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
             async move {
                 let run_id = parse_run_id(&params)?;
                 match store.get(run_id) {
-                    Some(run) => Ok(serde_json::to_value(run)
-                        .map_err(|e| AppError::internal(e.to_string()))?),
+                    Some(run) => {
+                        Ok(serde_json::to_value(run)
+                            .map_err(|e| AppError::internal(e.to_string()))?)
+                    }
                     None => Err(AppError::not_found(format!("Run {run_id} not found"))),
                 }
             }

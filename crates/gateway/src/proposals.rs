@@ -3,15 +3,15 @@
 //! Provides `rpc_proposals` for meta-skill proposals: creating, listing,
 //! accepting, and rejecting proposals produced by meta-skill runs.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// The status of a proposal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,8 +167,10 @@ pub fn register_proposals_handlers(registry: &mut RpcRegistry, store: ProposalSt
                     metadata,
                 };
                 store.insert(proposal.clone());
-                Ok(serde_json::to_value(proposal)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(
+                    serde_json::to_value(proposal)
+                        .map_err(|e| AppError::internal(e.to_string()))?,
+                )
             }
         }
     }));
@@ -320,7 +322,11 @@ mod tests {
             "skill_id": "s",
             "title": "t",
         });
-        let resp = registry.dispatch("proposals.create", params).await.unwrap().unwrap();
+        let resp = registry
+            .dispatch("proposals.create", params)
+            .await
+            .unwrap()
+            .unwrap();
         let id = resp["id"].as_str().unwrap().to_string();
 
         let r = registry

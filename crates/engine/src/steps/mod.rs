@@ -136,8 +136,7 @@ where
             &'a mut PipelineContext,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<StepAction>> + Send + 'a>,
-        >
-        + Send
+        > + Send
         + Sync,
 {
     async fn execute(&self, ctx: &mut PipelineContext) -> Result<StepAction> {
@@ -163,42 +162,58 @@ mod tests {
     use opensquilla_core::types::Message;
     use std::pin::Pin;
 
-    type BoxedStepFuture<'a> = Pin<Box<dyn std::future::Future<Output = Result<StepAction>> + Send + 'a>>;
+    type BoxedStepFuture<'a> =
+        Pin<Box<dyn std::future::Future<Output = Result<StepAction>> + Send + 'a>>;
 
     #[tokio::test]
     async fn test_chain_runs_in_order() {
         let mut chain = StepChain::new();
-        chain.push(ClosureStep::new("first", |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-            Box::pin(async move {
-                ctx.set_metadata("order", "first");
-                Ok(StepAction::Continue)
-            })
-        }));
-        chain.push(ClosureStep::new("second", |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-            Box::pin(async move {
-                ctx.set_metadata("order", "second");
-                Ok(StepAction::Continue)
-            })
-        }));
+        chain.push(ClosureStep::new(
+            "first",
+            |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
+                Box::pin(async move {
+                    ctx.set_metadata("order", "first");
+                    Ok(StepAction::Continue)
+                })
+            },
+        ));
+        chain.push(ClosureStep::new(
+            "second",
+            |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
+                Box::pin(async move {
+                    ctx.set_metadata("order", "second");
+                    Ok(StepAction::Continue)
+                })
+            },
+        ));
 
         let mut ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
         let action = chain.execute(&mut ctx).await.unwrap();
         assert!(matches!(action, StepAction::Continue));
-        assert_eq!(ctx.get_metadata("order").map(|s| s.as_str()), Some("second"));
+        assert_eq!(
+            ctx.get_metadata("order").map(|s| s.as_str()),
+            Some("second")
+        );
     }
 
     #[tokio::test]
     async fn test_halt_short_circuits() {
         let mut chain = StepChain::new();
-        chain.push(ClosureStep::new("halt", |_ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-            Box::pin(async move { Ok(StepAction::Halt("stop".into())) })
-        }));
-        chain.push(ClosureStep::new("never", |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-            Box::pin(async move {
-                ctx.set_metadata("ran", "true");
-                Ok(StepAction::Continue)
-            })
-        }));
+        chain.push(ClosureStep::new(
+            "halt",
+            |_ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
+                Box::pin(async move { Ok(StepAction::Halt("stop".into())) })
+            },
+        ));
+        chain.push(ClosureStep::new(
+            "never",
+            |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
+                Box::pin(async move {
+                    ctx.set_metadata("ran", "true");
+                    Ok(StepAction::Continue)
+                })
+            },
+        ));
 
         let mut ctx = PipelineContext::new("t1".into(), Vec::new());
         let action = chain.execute(&mut ctx).await.unwrap();

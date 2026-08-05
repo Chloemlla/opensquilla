@@ -65,8 +65,7 @@ impl UsageTracker {
             .fetch_add(event.input_tokens, Ordering::SeqCst);
         self.total_output_tokens
             .fetch_add(event.output_tokens, Ordering::SeqCst);
-        self.total_tokens
-            .fetch_add(event.total(), Ordering::SeqCst);
+        self.total_tokens.fetch_add(event.total(), Ordering::SeqCst);
         self.turn_count.fetch_add(1, Ordering::SeqCst);
         debug!(
             model = %event.model,
@@ -273,12 +272,14 @@ where
 ///
 /// When no sink is bound (outside a [`with_usage_scope`]) the record is a no-op.
 pub fn record_in_current_scope(usage: &Usage) {
-    let _ = CURRENT_USAGE_SINK.try_with(|sink| sink.record(&UsageEvent::new(
-        "unknown".to_string(),
-        "unknown".to_string(),
-        usage.input_tokens,
-        usage.output_tokens,
-    )));
+    let _ = CURRENT_USAGE_SINK.try_with(|sink| {
+        sink.record(&UsageEvent::new(
+            "unknown".to_string(),
+            "unknown".to_string(),
+            usage.input_tokens,
+            usage.output_tokens,
+        ))
+    });
 }
 
 /// The sink bound to the current task scope, if any.
@@ -300,7 +301,11 @@ pub struct ProviderCallAccountant {
 impl ProviderCallAccountant {
     /// Create an accountant that records into `sink` tagged with `model` and
     /// `provider`.
-    pub fn new(sink: Arc<dyn UsageEventSink>, model: impl Into<String>, provider: impl Into<String>) -> Self {
+    pub fn new(
+        sink: Arc<dyn UsageEventSink>,
+        model: impl Into<String>,
+        provider: impl Into<String>,
+    ) -> Self {
         Self {
             sink,
             model: model.into(),
@@ -358,7 +363,11 @@ impl PerModelUsageTracker {
 
     /// Get the usage recorded for a model, if any.
     pub fn get(&self, model: &str) -> Option<ModelUsage> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).get(model).cloned()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(model)
+            .cloned()
     }
 
     /// Aggregate the per-model counts into a single `Usage`.
@@ -390,7 +399,10 @@ impl PerModelUsageTracker {
 
     /// True when no models are tracked.
     pub fn is_empty(&self) -> bool {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 }
 

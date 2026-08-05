@@ -116,9 +116,9 @@ impl From<&ContentBlock> for ContentBlockDto {
                 content: result.content.clone(),
                 is_error: result.is_error,
             },
-            ContentBlock::Reasoning(reasoning) => {
-                ContentBlockDto::Reasoning { reasoning: reasoning.clone() }
-            }
+            ContentBlock::Reasoning(reasoning) => ContentBlockDto::Reasoning {
+                reasoning: reasoning.clone(),
+            },
         }
     }
 }
@@ -196,15 +196,10 @@ pub enum MessageStreamEvent {
     },
     /// The model has started generating a response.
     #[serde(rename = "generation_start")]
-    GenerationStart {
-        model: String,
-        provider: String,
-    },
+    GenerationStart { model: String, provider: String },
     /// A streaming delta event from the model.
     #[serde(rename = "stream_event")]
-    StreamEvent {
-        event: StreamEventPayload,
-    },
+    StreamEvent { event: StreamEventPayload },
     /// A tool call has been initiated.
     #[serde(rename = "tool_call_start")]
     ToolCallStart {
@@ -252,7 +247,10 @@ pub enum MessageStreamEvent {
 #[serde(tag = "event", content = "data")]
 pub enum StreamEventPayload {
     #[serde(rename = "content_block_start")]
-    ContentBlockStart { index: usize, block: ContentBlockDto },
+    ContentBlockStart {
+        index: usize,
+        block: ContentBlockDto,
+    },
     #[serde(rename = "content_block_delta")]
     ContentBlockDelta {
         index: usize,
@@ -271,7 +269,10 @@ pub enum StreamEventPayload {
         usage: Option<UsagePayload>,
     },
     #[serde(rename = "error")]
-    Error { message: String, code: Option<String> },
+    Error {
+        message: String,
+        code: Option<String>,
+    },
     #[serde(rename = "ping")]
     Ping,
 }
@@ -325,11 +326,14 @@ impl From<StreamEvent> for StreamEventPayload {
                     opensquilla_core::events::ContentBlockDelta::ReasoningDelta { reasoning } => {
                         StreamDeltaPayload::ReasoningDelta { reasoning }
                     }
-                    opensquilla_core::events::ContentBlockDelta::InputJsonDelta { partial_json } => {
-                        StreamDeltaPayload::InputJsonDelta { partial_json }
-                    }
+                    opensquilla_core::events::ContentBlockDelta::InputJsonDelta {
+                        partial_json,
+                    } => StreamDeltaPayload::InputJsonDelta { partial_json },
                 };
-                StreamEventPayload::ContentBlockDelta { index, delta: delta_payload }
+                StreamEventPayload::ContentBlockDelta {
+                    index,
+                    delta: delta_payload,
+                }
             }
             StreamEvent::ContentBlockStop { index } => {
                 StreamEventPayload::ContentBlockStop { index }
@@ -342,9 +346,7 @@ impl From<StreamEvent> for StreamEventPayload {
                 content: content.iter().map(ContentBlockDto::from).collect(),
                 usage: usage.map(UsagePayload::from),
             },
-            StreamEvent::Error { message, code } => {
-                StreamEventPayload::Error { message, code }
-            }
+            StreamEvent::Error { message, code } => StreamEventPayload::Error { message, code },
             StreamEvent::Ping => StreamEventPayload::Ping,
         }
     }
@@ -354,13 +356,11 @@ impl From<StreamEvent> for StreamEventPayload {
 impl From<TurnEvent> for MessageStreamEvent {
     fn from(event: TurnEvent) -> Self {
         match event {
-            TurnEvent::TurnStart { turn_id, timestamp } => {
-                MessageStreamEvent::TurnStart {
-                    turn_id,
-                    session_id: String::new(),
-                    timestamp,
-                }
-            }
+            TurnEvent::TurnStart { turn_id, timestamp } => MessageStreamEvent::TurnStart {
+                turn_id,
+                session_id: String::new(),
+                timestamp,
+            },
             TurnEvent::UserMessage { message } => {
                 // UserMessage is not directly streamed; convert to a turn start
                 // variant as a no-op passthrough — the frontend already has
@@ -375,35 +375,35 @@ impl From<TurnEvent> for MessageStreamEvent {
             TurnEvent::GenerationStart { model, provider } => {
                 MessageStreamEvent::GenerationStart { model, provider }
             }
-            TurnEvent::StreamEvent { event } => {
-                MessageStreamEvent::StreamEvent {
-                    event: StreamEventPayload::from(event),
-                }
-            }
-            TurnEvent::TurnComplete { message, usage, duration_ms } => {
-                MessageStreamEvent::TurnComplete {
-                    turn_id: String::new(),
-                    session_id: String::new(),
-                    messages: vec![MessageDto::from(&message)],
-                    usage: UsagePayload::from(usage),
-                    duration_ms,
-                }
-            }
-            TurnEvent::TurnError { message, code } => {
-                MessageStreamEvent::TurnError {
-                    turn_id: String::new(),
-                    session_id: String::new(),
-                    message,
-                    code,
-                }
-            }
-            TurnEvent::Compaction { before_count, after_count, success } => {
-                MessageStreamEvent::Compaction {
-                    before_count,
-                    after_count,
-                    success,
-                }
-            }
+            TurnEvent::StreamEvent { event } => MessageStreamEvent::StreamEvent {
+                event: StreamEventPayload::from(event),
+            },
+            TurnEvent::TurnComplete {
+                message,
+                usage,
+                duration_ms,
+            } => MessageStreamEvent::TurnComplete {
+                turn_id: String::new(),
+                session_id: String::new(),
+                messages: vec![MessageDto::from(&message)],
+                usage: UsagePayload::from(usage),
+                duration_ms,
+            },
+            TurnEvent::TurnError { message, code } => MessageStreamEvent::TurnError {
+                turn_id: String::new(),
+                session_id: String::new(),
+                message,
+                code,
+            },
+            TurnEvent::Compaction {
+                before_count,
+                after_count,
+                success,
+            } => MessageStreamEvent::Compaction {
+                before_count,
+                after_count,
+                success,
+            },
         }
     }
 }
@@ -417,24 +417,28 @@ impl From<ToolEvent> for MessageStreamEvent {
                 name: call.name,
                 input: call.input,
             },
-            ToolEvent::ToolCallComplete { call, result, duration_ms } => {
-                MessageStreamEvent::ToolCallComplete {
-                    tool_call_id: call.id,
-                    name: call.name,
-                    content: result.content,
-                    is_error: result.is_error,
-                    duration_ms,
-                }
-            }
-            ToolEvent::ToolCallError { call, error, duration_ms } => {
-                MessageStreamEvent::ToolCallComplete {
-                    tool_call_id: call.id,
-                    name: call.name,
-                    content: error,
-                    is_error: true,
-                    duration_ms,
-                }
-            }
+            ToolEvent::ToolCallComplete {
+                call,
+                result,
+                duration_ms,
+            } => MessageStreamEvent::ToolCallComplete {
+                tool_call_id: call.id,
+                name: call.name,
+                content: result.content,
+                is_error: result.is_error,
+                duration_ms,
+            },
+            ToolEvent::ToolCallError {
+                call,
+                error,
+                duration_ms,
+            } => MessageStreamEvent::ToolCallComplete {
+                tool_call_id: call.id,
+                name: call.name,
+                content: error,
+                is_error: true,
+                duration_ms,
+            },
             ToolEvent::ToolParallelStart { calls } => {
                 // Emit the first call; parallel completion is handled separately.
                 if let Some(call) = calls.into_iter().next() {
@@ -452,7 +456,10 @@ impl From<ToolEvent> for MessageStreamEvent {
                     }
                 }
             }
-            ToolEvent::ToolParallelComplete { results, total_duration_ms } => {
+            ToolEvent::ToolParallelComplete {
+                results,
+                total_duration_ms,
+            } => {
                 if let Some(result) = results.into_iter().next() {
                     MessageStreamEvent::ToolCallComplete {
                         tool_call_id: result.tool_use_id,
@@ -470,15 +477,13 @@ impl From<ToolEvent> for MessageStreamEvent {
                     }
                 }
             }
-            ToolEvent::ToolRejected { call, reason } => {
-                MessageStreamEvent::ToolCallComplete {
-                    tool_call_id: call.id,
-                    name: call.name,
-                    content: reason,
-                    is_error: true,
-                    duration_ms: 0,
-                }
-            }
+            ToolEvent::ToolRejected { call, reason } => MessageStreamEvent::ToolCallComplete {
+                tool_call_id: call.id,
+                name: call.name,
+                content: reason,
+                is_error: true,
+                duration_ms: 0,
+            },
         }
     }
 }

@@ -23,7 +23,7 @@
 //! ```
 
 use crate::types::{ChannelType, IncomingMessage, MessageAttachment};
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
@@ -31,7 +31,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use axum::{Json, Router};
 use chrono::{DateTime, TimeZone, Utc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
@@ -296,20 +296,14 @@ impl WebhookRegistry {
 
     /// Register a route, replacing any route with the same path.
     pub fn upsert(&self, route: WebhookRoute) {
-        let mut routes = self
-            .routes
-            .write()
-            .expect("webhook registry lock poisoned");
+        let mut routes = self.routes.write().expect("webhook registry lock poisoned");
         routes.retain(|r| r.path != route.path);
         routes.push(route);
     }
 
     /// Remove a route by path. Returns whether a route was removed.
     pub fn unregister(&self, path: &str) -> bool {
-        let mut routes = self
-            .routes
-            .write()
-            .expect("webhook registry lock poisoned");
+        let mut routes = self.routes.write().expect("webhook registry lock poisoned");
         let before = routes.len();
         routes.retain(|r| r.path != path);
         let removed = routes.len() != before;
@@ -339,10 +333,7 @@ impl WebhookRegistry {
 
     /// List all registered route paths.
     pub fn paths(&self) -> Vec<String> {
-        self.routes()
-            .into_iter()
-            .map(|r| r.path)
-            .collect()
+        self.routes().into_iter().map(|r| r.path).collect()
     }
 
     /// Number of registered routes.
@@ -375,22 +366,24 @@ impl WebhookRegistry {
             let secret = route.signature_secret.clone();
             let expected_method = route.method;
             let path = route.path.clone();
-            let route_handler = any(move |State(_): State<WebhookState>,
-                                          actual_method: Method,
-                                          headers: HeaderMap,
-                                          query: Query<HashMap<String, String>>,
-                                          body: Bytes| async move {
-                dispatch_webhook(
-                    handler.clone(),
-                    secret.clone(),
-                    expected_method,
-                    actual_method,
-                    headers,
-                    query.0,
-                    body,
-                )
-                .await
-            });
+            let route_handler = any(
+                move |State(_): State<WebhookState>,
+                      actual_method: Method,
+                      headers: HeaderMap,
+                      query: Query<HashMap<String, String>>,
+                      body: Bytes| async move {
+                    dispatch_webhook(
+                        handler.clone(),
+                        secret.clone(),
+                        expected_method,
+                        actual_method,
+                        headers,
+                        query.0,
+                        body,
+                    )
+                    .await
+                },
+            );
             router = router.route(&path, route_handler);
         }
         router.with_state(state)
@@ -688,7 +681,9 @@ pub fn decrypt_wecom_payload(
 fn ts_float_to_datetime(ts: f64) -> DateTime<Utc> {
     let secs = ts.floor() as i64;
     let nanos = ((ts - ts.floor()) * 1e9) as u32;
-    Utc.timestamp_opt(secs, nanos).single().unwrap_or_else(Utc::now)
+    Utc.timestamp_opt(secs, nanos)
+        .single()
+        .unwrap_or_else(Utc::now)
 }
 
 fn ts_seconds_to_datetime(secs: i64) -> DateTime<Utc> {
@@ -724,7 +719,10 @@ pub fn parse_slack_payload(payload: &Value) -> Result<IncomingMessage, WebhookEr
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let thread_id = event.get("thread_ts").and_then(|v| v.as_str()).map(String::from);
+    let thread_id = event
+        .get("thread_ts")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let ts = event
         .get("ts")
         .and_then(|v| v.as_str())
@@ -739,7 +737,10 @@ pub fn parse_slack_payload(payload: &Value) -> Result<IncomingMessage, WebhookEr
                 .iter()
                 .map(|f| MessageAttachment {
                     attachment_type: "file".to_string(),
-                    url: f.get("url_private").and_then(|v| v.as_str()).map(String::from),
+                    url: f
+                        .get("url_private")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     data: Some(f.clone()),
                     mime_type: f.get("mimetype").and_then(|v| v.as_str()).map(String::from),
                 })
@@ -752,7 +753,10 @@ pub fn parse_slack_payload(payload: &Value) -> Result<IncomingMessage, WebhookEr
         channel_id,
         channel_type: ChannelType::Slack,
         user_id,
-        user_name: event.get("username").and_then(|v| v.as_str()).map(String::from),
+        user_name: event
+            .get("username")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         text,
         thread_id,
         attachments,
@@ -792,13 +796,22 @@ pub fn parse_telegram_payload(payload: &Value) -> Result<IncomingMessage, Webhoo
         .and_then(|f| f.get("first_name"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .or_else(|| from.and_then(|f| f.get("username")).and_then(|v| v.as_str()).map(String::from));
+        .or_else(|| {
+            from.and_then(|f| f.get("username"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        });
 
     let text = message
         .get("text")
         .and_then(|v| v.as_str())
         .map(String::from)
-        .or_else(|| message.get("caption").and_then(|v| v.as_str()).map(String::from))
+        .or_else(|| {
+            message
+                .get("caption")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        })
         .unwrap_or_default();
     let thread_id = message
         .get("message_thread_id")
@@ -1072,8 +1085,7 @@ impl WebhookHandler for WeComWebhookHandler {
             return Err(WebhookError::Challenge(decrypted));
         }
         if let Some(encrypt) = payload.get("Encrypt").and_then(|v| v.as_str()) {
-            let key = signature_secret
-                .ok_or(WebhookError::SignatureVerificationFailed)?;
+            let key = signature_secret.ok_or(WebhookError::SignatureVerificationFailed)?;
             let plaintext = decrypt_wecom_payload(key, encrypt)?;
             let plain_json: Value = serde_json::from_str(&plaintext)
                 .map_err(|e| WebhookError::InvalidPayload(e.to_string()))?;
@@ -1171,11 +1183,29 @@ mod tests {
         let signing_secret = "8f742231b10e2628b0a4c21e04c3e5f1";
         let timestamp = "1531420618";
         let body = "token=xyzz0WbapA4vBCDEFasx0q6G&team_id=T1DC2H3EV&...";
-        let signature = hmac_sha256_hex(signing_secret.as_bytes(), format!("v0:{timestamp}:{body}").as_bytes());
+        let signature = hmac_sha256_hex(
+            signing_secret.as_bytes(),
+            format!("v0:{timestamp}:{body}").as_bytes(),
+        );
         let full = format!("v0={signature}");
-        assert!(verify_slack_signature(signing_secret, timestamp, body, &full));
-        assert!(!verify_slack_signature(signing_secret, "1531420619", body, &full));
-        assert!(!verify_slack_signature(signing_secret, timestamp, body, "v0=deadbeef"));
+        assert!(verify_slack_signature(
+            signing_secret,
+            timestamp,
+            body,
+            &full
+        ));
+        assert!(!verify_slack_signature(
+            signing_secret,
+            "1531420619",
+            body,
+            &full
+        ));
+        assert!(!verify_slack_signature(
+            signing_secret,
+            timestamp,
+            body,
+            "v0=deadbeef"
+        ));
     }
 
     #[test]
@@ -1196,8 +1226,12 @@ mod tests {
             let joined = parts.join("");
             hex::encode(sha1::Sha1::digest(joined.as_bytes()))
         };
-        assert!(verify_wecom_signature(token, timestamp, nonce, encrypt, &signature));
-        assert!(!verify_wecom_signature(token, timestamp, nonce, encrypt, "deadbeef"));
+        assert!(verify_wecom_signature(
+            token, timestamp, nonce, encrypt, &signature
+        ));
+        assert!(!verify_wecom_signature(
+            token, timestamp, nonce, encrypt, "deadbeef"
+        ));
     }
 
     #[test]
@@ -1207,7 +1241,9 @@ mod tests {
             use aes::cipher::{BlockEncryptMut, KeyIvInit};
             type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
             let full_key = format!("{WECOM_KEY}=");
-            let key_bytes = base64::engine::general_purpose::STANDARD.decode(&full_key).unwrap();
+            let key_bytes = base64::engine::general_purpose::STANDARD
+                .decode(&full_key)
+                .unwrap();
             let iv = &key_bytes[0..16];
             let cipher = Aes256CbcEnc::new(
                 aes::cipher::Key::<aes::Aes256>::from_slice(&key_bytes),
@@ -1335,14 +1371,12 @@ mod tests {
 
         let registry = WebhookRegistry::new();
         registry
-            .register(
-                WebhookRoute::new(
-                    "/webhooks/slack",
-                    WebhookMethod::Post,
-                    ChannelType::Slack,
-                    SlackWebhookHandler::new().on_message(|_| Ok(())),
-                ),
-            )
+            .register(WebhookRoute::new(
+                "/webhooks/slack",
+                WebhookMethod::Post,
+                ChannelType::Slack,
+                SlackWebhookHandler::new().on_message(|_| Ok(())),
+            ))
             .unwrap();
         let app = registry.router();
 
@@ -1353,7 +1387,9 @@ mod tests {
                     .method("POST")
                     .uri("/webhooks/slack")
                     .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_string(&slack_event_payload()).unwrap()))
+                    .body(Body::from(
+                        serde_json::to_string(&slack_event_payload()).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await

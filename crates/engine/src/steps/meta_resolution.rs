@@ -260,13 +260,11 @@ mod tests {
 
     #[test]
     fn test_resolve_by_name() {
-        let step = MetaResolutionStep::new().with_catalog(vec![
-            MetaSkill {
-                id: "code-task".into(),
-                name: "code-task".into(),
-                description: "Run a coding task".into(),
-            },
-        ]);
+        let step = MetaResolutionStep::new().with_catalog(vec![MetaSkill {
+            id: "code-task".into(),
+            name: "code-task".into(),
+            description: "Run a coding task".into(),
+        }]);
         let matched = step.resolve("/meta", "/meta code-task fix the tests");
         assert_eq!(matched.map(|s| s.name.as_str()), Some("code-task"));
     }

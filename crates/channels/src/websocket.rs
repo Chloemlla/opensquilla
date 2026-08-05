@@ -21,7 +21,7 @@ use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -134,7 +134,8 @@ impl WebSocketChannel {
     /// Accept a new WebSocket connection, generating a connection id.
     pub async fn accept(&self, socket: WebSocket, user_id: String) -> String {
         let connection_id = Uuid::new_v4().to_string();
-        self.accept_connection(socket, user_id, connection_id.clone()).await;
+        self.accept_connection(socket, user_id, connection_id.clone())
+            .await;
         connection_id
     }
 
@@ -274,7 +275,11 @@ impl WebSocketChannel {
     }
 
     /// Send a raw frame to a single connection by id.
-    pub async fn send_to(&self, connection_id: &str, frame: serde_json::Value) -> Result<(), String> {
+    pub async fn send_to(
+        &self,
+        connection_id: &str,
+        frame: serde_json::Value,
+    ) -> Result<(), String> {
         let text = serde_json::to_string(&frame).map_err(|e| format!("Serialize: {e}"))?;
         let conns = self.connections.lock().await;
         match conns.get(connection_id) {
@@ -288,13 +293,22 @@ impl WebSocketChannel {
     }
 
     /// Send a raw frame to every connection owned by `user_id`.
-    pub async fn send_to_user(&self, user_id: &str, frame: serde_json::Value) -> Result<usize, String> {
+    pub async fn send_to_user(
+        &self,
+        user_id: &str,
+        frame: serde_json::Value,
+    ) -> Result<usize, String> {
         let text = serde_json::to_string(&frame).map_err(|e| format!("Serialize: {e}"))?;
         let conns = self.connections.lock().await;
         let mut sent = 0;
         for handle in conns.values() {
             if handle.info.user_id == user_id {
-                if handle.sender.send(Message::Text(text.clone().into())).await.is_ok() {
+                if handle
+                    .sender
+                    .send(Message::Text(text.clone().into()))
+                    .await
+                    .is_ok()
+                {
                     sent += 1;
                 }
             }

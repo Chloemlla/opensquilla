@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::types::CronJob;
+use async_trait::async_trait;
 
 /// Result of a handler execution.
 #[derive(Debug, Clone)]
@@ -11,10 +11,18 @@ pub struct HandlerResult {
 
 impl HandlerResult {
     pub fn success(result: impl Into<String>) -> Self {
-        Self { success: true, result: Some(result.into()), error: None }
+        Self {
+            success: true,
+            result: Some(result.into()),
+            error: None,
+        }
     }
     pub fn failure(error: impl Into<String>) -> Self {
-        Self { success: false, result: None, error: Some(error.into()) }
+        Self {
+            success: false,
+            result: None,
+            error: Some(error.into()),
+        }
     }
 }
 
@@ -26,14 +34,22 @@ pub trait CronJobHandler: Send + Sync {
 }
 
 /// Handler that sends a heartbeat signal.
-pub struct HeartbeatHandler { name: String }
+pub struct HeartbeatHandler {
+    name: String,
+}
 impl HeartbeatHandler {
-    pub fn new() -> Self { Self { name: "heartbeat".to_string() } }
+    pub fn new() -> Self {
+        Self {
+            name: "heartbeat".to_string(),
+        }
+    }
 }
 
 #[async_trait]
 impl CronJobHandler for HeartbeatHandler {
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
     async fn execute(&self, job: &CronJob) -> HandlerResult {
         tracing::debug!("Heartbeat handler for job '{}' (id: {})", job.name, job.id);
         HandlerResult::success(format!("Heartbeat at {}", chrono::Utc::now().to_rfc3339()))
@@ -41,14 +57,22 @@ impl CronJobHandler for HeartbeatHandler {
 }
 
 /// Handler that automatically proposes actions.
-pub struct AutoProposeHandler { name: String }
+pub struct AutoProposeHandler {
+    name: String,
+}
 impl AutoProposeHandler {
-    pub fn new() -> Self { Self { name: "auto_propose".to_string() } }
+    pub fn new() -> Self {
+        Self {
+            name: "auto_propose".to_string(),
+        }
+    }
 }
 
 #[async_trait]
 impl CronJobHandler for AutoProposeHandler {
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
     async fn execute(&self, job: &CronJob) -> HandlerResult {
         tracing::info!("Auto-propose handler for job '{}'", job.name);
         HandlerResult::success("Auto-propose generated".to_string())
@@ -56,16 +80,28 @@ impl CronJobHandler for AutoProposeHandler {
 }
 
 /// Handler that triggers dream consolidation.
-pub struct DreamHandler { name: String }
+pub struct DreamHandler {
+    name: String,
+}
 impl DreamHandler {
-    pub fn new() -> Self { Self { name: "dream".to_string() } }
+    pub fn new() -> Self {
+        Self {
+            name: "dream".to_string(),
+        }
+    }
 }
 
 #[async_trait]
 impl CronJobHandler for DreamHandler {
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
     async fn execute(&self, job: &CronJob) -> HandlerResult {
-        tracing::info!("Dream consolidation triggered for agent_id={:?} by job '{}'", job.agent_id, job.name);
+        tracing::info!(
+            "Dream consolidation triggered for agent_id={:?} by job '{}'",
+            job.agent_id,
+            job.name
+        );
         HandlerResult::success("Dream consolidation triggered".to_string())
     }
 }
@@ -76,7 +112,11 @@ pub struct HandlerRegistry {
 }
 
 impl HandlerRegistry {
-    pub fn new() -> Self { Self { handlers: Vec::new() } }
+    pub fn new() -> Self {
+        Self {
+            handlers: Vec::new(),
+        }
+    }
 
     pub fn with_defaults() -> Self {
         let mut r = Self::new();
@@ -92,7 +132,10 @@ impl HandlerRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn CronJobHandler> {
-        self.handlers.iter().find(|h| h.name() == name).map(|h| h.as_ref())
+        self.handlers
+            .iter()
+            .find(|h| h.name() == name)
+            .map(|h| h.as_ref())
     }
 
     pub fn has_handler(&self, name: &str) -> bool {
@@ -103,8 +146,12 @@ impl HandlerRegistry {
         self.handlers.iter().map(|h| h.name().to_string()).collect()
     }
 
-    pub fn len(&self) -> usize { self.handlers.len() }
-    pub fn is_empty(&self) -> bool { self.handlers.is_empty() }
+    pub fn len(&self) -> usize {
+        self.handlers.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.handlers.is_empty()
+    }
 }
 
 #[cfg(test)]

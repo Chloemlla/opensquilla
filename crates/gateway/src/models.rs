@@ -3,13 +3,13 @@
 //! Provides `rpc_models` for listing the model catalog, backed by the core
 //! crate's [`ModelRegistry`] and [`ModelInfo`] types.
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use opensquilla_core::model::{ModelInfo, ModelRegistry};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A shared model catalog.
 #[derive(Clone, Default)]
@@ -139,9 +139,7 @@ pub fn register_models_handlers(registry: &mut RpcRegistry, catalog: ModelCatalo
                 match catalog.find(model_id) {
                     Some(model) => Ok(serde_json::to_value(model)
                         .map_err(|e| AppError::internal(e.to_string()))?),
-                    None => Err(AppError::not_found(format!(
-                        "Model '{model_id}' not found"
-                    ))),
+                    None => Err(AppError::not_found(format!("Model '{model_id}' not found"))),
                 }
             }
         }
@@ -191,8 +189,7 @@ pub fn register_models_handlers(registry: &mut RpcRegistry, catalog: ModelCatalo
                 let model: ModelInfo = serde_json::from_value(params)
                     .map_err(|e| AppError::bad_request(format!("Invalid model spec: {e}")))?;
                 catalog.register(model.clone());
-                Ok(serde_json::to_value(model)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(model).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));
@@ -208,7 +205,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_models_handlers(&mut registry, catalog);
 
-        let r = registry.dispatch("models.list", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("models.list", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["count"].as_u64().unwrap() > 0);
     }
@@ -233,7 +232,10 @@ mod tests {
         register_models_handlers(&mut registry, catalog);
 
         let r = registry
-            .dispatch("models.by_provider", serde_json::json!({"provider": "anthropic"}))
+            .dispatch(
+                "models.by_provider",
+                serde_json::json!({"provider": "anthropic"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["count"], 1);
@@ -245,7 +247,9 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_models_handlers(&mut registry, catalog);
 
-        let r = registry.dispatch("models.providers", serde_json::Value::Null).await;
+        let r = registry
+            .dispatch("models.providers", serde_json::Value::Null)
+            .await;
         let resp = r.unwrap().unwrap();
         assert!(resp["count"].as_u64().unwrap() >= 3);
     }

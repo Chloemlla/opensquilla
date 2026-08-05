@@ -148,9 +148,10 @@ impl SystemPromptInjector {
 impl PipelineStep for SystemPromptInjector {
     async fn execute(&self, ctx: &mut PipelineContext) -> Result<StepAction> {
         // Check if any message already has the System role.
-        let has_system = ctx.messages.iter().any(|m| {
-            matches!(m.role, opensquilla_core::types::MessageRole::System)
-        });
+        let has_system = ctx
+            .messages
+            .iter()
+            .any(|m| matches!(m.role, opensquilla_core::types::MessageRole::System));
 
         if !has_system {
             let system_msg = Message::system(&self.prompt);

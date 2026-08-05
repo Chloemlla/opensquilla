@@ -70,7 +70,10 @@ impl MigrationRunner {
 
     /// Apply a single migration in a transaction. Errors if the version has
     /// already been applied.
-    pub fn apply_migration(&mut self, migration: &SchemaMigration) -> crate::Result<AppliedMigration> {
+    pub fn apply_migration(
+        &mut self,
+        migration: &SchemaMigration,
+    ) -> crate::Result<AppliedMigration> {
         let already: Option<i64> = self
             .connection
             .query_row(
@@ -120,9 +123,9 @@ impl MigrationRunner {
 
     /// List all applied migrations, oldest first.
     pub fn list_migrations(&self) -> crate::Result<Vec<AppliedMigration>> {
-        let mut stmt = self.connection.prepare(
-            "SELECT version, name, applied_at FROM schema_version ORDER BY version",
-        )?;
+        let mut stmt = self
+            .connection
+            .prepare("SELECT version, name, applied_at FROM schema_version ORDER BY version")?;
         let rows = stmt.query_map([], |row| {
             let applied_at_str: String = row.get(2)?;
             let applied_at = chrono::DateTime::parse_from_rfc3339(&applied_at_str)

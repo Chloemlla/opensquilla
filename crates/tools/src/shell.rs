@@ -5,7 +5,9 @@
 //! The `exec_command` tool runs a command synchronously and returns its output,
 //! while `background_process` starts a long-running process and manages its lifecycle.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -144,9 +146,8 @@ impl ExecCommandTool {
             .await
             .map_err(|_| ToolError::timeout(timeout_secs))?;
 
-        let output = result.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to execute command: {}", e))
-        })?;
+        let output = result
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to execute command: {}", e)))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -210,7 +211,10 @@ impl Tool for ExecCommandTool {
                     ),
                     (
                         "args".to_string(),
-                        ParameterDefinition::array("Additional arguments for the command", ParameterDefinition::string("Argument value")),
+                        ParameterDefinition::array(
+                            "Additional arguments for the command",
+                            ParameterDefinition::string("Argument value"),
+                        ),
                     ),
                     (
                         "timeout".to_string(),
@@ -223,7 +227,9 @@ impl Tool for ExecCommandTool {
                     ),
                     (
                         "env_vars".to_string(),
-                        ParameterDefinition::string("Environment variables as JSON object (key-value pairs)"),
+                        ParameterDefinition::string(
+                            "Environment variables as JSON object (key-value pairs)",
+                        ),
                     ),
                 ]),
             )
@@ -241,7 +247,11 @@ impl Tool for ExecCommandTool {
 
         let args: Vec<String> = params["args"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let env_vars: HashMap<String, String> = params["env_vars"]
@@ -309,13 +319,13 @@ impl BackgroundProcessTool {
         cmd.stderr(Stdio::piped());
 
         // Spawn without waiting for the process to finish.
-        let mut child = cmd.spawn().map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to spawn process: {}", e))
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to spawn process: {}", e)))?;
 
-        let pid = child.id().ok_or_else(|| {
-            ToolError::new("IO_ERROR", "Failed to get process ID".to_string())
-        })?;
+        let pid = child
+            .id()
+            .ok_or_else(|| ToolError::new("IO_ERROR", "Failed to get process ID".to_string()))?;
 
         let mut process = BackgroundProcess::new(command.to_string(), child, pid);
 
@@ -424,8 +434,10 @@ impl BackgroundProcessTool {
             "elapsed_secs": elapsed,
         });
 
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-            .with_data(data))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
     }
 
     /// Get the output of a background process.
@@ -459,16 +471,8 @@ impl BackgroundProcessTool {
             }
         }
 
-        let stdout = process
-            .stdout
-            .lock()
-            .await
-            .clone();
-        let stderr = process
-            .stderr
-            .lock()
-            .await
-            .clone();
+        let stdout = process.stdout.lock().await.clone();
+        let stderr = process.stderr.lock().await.clone();
 
         let data = serde_json::json!({
             "process_id": id,
@@ -533,8 +537,10 @@ impl BackgroundProcessTool {
             "count": list.len(),
         });
 
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-            .with_data(data))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
     }
 }
 
@@ -603,11 +609,16 @@ impl Tool for BackgroundProcessTool {
                 })?;
                 let args: Vec<String> = params["args"]
                     .as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 let env_vars = HashMap::new();
                 let working_dir = params["working_dir"].as_str().unwrap_or(".");
-                self.start_process(id, command, &args, &env_vars, working_dir).await
+                self.start_process(id, command, &args, &env_vars, working_dir)
+                    .await
             }
             "status" => {
                 let id = params["process_id"].as_str().ok_or_else(|| {
@@ -628,7 +639,10 @@ impl Tool for BackgroundProcessTool {
                 self.stop_process(id).await
             }
             "list" => self.list_processes().await,
-            other => Err(ToolError::invalid_args(format!("Unknown operation: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown operation: {}",
+                other
+            ))),
         }
     }
 }
@@ -690,9 +704,7 @@ mod tests {
             .await;
         assert!(status.is_ok());
 
-        let list = tool
-            .execute(serde_json::json!({"operation": "list"}))
-            .await;
+        let list = tool.execute(serde_json::json!({"operation": "list"})).await;
         assert!(list.is_ok());
         assert!(list.unwrap().content.contains("test1"));
     }

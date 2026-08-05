@@ -34,9 +34,7 @@ pub fn scan_install(base_dir: impl AsRef<Path>) -> crate::Result<Vec<InventoryIt
     }
 
     let mut items = Vec::new();
-    let walker = walkdir::WalkDir::new(base)
-        .min_depth(1)
-        .sort_by_file_name();
+    let walker = walkdir::WalkDir::new(base).min_depth(1).sort_by_file_name();
     for entry in walker {
         let entry = entry.map_err(|e| crate::Error::Io(e.to_string()))?;
         let path = entry.path();

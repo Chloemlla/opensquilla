@@ -4,7 +4,9 @@
 //! and output capture. Supports multiple programming languages by
 //! dispatching to the appropriate interpreter or compiler.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -216,8 +218,8 @@ impl CodeExecTool {
             cmd.arg(&file_path);
             cmd.kill_on_drop(true);
 
-            let result = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
-                .await;
+            let result =
+                tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output()).await;
 
             // Clean up the temp file.
             tokio::fs::remove_file(&file_path).await.ok();
@@ -268,8 +270,8 @@ impl CodeExecTool {
             cmd.arg(code);
             cmd.kill_on_drop(true);
 
-            let result = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
-                .await;
+            let result =
+                tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output()).await;
 
             let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -282,7 +284,11 @@ impl CodeExecTool {
                     let content = if output.status.success() {
                         truncate_output(&stdout, self.max_output_size)
                     } else {
-                        format!("Exit code {}:\n{}", exit_code, truncate_output(&stderr, self.max_output_size))
+                        format!(
+                            "Exit code {}:\n{}",
+                            exit_code,
+                            truncate_output(&stderr, self.max_output_size)
+                        )
                     };
 
                     let data = serde_json::json!({

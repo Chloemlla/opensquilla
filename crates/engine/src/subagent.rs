@@ -194,8 +194,12 @@ impl SubAgentManager {
             let max_rounds = (budget / 4_000).max(1) as u32;
             config.max_turns = config.max_turns.min(max_rounds);
         }
-        Agent::with_config(spec.id.clone(), Box::new(SharedGenerator(self.generator.clone())), config)
-            .named(spec.id.clone())
+        Agent::with_config(
+            spec.id.clone(),
+            Box::new(SharedGenerator(self.generator.clone())),
+            config,
+        )
+        .named(spec.id.clone())
     }
 
     /// Spawn a sub-agent that runs its own turn in the background.
@@ -284,11 +288,11 @@ impl SubAgentManager {
         let Some(total) = self.token_budget else {
             return specs;
         };
-        let explicit_sum: u64 = specs
+        let explicit_sum: u64 = specs.iter().filter_map(|s| s.token_budget_tokens).sum();
+        let unallocated = specs
             .iter()
-            .filter_map(|s| s.token_budget_tokens)
-            .sum();
-        let unallocated = specs.iter().filter(|s| s.token_budget_tokens.is_none()).count();
+            .filter(|s| s.token_budget_tokens.is_none())
+            .count();
         if unallocated == 0 {
             return specs;
         }
@@ -443,15 +447,15 @@ impl ProviderSubAgent {
     /// Spawn a sub-agent driven by this provider wrapper.
     ///
     /// Returns a handle that resolves to the sub-agent's turn outcome.
-    pub async fn spawn(self, id: impl Into<String>, prompt: impl Into<String>) -> Result<SubAgentHandle> {
+    pub async fn spawn(
+        self,
+        id: impl Into<String>,
+        prompt: impl Into<String>,
+    ) -> Result<SubAgentHandle> {
         let mut spec = SubAgentSpec::new(id, prompt);
         spec.token_budget_tokens = self.token_budget_tokens;
-        let agent = Agent::with_config(
-            spec.id.clone(),
-            Box::new(self),
-            AgentConfig::default(),
-        )
-        .named(spec.id.clone());
+        let agent = Agent::with_config(spec.id.clone(), Box::new(self), AgentConfig::default())
+            .named(spec.id.clone());
         let mut agent = agent;
         agent.initialize();
 

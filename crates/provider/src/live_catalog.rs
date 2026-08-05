@@ -10,7 +10,7 @@
 //! catalog remains as a fallback.
 
 use crate::compat_policy::policy_for;
-use crate::model_catalog::{merge_live, ModelCapabilities, ModelCatalog};
+use crate::model_catalog::{ModelCapabilities, ModelCatalog, merge_live};
 use crate::types::ProviderError;
 use reqwest::Client;
 use std::time::Duration;
@@ -232,7 +232,9 @@ pub fn parse_models_response(provider: &str, data: &serde_json::Value) -> Vec<Mo
 
 fn parse_one_model(provider: &str, m: &serde_json::Value) -> Option<ModelCapabilities> {
     // The model id may be under "id" (OpenAI) or "name".
-    let id = m.get("id").and_then(|v| v.as_str())
+    let id = m
+        .get("id")
+        .and_then(|v| v.as_str())
         .or_else(|| m.get("name").and_then(|v| v.as_str()))?;
     if id.is_empty() {
         return None;
@@ -277,12 +279,19 @@ fn parse_one_model(provider: &str, m: &serde_json::Value) -> Option<ModelCapabil
         .unwrap_or(false);
 
     let supports_vision = caps_list.iter().any(|c| c.contains("vision"))
-        || m.get("supports_vision").and_then(|v| v.as_bool()).unwrap_or(false);
+        || m.get("supports_vision")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
     let supports_audio = caps_list.iter().any(|c| c.contains("audio"))
-        || m.get("supports_audio").and_then(|v| v.as_bool()).unwrap_or(false);
-    let supports_reasoning = caps_list.iter().any(|c| {
-        c.contains("reasoning") || c.contains("thinking")
-    }) || m.get("supports_reasoning").and_then(|v| v.as_bool()).unwrap_or(false);
+        || m.get("supports_audio")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+    let supports_reasoning = caps_list
+        .iter()
+        .any(|c| c.contains("reasoning") || c.contains("thinking"))
+        || m.get("supports_reasoning")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
     let input_price = m
         .get("pricing")

@@ -5,14 +5,14 @@
 //! store). Backed by [`opensquilla_memory::MemoryStore`] which uses SQLite
 //! FTS5 for full-text search and blob-backed embeddings.
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use opensquilla_core::types::MemoryId;
 use opensquilla_memory::store::{MemoryEntry, MemoryStore};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// A lightweight handle around a memory store that can be cheaply cloned
 /// across RPC handlers.
@@ -26,14 +26,18 @@ impl MemoryHandle {
     pub fn in_memory() -> Result<Self, AppError> {
         let store = MemoryStore::in_memory()
             .map_err(|e| AppError::internal(format!("Failed to open memory store: {e}")))?;
-        Ok(Self { store: Arc::new(store) })
+        Ok(Self {
+            store: Arc::new(store),
+        })
     }
 
     /// Create a new handle wrapping a file-backed SQLite store.
     pub fn open(path: &str) -> Result<Self, AppError> {
         let store = MemoryStore::new(path)
             .map_err(|e| AppError::internal(format!("Failed to open memory store: {e}")))?;
-        Ok(Self { store: Arc::new(store) })
+        Ok(Self {
+            store: Arc::new(store),
+        })
     }
 
     /// Access the underlying store.
@@ -90,12 +94,7 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     .map_err(store_err)?;
                 let mut orphans = 0u64;
                 for (mid, _) in &embeddings {
-                    if handle
-                        .store()
-                        .get_memory(mid)
-                        .map_err(store_err)?
-                        .is_none()
-                    {
+                    if handle.store().get_memory(mid).map_err(store_err)?.is_none() {
                         orphans += 1;
                     }
                 }
@@ -123,14 +122,8 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     .get("query")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'query' parameter"))?;
-                let limit = params
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(20);
-                let offset = params
-                    .get("offset")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20);
+                let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
 
                 let results = handle
                     .store()
@@ -160,12 +153,7 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     .map_err(store_err)?;
                 let mut repaired = 0u64;
                 for (mid, _) in &embeddings {
-                    if handle
-                        .store()
-                        .get_memory(mid)
-                        .map_err(store_err)?
-                        .is_none()
-                    {
+                    if handle.store().get_memory(mid).map_err(store_err)?.is_none() {
                         // delete_memory also removes the embedding row.
                         handle.store().delete_memory(mid).map_err(store_err)?;
                         repaired += 1;
@@ -200,7 +188,12 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                         Uuid::parse_str(id_str)
                             .map_err(|_| AppError::bad_request("Invalid memory id"))?,
                     );
-                    if handle.store().get_memory(&mid).map_err(store_err)?.is_some() {
+                    if handle
+                        .store()
+                        .get_memory(&mid)
+                        .map_err(store_err)?
+                        .is_some()
+                    {
                         handle.store().increment_access(&mid).map_err(store_err)?;
                         touched += 1;
                     } else {
@@ -240,7 +233,10 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.5)
                     .clamp(0.0, 1.0);
-                let metadata = params.get("metadata").cloned().unwrap_or(serde_json::Value::Null);
+                let metadata = params
+                    .get("metadata")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
 
                 let now = chrono::Utc::now();
                 let mut entry = MemoryEntry::new(
@@ -266,8 +262,7 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     }
                 }
 
-                Ok(serde_json::to_value(&entry)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                Ok(serde_json::to_value(&entry).map_err(|e| AppError::internal(e.to_string()))?)
             }
         }
     }));

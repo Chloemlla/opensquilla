@@ -196,7 +196,15 @@ mod backend {
 
             // Read-only host system directories (skipped when denied).
             for dir in [
-                "/usr", "/etc", "/lib", "/lib64", "/bin", "/sbin", "/opt", "/nix", "/usr/local",
+                "/usr",
+                "/etc",
+                "/lib",
+                "/lib64",
+                "/bin",
+                "/sbin",
+                "/opt",
+                "/nix",
+                "/usr/local",
             ] {
                 if policy.filesystem.blocks(dir) {
                     continue;
@@ -270,10 +278,7 @@ mod backend {
             let ret_out = unsafe { libc::pipe(out_fds.as_mut_ptr()) };
             let ret_err = unsafe { libc::pipe(err_fds.as_mut_ptr()) };
             if ret_out != 0 || ret_err != 0 {
-                return Err(format!(
-                    "pipe: {}",
-                    nix::errno::Errno::last()
-                ));
+                return Err(format!("pipe: {}", nix::errno::Errno::last()));
             }
             let (out_read, out_write) = (out_fds[0], out_fds[1]);
             let (err_read, err_write) = (err_fds[0], err_fds[1]);
@@ -293,8 +298,7 @@ mod backend {
             let env = filter_env(opts.env.as_ref(), opts.policy);
             let limits = RlimitSpec::from_policy(opts.policy);
 
-            let pid = unsafe { nix::unistd::fork() }
-                .map_err(|e| format!("fork: {e}"))?;
+            let pid = unsafe { nix::unistd::fork() }.map_err(|e| format!("fork: {e}"))?;
 
             match pid {
                 ForkResult::Child => {
@@ -651,7 +655,9 @@ mod backend {
 
         let filter = SeccompFilter::new(rules, SeccompAction::Errno(1))
             .map_err(|e| format!("seccomp filter build: {e}"))?;
-        filter.into_bpf().map_err(|e| format!("seccomp bpf compile: {e}"))
+        filter
+            .into_bpf()
+            .map_err(|e| format!("seccomp bpf compile: {e}"))
     }
 
     /// Size in bytes of the `struct sock_fprog` header for the host
@@ -695,16 +701,15 @@ mod backend {
     /// The memfd intentionally lacks `MFD_CLOEXEC` so it survives the `exec`
     /// into bwrap; it is dropped once bwrap has read it.
     fn create_seccomp_fd(prog: &seccompiler::BpfProgram) -> Result<OwnedFd, String> {
-        use nix::sys::memfd::{memfd_create, MemFdCreateFlag};
-        use nix::unistd::{lseek, write, Whence};
+        use nix::sys::memfd::{MemFdCreateFlag, memfd_create};
+        use nix::unistd::{Whence, lseek, write};
 
         let serialized = serialize_sock_fprog(prog);
         let fd = memfd_create(c"osq-seccomp", MemFdCreateFlag::empty())
             .map_err(|e| format!("memfd_create: {e}"))?;
         let mut written = 0usize;
         while written < serialized.len() {
-            let n = write(&fd, &serialized[written..])
-                .map_err(|e| format!("memfd write: {e}"))?;
+            let n = write(&fd, &serialized[written..]).map_err(|e| format!("memfd write: {e}"))?;
             written += n;
         }
         lseek(&fd, 0, Whence::SeekSet).map_err(|e| format!("memfd seek: {e}"))?;
@@ -743,10 +748,7 @@ mod backend {
         use std::ffi::CString;
 
         let program = CString::new(command).unwrap_or_default();
-        let cargs: Vec<CString> = args
-            .iter()
-            .filter_map(|a| CString::new(*a).ok())
-            .collect();
+        let cargs: Vec<CString> = args.iter().filter_map(|a| CString::new(*a).ok()).collect();
 
         let mut arg_ptrs: Vec<*const libc::c_char> = Vec::with_capacity(cargs.len() + 2);
         arg_ptrs.push(program.as_ptr());
@@ -759,8 +761,7 @@ mod backend {
             .iter()
             .filter_map(|(k, v)| CString::new(format!("{k}={v}")).ok())
             .collect();
-        let mut env_ptrs: Vec<*const libc::c_char> =
-            env_vars.iter().map(|c| c.as_ptr()).collect();
+        let mut env_ptrs: Vec<*const libc::c_char> = env_vars.iter().map(|c| c.as_ptr()).collect();
         env_ptrs.push(std::ptr::null());
 
         unsafe {
@@ -900,7 +901,10 @@ impl LinuxSandbox {
                 } else {
                     "linux_execute_failed".to_string()
                 },
-                details: format!("command={}, ok={ok}, duration_ms={duration_ms}", opts.command),
+                details: format!(
+                    "command={}, ok={ok}, duration_ms={duration_ms}",
+                    opts.command
+                ),
             });
             let mut res = result?;
             res.audit_log = self.audit_log.clone();

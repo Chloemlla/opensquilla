@@ -72,7 +72,9 @@ impl PidLock {
             std::fs::remove_file(path)
                 .map_err(|e| AppError::internal(format!("Failed to clear stale lock: {e}")))?;
             return Self::try_create(path).map_err(|e| {
-                AppError::internal(format!("Failed to re-acquire lock after clearing stale: {e}"))
+                AppError::internal(format!(
+                    "Failed to re-acquire lock after clearing stale: {e}"
+                ))
             });
         }
 
@@ -122,9 +124,8 @@ impl PidLock {
     pub fn release(&self) -> Result<(), AppError> {
         match read_lock(&self.path) {
             Ok(record) if record.pid == self.pid => {
-                std::fs::remove_file(&self.path).map_err(|e| {
-                    AppError::internal(format!("Failed to remove lock file: {e}"))
-                })?;
+                std::fs::remove_file(&self.path)
+                    .map_err(|e| AppError::internal(format!("Failed to remove lock file: {e}")))?;
                 info!(path = %self.path.display(), "PID lock released");
                 Ok(())
             }
@@ -165,9 +166,8 @@ fn read_lock(path: &Path) -> Result<LockRecord, AppError> {
         .map_err(|e| AppError::internal(format!("Failed to open lock file: {e}")))?;
     file.read_to_string(&mut contents)
         .map_err(|e| AppError::internal(format!("Failed to read lock file: {e}")))?;
-    serde_json::from_str(&contents).map_err(|e| {
-        AppError::internal(format!("Lock file has invalid contents: {e}"))
-    })
+    serde_json::from_str(&contents)
+        .map_err(|e| AppError::internal(format!("Lock file has invalid contents: {e}")))
 }
 
 /// Determine whether an existing lock is stale.
