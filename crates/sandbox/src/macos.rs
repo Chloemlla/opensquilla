@@ -318,6 +318,7 @@ mod backend {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn which(name: &str) -> Option<String> {
     std::env::var_os("PATH").and_then(|paths| {
         for path in std::env::split_paths(&paths) {
@@ -331,6 +332,7 @@ fn which(name: &str) -> Option<String> {
 }
 
 /// Resolve a bare command name to an absolute path using `PATH`.
+#[cfg(target_os = "macos")]
 fn resolve_binary(command: &str) -> Option<String> {
     let path = std::path::Path::new(command);
     if path.is_absolute() {
@@ -441,6 +443,7 @@ impl MacOsSandbox {
         }
         #[cfg(not(target_os = "macos"))]
         {
+            let _ = (&args, &env, &working_dir, &policy);
             self.audit_log.push(AuditEntry {
                 timestamp: chrono::Utc::now(),
                 action: "macos_execute_unsupported".to_string(),

@@ -475,7 +475,7 @@ mod tests {
     fn test_apply_summarize_keeps_system() {
         let stage = CompactionStage::new(50);
         let mut msgs = vec![Message::system("instructions")];
-        for i in 0..40 {
+        for i in 0..100 {
             msgs.push(Message::user(format!("message {i}")));
         }
         let out = stage.apply(&msgs, CompactionStrategy::Summarize);

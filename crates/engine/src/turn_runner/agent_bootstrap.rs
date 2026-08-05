@@ -428,4 +428,5 @@ mod tests {
         fn provider_name(&self) -> &str {
             "mock"
         }
- 
+    }
+}

@@ -21,6 +21,20 @@
 use crate::policy::{AuditEntry, SandboxPolicy, SandboxResult};
 use std::collections::HashMap;
 
+/// Execution options shared by both Linux strategies.
+///
+/// This type is only exercised on Linux; the `allow(dead_code)` attribute is
+/// applied to non-Linux builds where the public `execute` methods construct it
+/// but the backend that consumes it is compiled out.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub struct ExecOptions<'a> {
+    pub command: &'a str,
+    pub args: &'a [&'a str],
+    pub env: Option<HashMap<String, String>>,
+    pub working_dir: Option<&'a str>,
+    pub policy: &'a SandboxPolicy,
+}
+
 #[cfg(target_os = "linux")]
 mod backend {
     use super::*;
@@ -28,19 +42,10 @@ mod backend {
     use nix::sched::CloneFlags;
     use nix::sys::wait::WaitStatus;
     use nix::unistd::ForkResult;
-    use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
     use std::process::Stdio;
     use tokio::process::Command;
     use tracing::{info, warn};
-
-    /// Execution options shared by both strategies.
-    pub struct ExecOptions<'a> {
-        pub command: &'a str,
-        pub args: &'a [&'a str],
-        pub env: Option<HashMap<String, String>>,
-        pub working_dir: Option<&'a str>,
-        pub policy: &'a SandboxPolicy,
-    }
 
     pub struct LinuxSandboxBackend {
         bwrap_path: Option<String>,
@@ -355,7 +360,10 @@ mod backend {
                     }
 
                     exec_command(opts.command, opts.args, &env);
-                    unsafe { libc::_exit(127) };
+                    // exec_command only returns when exec fails; exit the
+                    // child. Diverges, so this arm typechecks against the
+                    // parent arm's `Result`.
+                    unsafe { libc::_exit(127) }
                 }
                 ForkResult::Parent { child } => {
                     unsafe {
@@ -789,6 +797,7 @@ mod backend {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn which_bwrap() -> Option<String> {
     std::env::var_os("PATH").and_then(|paths| {
         for path in std::env::split_paths(&paths) {
@@ -829,7 +838,7 @@ impl LinuxSandbox {
         args: &[&str],
         policy: &SandboxPolicy,
     ) -> Result<SandboxResult, String> {
-        let opts = backend::ExecOptions {
+        let opts = ExecOptions {
             command,
             args,
             env: None,
@@ -849,7 +858,7 @@ impl LinuxSandbox {
         working_dir: Option<&str>,
         policy: &SandboxPolicy,
     ) -> Result<SandboxResult, String> {
-        let opts = backend::ExecOptions {
+        let opts = ExecOptions {
             command,
             args,
             env: Some(env),
@@ -876,7 +885,7 @@ impl LinuxSandbox {
         self.audit_log.clone()
     }
 
-    async fn run(&mut self, opts: backend::ExecOptions<'_>) -> Result<SandboxResult, String> {
+    async fn run(&mut self, opts: ExecOptions<'_>) -> Result<SandboxResult, String> {
         #[cfg(target_os = "linux")]
         {
             let result = self.backend.execute(&opts).await;
@@ -899,6 +908,7 @@ impl LinuxSandbox {
         }
         #[cfg(not(target_os = "linux"))]
         {
+            let _ = &opts;
             self.audit_log.push(AuditEntry {
                 timestamp: chrono::Utc::now(),
                 action: "linux_execute_unsupported".to_string(),

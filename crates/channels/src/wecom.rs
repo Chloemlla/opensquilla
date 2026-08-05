@@ -642,6 +642,7 @@ impl Channel for WeComChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha1::Digest as _;
 
     const WECOM_KEY: &str = "jWmYm7qr5nMoAUwZRjGtBxmz3KA1tkAj3ykkR6q2B2C";
 

@@ -17,7 +17,7 @@ use crate::agent::TurnGenerator;
 use crate::stages::{Stage, StageContext, StageOutcome, StageOutput};
 use crate::usage::UsageTracker;
 use async_trait::async_trait;
-use opensquilla_core::error::{Error, Result};
+use opensquilla_core::error::Result;
 use opensquilla_core::events::{StreamEvent, TurnEvent};
 use opensquilla_core::types::{Message, MessageRole, Usage};
 use std::fmt;
@@ -233,8 +233,10 @@ impl FinalizerStage {
             let token_count = message
                 .content
                 .iter()
-                .map(|b| {
-                    opensquilla_core::types::ContentBlock::Text(t) => t.chars().count() as u64 / 4,
+                .map(|b| match b {
+                    opensquilla_core::types::ContentBlock::Text(t) => {
+                        t.chars().count() as u64 / 4
+                    }
                     opensquilla_core::types::ContentBlock::Reasoning(r) => {
                         r.chars().count() as u64 / 4
                     }

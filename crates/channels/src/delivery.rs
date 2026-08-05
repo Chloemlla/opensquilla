@@ -805,6 +805,7 @@ impl OutboxWorker {
 mod tests {
     use super::*;
     use crate::types::ChannelType;
+    use rusqlite::params;
     use serde_json::json;
 
     fn temp_store() -> (DeliveryStore, String) {

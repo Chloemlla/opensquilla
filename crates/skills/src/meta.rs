@@ -113,32 +113,29 @@ pub trait StepExecutor: Send + Sync {
     async fn execute(&self, ctx: &ExecutionContext) -> Result<Value, String>;
 }
 
-/// Build a shared Tera instance with the custom helper functions used by
-/// templates in the skill system.
-fn default_tera() -> &'static tera::Tera {
-    static TERA: std::sync::OnceLock<tera::Tera> = std::sync::OnceLock::new();
-    TERA.get_or_init(|| {
-        let mut tera = tera::Tera::default();
-        tera.register_function(
-            "uuid",
-            |_: &tera::Value, _: &HashMap<String, tera::Value>| {
-                Ok(tera::Value::String(uuid::Uuid::new_v4().to_string()))
-            },
-        );
-        tera.register_function(
-            "now_iso",
-            |_: &tera::Value, _: &HashMap<String, tera::Value>| {
-                Ok(tera::Value::String(chrono::Utc::now().to_rfc3339()))
-            },
-        );
-        tera.register_function(
-            "ts",
-            |_: &tera::Value, _: &HashMap<String, tera::Value>| {
-                Ok(tera::Value::Number(chrono::Utc::now().timestamp().into()))
-            },
-        );
-        tera
-    })
+/// Build a Tera instance with the custom helper functions used by templates in
+/// the skill system.
+fn build_tera() -> tera::Tera {
+    let mut tera = tera::Tera::default();
+    tera.register_function(
+        "uuid",
+        |_: &tera::Value, _: &HashMap<String, tera::Value>| {
+            Ok(tera::Value::String(uuid::Uuid::new_v4().to_string()))
+        },
+    );
+    tera.register_function(
+        "now_iso",
+        |_: &tera::Value, _: &HashMap<String, tera::Value>| {
+            Ok(tera::Value::String(chrono::Utc::now().to_rfc3339()))
+        },
+    );
+    tera.register_function(
+        "ts",
+        |_: &tera::Value, _: &HashMap<String, tera::Value>| {
+            Ok(tera::Value::Number(chrono::Utc::now().timestamp().into()))
+        },
+    );
+    tera
 }
 
 /// Renders a Jinja-ish `{{ var }}` template against the current variables.
@@ -152,7 +149,7 @@ pub fn render_template(template: &str, variables: &HashMap<String, Value>) -> St
     for (k, v) in variables {
         ctx.insert(k, v);
     }
-    default_tera()
+    build_tera()
         .render_str(template, &ctx)
         .unwrap_or_else(|_| template.to_string())
 }
@@ -2177,4 +2174,9 @@ mod tests {
     }
 
     #[test]
-    fn coerce_classifier_choices() 
+    fn coerce_classifier_choices() {
+        assert_eq!(coerce_to_choice("  Yes ", &["yes".to_string(), "no".to_string()]), Some("yes".to_string()));
+        assert_eq!(coerce_to_choice("YES!", &["yes".to_string()]), Some("yes".to_string()));
+        assert_eq!(coerce_to_choice("maybe", &["yes".to_string(), "no".to_string()]), None);
+    }
+}

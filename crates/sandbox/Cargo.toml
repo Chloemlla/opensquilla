@@ -16,7 +16,6 @@ thiserror.workspace = true
 nix = { workspace = true, features = ["memfd", "mount", "resource", "sched"] }
 windows = { workspace = true, features = [
     "Win32_NetworkManagement_NetFw",
-    "Win32_Networking_WindowsFilteringPlatform",
     "Win32_Security_Authorization",
     "Win32_System_Com",
     "Win32_System_JobObjects",

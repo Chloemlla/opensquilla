@@ -425,7 +425,7 @@ impl ChannelManager {
         poll_interval: Duration,
     ) -> Result<(), String> {
         let channels = self.channels.clone();
-        let send = move |entry: &OutboxEntry| {
+        let send = move |entry: &OutboxEntry| -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             let channels = channels.clone();
             let channel_id = entry.channel_id.clone();
             // Extract owned data before the async block so the returned future

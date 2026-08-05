@@ -24,7 +24,6 @@ use crate::stages::{Stage, StageContext, StageError, StageOutput};
 use async_trait::async_trait;
 use opensquilla_core::error::Result;
 use opensquilla_core::types::MessageRole;
-use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, instrument, trace, warn};

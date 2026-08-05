@@ -173,7 +173,7 @@ impl WebSocketChannel {
         // Send the welcome frame.
         let welcome = serde_json::json!({
             "type": "welcome",
-            "connection_id": connection_id,
+            "connection_id": connection_id.clone(),
             "user_id": user_id,
             "timestamp": Utc::now(),
         });

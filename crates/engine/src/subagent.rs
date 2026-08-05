@@ -186,6 +186,7 @@ impl SubAgentManager {
             default_model: self.generator.model_name().to_string(),
             default_provider: self.generator.provider_name().to_string(),
             system_prompt: spec.system_prompt.clone().unwrap_or_default(),
+            context_window_tokens: 128_000,
         };
         if let Some(budget) = spec.token_budget_tokens {
             // The token budget caps the per-sub-agent context by limiting the
@@ -276,25 +277,28 @@ impl SubAgentManager {
 
     /// Allocate the manager's total token budget across a batch of specs.
     ///
-    /// Specs that already carry a per-sub-agent budget are left unchanged; the
-    /// remaining budget is split evenly across the rest. Returns the specs with
-    /// budgets applied.
+    /// Specs that already carry a per-sub-agent budget are left unchanged and
+    /// their budgets are subtracted from the total first; the remaining budget
+    /// is split evenly across the rest. Returns the specs with budgets applied.
     pub fn allocate_budget(&self, mut specs: Vec<SubAgentSpec>) -> Vec<SubAgentSpec> {
         let Some(total) = self.token_budget else {
             return specs;
         };
-        let mut unallocated = specs.iter().filter(|s| s.token_budget_tokens.is_none()).count();
+        let explicit_sum: u64 = specs
+            .iter()
+            .filter_map(|s| s.token_budget_tokens)
+            .sum();
+        let unallocated = specs.iter().filter(|s| s.token_budget_tokens.is_none()).count();
         if unallocated == 0 {
             return specs;
         }
-        let per_sub = total / unallocated as u64;
+        let remaining = total.saturating_sub(explicit_sum);
+        let per_sub = remaining / unallocated as u64;
         for spec in &mut specs {
             if spec.token_budget_tokens.is_none() {
                 spec.token_budget_tokens = Some(per_sub);
-                unallocated = unallocated.saturating_sub(1);
             }
         }
-        let _ = unallocated;
         specs
     }
 

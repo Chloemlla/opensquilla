@@ -974,7 +974,7 @@ async fn run_socket_loop(
                 continue;
             }
         };
-        run_socket_cycle(running.clone(), incoming.clone(), &api, &ws_url).await;
+        run_socket_cycle(running.clone(), incoming.clone(), &ws_url).await;
         attempt = attempt.saturating_add(1).min(10);
         if !*running.lock().await {
             return;
@@ -989,7 +989,6 @@ async fn run_socket_loop(
 async fn run_socket_cycle(
     running: Arc<Mutex<bool>>,
     incoming: Arc<Mutex<VecDeque<IncomingMessage>>>,
-    api: &SlackClient,
     ws_url: &str,
 ) {
     let (ws_stream, _) = match connect_async(ws_url).await {

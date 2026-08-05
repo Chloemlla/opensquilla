@@ -93,6 +93,7 @@ struct RejectionGuardEntry {
 ///
 /// The struct is cheap to clone — all state lives behind `Arc` — so a shared
 /// queue can be handed to RPC handlers, background workers and test harnesses.
+#[derive(Clone)]
 pub struct ApprovalQueue {
     pending: Arc<Mutex<HashMap<String, ApprovalRequest>>>,
     rejections: Arc<Mutex<Vec<RejectionEntry>>>,
@@ -323,16 +324,16 @@ impl ApprovalQueue {
             detail: format!("rejected by {}: {}", rejected_by, reason),
         });
 
-        // Persist synchronously unless a background worker owns the channel.
-        let worker_owns_channel = self.persistence_rx.lock().await.is_none();
-        if worker_owns_channel {
-            if let Some(path) = self.ledger_path().await {
-                if let Err(e) = self.persist_ledger(&path).await {
-                    warn!("governance: ledger persistence failed: {}", e);
-                }
-            }
-        } else {
+        // If the persistence worker has taken the receiver, hand it the entry
+        // over mpsc; otherwise persist synchronously so the ledger is never
+        // silently dropped.
+        let worker_started = self.persistence_rx.lock().await.is_none();
+        if worker_started {
             let _ = self.persistence_tx.send(entry);
+        } else if let Some(path) = self.ledger_path().await {
+            if let Err(e) = self.persist_ledger(&path).await {
+                warn!("governance: ledger persistence failed: {}", e);
+            }
         }
 
         info!(
@@ -567,12 +568,8 @@ impl Default for ApprovalQueue {
 
 /// Run a periodic worker that auto-rejects expired approval requests.
 ///
-/// This should be spawned once per queue at application startup:
-///
-/// ```
-/// let queue = opensquilla_sandbox::ApprovalQueue::new();
-/// tokio::spawn(opensquilla_sandbox::governance::run_auto_reject_worker(queue, 30));
-/// ```
+/// Spawn this once per queue at application startup; it also expires
+/// display-facing pending requests on every tick.
 pub async fn run_auto_reject_worker(queue: ApprovalQueue, interval_secs: u64) {
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
     loop {

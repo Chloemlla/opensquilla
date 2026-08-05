@@ -208,15 +208,11 @@ impl AttachmentStage {
 
     /// Clear the attachments after a turn completes.
     ///
-    /// Fires registered cleanup hooks.
+    /// This variant does not fire cleanup hooks; use
+    /// [`AttachmentStage::clear_attachments_for_turn`] when the turn id is
+    /// available so hooks observe it.
     pub fn clear_attachments(&self) {
         let cleaned = self.attachments.lock().unwrap().len();
-        if cleaned > 0 {
-            let hooks = &self.cleanup_hooks;
-            let _ = hooks;
-            // The turn id is not threaded here; callers that need it should use
-            // `clear_attachments_for_turn`.
-        }
         self.attachments.lock().unwrap().clear();
         trace!(cleaned = cleaned, "attachment list cleared");
     }
@@ -645,14 +641,7 @@ fn parse_multipart_inner(body: &[u8], boundary: &str) -> Option<Vec<MultipartFie
         }
 
         // Body runs until the next `\r\n--boundary` (or `\n--boundary`).
-        let terminator = match find_subslice(body, crlf, cursor) {
-            Some(crlf_at) => find_subslice(body, delimiter_bytes, crlf_at),
-            None => None,
-        };
-        let terminator = match terminator {
-            Some(at) => at,
-            None => find_subslice(body, delimiter_bytes, cursor)?,
-        };
+        let terminator = find_body_terminator(body, delimiter_bytes, cursor)?;
         let data = body[cursor..terminator].to_vec();
 
         fields.push(MultipartField {
@@ -662,14 +651,36 @@ fn parse_multipart_inner(body: &[u8], boundary: &str) -> Option<Vec<MultipartFie
             data,
         });
 
-        // Advance past `\r\n` + `--boundary`.
-        let after_data = terminator;
-        if body[after_data..].starts_with(crlf) {
-            cursor = after_data + 2 + delimiter_bytes.len();
+        // Advance past the newline + `--boundary`.
+        if body[terminator..].starts_with(crlf) {
+            cursor = terminator + 2 + delimiter_bytes.len();
+        } else if body[terminator..].starts_with(b"\n") {
+            cursor = terminator + 1 + delimiter_bytes.len();
         } else {
-            cursor = after_data + delimiter_bytes.len();
+            cursor = terminator + delimiter_bytes.len();
         }
     }
+}
+
+/// Find the index where a multipart field's data ends.
+///
+/// The data ends immediately before the `\r\n--boundary` (or `\n--boundary`,
+/// or bare `--boundary`) that delimits the next part, so the returned index is
+/// the start of that terminating sequence.
+fn find_body_terminator(body: &[u8], delimiter: &[u8], from: usize) -> Option<usize> {
+    let mut crlf_seq = Vec::with_capacity(2 + delimiter.len());
+    crlf_seq.extend_from_slice(b"\r\n");
+    crlf_seq.extend_from_slice(delimiter);
+    if let Some(at) = find_subslice(body, &crlf_seq, from) {
+        return Some(at);
+    }
+    let mut lf_seq = Vec::with_capacity(1 + delimiter.len());
+    lf_seq.extend_from_slice(b"\n");
+    lf_seq.extend_from_slice(delimiter);
+    if let Some(at) = find_subslice(body, &lf_seq, from) {
+        return Some(at);
+    }
+    find_subslice(body, delimiter, from)
 }
 
 /// Read the header block ending in a blank line.
@@ -737,6 +748,9 @@ fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, String> {
 
     let mut out = Vec::with_capacity(chars.len() / 4 * 3);
     for chunk in chars.chunks(4) {
+        // The number of real data characters before any padding; this decides
+        // how many output bytes this chunk contributes.
+        let data_len = chunk.iter().take_while(|&&c| c != b'=').count();
         let mut n = 0u32;
         for (i, &c) in chunk.iter().enumerate() {
             let value = if c == b'=' {
@@ -747,10 +761,10 @@ fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, String> {
             n |= value << (18 - 6 * i);
         }
         out.push((n >> 16) as u8);
-        if chunk.len() > 2 {
+        if data_len >= 3 {
             out.push((n >> 8) as u8);
         }
-        if chunk.len() > 3 {
+        if data_len >= 4 {
             out.push(n as u8);
         }
     }
@@ -808,7 +822,7 @@ mod tests {
         for original in cases {
             let encoded = encode_for_test(original);
             let decoded = base64_decode(&encoded).unwrap();
-            assert_eq!(&decoded, original, "roundtrip failed for {original:?}");
+            assert_eq!(decoded.as_slice(), *original, "roundtrip failed for {original:?}");
         }
     }
 

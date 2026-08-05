@@ -20,6 +20,7 @@
 //! optional file-system watcher (via the `notify` crate) triggers hot reloads
 //! without an explicit scan.
 
+use crate::eligibility::EligibilityChecker;
 use crate::types::{
     rank_skills, SkillFilter, SkillKind, SkillLayer, SkillManifest, SkillMatch, SkillScope,
     SkillSpec, SkillVisibility,
@@ -596,6 +597,23 @@ impl SkillLoader {
         filter.apply(&all)
     }
 
+    /// Get skills matching filter criteria, additionally enforcing the
+    /// `eligible_only` flag with a shared eligibility checker.
+    pub fn get_skills_filtered_with(
+        &self,
+        filter: &SkillFilter,
+        checker: &EligibilityChecker,
+    ) -> Vec<SkillSpec> {
+        let all: Vec<SkillSpec> = self.skills.iter().map(|s| s.value().clone()).collect();
+        all.into_iter()
+            .filter(|s| {
+                filter.matches(s)
+                    && (!filter.eligible_only
+                        || checker.is_eligible(&s.requires).unwrap_or(false))
+            })
+            .collect()
+    }
+
     /// Get all meta-skills (kind = Meta or MetaSop).
     pub async fn get_meta_skills(&self) -> Vec<SkillSpec> {
         self.skills
@@ -1019,7 +1037,7 @@ pub fn manifest_to_spec(
     spec.steps = manifest.steps;
     spec.outputs = manifest.outputs;
     spec.raw_frontmatter = raw_frontmatter;
-    spec.source_path = Some(source_path.clone());
+    spec.source_path = Some(source_path.to_string_lossy().to_string());
     spec.body = body;
     spec.allowed_tools = manifest.allowed_tools;
     spec.disable_model_invocation = manifest.disable_model_invocation;
@@ -1257,8 +1275,8 @@ metadata:
         let dir = temp_dir("scan");
         write_skill(&dir, "alpha", "");
         write_skill(&dir, "beta", "kind: meta\n");
-        std::fs::create_dir_all(dir.join("nested/sub")).unwrap();
-        write_skill(&dir.join("nested/sub"), "gamma", "");
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        write_skill(&dir.join("nested"), "gamma", "");
 
         let loader = SkillLoader::new();
         loader.register_layer_dir(SkillLayer::Personal, dir.clone());
@@ -1357,30 +1375,35 @@ metadata:
         let rt = tokio::runtime::Runtime::new().unwrap();
         let loader = SkillLoader::new();
         rt.block_on(async {
-            let mut needs_env = SkillSpec::new(
-                "needs-env".into(),
-                "NeedsEnv".into(),
+            let mut needs_binary = SkillSpec::new(
+                "needs-binary".into(),
+                "NeedsBinary".into(),
                 "d".into(),
                 SkillLayer::Bundled,
             );
-            needs_env.requires = SkillRequires {
-                env_vars: Some(vec!["OPENAI_API_KEY".to_string()]),
+            needs_binary.requires = SkillRequires {
+                binaries: Some(vec!["definitely-not-a-real-binary-xyz".to_string()]),
                 ..SkillRequires::default()
             };
             loader
                 .register_skills(vec![
                     SkillSpec::new("plain".into(), "Plain".into(), "d".into(), SkillLayer::Bundled),
-                    needs_env,
+                    needs_binary,
                 ])
                 .await;
             let filter = SkillFilter {
                 eligible_only: true,
                 ..SkillFilter::default()
             };
-            // Without eligibility evaluation wired, eligible_only is advisory;
-            // both specs are returned. The real gating happens in eligibility.rs.
+            // Without a checker, eligible_only is advisory and both are kept.
             let hits = loader.get_skills_filtered(&filter);
             assert_eq!(hits.len(), 2);
+
+            // With a checker, the skill requiring a missing binary is dropped.
+            let checker = crate::eligibility::EligibilityChecker::new();
+            let hits = loader.get_skills_filtered_with(&filter, &checker);
+            assert_eq!(hits.len(), 1);
+            assert_eq!(hits[0].id, "plain");
         });
     }
 

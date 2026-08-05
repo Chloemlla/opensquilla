@@ -380,12 +380,7 @@ impl TerminalChannel {
             info!("Terminal channel started, reading stdin...");
             loop {
                 let n = match stdin.read(&mut buf).await {
-                    Ok(0) => {
-                        if incoming_tx.send(make_incoming(&channel_id, &user_name, "[eof]".to_string())).is_err() {
-                            break;
-                        }
-                        break;
-                    }
+                    Ok(0) => break,
                     Ok(n) => n,
                     Err(e) => {
                         warn!("Terminal stdin error: {e}");

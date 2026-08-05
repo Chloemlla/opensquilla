@@ -30,8 +30,8 @@ pub use macos::MacOsSandbox;
 pub use network::{IpRange, NetworkConfig, NetworkMode, NetworkProxy, ProxyAuditEntry, ProxyHandle};
 pub use noop::NoopSandbox;
 pub use policy::{
-    AuditEntry, FilesystemPolicy, NetworkPolicy, OperationClass, PolicyValidationError,
-    ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult,
+    classify_operation, AuditEntry, FilesystemPolicy, NetworkPolicy, OperationClass,
+    PolicyValidationError, ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult,
 };
 pub use stale_output_cache::{CacheEntry, NullStaleOutputCache, StaleOutputCache};
 pub use windows::WindowsSandbox;
@@ -81,13 +81,8 @@ pub trait Sandbox: Send + Sync {
 /// Return the platform-appropriate sandbox backend as a boxed trait object.
 ///
 /// This is the primary entry point for callers that do not care about the
-/// concrete platform type:
-///
-/// ```
-/// let mut sb = opensquilla_sandbox::default_sandbox();
-/// let policy = opensquilla_sandbox::SandboxPolicy::default();
-/// let _ = sb.execute("echo", &["hi"], &policy).await;
-/// ```
+/// concrete platform type; the returned object dispatches to the Linux,
+/// macOS, Windows or noop backend based on the compile target.
 pub fn default_sandbox() -> Box<dyn Sandbox> {
     #[cfg(target_os = "linux")]
     {

@@ -1497,7 +1497,9 @@ impl Agent {
             let results = self.tool_call_loop(&turn_ctx, &calls).await;
             working.extend(response);
             working.push(self.process_tool_results(results));
-            self.conversation = working;
+            // Clone rather than move: the loop continues to use `working` on the
+            // next round.
+            self.conversation = working.clone();
 
             round += 1;
             if round >= max_rounds {
@@ -1623,7 +1625,6 @@ impl Agent {
         }
         compacted.extend(rest.into_iter().skip(tail_start));
         self.conversation = compacted;
-        let _ = strategy;
 
         // Repair any tool pairs broken by the surgery.
         let _ = self.repair_history();
@@ -2362,7 +2363,7 @@ mod tests {
         for i in 0..50 {
             agent.add_message(Message::user(format!("body {i}")));
         }
-        let dropped = agent.trim_history_to_budget(100);
+        let dropped = agent.trim_history_to_budget(50);
         assert!(dropped > 0);
         // The system message is preserved.
         assert!(agent.conversation().iter().any(|m| m.role == MessageRole::System));

@@ -22,7 +22,6 @@ use async_trait::async_trait;
 use opensquilla_core::error::{Error, Result};
 use opensquilla_core::events::StreamEvent;
 use opensquilla_core::types::{Message, MessageRole, Usage};
-use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, instrument, warn};
@@ -654,8 +653,7 @@ mod tests {
                 backoff_ms: 1,
                 retry_transient_only: false,
             });
-        let report = ProviderCallReport::default();
-        let mut report = report;
+        let mut report = ProviderCallReport::default();
         let result = stage
             .generate_with_retries(&failing, &[Message::user("hi")], &mut report)
             .await;
@@ -676,8 +674,7 @@ mod tests {
                 backoff_ms: 1,
                 retry_transient_only: false,
             });
-        let report = ProviderCallReport::default();
-        let mut report = report;
+        let mut report = ProviderCallReport::default();
         let result = stage
             .generate_with_retries(&failing, &[Message::user("hi")], &mut report)
             .await;
@@ -695,8 +692,7 @@ mod tests {
                 backoff_ms: 1,
                 retry_transient_only: true,
             });
-        let report = ProviderCallReport::default();
-        let mut report = report;
+        let mut report = ProviderCallReport::default();
         let result = stage
             .generate_with_retries(&failing, &[Message::user("hi")], &mut report)
             .await;

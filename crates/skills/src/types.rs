@@ -729,28 +729,28 @@ pub struct SkillStep {
     #[serde(default)]
     pub when: Option<String>,
     /// Dependencies: step IDs that must complete before this one
-    #[serde(default)]
+    #[serde(default, alias = "depends-on", alias = "dependencies")]
     pub depends_on: Option<Vec<String>>,
     /// Maximum retries
-    #[serde(default)]
+    #[serde(default, alias = "max-retries")]
     pub max_retries: Option<u32>,
     /// Timeout in seconds
-    #[serde(default)]
+    #[serde(default, alias = "timeout-secs", alias = "timeout")]
     pub timeout_secs: Option<u64>,
     /// Output routing
     #[serde(default)]
     pub output: Option<StepOutput>,
     /// Per-step arguments (Jinja-rendered against inputs + outputs).
-    #[serde(default)]
+    #[serde(default, alias = "with-args", alias = "args")]
     pub with_args: HashMap<String, serde_json::Value>,
     /// Arguments passed verbatim to the named tool for `tool_call` steps.
-    #[serde(default)]
+    #[serde(default, alias = "tool-args")]
     pub tool_args: HashMap<String, serde_json::Value>,
     /// Closed set of valid labels for `llm_classify` steps.
-    #[serde(default)]
+    #[serde(default, alias = "output-choices", alias = "choices")]
     pub output_choices: Vec<String>,
     /// Backoff base in milliseconds between retries (doubles each attempt).
-    #[serde(default)]
+    #[serde(default, alias = "retry-backoff-ms")]
     pub retry_backoff_ms: Option<u64>,
     /// Priority hint for the scheduler (higher runs first among ready steps).
     #[serde(default)]
@@ -856,13 +856,13 @@ pub struct SkillMetadata {
     #[serde(default)]
     pub temperature: Option<f64>,
     /// Tool names the skill may use.
-    #[serde(default)]
+    #[serde(default, alias = "allowed-tools")]
     pub allowed_tools: Vec<String>,
     /// Whether the operator must sign off on the skill's actions.
-    #[serde(default)]
+    #[serde(default, alias = "require-sign-off", alias = "require_sign_off")]
     pub require_sign_off: bool,
     /// Unknown metadata keys are preserved verbatim.
-    #[serde(flatten)]
+    #[serde(default, flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
 
@@ -920,10 +920,10 @@ pub struct SkillManifest {
     #[serde(default)]
     pub metadata: Option<SkillMetadata>,
     /// Allowed tools.
-    #[serde(default)]
+    #[serde(default, alias = "allowed-tools")]
     pub allowed_tools: Vec<String>,
     /// Whether the model may invoke this skill directly.
-    #[serde(default)]
+    #[serde(default, alias = "disable-model-invocation", alias = "disable_model_invocation")]
     pub disable_model_invocation: bool,
     /// Meta-skill DAG steps.
     #[serde(default)]
@@ -944,7 +944,7 @@ pub struct SkillManifest {
     #[serde(default)]
     pub changelog: Vec<SkillChange>,
     /// Anything else in the frontmatter is preserved verbatim.
-    #[serde(flatten)]
+    #[serde(default, flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
 
@@ -1026,10 +1026,10 @@ pub struct SkillSpec {
     #[serde(default)]
     pub metadata: Option<SkillMetadata>,
     /// Allowed tools.
-    #[serde(default)]
+    #[serde(default, alias = "allowed-tools")]
     pub allowed_tools: Vec<String>,
     /// Whether the model may invoke this skill directly.
-    #[serde(default)]
+    #[serde(default, alias = "disable-model-invocation")]
     pub disable_model_invocation: bool,
     /// Named contexts.
     #[serde(default)]
