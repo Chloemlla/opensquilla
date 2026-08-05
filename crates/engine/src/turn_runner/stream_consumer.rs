@@ -80,7 +80,8 @@ impl BufferedToolCall {
 
     /// Convert into a concrete [`ToolCall`] when the input parses.
     pub fn into_tool_call(self) -> Option<ToolCall> {
-        Some(ToolCall::new(self.id, self.name, self.parsed_input()?))
+        let input = self.parsed_input()?;
+        Some(ToolCall::new(self.id, self.name, input))
     }
 }
 

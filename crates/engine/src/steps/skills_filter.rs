@@ -185,7 +185,7 @@ impl SkillsFilterStep {
     pub fn render_prompt(&self, pinned: &[&SkillSpec], filtered: &[&SkillSpec]) -> String {
         let mut out = String::from("<available_skills>\n");
         let mut budget = self.config.max_skills_prompt_chars;
-        let mut push_skill = |out: &mut String, budget: &mut usize, s: &SkillSpec| -> bool {
+        let push_skill = |out: &mut String, budget: &mut usize, s: &SkillSpec| -> bool {
             let entry = format!("<name>{}</name>\n{}", s.name, s.description);
             let cost = entry.len();
             if *budget < cost && !out.is_empty() {
@@ -332,7 +332,7 @@ mod tests {
     fn sample_catalog() -> Vec<SkillSpec> {
         vec![
             SkillSpec::always("always-a", "always-a"),
-            SkillSpec::new("git", "git").with_requires(vec!["git_exec"]),
+            SkillSpec::new("git", "git").with_requires(vec!["git_exec".into()]),
             SkillSpec::new("meta-flow", "meta-flow"),
             SkillSpec {
                 id: "needs-missing".into(),

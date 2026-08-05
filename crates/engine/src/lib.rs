@@ -71,22 +71,6 @@ pub use agent::{
     GitOperation, GitResult, RecoveryAction, TurnContext, TurnGenerator, TurnOutcome, UsageEvent,
     UsageStats,
 };
-#[cfg(feature = "tools")]
-pub use agent::ToolDispatchExecutor;
-pub use pipeline::{PipelineContext, PipelineStep, StepAction};
-pub use stages::{
-    BootstrapStage, CompactionStage, FinalizerStage, HarnessStage, InputStage, ProviderStage,
-    Stage, StageContext, StageError, StageOutcome, StageOutput, StreamStage,
-};
-pub use hooks::{CompactionHook, ToolHook, TurnHook};
-pub use usage::UsageTracker;
-pub use context::{ContextBuilder, ContextFragment};
-pub use turn_control::{StopReason, TurnControl, TurnControlError};
-pub use history::{MessageFingerprint, RepairOutcome};
-pub use thinking::ReasoningSupport;
-pub use subagent::{SubAgentHandle, SubAgentManager, SubAgentSpec};
-pub use commands::{Command, CommandCategory, CommandRegistry, ExecutionKind, Surface};
-pub use runtime_recovery::{RecoveryAction, RecoveryInput, RoundStatus};
 pub use session_lock::{SessionLockGuard, SessionLockSet, with_session_lock};
 pub use compaction_control::{CompactionDecision, CompactionInput, CompactionStrategy};
 pub use pricing::{ModelPricing, ModelPrice, PricingCache, PricingResult};

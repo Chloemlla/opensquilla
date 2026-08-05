@@ -21,12 +21,13 @@ use crate::stages::{Stage, StageContext, StageError, StageOutput};
 use async_trait::async_trait;
 use opensquilla_core::error::Result;
 use opensquilla_core::types::{ContentBlock, Message, MessageRole};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument};
 
 /// Input mode for the turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
     /// A normal human user message.
+    #[default]
     User,
     /// An internal scheduler/system event, not a human user.
     SystemEvent,
@@ -400,28 +401,34 @@ impl Stage for InputStage {
             .map(|m| m.text_content())
             .unwrap_or_default();
 
-        let mut injection_detected = false;
-        let mut injection_severity: Option<String> = None;
-        let mut injection_pattern: Option<String> = None;
-
         #[cfg(feature = "safety")]
-        if let Some(result) = self.detect_injection(&input_text) {
-            injection_detected = true;
-            injection_severity = Some(format!("{:?}", result.severity));
-            injection_pattern = result.pattern.clone();
-            warn!(
+        let (injection_detected, injection_severity, injection_pattern) = if let Some(result) =
+            self.detect_injection(&input_text)
+        {
+            tracing::warn!(
                 turn_id = %ctx.turn_id,
                 severity = ?result.severity,
                 pattern = ?result.pattern,
                 "input stage: prompt-injection pattern detected"
             );
-        }
+            (
+                true,
+                Some(format!("{:?}", result.severity)),
+                result.pattern.clone(),
+            )
+        } else {
+            (false, None, None)
+        };
+
+        #[cfg(not(feature = "safety"))]
+        let (injection_detected, injection_severity, injection_pattern) = (false, None, None);
 
         // Detect slash commands.
         let commands = self.detect_commands(&input_text);
 
         ctx.messages = self.prepare_messages(ctx.messages.clone(), mode);
 
+        let command_count = commands.len();
         let report = InputReport {
             mode,
             sanitized,
@@ -439,7 +446,7 @@ impl Stage for InputStage {
             mode = ?mode,
             sanitized = sanitized,
             injection_detected = injection_detected,
-            commands = commands.len(),
+            commands = command_count,
             "input stage complete"
         );
 
@@ -566,8 +573,8 @@ mod tests {
     async fn test_execute_runs_end_to_end() {
         let stage = InputStage::new(100);
         let mut ctx = context(vec![Message::user("hello world")]);
-        let gen = MockGenerator;
-        let out = stage.execute(&mut ctx, &gen).await.unwrap();
+        let generator = MockGenerator;
+        let out = stage.execute(&mut ctx, &generator).await.unwrap();
         assert!(matches!(out, StageOutput::Continue));
         let report = stage.last_report().unwrap();
         assert_eq!(report.mode, InputMode::User);

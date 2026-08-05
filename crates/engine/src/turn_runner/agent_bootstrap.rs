@@ -387,8 +387,8 @@ mod tests {
             tool_round: 0,
             max_tool_rounds: 10,
         };
-        let gen = MockGenerator;
-        let out = stage.execute(&mut ctx, &gen).await.unwrap();
+        let generator = MockGenerator;
+        let out = stage.execute(&mut ctx, &generator).await.unwrap();
         assert!(matches!(out, StageOutput::Continue));
         assert!(ctx.messages.iter().any(|m| m.role == MessageRole::System));
         assert_eq!(ctx.max_tool_rounds, 10);
@@ -407,8 +407,8 @@ mod tests {
             tool_round: 0,
             max_tool_rounds: 10,
         };
-        let gen = MockGenerator;
-        let out = stage.execute(&mut ctx, &gen).await.unwrap();
+        let generator = MockGenerator;
+        let out = stage.execute(&mut ctx, &generator).await.unwrap();
         match out {
             StageOutput::Error(e) => assert_eq!(e.code.as_deref(), Some("NO_SYSTEM_PROMPT")),
             _ => panic!("expected error"),

@@ -437,8 +437,8 @@ mod tests {
     async fn test_execute_produces_outcome() {
         let stage = FinalizerStage::new();
         let mut ctx = context();
-        let gen = MockGenerator;
-        let out = stage.execute(&mut ctx, &gen).await.unwrap();
+        let generator = MockGenerator;
+        let out = stage.execute(&mut ctx, &generator).await.unwrap();
         match out {
             StageOutput::Output(outcome) => {
                 assert!(outcome.success);

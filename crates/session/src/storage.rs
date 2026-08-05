@@ -1109,7 +1109,8 @@ impl SessionStorage {
             })
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         for r in model_rows {
-            let (model, prompt_tokens, completion_tokens, cost_nanodollars, calls) = r?;
+            let (model, prompt_tokens, completion_tokens, cost_nanodollars, calls) =
+                r.map_err(|e| CoreError::Storage(e.to_string()))?;
             by_model.insert(
                 model,
                 crate::usage_ledger::ModelUsage {
@@ -2354,7 +2355,7 @@ impl SessionStorage {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         let ids = stmt
             .query_map(params![tag], |row| {
-                Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default()
+                Ok(Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default())
             })
             .map_err(|e| CoreError::Storage(e.to_string()))?
             .filter_map(|r| r.ok())

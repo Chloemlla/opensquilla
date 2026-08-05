@@ -414,7 +414,7 @@ impl TurnRunner {
             self.tool_executor.as_ref().map(|e| e.as_ref() as &dyn ToolExecutor);
 
         loop {
-            // Emit generation start for each provider round.
+            // Emit generatoreration start for each provider round.
             debug!(
                 turn_id = %stage_ctx.turn_id,
                 tool_round = stage_ctx.tool_round,
@@ -1178,12 +1178,12 @@ mod tests {
     #[tokio::test]
     async fn test_standalone_runs_stage_chain() {
         let runner = TurnRunner::from_config(&config_with_system());
-        let gen = MockGenerator {
+        let generator = MockGenerator {
             model: "test-model".into(),
             provider: "test-provider".into(),
         };
         let outcome = runner
-            .run_standalone(vec![Message::user("hello")], &gen)
+            .run_standalone(vec![Message::user("hello")], &generator)
             .await
             .unwrap();
         assert!(matches!(outcome, TurnOutcome::Complete { .. }));
@@ -1216,12 +1216,12 @@ mod tests {
                 },
             ))
             .build();
-        let gen = MockGenerator {
+        let generator = MockGenerator {
             model: "test-model".into(),
             provider: "test-provider".into(),
         };
         let outcome = runner
-            .run_with_pipeline(vec![Message::user("hello")], &gen)
+            .run_with_pipeline(vec![Message::user("hello")], &generator)
             .await
             .unwrap();
         assert!(matches!(outcome, TurnOutcome::Complete { .. }));
@@ -1241,12 +1241,12 @@ mod tests {
                 },
             ))
             .build();
-        let gen = MockGenerator {
+        let generator = MockGenerator {
             model: "m".into(),
             provider: "p".into(),
         };
         let outcome = runner
-            .run_with_pipeline(vec![Message::user("hello")], &gen)
+            .run_with_pipeline(vec![Message::user("hello")], &generator)
             .await
             .unwrap();
         assert!(matches!(

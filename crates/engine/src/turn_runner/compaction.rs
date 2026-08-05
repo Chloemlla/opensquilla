@@ -245,7 +245,7 @@ impl CompactionStage {
         }
 
         let mut compacted = self.apply(&messages, strategy);
-        let after = compacted.len();
+        let _after = compacted.len();
 
         // Repair the tool-call pairing so the provider never sees an orphaned
         // tool_result after the surgery drops its tool_use.

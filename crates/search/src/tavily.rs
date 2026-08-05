@@ -1,7 +1,7 @@
 use opensquilla_core::config::Config;
 use tracing::{debug, info, warn};
 
-use crate::types::{SearchError, SearchProvider, SearchRequest, SearchResponse, SearchResult, SearchOptions};
+use crate::types::{SearchError, SearchProvider, SearchRequest, SearchResponse, SearchResult};
 
 /// Tavily Search API adapter.
 pub struct TavilySearch {
@@ -114,7 +114,7 @@ impl SearchProvider for TavilySearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
     {
         Box::pin(self.search_web(request))
     }

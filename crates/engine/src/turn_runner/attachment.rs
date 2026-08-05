@@ -533,7 +533,7 @@ fn truncate_chars(text: &str, max: usize) -> &str {
 fn detect_mime_type(extension: &Option<String>, bytes: &[u8]) -> String {
     let by_magic = match_magic(bytes);
     if !by_magic.is_empty() {
-        return by_magic;
+        return by_magic.into();
     }
     match extension.as_deref() {
         Some("png") => "image/png".into(),
@@ -600,11 +600,10 @@ fn parse_multipart_inner(body: &[u8], boundary: &str) -> Option<Vec<MultipartFie
     let crlf: &[u8] = b"\r\n";
 
     let mut fields = Vec::new();
-    let mut cursor = 0usize;
 
     // Find the first delimiter.
     let first = find_subslice(body, delimiter_bytes, 0)?;
-    cursor = first + delimiter_bytes.len();
+    let mut cursor = first + delimiter_bytes.len();
 
     loop {
         // After a delimiter, the line is either `--` (final) or CRLF.

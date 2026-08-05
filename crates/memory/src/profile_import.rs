@@ -240,9 +240,10 @@ impl ProfileDetector {
                 continue;
             }
             if std::path::Path::new(&p).exists() {
+                let config_type = detect_config_type(&p);
                 out.push(DetectedProfile {
                     path: p,
-                    config_type: detect_config_type(&p),
+                    config_type,
                 });
             }
         }
@@ -340,12 +341,19 @@ impl ProfileImporter {
                     "Invalid JSON in {}: {}",
                     path, e
                 )))?,
-            "yaml" => serde_yaml::from_str::<serde_yaml::Value>(&content)
-                .map_err(|e| opensquilla_core::error::CoreError::Config(format!(
-                    "Invalid YAML in {}: {}",
-                    path, e
-                )))?
-                .into(),
+            "yaml" => {
+                let value: serde_yaml::Value = serde_yaml::from_str(&content)
+                    .map_err(|e| opensquilla_core::error::CoreError::Config(format!(
+                        "Invalid YAML in {}: {}",
+                        path, e
+                    )))?;
+                serde_json::to_value(value).map_err(|e| {
+                    opensquilla_core::error::CoreError::Config(format!(
+                        "YAML not serializable to JSON in {}: {}",
+                        path, e
+                    ))
+                })?
+            }
             "toml" => {
                 let value: toml::Value = toml::from_str(&content)
                     .map_err(|e| opensquilla_core::error::CoreError::Config(format!(
@@ -828,7 +836,7 @@ fn collect_nested_strings(
 /// Recursively collect scalar values from a parsed config into extracted memories.
 fn collect_scalars(
     value: &serde_json::Value,
-    _path: &str,
+    path: &str,
     prefix: &str,
     out: &mut Vec<ExtractedMemory>,
 ) {

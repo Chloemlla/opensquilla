@@ -1,0 +1,37 @@
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Zlib",
+    "0BSD",
+]
+
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "deny"
+notice = "warn"
+
+[advisories.ignore]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+deny = []
+skip = [
+    # reqwest 0.12 and 0.13 coexist due to Tauri vs direct usage
+    { name = "reqwest", version = "0.12" },
+    { name = "reqwest", version = "0.13" },
+    # getrandom 0.1 and 0.3 coexist from transitive deps
+    { name = "getrandom", version = "0.1" },
+    { name = "getrandom", version = "0.3" },
+    # time 0.3 from chrono vs 0.1 from old deps
+    { name = "time", version = "0.3" },
+]
+skip-tree = []

@@ -1,6 +1,6 @@
-use tracing::{debug, info, warn};
+use tracing::debug;
 
-use crate::types::{SearchError, SearchProvider, SearchRequest, SearchResponse, SearchResult, SearchOptions};
+use crate::types::{SearchError, SearchProvider, SearchRequest, SearchResponse, SearchResult};
 
 /// DuckDuckGo search adapter (uses the HTML-based instant answer API).
 pub struct DuckDuckGoSearch {
@@ -106,7 +106,7 @@ impl SearchProvider for DuckDuckGoSearch {
     fn search(
         &self,
         request: &SearchRequest,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>
     {
         Box::pin(self.search_web(request))
     }

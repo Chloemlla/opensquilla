@@ -103,18 +103,18 @@ impl ModelSelectStep {
     /// `provider_name`, `routed_tier`, and `model_source` metadata.
     pub fn resolve(&self, ctx: &mut PipelineContext) -> ModelSelectOutcome {
         // 1. Explicit per-turn override.
-        if let Some(model) = ctx.get_metadata("model") {
+        if let Some(model) = ctx.get_metadata("model").cloned() {
             let provider = ctx
                 .get_metadata("provider_name")
                 .cloned()
                 .filter(|p| !p.is_empty())
                 .unwrap_or_else(|| self.config.default_provider.clone());
             debug!(model = %model, provider = %provider, "model selected via override");
-            ctx.set_metadata("resolved_model", model);
+            ctx.set_metadata("resolved_model", &model);
             ctx.set_metadata("provider_name", &provider);
             ctx.set_metadata("model_source", "override");
             return ModelSelectOutcome {
-                model: model.clone(),
+                model,
                 provider,
                 routed_tier: None,
                 source: "override".to_string(),
