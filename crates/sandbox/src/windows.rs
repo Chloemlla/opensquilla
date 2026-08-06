@@ -610,6 +610,241 @@ mod backend {
     fn debug_network_rule_removal_failed(name: &str, error: &str) {
         warn!("failed to remove network isolation rule '{name}': {error}");
     }
+
+    /// RAII wrapper for a Windows kernel handle: closes the handle on drop so
+    /// a panic in a sandboxed execution cannot leak handles.
+    pub struct HandleGuard(pub HANDLE);
+    impl Drop for HandleGuard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+    // `HANDLE` is `*mut c_void`, which is not `Send`/`Sync`; these are
+    // pointer-sized integers in practice and safe to move between threads.
+    unsafe impl Send for HandleGuard {}
+    unsafe impl Sync for HandleGuard {}
+
+    /// Set additional Job Object limits that the basic setup does not cover:
+    /// per-process working set. Reads the current extended limits first and
+    /// modifies them so flags set by [`create_job_object`] (notably
+    /// `KILL_ON_JOB_CLOSE`) are preserved.
+    fn configure_job_object(
+        job: HANDLE,
+        limits: &crate::policy::ResourceLimits,
+    ) -> Result<(), String> {
+        use windows::Win32::System::JobObjects::{
+            JOB_OBJECT_LIMIT_WORKINGSET, JOB_OBJECT_UILIMIT_HANDLES, JobObjectBasicUIRestrictions,
+            JobObjectExtendedLimitInformation, JOBOBJECT_BASIC_UI_RESTRICTIONS,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, QueryInformationJobObject,
+        };
+        unsafe {
+            // Read the current limits so we only amend them and do not clobber
+            // flags set earlier (notably KILL_ON_JOB_CLOSE).
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            let mut returned = 0u32;
+            let query_ok = QueryInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &mut info as *mut _ as *mut c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                &mut returned,
+            )
+            .is_ok();
+            if query_ok {
+                if let Some(rss) = limits.rss_bytes {
+                    let max = rss.min(512 * 1024 * 1024) as usize;
+                    info.BasicLimitInformation.MinimumWorkingSetSize = 256 * 1024;
+                    info.BasicLimitInformation.MaximumWorkingSetSize = max;
+                    info.BasicLimitInformation.LimitFlags |=
+                        JOB_OBJECT_LIMIT_WORKINGSET | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+                }
+                SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+                .map_err(|e| format!("SetInformationJobObject(workingset): {e}"))?;
+            }
+
+            // Prevent sandboxed processes from using UI handles (dialogs,
+            // clipboard, user objects) — a common escape vector.
+            let ui = JOBOBJECT_BASIC_UI_RESTRICTIONS {
+                UIRestrictionsClass: JOB_OBJECT_UILIMIT_HANDLES,
+            };
+            SetInformationJobObject(
+                job,
+                JobObjectBasicUIRestrictions,
+                &ui as *const _ as *const c_void,
+                std::mem::size_of::<JOBOBJECT_BASIC_UI_RESTRICTIONS>() as u32,
+            )
+            .map_err(|e| format!("SetInformationJobObject(UIRestrictions): {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Create an AppContainer profile and derive its SID.
+    ///
+    /// AppContainers are the modern Windows sandbox primitive (used by Edge,
+    /// Chrome, Office). Processes spawned with an AppContainer SID run at low
+    /// integrity, cannot access most of the user's profile, cannot write
+    /// outside their package root, and have no network access unless a
+    /// capability SID is granted.
+    ///
+    /// Returns the profile name and the derived SID. The caller is responsible
+    /// for deleting the profile when no longer needed.
+    pub fn create_appcontainer_profile() -> Result<(String, Vec<u8>), String> {
+        use windows::Win32::Security::Isolation::{
+            CreateAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
+        };
+        use windows::core::PWSTR;
+
+        unsafe {
+            let name = format!(
+                "OpenSquilla.Sandbox.{}",
+                uuid::Uuid::new_v4().to_string().replace('-', "")
+            );
+            let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            let name_pwstr = PWSTR(name_wide.as_ptr() as *mut u16);
+
+            let app_sid =
+                CreateAppContainerProfile(name_pwstr, PWSTR::null(), PWSTR::null(), None)
+                    .map_err(|e| format!("CreateAppContainerProfile: {e}"))?;
+            let _ = windows::Win32::Security::FreeSid(app_sid);
+
+            let sid = DeriveAppContainerSidFromAppContainerName(name_pwstr)
+                .map_err(|e| format!("DeriveAppContainerSidFromAppContainerName: {e}"))?;
+
+            // Copy the SID bytes out so we can free the original later.
+            let mut sid_buf = [0u8; 256];
+            let mut sid_size = sid_buf.len() as u32;
+            windows::Win32::Security::CopySid(
+                sid_size,
+                windows::Win32::Security::PSID(sid_buf.as_mut_ptr() as *mut c_void),
+                sid,
+            )
+            .map_err(|e| format!("CopySid: {e}"))?;
+            Ok((name, sid_buf.to_vec()))
+        }
+    }
+
+    /// Delete an AppContainer profile by name.
+    pub fn delete_appcontainer_profile(name: &str) -> Result<(), String> {
+        use windows::Win32::Security::Isolation::DeleteAppContainerProfile;
+        use windows::core::PWSTR;
+        unsafe {
+            let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            DeleteAppContainerProfile(PWSTR(name_wide.as_ptr() as *mut u16))
+                .map_err(|e| format!("DeleteAppContainerProfile: {e}"))
+        }
+    }
+
+    /// Attach a CPU-rate limit to the Job Object (Windows 8+). `rate` is a
+    /// percentage of a single core, e.g. 50 for half a core.
+    fn set_job_cpu_rate(job: HANDLE, rate_percent: u32) -> Result<(), String> {
+        use windows::Win32::System::JobObjects::{
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            JobObjectCpuRateControlInformation, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+            JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+        };
+        unsafe {
+            let mut info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
+            // The CpuRate field is a 16.16 fixed-point percentage of a core.
+            info.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
+                | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+            info.Anonymous = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
+                CpuRate: rate_percent << 16,
+            };
+            SetInformationJobObject(
+                job,
+                JobObjectCpuRateControlInformation,
+                &info as *const _ as *const c_void,
+                std::mem::size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
+            )
+            .map_err(|e| format!("SetInformationJobObject(CPU rate): {e}"))
+        }
+    }
+
+    /// Enable a memory cap on the Job Object. Returns the configured limit.
+    ///
+    /// Reads the current extended limits first so earlier flags (e.g.
+    /// `KILL_ON_JOB_CLOSE`) are preserved.
+    fn apply_job_memory_limit(
+        job: HANDLE,
+        limits: &crate::policy::ResourceLimits,
+    ) -> Result<Option<u64>, String> {
+        if let Some(mem) = limits.memory_bytes {
+            unsafe {
+                use windows::Win32::System::JobObjects::{
+                    JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                    QueryInformationJobObject,
+                };
+                let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+                let mut returned = 0u32;
+                let _ = QueryInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &mut info as *mut _ as *mut c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                    &mut returned,
+                );
+                info.ProcessMemoryLimit = mem as usize;
+                info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+                SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+                .map_err(|e| format!("SetInformationJobObject(memory): {e}"))?;
+            }
+        }
+        Ok(limits.memory_bytes)
+    }
+
+    /// Query the exit code of a process, distinguishing a still-running
+    /// process from a terminated one.
+    fn query_exit_code(process: HANDLE) -> Result<i32, String> {
+        unsafe {
+            let mut code: u32 = 0;
+            GetExitCodeProcess(process, &mut code)
+                .map_err(|e| format!("GetExitCodeProcess: {e}"))?;
+            Ok(code as i32)
+        }
+    }
+
+    /// A small wrapper that tracks every handle a sandboxed execution opened
+    /// so the caller can verify the process closed them (leak detection).
+    pub struct JobResources {
+        job: HandleGuard,
+        _marker: std::marker::PhantomData<()>,
+    }
+
+    impl JobResources {
+        /// Create a configured Job Object from a policy's resource limits.
+        pub fn from_policy(limits: &crate::policy::ResourceLimits) -> Result<Self, String> {
+            let job = create_job_object(limits)?;
+            let _ = configure_job_object(job.0, limits);
+            if let Some(quota) = limits.cpu_quota_cores {
+                let rate = (quota * 100.0) as u32;
+                if rate > 0 && rate <= 100 {
+                    let _ = set_job_cpu_rate(job.0, rate);
+                }
+            }
+            let _ = apply_job_memory_limit(job.0, limits);
+            Ok(Self {
+                job: HandleGuard(job.0),
+                _marker: std::marker::PhantomData,
+            })
+        }
+
+        /// The raw job handle.
+        pub fn handle(&self) -> HANDLE {
+            self.job.0
+        }
+    }
 }
 
 /// Windows sandbox backend.

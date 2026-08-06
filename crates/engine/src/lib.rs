@@ -64,12 +64,29 @@ pub mod compaction_control;
 /// Model pricing cache and cost calculation.
 pub mod pricing;
 
+/// Context window management: system prompt assembly, token budget allocation.
+pub mod context_builder;
+
+/// Tool execution lifecycle: dispatch, timeout, result capture, retry.
+pub mod tool_executor;
+
+/// Token/cost budget enforcement, rate limiting, and circuit breakers.
+pub mod budget;
+
+/// Crash recovery, state reconstruction, and partial turn replay.
+pub mod recovery;
+
 pub use agent::{
-    Agent, AgentConfig, AgentError, AgentRegistry, AgentState, BackgroundProcess, CommandResult,
-    GitOperation, GitResult, RecoveryAction, TurnContext, TurnGenerator, TurnOutcome, UsageEvent,
-    UsageStats,
+    Agent, AgentBuilder, AgentConfig, AgentError, AgentRegistry, AgentSnapshot, AgentState,
+    BackgroundProcess, BackgroundProcessManager, CommandResult, ErrorCategory,
+    ErrorClassification, GitOpResult, GitOperation, GitResult, PlaceholderGenerator,
+    RecoveryAction, ToolCallBudget, ToolCallDecision, ToolRoundResult, TurnContext,
+    TurnGenerator, TurnOutcome, TurnPhase, UsageEvent, UsageStats, classify_error,
 };
-pub use compaction_control::{CompactionDecision, CompactionInput, CompactionStrategy};
+pub use compaction_control::{
+    CompactionDecision, CompactionInput, CompactionPlan, CompactionStrategy,
+    average_message_tokens, plan_compaction, should_compact_before_generation,
+};
 pub use pricing::{ModelPrice, ModelPricing, PricingCache, PricingResult};
 /// Re-export the most commonly used types at the crate root for convenience.
 pub use runtime::{AgentRuntime, TurnRunner, TurnRunnerBuilder};
@@ -91,10 +108,12 @@ pub use steps::{
 pub use turn_runner::{
     AgentBootstrapStage, AgentIdentity, AttachmentCleanupHook, AttachmentConfig,
     AttachmentFileMetadata, AttachmentLoadOutcome, AttachmentStage, BootstrapSettings,
-    BufferedToolCall, CompactionOutcome, CostRollup, FinalizeReport, HarnessConfig, InputConfig,
-    InputMode, InputReport, MultipartField, PipelineConfig, ProviderCallReport,
-    ProviderRetryPolicy, RateLimiter, RoutingConfig, StageMetrics, StreamConfig,
-    StreamConsumerStage, StreamConsumerState, TokenBudget, TurnAttachment, TurnRunnerConfig,
+    BufferedToolCall, CompactionOutcome, CostRollup, FailoverOrder, FinalizeReport, HarnessConfig,
+    InputConfig, InputMode, InputReport, MultipartField, PipelineConfig, ProviderCallReport,
+    ProviderFailoverPolicy, ProviderOutcomeTracker, ProviderRetryPolicy, RateLimiter, RoutingConfig,
+    StageMetric, StageMetrics, StageMetricsCollector, StageRollup, StageTimer, StreamConfig,
+    StreamConsumerStage, StreamConsumerState, TurnAttachment, TurnErrorAggregator,
+    TurnErrorBoundary, TurnErrorKind, TurnRunnerConfig,
 };
 
 // Routing policy engine, calibration, health ledger, and model selector.
@@ -102,4 +121,31 @@ pub use routing::{
     BudgetGateInput, BudgetGateResult, CalibrationState, ModelSelector, PolicyInputs, PolicyResult,
     ProviderConfig, ProviderFailureKind, ProviderHealthLedger, RouterConfig, RoutingDecision,
     RoutingPolicyEngine, SelectorConfig, TierCapability, TierConfig,
+};
+
+// Context window management and system prompt assembly.
+pub use context_builder::{
+    CharTokenEstimator, ContextPromptBuilder, ContextWindowManager, FragmentBuilder,
+    SystemPromptAssembler, SystemPromptSection, TokenBudgetAllocation, TokenEstimator,
+};
+
+// Tool execution lifecycle.
+pub use tool_executor::{
+    ToolConcurrencyLimiter, ToolErrorKind, ToolExecutionConfig, ToolExecutionEngine,
+    ToolExecutionEngineBuilder, ToolExecutionHook, ToolExecutionOutcome, ToolExecutorRegistry,
+    ToolPermission, ToolPermissionRule, ToolPolicy, ToolResultCache, ToolOutputStream,
+};
+
+// Budget enforcement, rate limiting, and circuit breakers.
+pub use budget::{
+    BudgetCheckResult, BudgetConfig, BudgetManager, CostBudget, ModelRateLimiter,
+    RequestAdmission, SessionBudgetReport, SessionBudgetTracker,
+};
+
+// Crash recovery, state reconstruction, and replay.
+pub use recovery::{
+    CrashRecovery, CrashRecoveryConfig, CrashSnapshot, RecoveryStatus, ReconstructedState,
+    ReplayCheckpoint, ReplayDecision, ReplayOutcome, StateReconstructor, TransactionOutcome,
+    TransactionStatus, TransactionalUpdate, TurnReplay,
+    transactional::{TransactionJournal, TransactionJournalEntry},
 };

@@ -178,6 +178,121 @@ impl SkillsFilterStep {
             .collect()
     }
 
+    /// Compute an eligibility score for a skill against the current turn.
+    ///
+    /// The score aggregates several signals:
+    /// * whether the skill's required tools are all present (+0.4),
+    /// * whether the skill is a meta skill and meta is enabled (+0.2),
+    /// * whether the skill's id/name appears in the pipeline metadata
+    ///   (`meta_match`, `requested_skill`) (+0.3),
+    /// * whether the skill is pinned (`always`) (+0.1).
+    ///
+    /// Returns a score in `[0, 1]`.
+    pub fn eligibility_score(&self, skill: &SkillSpec, ctx: &PipelineContext) -> f64 {
+        let mut score = 0.0f64;
+        let available = &self.available_tools;
+
+        // Required tools present.
+        if skill.requires_tools.is_empty()
+            || skill.requires_tools.iter().all(|t| available.contains(t))
+        {
+            score += 0.4;
+        }
+
+        // Meta skills score higher when meta is enabled.
+        let meta_enabled = ctx.get_metadata("meta_skill_enabled").is_some();
+        if skill.kind == "meta" && meta_enabled {
+            score += 0.2;
+        }
+
+        // A meta-match or explicit request boosts the skill.
+        if let Some(match_name) = ctx.get_metadata("meta_match") {
+            if skill.name == *match_name || skill.id == *match_name {
+                score += 0.3;
+            }
+        }
+        if let Some(requested) = ctx.get_metadata("requested_skill") {
+            if skill.name == *requested || skill.id == *requested {
+                score += 0.3;
+            }
+        }
+
+        // Pinned (always) skills get a small boost.
+        if skill.always {
+            score += 0.1;
+        }
+
+        score.min(1.0)
+    }
+
+    /// Rank a skill catalog by eligibility score against the current context.
+    ///
+    /// Returns the skills sorted by descending eligibility score.
+    pub fn rank_by_eligibility(
+        &self,
+        skills: &[SkillSpec],
+        ctx: &PipelineContext,
+    ) -> Vec<SkillSpec> {
+        let mut scored: Vec<(f64, SkillSpec)> = skills
+            .iter()
+            .map(|s| (self.eligibility_score(s, ctx), s.clone()))
+            .collect();
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.into_iter().map(|(_, s)| s).collect()
+    }
+
+    /// Determine whether a skill is eligible for the current turn.
+    ///
+    /// This is a stronger check than the deterministic gate: it also verifies
+    /// the skill is not disabled by pipeline metadata (`disabled_skill_ids`)
+    /// and that meta skills are gated behind the meta-enable flag.
+    pub fn is_eligible(&self, skill: &SkillSpec, ctx: &PipelineContext) -> bool {
+        // Operator-disabled skills.
+        if self.config.disabled.iter().any(|d| d == &skill.id || d == &skill.name) {
+            return false;
+        }
+        // Turn-scoped disabled skills.
+        if let Some(disabled) = ctx.get_metadata("disabled_skill_ids") {
+            if disabled.split(',').any(|d| d.trim() == skill.id || d.trim() == skill.name) {
+                return false;
+            }
+        }
+        // Meta skills require the meta flag.
+        if skill.kind == "meta" && ctx.get_metadata("meta_skill_enabled").is_none() {
+            return false;
+        }
+        // Model invocation gating.
+        if skill.disable_model_invocation {
+            return false;
+        }
+        // Required tools.
+        if !skill.requires_tools.is_empty()
+            && !skill.requires_tools.iter().all(|t| self.available_tools.contains(t))
+        {
+            return false;
+        }
+        // Fallback redundancy.
+        if skill.fallback_for_toolsets
+            .iter()
+            .any(|t| self.available_tools.contains(t))
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Filter a catalog to only eligible skills for the turn.
+    pub fn eligible_skills<'a>(
+        &self,
+        skills: &'a [SkillSpec],
+        ctx: &PipelineContext,
+    ) -> Vec<&'a SkillSpec> {
+        skills.iter().filter(|s| self.is_eligible(s, ctx)).collect()
+    }
+
     /// Build the `<available_skills>` prompt block from the final skill list.
     ///
     /// Renders each skill as `<name>description</name>`, truncated to

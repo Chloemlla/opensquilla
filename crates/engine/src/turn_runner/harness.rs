@@ -352,6 +352,201 @@ impl Stage for HarnessStage {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Turn error boundary classification
+// ---------------------------------------------------------------------------
+
+/// The classification of a turn error for recovery decisions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnErrorKind {
+    /// The error is transient and the turn should be retried.
+    Transient,
+    /// The error is a provider-side failure.
+    Provider,
+    /// The error is a tool execution failure.
+    Tool,
+    /// The error is an input validation failure.
+    InvalidInput,
+    /// The error is a rate-limit / quota failure.
+    RateLimited,
+    /// The error is a context-overflow failure.
+    ContextOverflow,
+    /// The error is an internal engine failure.
+    Internal,
+    /// The error is unknown.
+    Unknown,
+}
+
+impl TurnErrorKind {
+    /// Whether the error warrants a retry.
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            TurnErrorKind::Transient | TurnErrorKind::RateLimited | TurnErrorKind::Provider
+        )
+    }
+
+    /// The canonical telemetry token.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TurnErrorKind::Transient => "transient",
+            TurnErrorKind::Provider => "provider",
+            TurnErrorKind::Tool => "tool",
+            TurnErrorKind::InvalidInput => "invalid_input",
+            TurnErrorKind::RateLimited => "rate_limited",
+            TurnErrorKind::ContextOverflow => "context_overflow",
+            TurnErrorKind::Internal => "internal",
+            TurnErrorKind::Unknown => "unknown",
+        }
+    }
+
+    /// Classify an error message + stage error code into a kind.
+    pub fn classify(message: &str, code: Option<&str>) -> Self {
+        let code_lower = code.map(|c| c.to_ascii_lowercase()).unwrap_or_default();
+        match code_lower.as_str() {
+            "empty_messages" | "message_limit" | "invalid_input" => TurnErrorKind::InvalidInput,
+            "context_overflow" | "context_too_large" => TurnErrorKind::ContextOverflow,
+            "rate_limited" | "rate_limit" => TurnErrorKind::RateLimited,
+            "provider_call_failed" | "provider_error" => TurnErrorKind::Provider,
+            "tool_error" | "tool_execution_failed" => TurnErrorKind::Tool,
+            "session_lock_timeout" | "stage_timeout" => TurnErrorKind::Transient,
+            _ => {
+                let lower = message.to_ascii_lowercase();
+                if lower.contains("rate") || lower.contains("429") {
+                    TurnErrorKind::RateLimited
+                } else if lower.contains("timeout") || lower.contains("timed out") {
+                    TurnErrorKind::Transient
+                } else if lower.contains("context") || lower.contains("token")
+                    || lower.contains("window")
+                {
+                    TurnErrorKind::ContextOverflow
+                } else if lower.contains("provider") || lower.contains("502")
+                    || lower.contains("503") || lower.contains("overloaded")
+                {
+                    TurnErrorKind::Provider
+                } else if lower.contains("tool") {
+                    TurnErrorKind::Tool
+                } else if lower.contains("invalid") || lower.contains("missing") {
+                    TurnErrorKind::InvalidInput
+                } else {
+                    TurnErrorKind::Internal
+                }
+            }
+        }
+    }
+}
+
+/// The turn error boundary: a pure classification of a [`StageError`] into a
+/// [`TurnErrorKind`] plus the recovery hint.
+#[derive(Debug, Clone)]
+pub struct TurnErrorBoundary {
+    /// The classified error kind.
+    pub kind: TurnErrorKind,
+    /// Whether the turn should be retried.
+    pub retryable: bool,
+    /// The suggested retry delay in milliseconds.
+    pub retry_delay_ms: u64,
+    /// The error message.
+    pub message: String,
+    /// The stage that produced the error.
+    pub stage: String,
+}
+
+impl TurnErrorBoundary {
+    /// Classify a [`StageError`].
+    pub fn from_stage_error(error: &StageError) -> Self {
+        let kind = TurnErrorKind::classify(&error.message, error.code.as_deref());
+        let retry_delay_ms = match kind {
+            TurnErrorKind::RateLimited => 1_000,
+            TurnErrorKind::Transient => 500,
+            TurnErrorKind::Provider => 250,
+            _ => 0,
+        };
+        Self {
+            retryable: kind.is_retryable(),
+            retry_delay_ms,
+            message: error.message.clone(),
+            stage: error.stage.clone(),
+            kind,
+        }
+    }
+
+    /// Classify from a raw message + optional code.
+    pub fn from_message(message: &str, code: Option<&str>) -> Self {
+        let kind = TurnErrorKind::classify(message, code);
+        let retryable = kind.is_retryable();
+        Self {
+            kind,
+            retryable,
+            retry_delay_ms: 0,
+            message: message.to_string(),
+            stage: "unknown".to_string(),
+        }
+    }
+}
+
+/// A helper that aggregates stage errors across a turn for recovery.
+#[derive(Debug, Clone, Default)]
+pub struct TurnErrorAggregator {
+    /// The errors recorded in this turn.
+    errors: Vec<TurnErrorBoundary>,
+}
+
+impl TurnErrorAggregator {
+    /// Create a new empty aggregator.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a stage error.
+    pub fn record(&mut self, error: StageError) {
+        let boundary = TurnErrorBoundary::from_stage_error(&error);
+        self.errors.push(boundary);
+    }
+
+    /// The recorded errors.
+    pub fn errors(&self) -> &[TurnErrorBoundary] {
+        &self.errors
+    }
+
+    /// The most severe error kind, if any.
+    pub fn most_severe(&self) -> Option<TurnErrorKind> {
+        self.errors
+            .iter()
+            .map(|e| e.kind.clone())
+            .max_by_key(|k| severity_rank(k))
+    }
+
+    /// Whether any recorded error is retryable.
+    pub fn has_retryable(&self) -> bool {
+        self.errors.iter().any(|e| e.retryable)
+    }
+
+    /// The number of recorded errors.
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    /// True when no errors were recorded.
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
+
+/// The severity ordering of error kinds (higher = more severe).
+fn severity_rank(kind: &TurnErrorKind) -> u8 {
+    match kind {
+        TurnErrorKind::InvalidInput => 0,
+        TurnErrorKind::Transient => 1,
+        TurnErrorKind::Tool => 2,
+        TurnErrorKind::RateLimited => 3,
+        TurnErrorKind::Provider => 4,
+        TurnErrorKind::ContextOverflow => 5,
+        TurnErrorKind::Internal => 6,
+        TurnErrorKind::Unknown => 7,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

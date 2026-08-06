@@ -623,7 +623,8 @@ mod tests {
     fn normalise() {
         assert_eq!(normalise_path("/a/b/./c/../d/"), "/a/b/d");
         assert_eq!(normalise_path("/a//b///c"), "/a/b/c");
-        assert_eq!(normalise_path("a/b/../.."), "");
+        // A relative path that resolves to the current directory becomes ".".
+        assert_eq!(normalise_path("a/b/../.."), ".");
     }
 
     #[test]

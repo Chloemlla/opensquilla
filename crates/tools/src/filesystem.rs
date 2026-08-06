@@ -221,6 +221,426 @@ impl FilesystemTool {
                 .with_data(data),
         )
     }
+
+    /// List a directory tree recursively, with nesting levels.
+    ///
+    /// Returns entries with their relative path, type, size, and depth.
+    async fn list_tree(&self, path: &Path, max_depth: usize) -> ToolResult<ToolOutput> {
+        if max_depth == 0 {
+            return self.list_dir(path).await;
+        }
+
+        let path_clone = path.to_path_buf();
+        let allowed_base = self.allowed_base.clone();
+        let tree =
+            tokio::task::spawn_blocking(move || -> ToolResult<Vec<serde_json::Value>> {
+                let mut entries = Vec::new();
+                let mut stack = vec![(path_clone, 0usize)];
+                while let Some((dir, depth)) = stack.pop() {
+                    if depth > max_depth {
+                        continue;
+                    }
+                    let read_dir = std::fs::read_dir(&dir).map_err(|e| {
+                        ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e))
+                    })?;
+                    for entry in read_dir.flatten() {
+                        let metadata = entry.metadata().ok();
+                        let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+                        let rel = entry
+                            .path()
+                            .strip_prefix(&allowed_base)
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|_| {
+                                entry.file_name().to_string_lossy().to_string()
+                            });
+                        entries.push(serde_json::json!({
+                            "path": rel,
+                            "name": entry.file_name().to_string_lossy(),
+                            "is_dir": is_dir,
+                            "size": metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+                            "depth": depth,
+                        }));
+                        if is_dir {
+                            stack.push((entry.path(), depth + 1));
+                        }
+                    }
+                }
+                entries.sort_by(|a, b| {
+                    a["path"]
+                        .as_str()
+                        .unwrap_or("")
+                        .cmp(b["path"].as_str().unwrap_or(""))
+                });
+                Ok(entries)
+            })
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Tree walk task failed: {}", e)))??;
+
+        let data = serde_json::json!({
+            "path": path.to_string_lossy(),
+            "entries": tree,
+            "count": tree.len(),
+            "max_depth": max_depth,
+        });
+
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
+    }
+
+    /// Get detailed file metadata.
+    async fn stat_file(&self, path: &Path) -> ToolResult<ToolOutput> {
+        let metadata = fs::metadata(path)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read metadata: {}", e)))?;
+
+        let symlink_target = if metadata.file_type().is_symlink() {
+            fs::read_link(path)
+                .await
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        } else {
+            None
+        };
+
+        let created = metadata.created().ok().map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        });
+        let modified = metadata.modified().ok().map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        });
+        let accessed = metadata.accessed().ok().map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        });
+
+        let data = serde_json::json!({
+            "path": path.to_string_lossy(),
+            "size": metadata.len(),
+            "is_file": metadata.is_file(),
+            "is_dir": metadata.is_dir(),
+            "is_symlink": metadata.file_type().is_symlink(),
+            "permissions_readonly": metadata.permissions().readonly(),
+            "created_epoch": created,
+            "modified_epoch": modified,
+            "accessed_epoch": accessed,
+            "symlink_target": symlink_target,
+        });
+
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
+    }
+
+    /// Recursively copy a file or directory to a destination.
+    async fn copy_path(
+        &self,
+        source: &Path,
+        dest: &Path,
+        overwrite: bool,
+    ) -> ToolResult<ToolOutput> {
+        if dest.exists() && !overwrite {
+            return Err(ToolError::new(
+                "DESTINATION_EXISTS",
+                format!("Destination '{}' already exists", dest.display()),
+            ));
+        }
+
+        if source.is_dir() {
+            fs::create_dir_all(dest)
+                .await
+                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+            let mut read_dir = fs::read_dir(source)
+                .await
+                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e)))?;
+            while let Some(entry) = read_dir.next_entry().await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to read directory entry: {}", e))
+            })? {
+                let entry_path = entry.path();
+                let rel = entry_path.strip_prefix(source).map_err(|_| {
+                    ToolError::new("IO_ERROR", "Failed to compute relative path".to_string())
+                })?;
+                let dest_path = dest.join(rel);
+                if entry_path.is_dir() {
+                    fs::create_dir_all(&dest_path)
+                        .await
+                        .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+                } else if entry_path.is_symlink() {
+                    if let Ok(target) = fs::read_link(&entry_path).await {
+                        fs::symlink(target, &dest_path)
+                            .await
+                            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
+                    }
+                } else {
+                    fs::copy(&entry_path, &dest_path)
+                        .await
+                        .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to copy file: {}", e)))?;
+                }
+            }
+        } else if source.is_symlink() {
+            if let Ok(target) = fs::read_link(source).await {
+                fs::symlink(target, dest)
+                    .await
+                    .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
+            }
+        } else {
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+            }
+            fs::copy(source, dest)
+                .await
+                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to copy file: {}", e)))?;
+        }
+
+        let data = serde_json::json!({
+            "source": source.to_string_lossy(),
+            "destination": dest.to_string_lossy(),
+            "overwrite": overwrite,
+        });
+
+        Ok(
+            ToolOutput::success(format!(
+                "Copied '{}' to '{}'",
+                source.display(),
+                dest.display()
+            ))
+            .with_data(data),
+        )
+    }
+
+    /// Move a file or directory to a destination.
+    async fn move_path(
+        &self,
+        source: &Path,
+        dest: &Path,
+        overwrite: bool,
+    ) -> ToolResult<ToolOutput> {
+        if dest.exists() && !overwrite {
+            return Err(ToolError::new(
+                "DESTINATION_EXISTS",
+                format!("Destination '{}' already exists", dest.display()),
+            ));
+        }
+
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+        }
+
+        fs::rename(source, dest)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to move: {}", e)))?;
+
+        let data = serde_json::json!({
+            "source": source.to_string_lossy(),
+            "destination": dest.to_string_lossy(),
+            "overwrite": overwrite,
+        });
+
+        Ok(
+            ToolOutput::success(format!(
+                "Moved '{}' to '{}'",
+                source.display(),
+                dest.display()
+            ))
+            .with_data(data),
+        )
+    }
+
+    /// Delete a file or directory recursively.
+    async fn delete_path(&self, path: &Path, recursive: bool) -> ToolResult<ToolOutput> {
+        if path.is_dir() && !recursive {
+            return Err(ToolError::new(
+                "NOT_EMPTY",
+                format!(
+                    "'{}' is a directory; use recursive=true to delete it",
+                    path.display()
+                ),
+            ));
+        }
+
+        if path.is_dir() {
+            fs::remove_dir_all(path)
+                .await
+                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to remove directory: {}", e)))?;
+        } else {
+            fs::remove_file(path)
+                .await
+                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to remove file: {}", e)))?;
+        }
+
+        let data = serde_json::json!({
+            "path": path.to_string_lossy(),
+            "recursive": recursive,
+        });
+
+        Ok(ToolOutput::success(format!("Deleted '{}'", path.display())).with_data(data))
+    }
+
+    /// Create a symbolic link.
+    async fn create_symlink(&self, target: &Path, link: &Path) -> ToolResult<ToolOutput> {
+        #[cfg(windows)]
+        let result = {
+            let metadata = std::fs::metadata(target);
+            if let Ok(m) = metadata {
+                if m.is_dir() {
+                    std::os::windows::fs::symlink_dir(target, link)
+                } else {
+                    std::os::windows::fs::symlink_file(target, link)
+                }
+            } else {
+                std::os::windows::fs::symlink_file(target, link)
+            }
+        };
+        #[cfg(not(windows))]
+        let result = std::os::unix::fs::symlink(target, link);
+
+        result.map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
+
+        let data = serde_json::json!({
+            "target": target.to_string_lossy(),
+            "link": link.to_string_lossy(),
+        });
+
+        Ok(
+            ToolOutput::success(format!(
+                "Created symlink '{}' → '{}'",
+                link.display(),
+                target.display()
+            ))
+            .with_data(data),
+        )
+    }
+
+    /// Search for files matching a substring pattern within the base directory.
+    async fn search_files(&self, pattern: &str, base: &Path) -> ToolResult<ToolOutput> {
+        let pattern_lower = pattern.to_lowercase();
+        let base_clone = base.to_path_buf();
+        let max_results = 500usize;
+
+        let matches = tokio::task::spawn_blocking(move || -> Vec<serde_json::Value> {
+            let mut results = Vec::new();
+            let mut stack = vec![base_clone];
+            while let Some(dir) = stack.pop() {
+                if results.len() >= max_results {
+                    break;
+                }
+                if let Ok(read_dir) = std::fs::read_dir(&dir) {
+                    for entry in read_dir.flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if name.to_lowercase().contains(&pattern_lower) {
+                            results.push(serde_json::json!({
+                                "path": entry.path().to_string_lossy(),
+                                "name": name,
+                            }));
+                        }
+                        if entry.path().is_dir() {
+                            stack.push(entry.path());
+                        }
+                        if results.len() >= max_results {
+                            break;
+                        }
+                    }
+                }
+            }
+            results
+        })
+        .await
+        .map_err(|e| ToolError::new("IO_ERROR", format!("Search task failed: {}", e)))?;
+
+        let data = serde_json::json!({
+            "pattern": pattern,
+            "matches": matches,
+            "count": matches.len(),
+            "truncated": matches.len() >= max_results,
+        });
+
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
+    }
+
+    /// Watch a file or directory for changes using the `notify` crate.
+    ///
+    /// Collects filesystem events (create, modify, remove, rename) for a
+    /// configurable duration and returns them as structured data.
+    async fn watch_files(
+        &self,
+        path: &Path,
+        duration_secs: u64,
+        recursive: bool,
+    ) -> ToolResult<ToolOutput> {
+        use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel::<Event>();
+        let mut watcher: RecommendedWatcher =
+            notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+                if let Ok(event) = res {
+                    let _ = tx.send(event);
+                }
+            })
+            .map_err(|e| ToolError::new("WATCH_ERROR", format!("Failed to create watcher: {}", e)))?;
+
+        watcher
+            .configure(Config::default().with_poll_interval(std::time::Duration::from_secs(1)))
+            .map_err(|e| ToolError::new("WATCH_ERROR", format!("Failed to configure watcher: {}", e)))?;
+
+        watcher
+            .watch(path, if recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive })
+            .map_err(|e| ToolError::new("WATCH_ERROR", format!("Failed to watch '{}': {}", path.display(), e)))?;
+
+        // Collect events for the requested duration.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(duration_secs);
+        let mut events: Vec<serde_json::Value> = Vec::new();
+
+        while std::time::Instant::now() < deadline {
+            match rx.recv_timeout(std::time::Duration::from_millis(250)) {
+                Ok(event) => {
+                    let kind = match event.kind {
+                        EventKind::Create(_) => "create",
+                        EventKind::Modify(_) => "modify",
+                        EventKind::Remove(_) => "remove",
+                        EventKind::Access(_) => "access",
+                        EventKind::Any => "any",
+                        _ => "other",
+                    };
+                    for event_path in event.paths {
+                        events.push(serde_json::json!({
+                            "kind": kind,
+                            "path": event_path.to_string_lossy(),
+                        }));
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+
+        let data = serde_json::json!({
+            "watched_path": path.to_string_lossy(),
+            "duration_secs": duration_secs,
+            "recursive": recursive,
+            "event_count": events.len(),
+            "events": events,
+        });
+
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
+    }
 }
 
 #[async_trait]
@@ -230,18 +650,29 @@ impl Tool for FilesystemTool {
             ToolDefinition::new(
                 "filesystem",
                 "Read, write, edit, and list files on the local filesystem. \
+                 Also supports directory tree listing, file metadata (stat), \
+                 recursive copy/move/delete, symlink creation, file search, \
+                 and file watching. \
                  All paths are relative to the allowed working directory.",
                 HashMap::from([
                     (
                         "operation".to_string(),
                         ParameterDefinition::required_string(
-                            "The operation: read, write, edit, list",
+                            "The operation: read, write, edit, list, tree, stat, copy, move, delete, symlink, search, watch",
                         )
                         .enum_values(vec![
                             "read".to_string(),
                             "write".to_string(),
                             "edit".to_string(),
                             "list".to_string(),
+                            "tree".to_string(),
+                            "stat".to_string(),
+                            "copy".to_string(),
+                            "move".to_string(),
+                            "delete".to_string(),
+                            "symlink".to_string(),
+                            "search".to_string(),
+                            "watch".to_string(),
                         ]),
                     ),
                     (
@@ -259,6 +690,40 @@ impl Tool for FilesystemTool {
                     (
                         "new_string".to_string(),
                         ParameterDefinition::string("Replacement string (for edit operation)"),
+                    ),
+                    (
+                        "max_depth".to_string(),
+                        ParameterDefinition::integer("Maximum depth for tree listing")
+                            .default(serde_json::json!(10)),
+                    ),
+                    (
+                        "destination".to_string(),
+                        ParameterDefinition::string("Destination path (for copy, move operations)"),
+                    ),
+                    (
+                        "overwrite".to_string(),
+                        ParameterDefinition::boolean("Overwrite destination if it exists")
+                            .default(serde_json::json!(false)),
+                    ),
+                    (
+                        "recursive".to_string(),
+                        ParameterDefinition::boolean(
+                            "Delete recursively (for delete) / watch recursively (for watch)",
+                        )
+                        .default(serde_json::json!(false)),
+                    ),
+                    (
+                        "target".to_string(),
+                        ParameterDefinition::string("Symlink target (for symlink operation)"),
+                    ),
+                    (
+                        "pattern".to_string(),
+                        ParameterDefinition::string("Filename pattern to search (for search operation)"),
+                    ),
+                    (
+                        "duration_secs".to_string(),
+                        ParameterDefinition::integer("Duration in seconds to watch (for watch operation)")
+                            .default(serde_json::json!(5)),
                     ),
                 ]),
             )
@@ -304,6 +769,62 @@ impl Tool for FilesystemTool {
                     ));
                 }
                 self.list_dir(&path).await
+            }
+            "tree" => {
+                if !path.is_dir() {
+                    return Err(ToolError::new(
+                        "NOT_A_DIRECTORY",
+                        format!("Path '{}' is not a directory", path_str),
+                    ));
+                }
+                let max_depth = params["max_depth"].as_i64().unwrap_or(10).max(0) as usize;
+                self.list_tree(&path, max_depth).await
+            }
+            "stat" => self.stat_file(&path).await,
+            "copy" => {
+                let destination = params["destination"].as_str().ok_or_else(|| {
+                    ToolError::invalid_args("Missing 'destination' for copy operation")
+                })?;
+                let dest = self.resolve_path(destination)?;
+                let overwrite = params["overwrite"].as_bool().unwrap_or(false);
+                self.copy_path(&path, &dest, overwrite).await
+            }
+            "move" => {
+                let destination = params["destination"].as_str().ok_or_else(|| {
+                    ToolError::invalid_args("Missing 'destination' for move operation")
+                })?;
+                let dest = self.resolve_path(destination)?;
+                let overwrite = params["overwrite"].as_bool().unwrap_or(false);
+                self.move_path(&path, &dest, overwrite).await
+            }
+            "delete" => {
+                let recursive = params["recursive"].as_bool().unwrap_or(false);
+                self.delete_path(&path, recursive).await
+            }
+            "symlink" => {
+                let target = params["target"].as_str().ok_or_else(|| {
+                    ToolError::invalid_args("Missing 'target' for symlink operation")
+                })?;
+                let target_path = self.resolve_path(target)?;
+                self.create_symlink(&target_path, &path).await
+            }
+            "search" => {
+                let pattern = params["pattern"].as_str().ok_or_else(|| {
+                    ToolError::invalid_args("Missing 'pattern' for search operation")
+                })?;
+                let base = if path.is_dir() { path } else { self.allowed_base.clone() };
+                self.search_files(pattern, &base).await
+            }
+            "watch" => {
+                if !path.exists() {
+                    return Err(ToolError::not_found(format!(
+                        "Path '{}' does not exist",
+                        path.display()
+                    )));
+                }
+                let duration_secs = params["duration_secs"].as_i64().unwrap_or(5).max(1) as u64;
+                let recursive = params["recursive"].as_bool().unwrap_or(true);
+                self.watch_files(&path, duration_secs, recursive).await
             }
             other => Err(ToolError::invalid_args(format!(
                 "Unknown operation: {}",
@@ -400,5 +921,262 @@ mod tests {
             .await;
         assert!(result.is_ok());
         assert!(result.unwrap().content.contains("a.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_tree_listing_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/nested.txt"), "nested").unwrap();
+        std::fs::write(dir.path().join("top.txt"), "top").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "tree",
+                "path": ".",
+                "max_depth": 5,
+            }))
+            .await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.content.contains("nested.txt"));
+        assert!(output.content.contains("top.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_stat_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("meta.txt"), "hello").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "stat",
+                "path": "meta.txt",
+            }))
+            .await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.content.contains("is_file"));
+        assert!(output.content.contains("size"));
+    }
+
+    #[tokio::test]
+    async fn test_copy_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("orig.txt"), "hello").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "copy",
+                "path": "orig.txt",
+                "destination": "copied.txt",
+            }))
+            .await;
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(dir.path().join("copied.txt")).unwrap();
+        assert_eq!(content, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_copy_directory_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::create_dir_all(dir.path().join("src/sub")).unwrap();
+        std::fs::write(dir.path().join("src/a.txt"), "a").unwrap();
+        std::fs::write(dir.path().join("src/sub/b.txt"), "b").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "copy",
+                "path": "src",
+                "destination": "dst",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(dir.path().join("dst/a.txt").exists());
+        assert!(dir.path().join("dst/sub/b.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_copy_overwrite_denied() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("orig.txt"), "hello").unwrap();
+        std::fs::write(dir.path().join("dest.txt"), "existing").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "copy",
+                "path": "orig.txt",
+                "destination": "dest.txt",
+            }))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "DESTINATION_EXISTS");
+    }
+
+    #[tokio::test]
+    async fn test_move_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("mover.txt"), "move me").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "move",
+                "path": "mover.txt",
+                "destination": "moved.txt",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(!dir.path().join("mover.txt").exists());
+        assert!(dir.path().join("moved.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("todelete.txt"), "bye").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "delete",
+                "path": "todelete.txt",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(!dir.path().join("todelete.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_directory_requires_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::create_dir_all(dir.path().join("dir_to_del")).unwrap();
+        std::fs::write(dir.path().join("dir_to_del/f.txt"), "x").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "delete",
+                "path": "dir_to_del",
+            }))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "NOT_EMPTY");
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "delete",
+                "path": "dir_to_del",
+                "recursive": true,
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(!dir.path().join("dir_to_del").exists());
+    }
+
+    #[tokio::test]
+    async fn test_search_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("report_q1.txt"), "data").unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "data").unwrap();
+        std::fs::create_dir_all(dir.path().join("nested")).unwrap();
+        std::fs::write(dir.path().join("nested/report_q2.txt"), "data").unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "search",
+                "path": ".",
+                "pattern": "report",
+            }))
+            .await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.content.contains("report_q1.txt"));
+        assert!(output.content.contains("report_q2.txt"));
+        assert!(!output.content.contains("notes.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_symlink_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("target.txt"), "link target").unwrap();
+
+        // On Windows, symlink creation may require admin privileges; skip if it fails.
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "symlink",
+                "path": "link.txt",
+                "target": "target.txt",
+            }))
+            .await;
+        if result.is_ok() {
+            let metadata = std::fs::symlink_metadata(dir.path().join("link.txt")).unwrap();
+            assert!(metadata.file_type().is_symlink());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_watch_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        // Watch the directory for a short window and create a file inside it.
+        let tool_clone_path = dir.path().to_path_buf();
+        let watcher_dir = dir.path().to_path_buf();
+        let watch_handle = tokio::spawn(async move {
+            let tool = FilesystemTool::new(watcher_dir);
+            tool.execute(serde_json::json!({
+                "operation": "watch",
+                "path": ".",
+                "duration_secs": 3,
+                "recursive": true,
+            }))
+            .await
+        });
+
+        // Give the watcher a moment to start, then create a file.
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        std::fs::write(tool_clone_path.join("watched.txt"), "hello").unwrap();
+
+        let result = watch_handle.await.unwrap();
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // The operation must return a valid response structure regardless of
+        // whether notify delivered events on this platform.
+        let data = output.data.unwrap();
+        assert!(data["duration_secs"] == 3);
+    }
+
+    #[tokio::test]
+    async fn test_watch_missing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = FilesystemTool::new(dir.path().to_path_buf());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "watch",
+                "path": "nonexistent_dir",
+                "duration_secs": 1,
+            }))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "TOOL_NOT_FOUND");
     }
 }

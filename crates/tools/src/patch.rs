@@ -386,15 +386,9 @@ fn reverse_diff(diffs: Vec<ParsedDiff>) -> Vec<ParsedDiff> {
                         HunkLine::Context(_) => {}
                     }
                 }
-                // Reorder so context/removal/addition ordering is preserved as
-                // much as possible: the parser expects removals before additions
-                // in the original; after swapping we should keep removals first
-                // so the re-application of the reversed patch matches correctly.
-                hunk.lines.sort_by_key(|l| match l {
-                    HunkLine::Context(_) => 0,
-                    HunkLine::Removal(_) => 1,
-                    HunkLine::Addition(_) => 2,
-                });
+                // Keep the line ordering intact: only the + / - signs are
+                // swapped, so applying the reversed patch to the post-patch
+                // content recovers the pre-patch content exactly.
             }
             diff
         })
@@ -594,95 +588,144 @@ fn lcs_table(a: &[String], b: &[String]) -> Vec<Vec<usize>> {
 /// Walk back through the LCS table to produce a list of merge lines that
 /// mark each line as common, ours-only, or theirs-only.
 fn build_merge_lines(base: &[String], ours: &[String], theirs: &[String]) -> Vec<MergeLine> {
-    // Merge base → ours and base → theirs separately, then walk the three
-    // sequences in lockstep using their LCS structure.
+    // Compute edit scripts (base → ours) and (base → theirs) from the LCS
+    // tables, then walk both in lockstep against the base to classify each
+    // line.
     let table_ours = lcs_table(base, ours);
     let table_theirs = lcs_table(base, theirs);
 
-    let mut result = Vec::new();
-    let mut bi = base.len();
-    let mut oi = ours.len();
-    let mut ti = theirs.len();
-
-    // We reconstruct from the end; collect then reverse at the end.
-    let mut reversed = Vec::new();
-
-    while bi > 0 || oi > 0 || ti > 0 {
-        let base_line = if bi > 0 { Some(&base[bi - 1]) } else { None };
-        let ours_line = if oi > 0 { Some(&ours[oi - 1]) } else { None };
-        let theirs_line = if ti > 0 { Some(&theirs[ti - 1]) } else { None };
-
-        if bi > 0
-            && oi > 0
-            && base_line == ours_line
-            && table_ours[bi][oi] == table_ours[bi - 1][oi - 1] + 1
-        {
-            // base line matched in ours. Check if it also matches theirs.
-            if ti > 0
-                && base_line == theirs_line
-                && table_theirs[bi][ti] == table_theirs[bi - 1][ti - 1] + 1
-            {
-                reversed.push(MergeLine {
-                    text: base_line.unwrap().clone(),
-                    side: MergeSide::Common,
-                });
-                bi -= 1;
-                oi -= 1;
-                ti -= 1;
-            } else {
-                // ours consumed a base line; theirs diverged here.
-                reversed.push(MergeLine {
-                    text: ours_line.unwrap().clone(),
-                    side: MergeSide::Ours,
-                });
-                oi -= 1;
-            }
-        } else if oi > 0
-            && (bi == 0
-                || table_ours[bi][oi] != table_ours[bi][oi - 1]
-                || table_ours[bi][oi] == table_ours[bi][oi - 1])
-        {
-            // ours-only line (insertion in ours)
-            if bi > 0 && table_ours[bi][oi] == table_ours[bi][oi - 1] {
-                reversed.push(MergeLine {
-                    text: ours_line.unwrap().clone(),
-                    side: MergeSide::Ours,
-                });
-                oi -= 1;
-            } else if ti > 0 && theirs_line == ours_line {
-                // Same insertion in both — treat as common.
-                reversed.push(MergeLine {
-                    text: ours_line.unwrap().clone(),
-                    side: MergeSide::Common,
-                });
-                oi -= 1;
-                ti -= 1;
-            } else {
-                reversed.push(MergeLine {
-                    text: ours_line.unwrap().clone(),
-                    side: MergeSide::Ours,
-                });
-                oi -= 1;
-            }
-        } else if ti > 0 {
-            reversed.push(MergeLine {
-                text: theirs_line.unwrap().clone(),
-                side: MergeSide::Theirs,
-            });
-            ti -= 1;
-        } else if bi > 0 {
-            reversed.push(MergeLine {
-                text: base_line.unwrap().clone(),
-                side: MergeSide::Common,
-            });
-            bi -= 1;
-        } else {
-            break;
-        }
+    // Each edit script is a sequence of operations over base indices.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Op {
+        /// Base line i is kept (maps to the given other-side line).
+        Keep,
+        /// The other side inserted a line between base lines.
+        Insert,
+        /// The other side deleted base line i.
+        Delete,
     }
 
-    reversed.reverse();
-    result = reversed;
+    fn edit_script(base: &[String], other: &[String], table: &[Vec<usize>]) -> Vec<Op> {
+        let mut ops = Vec::with_capacity(base.len() + other.len());
+        let mut bi = base.len();
+        let mut oi = other.len();
+        while bi > 0 || oi > 0 {
+            if bi > 0
+                && oi > 0
+                && base[bi - 1] == other[oi - 1]
+                && table[bi][oi] == table[bi - 1][oi - 1] + 1
+            {
+                ops.push(Op::Keep);
+                bi -= 1;
+                oi -= 1;
+            } else if oi > 0 && (bi == 0 || table[bi][oi - 1] >= table[bi - 1][oi]) {
+                ops.push(Op::Insert);
+                oi -= 1;
+            } else if bi > 0 {
+                ops.push(Op::Delete);
+                bi -= 1;
+            } else {
+                ops.push(Op::Insert);
+                oi -= 1;
+            }
+        }
+        ops.reverse();
+        ops
+    }
+
+    let ops_ours = edit_script(base, ours, &table_ours);
+    let ops_theirs = edit_script(base, theirs, &table_theirs);
+
+    // Running index into `ours` / `theirs`. A Keep consumes one line from
+    // both base and the other side; an Insert consumes one line from the
+    // other side only; a Delete consumes a base line only.
+    let mut oi = 0usize; // cursor into ops_ours
+    let mut ti = 0usize; // cursor into ops_theirs
+    let mut oi_side = 0usize; // cursor into `ours`
+    let mut ti_side = 0usize; // cursor into `theirs`
+    let mut base_idx = 0usize; // cursor into base
+
+    let mut result = Vec::new();
+
+    // Helper closures to drain insertions that precede the current base line.
+    let mut drain_ours = |result: &mut Vec<MergeLine>, ops: &[Op], oi: &mut usize, oi_side: &mut usize| {
+        while *oi < ops.len() && ops[*oi] == Op::Insert {
+            result.push(MergeLine {
+                text: ours[*oi_side].clone(),
+                side: MergeSide::Ours,
+            });
+            *oi += 1;
+            *oi_side += 1;
+        }
+    };
+    let mut drain_theirs = |result: &mut Vec<MergeLine>, ops: &[Op], ti: &mut usize, ti_side: &mut usize| {
+        while *ti < ops.len() && ops[*ti] == Op::Insert {
+            result.push(MergeLine {
+                text: theirs[*ti_side].clone(),
+                side: MergeSide::Theirs,
+            });
+            *ti += 1;
+            *ti_side += 1;
+        }
+    };
+
+    while base_idx < base.len() {
+        drain_ours(&mut result, &ops_ours, &mut oi, &mut oi_side);
+        drain_theirs(&mut result, &ops_theirs, &mut ti, &mut ti_side);
+
+        let ours_op = ops_ours.get(oi).copied().unwrap_or(Op::Delete);
+        let theirs_op = ops_theirs.get(ti).copied().unwrap_or(Op::Delete);
+
+        match (ours_op, theirs_op) {
+            (Op::Keep, Op::Keep) => {
+                result.push(MergeLine {
+                    text: base[base_idx].clone(),
+                    side: MergeSide::Common,
+                });
+                oi += 1;
+                ti += 1;
+                oi_side += 1;
+                ti_side += 1;
+            }
+            (Op::Delete, Op::Delete) => {
+                // Both sides deleted this base line — drop it.
+                oi += 1;
+                ti += 1;
+            }
+            (Op::Keep, Op::Delete) => {
+                // Ours kept this base line unchanged; theirs deleted it.
+                // Theirs is the side with a change, so apply theirs: drop the
+                // base line (and the identical line in ours), letting theirs'
+                // following Insert surface via the drain.
+                oi += 1;
+                ti += 1;
+                oi_side += 1;
+            }
+            (Op::Delete, Op::Keep) => {
+                // Ours deleted this base line; theirs kept it unchanged.
+                // Apply ours: drop the base line (and the identical line in
+                // theirs), letting ours' following Insert surface via the drain.
+                oi += 1;
+                ti += 1;
+                ti_side += 1;
+            }
+            (Op::Insert, _) | (_, Op::Insert) => {
+                // Unreachable after draining insertions; defensive fallback.
+                if oi < ops_ours.len() && ops_ours[oi] != Op::Delete {
+                    oi += 1;
+                    oi_side += 1;
+                } else {
+                    oi += 1;
+                }
+            }
+        }
+        base_idx += 1;
+    }
+
+    // Drain any trailing insertions.
+    drain_ours(&mut result, &ops_ours, &mut oi, &mut oi_side);
+    drain_theirs(&mut result, &ops_theirs, &mut ti, &mut ti_side);
+
     result
 }
 
@@ -1331,5 +1374,69 @@ mod tests {
         assert_eq!(regions[0].0, 2); // 1-based start line
         assert_eq!(regions[0].1, vec!["ours_line"]);
         assert_eq!(regions[0].2, vec!["theirs_line"]);
+    }
+
+    #[test]
+    fn test_three_way_merge_ours_changed_theirs_unchanged() {
+        // Ours modified a line; theirs is unchanged from base → clean, take ours.
+        let base = "line1\noriginal\nline3\n";
+        let ours = "line1\nmodified\nline3\n";
+        let theirs = "line1\noriginal\nline3\n";
+        let outcome = three_way_merge(base, ours, theirs);
+        match outcome {
+            MergeOutcome::Clean { content, .. } => {
+                assert!(content.contains("modified"));
+                assert!(!content.contains("original"));
+                assert!(!content.contains("<<<<<<<"));
+            }
+            MergeOutcome::Conflict { .. } => panic!("expected clean merge"),
+        }
+    }
+
+    #[test]
+    fn test_three_way_merge_theirs_changed_ours_unchanged() {
+        // Theirs modified a line; ours is unchanged from base → clean, take theirs.
+        let base = "line1\noriginal\nline3\n";
+        let ours = "line1\noriginal\nline3\n";
+        let theirs = "line1\nmodified\nline3\n";
+        let outcome = three_way_merge(base, ours, theirs);
+        match outcome {
+            MergeOutcome::Clean { content, .. } => {
+                assert!(content.contains("modified"));
+                assert!(!content.contains("original"));
+            }
+            MergeOutcome::Conflict { .. } => panic!("expected clean merge"),
+        }
+    }
+
+    #[test]
+    fn test_three_way_merge_same_change_both_sides() {
+        // Both sides made the same change → clean, no conflict.
+        let base = "line1\noriginal\nline3\n";
+        let ours = "line1\nchanged\nline3\n";
+        let theirs = "line1\nchanged\nline3\n";
+        let outcome = three_way_merge(base, ours, theirs);
+        match outcome {
+            MergeOutcome::Clean { content, .. } => {
+                assert!(content.contains("changed"));
+            }
+            MergeOutcome::Conflict { .. } => panic!("expected clean merge"),
+        }
+    }
+
+    #[test]
+    fn test_three_way_merge_insert_only_one_side() {
+        // Ours added a line; theirs unchanged → clean merge contains the line.
+        let base = "line1\nline2\n";
+        let ours = "line1\ninserted\nline2\n";
+        let theirs = "line1\nline2\n";
+        let outcome = three_way_merge(base, ours, theirs);
+        match outcome {
+            MergeOutcome::Clean { content, .. } => {
+                assert!(content.contains("inserted"));
+                assert!(!content.contains("<<<<<<<"));
+            }
+            MergeOutcome::Conflict { .. } => panic!("expected clean merge"),
+        }
     }
 }

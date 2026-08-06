@@ -27,5 +27,6 @@ pub use state_reconstruction::{
     ReconstructedState, StateReconstructor,
 };
 pub use transactional::{
-    TransactionalUpdate, TransactionOutcome, TransactionStatus,
+    TransactionJournal, TransactionJournalEntry, TransactionalUpdate, TransactionOutcome,
+    TransactionStatus,
 };

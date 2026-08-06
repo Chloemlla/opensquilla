@@ -1109,6 +1109,226 @@ impl MemoryStore {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(())
     }
+
+    // -----------------------------------------------------------------------
+    // FTS index management
+    // -----------------------------------------------------------------------
+
+    /// List every memory across all agents (used by the index manager for
+    /// reindexing and statistics). Ordered by agent then importance.
+    pub fn list_memories_by_agent_all(&self) -> CoreResult<Vec<MemoryEntry>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, agent_id, content, tags, created_at, updated_at, accessed_at,
+                 source, memory_type, importance, importance_score, access_count, metadata
+                 FROM memories ORDER BY agent_id, importance DESC",
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| memory_from_row(row))
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// A row of FTS index statistics.
+    pub fn query_fts_stats(&self) -> CoreResult<FtsStatsRow> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let rows: i64 = conn
+            .query_row("SELECT count(*) FROM memories_fts", [], |row| row.get(0))
+            .unwrap_or(0);
+        let size_bytes: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(length(content)), 0) FROM memories_fts",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        // Orphans: FTS rows whose rowid has no matching memory row.
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM memories_fts f
+                 WHERE NOT EXISTS (SELECT 1 FROM memories m WHERE m.rowid = f.rowid)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok(FtsStatsRow {
+            rows: rows as u64,
+            size_bytes: size_bytes as u64,
+            orphans: orphans as u64,
+        })
+    }
+
+    /// Count tracked indexed files.
+    pub fn count_files(&self) -> CoreResult<Option<u64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        match conn.query_row("SELECT count(*) FROM files", [], |row| {
+            row.get::<_, i64>(0)
+        }) {
+            Ok(n) => Ok(Some(n as u64)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Count indexed file chunks.
+    pub fn count_chunks(&self) -> CoreResult<Option<u64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        match conn.query_row("SELECT count(*) FROM chunks", [], |row| {
+            row.get::<_, i64>(0)
+        }) {
+            Ok(n) => Ok(Some(n as u64)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Re-insert a single memory's text into the FTS table.
+    ///
+    /// This is used by the index manager to repair a missing or stale FTS row
+    /// after a partial failure or manual table surgery. It removes any
+    /// existing index entry for the rowid first (the FTS5 special delete),
+    /// then inserts a fresh one.
+    pub fn reindex_memory(&self, entry: &MemoryEntry) -> CoreResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let rowid: Option<i64> = conn
+            .query_row(
+                "SELECT rowid FROM memories WHERE id = ?1",
+                params![entry.id.0.to_string()],
+                |row| row.get(0),
+            )
+            .ok();
+        let Some(rowid) = rowid else {
+            return Ok(());
+        };
+        // FTS5 external-content tables cannot use UPSERT; delete-then-insert.
+        conn.execute(
+            "INSERT INTO memories_fts(memories_fts, rowid, content, memory_type)
+             VALUES ('delete', ?1, '', '')",
+            params![rowid],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO memories_fts(rowid, content, memory_type) VALUES (?1, ?2, ?3)",
+            params![rowid, entry.content, entry.memory_type],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Remove FTS rows whose memory no longer exists. Returns the number of
+    /// rows deleted.
+    pub fn prune_fts_orphans(&self) -> CoreResult<u64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let orphan_rowids: Vec<i64> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT f.rowid FROM memories_fts f
+                     WHERE NOT EXISTS (SELECT 1 FROM memories m WHERE m.rowid = f.rowid)",
+                )
+                .map_err(|e| CoreError::Storage(e.to_string()))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, i64>(0))
+                .map_err(|e| CoreError::Storage(e.to_string()))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        let mut removed = 0u64;
+        for rowid in orphan_rowids {
+            conn.execute(
+                "INSERT INTO memories_fts(memories_fts, rowid, content, memory_type)
+                 VALUES ('delete', ?1, '', '')",
+                params![rowid],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+            removed += 1;
+        }
+        Ok(removed)
+    }
+
+    /// Low-level FTS repair: inject an index row for a raw rowid. Used to
+    /// simulate or repair external-content-table drift where a rowid exists in
+    /// the FTS index but not in the `memories` table (or vice versa). The
+    /// caller must be careful: this bypasses the normal triggers.
+    pub fn inject_fts_row(&self, rowid: i64, content: &str, memory_type: &str) -> CoreResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO memories_fts(memories_fts, rowid, content, memory_type)
+             VALUES ('delete', ?1, '', '')",
+            params![rowid],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO memories_fts(rowid, content, memory_type) VALUES (?1, ?2, ?3)",
+            params![rowid, content, memory_type],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Re-insert every chunk's content into the chunks_fts table. Returns the
+    /// number of chunks re-indexed.
+    pub fn reindex_chunks(&self) -> CoreResult<u64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let chunk_rows: Vec<(i64, String)> = {
+            let mut stmt = conn
+                .prepare("SELECT rowid, content FROM chunks")
+                .map_err(|e| CoreError::Storage(e.to_string()))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|e| CoreError::Storage(e.to_string()))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        let mut reindexed = 0u64;
+        for (rowid, content) in chunk_rows {
+            conn.execute(
+                "INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES ('delete', ?1, '')",
+                params![rowid],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+            conn.execute(
+                "INSERT INTO chunks_fts(rowid, content) VALUES (?1, ?2)",
+                params![rowid, content],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+            reindexed += 1;
+        }
+        Ok(reindexed)
+    }
+}
+
+/// Row-level statistics about the FTS index.
+#[derive(Debug, Clone, Default)]
+pub struct FtsStatsRow {
+    pub rows: u64,
+    pub size_bytes: u64,
+    pub orphans: u64,
 }
 
 fn memory_from_row(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {

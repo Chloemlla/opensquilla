@@ -22,7 +22,7 @@ use crate::table::{self, Color, KeyValue, Style};
 use crate::util;
 
 /// Onboarding subcommands.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, clap::Subcommand)]
 pub enum OnboardAction {
     /// Run the full interactive wizard.
     Run,
@@ -400,7 +400,8 @@ fn apply_provider_config(
         base_url: None,
         models: vec![model.to_string()],
         default_model: Some(model.to_string()),
-        ..Default::default()
+        max_retries: 3,
+        timeout_secs: 60,
     };
     config.providers.push(provider_config);
 }
@@ -463,19 +464,12 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).style_str(*self))
+        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
     }
 }
 
 impl BoldStr for String {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).style_str(self))
-    }
-}
-
-/// Extension to Style for rendering plain styled strings.
-impl Style {
-    fn style_str(self, s: &str) -> table::StyledString {
-        table::StyledString::new(s, self)
+        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(self))
     }
 }

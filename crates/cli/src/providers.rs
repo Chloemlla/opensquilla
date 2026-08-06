@@ -191,7 +191,8 @@ pub async fn add_provider(
         base_url,
         models,
         default_model,
-        ..Default::default()
+        max_retries: 3,
+        timeout_secs: 60,
     };
     config.providers.push(provider_config);
     config.save().context("Failed to save configuration")?;

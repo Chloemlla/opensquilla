@@ -33,7 +33,7 @@ use crate::table::{self, Alignment, Color, Column, KeyValue, Style, Table};
 use crate::util;
 
 /// Agent subcommands.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, clap::Subcommand)]
 pub enum AgentAction {
     /// Run an autonomous agent task.
     Run {
@@ -507,7 +507,6 @@ pub async fn agent_skill(skill: String, input: Option<String>) -> Result<()> {
     let skill_def = loader
         .get_skill(&skill)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Skill '{skill}' not found"))?;
 
     println!("Executing skill: {} ({} steps)", skill_def.name, skill_def.steps.len());

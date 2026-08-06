@@ -1698,3 +1698,329 @@ impl RoutingPolicyEngine {
 pub use calibration::CalibrationState;
 pub use health_ledger::{ProviderFailureKind, ProviderHealthLedger};
 pub use selector::{ModelSelector, ProviderConfig, SelectorConfig};
+
+// ---------------------------------------------------------------------------
+// Model selector scoring
+// ---------------------------------------------------------------------------
+
+/// Weightings for the model selector scoring algorithm.
+#[derive(Debug, Clone)]
+pub struct SelectorWeights {
+    /// Weight for cost (lower is better).
+    pub cost: f64,
+    /// Weight for speed / latency (lower is better).
+    pub latency: f64,
+    /// Weight for capability coverage.
+    pub capability: f64,
+    /// Weight for reliability (provider health).
+    pub reliability: f64,
+}
+
+impl Default for SelectorWeights {
+    fn default() -> Self {
+        Self {
+            cost: 0.4,
+            latency: 0.2,
+            capability: 0.2,
+            reliability: 0.2,
+        }
+    }
+}
+
+/// A scored model candidate.
+#[derive(Debug, Clone)]
+pub struct ScoredModel {
+    /// The model id.
+    pub model: String,
+    /// The provider serving the model.
+    pub provider: String,
+    /// The composite score (higher is better).
+    pub score: f64,
+    /// The per-factor breakdown.
+    pub factors: ScoreFactors,
+}
+
+/// The per-factor breakdown of a model score.
+#[derive(Debug, Clone, Default)]
+pub struct ScoreFactors {
+    /// Cost score in `[0, 1]`.
+    pub cost: f64,
+    /// Latency score in `[0, 1]`.
+    pub latency: f64,
+    /// Capability score in `[0, 1]`.
+    pub capability: f64,
+    /// Reliability score in `[0, 1]`.
+    pub reliability: f64,
+}
+
+/// Inputs to the model scoring algorithm.
+#[derive(Debug, Clone)]
+pub struct ScoreInput<'a> {
+    /// The model id.
+    pub model: &'a str,
+    /// The provider serving the model.
+    pub provider: &'a str,
+    /// Price per 1M input tokens (USD).
+    pub input_price_per_1m: f64,
+    /// Price per 1M output tokens (USD).
+    pub output_price_per_1m: f64,
+    /// The model's context window.
+    pub context_window: u64,
+    /// Whether the model supports vision (if the turn needs it).
+    pub supports_vision: bool,
+    /// Whether the model supports tool calling.
+    pub supports_tools: bool,
+    /// Whether the model supports reasoning.
+    pub supports_reasoning: bool,
+    /// The model's expected latency in ms (lower is better).
+    pub latency_ms: u64,
+    /// Whether the provider is currently healthy (not benched).
+    pub healthy: bool,
+    /// The turn's estimated input tokens (for cost scoring).
+    pub estimated_input_tokens: u64,
+    /// The turn's estimated output tokens (for cost scoring).
+    pub estimated_output_tokens: u64,
+}
+
+/// Score a model candidate on a `[0, 1]` scale where higher is better.
+///
+/// The composite score is a weighted sum of the per-factor scores. The
+/// weights default to [`SelectorWeights::default`].
+pub fn score_model(input: &ScoreInput<'_>, weights: &SelectorWeights) -> ScoredModel {
+    // Cost factor: normalize against a reference budget of $1.00 per turn.
+    let turn_cost = crate::pricing::cost(
+        input.input_price_per_1m,
+        input.output_price_per_1m,
+        input.estimated_input_tokens,
+        input.estimated_output_tokens,
+    );
+    let cost_score = (1.0 - (turn_cost / 1.0).min(1.0)).max(0.0);
+
+    // Latency factor: 0 at >= 10s, 1 at 0ms.
+    let latency_score = (1.0 - (input.latency_ms as f64 / 10_000.0).min(1.0)).max(0.0);
+
+    // Capability factor: sum of supported features, capped at 1.
+    let mut capability: f64 = 0.0;
+    if input.supports_tools {
+        capability += 0.4;
+    }
+    if input.supports_vision {
+        capability += 0.3;
+    }
+    if input.supports_reasoning {
+        capability += 0.3;
+    }
+    let capability_score = capability.min(1.0);
+
+    // Reliability factor: healthy providers score 1, benched score 0.
+    let reliability_score = if input.healthy { 1.0 } else { 0.0 };
+
+    let score = weights.cost * cost_score
+        + weights.latency * latency_score
+        + weights.capability * capability_score
+        + weights.reliability * reliability_score;
+
+    ScoredModel {
+        model: input.model.to_string(),
+        provider: input.provider.to_string(),
+        score,
+        factors: ScoreFactors {
+            cost: cost_score,
+            latency: latency_score,
+            capability: capability_score,
+            reliability: reliability_score,
+        },
+    }
+}
+
+/// Score a list of model candidates and return them sorted by score
+/// descending.
+pub fn rank_models<'a>(
+    inputs: impl IntoIterator<Item = ScoreInput<'a>>,
+    weights: &SelectorWeights,
+) -> Vec<ScoredModel> {
+    let mut scored: Vec<ScoredModel> = inputs.into_iter().map(|i| score_model(&i, weights)).collect();
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored
+}
+
+// ---------------------------------------------------------------------------
+// Tier capability matching
+// ---------------------------------------------------------------------------
+
+/// The requirements a tier's model must satisfy.
+#[derive(Debug, Clone, Default)]
+pub struct TierRequirements {
+    /// The turn carries an image.
+    pub requires_vision: bool,
+    /// The turn needs tool calling.
+    pub requires_tools: bool,
+    /// The turn needs reasoning support.
+    pub requires_reasoning: bool,
+    /// The estimated material context tokens.
+    pub material_tokens: u64,
+}
+
+/// Assess whether a tier's capabilities satisfy the turn requirements.
+#[derive(Debug, Clone)]
+pub struct TierMatch {
+    /// The tier id.
+    pub tier: String,
+    /// Whether the tier matches all requirements.
+    pub matches: bool,
+    /// The unmet requirements (empty when `matches` is true).
+    pub unmet: Vec<String>,
+    /// The matched capability facts.
+    pub capability: TierCapability,
+}
+
+/// Match a tier against the turn requirements.
+///
+/// The match is conservative: a `None` capability is treated as "unknown" and
+/// does not fail the match (the caller decides whether to walk up).
+pub fn tier_matches(
+    tier: &str,
+    capability: &TierCapability,
+    requirements: &TierRequirements,
+) -> TierMatch {
+    let mut unmet: Vec<String> = Vec::new();
+
+    if requirements.requires_vision && capability.supports_vision == Some(false) {
+        unmet.push("vision".to_string());
+    }
+    if requirements.material_tokens > 0 {
+        if let Some(window) = capability.context_window {
+            if requirements.material_tokens > window {
+                unmet.push("context_window".to_string());
+            }
+        }
+    }
+
+    TierMatch {
+        tier: tier.to_string(),
+        matches: unmet.is_empty(),
+        unmet,
+        capability: *capability,
+    }
+}
+
+/// Find the lowest tier that matches the turn requirements.
+///
+/// Tiers are evaluated in ascending ladder order (`c0`, `c1`, `c2`, `c3`).
+/// Returns the first matching tier, or the highest tier when none match
+/// (the caller must then handle the mismatch).
+pub fn find_matching_tier(
+    valid_tiers: &[String],
+    capabilities: &HashMap<String, TierCapability>,
+    requirements: &TierRequirements,
+) -> Option<String> {
+    let ordered = canonical_order(valid_tiers);
+    for tier in &ordered {
+        let caps = capabilities.get(tier).copied().unwrap_or_default();
+        let match_result = tier_matches(tier, &caps, requirements);
+        if match_result.matches {
+            return Some(tier.clone());
+        }
+    }
+    // Fall back to the highest tier.
+    ordered.last().cloned()
+}
+
+// ---------------------------------------------------------------------------
+// Policy engine strategies
+// ---------------------------------------------------------------------------
+
+/// The strategy used by the routing policy engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolicyStrategy {
+    /// The full legacy pipeline (gate, upgrade, hold, capability, bind).
+    Full,
+    /// Skip the preference stages (gate/upgrade/hold); only apply the floor
+    /// and budget rules.
+    Conservative,
+    /// Skip all stages and return the classified decision unchanged.
+    Passthrough,
+}
+
+impl PolicyStrategy {
+    /// The canonical name of the strategy.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PolicyStrategy::Full => "full",
+            PolicyStrategy::Conservative => "conservative",
+            PolicyStrategy::Passthrough => "passthrough",
+        }
+    }
+}
+
+/// Configuration for a routing policy run.
+#[derive(Debug, Clone)]
+pub struct PolicyConfig {
+    /// The strategy to apply.
+    pub strategy: PolicyStrategy,
+    /// Whether the large-context floor applies.
+    pub apply_large_context_floor: bool,
+    /// Whether the budget gate applies.
+    pub apply_budget_gate: bool,
+    /// Whether controller reconciliation applies.
+    pub reconcile_controller: bool,
+}
+
+impl Default for PolicyConfig {
+    fn default() -> Self {
+        Self {
+            strategy: PolicyStrategy::Full,
+            apply_large_context_floor: true,
+            apply_budget_gate: true,
+            reconcile_controller: true,
+        }
+    }
+}
+
+/// Run the routing policy engine with an explicit strategy.
+///
+/// This is a thin wrapper over [`RoutingPolicyEngine::run`] that honors the
+/// `Passthrough` and `Conservative` strategies.
+pub fn run_policy_with_strategy(
+    inputs: &PolicyInputs,
+    config: &PolicyConfig,
+) -> PolicyResult {
+    match config.strategy {
+        PolicyStrategy::Passthrough => PolicyResult {
+            decision: inputs.decision.clone(),
+            thinking_mode: inputs.thinking_mode.clone(),
+            prompt_policy: inputs.prompt_policy.clone(),
+            metadata_updates: HashMap::new(),
+            extra: inputs.extra.clone(),
+        },
+        PolicyStrategy::Conservative => {
+            // Skip the preference stages: no gate, no upgrade, no hold.
+            let engine = RoutingPolicyEngine::new();
+            let mut result = engine.run(inputs);
+
+            // Remove the preference-stage metadata updates.
+            result
+                .metadata_updates
+                .retain(|key, _| !key.starts_with("router_"));
+            result
+        }
+        PolicyStrategy::Full => RoutingPolicyEngine::new().run(inputs),
+    }
+}
+
+/// Serialize a routing decision into a compact JSON record for persistence
+/// and calibration.
+pub fn decision_to_record(decision: &RoutingDecision, extra: Option<&HashMap<String, Value>>) -> Value {
+    let mut record = serde_json::Map::new();
+    record.insert("tier".to_string(), json!(decision.tier));
+    record.insert("model".to_string(), json!(decision.model));
+    record.insert("confidence".to_string(), json!(decision.confidence));
+    record.insert("source".to_string(), json!(decision.source));
+    record.insert("ts_ms".to_string(), json!(crate::routing::calibration::SCHEMA_VERSION));
+    if let Some(extra) = extra {
+        for (k, v) in extra {
+            record.insert(k.clone(), v.clone());
+        }
+    }
+    Value::Object(record)
+}

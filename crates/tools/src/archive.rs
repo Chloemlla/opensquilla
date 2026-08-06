@@ -82,13 +82,19 @@ const ZIP_END_CENTRAL_SIG: u32 = 0x06054b50;
 
 /// A minimal zip file entry read from an archive.
 #[derive(Debug, Clone)]
-struct ZipEntry {
-    name: String,
-    compressed_size: u64,
-    uncompressed_size: u64,
-    compression_method: u16,
-    local_header_offset: u64,
-    crc32: u32,
+pub struct ZipEntry {
+    /// The entry name (path within the archive).
+    pub name: String,
+    /// The compressed size in bytes.
+    pub compressed_size: u64,
+    /// The uncompressed size in bytes.
+    pub uncompressed_size: u64,
+    /// The compression method (0 = stored, 8 = deflate).
+    pub compression_method: u16,
+    /// The offset of the local file header.
+    pub local_header_offset: u64,
+    /// The CRC-32 checksum.
+    pub crc32: u32,
 }
 
 /// CRC-32 table (polynomial 0xEDB88320, standard for ZIP).
@@ -181,10 +187,6 @@ impl<W: Write> ZipWriter<W> {
     /// Add a file with the given name and content (STORE method, no compression).
     pub fn add_file(&mut self, name: &str, data: &[u8]) -> std::io::Result<()> {
         let crc = crc32(data);
-        let offset = self.entries.iter().map(|e| 30 + e.name.len() as u32 + e.compressed_size).sum::<u32>();
-        // Actually we need the real offset which is the current position.
-        // Since we can't easily track the writer position, we compute it from
-        // entries.
         let local_offset: u32 = self
             .entries
             .iter()
@@ -256,13 +258,11 @@ impl<W: Write> ZipWriter<W> {
 
     /// Finalize the zip file by writing the central directory and EOCD.
     pub fn finish(mut self) -> std::io::Result<()> {
-        let central_start: u32 = self
+        let central_offset: u32 = self
             .entries
             .iter()
             .map(|e| 30u32 + e.name.len() as u32 + e.compressed_size)
             .sum();
-
-        let central_size_pos = central_start;
 
         // Central directory headers.
         for entry in &self.entries {
@@ -286,8 +286,7 @@ impl<W: Write> ZipWriter<W> {
             self.writer.write_all(entry.name.as_bytes())?;
         }
 
-        let central_size = central_start; // placeholder; compute below properly.
-        // Compute central directory size by re-measuring.
+        // Compute central directory size.
         let central_dir_size: u32 = self
             .entries
             .iter()
@@ -301,10 +300,9 @@ impl<W: Write> ZipWriter<W> {
         write_u16(&mut self.writer, self.entries.len() as u16)?; // Entries on this disk.
         write_u16(&mut self.writer, self.entries.len() as u16)?; // Total entries.
         write_u32(&mut self.writer, central_dir_size)?; // Central dir size.
-        write_u32(&mut self.writer, central_size_pos)?; // Central dir offset.
+        write_u32(&mut self.writer, central_offset)?; // Central dir offset.
         write_u16(&mut self.writer, 0)?; // Comment length.
 
-        let _ = central_size; // suppress unused warning
         self.writer.flush()?;
         Ok(())
     }
@@ -640,38 +638,145 @@ pub fn read_tar(data: &[u8]) -> std::io::Result<Vec<(String, Vec<u8>)>> {
 /// Gzip magic bytes.
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
-/// Wrap data in a gzip container without compression (method 0 = stored).
+/// Wrap data in a gzip container using stored (uncompressed) DEFLATE blocks.
 ///
-/// Note: this produces a valid gzip file that can be decompressed by any gzip
-/// tool, but it does not actually compress the data. For compression, use the
-/// `flate2` crate.
+/// This produces a valid gzip file that any gzip tool can decompress, but it
+/// does not actually compress the data. For real compression, integrate the
+/// `flate2` crate. Large inputs are split into 65535-byte stored blocks, the
+/// DEFLATE stored-block size limit.
 pub fn gzip_wrap(data: &[u8]) -> std::io::Result<Vec<u8>> {
-    let mut buf = Vec::with_capacity(data.len() + 18);
-    // Header.
-    buf.extend_from_slice(&GZIP_MAGIC); // Magic.
-    buf.push(0x08); // Method 8 = deflate. (We use 0 = stored below, but 8 is
-                    // standard; real implementation would deflate.)
-    buf.push(0); // Flags.
-    buf.extend_from_slice(&[0, 0, 0, 0]); // Mtime.
-    buf.push(0); // XFL.
-    buf.push(0xff); // OS = unknown.
+    let mut buf = Vec::with_capacity(data.len() + 64);
+    // GZIP header (10 bytes): magic, method 8 (deflate), flags, mtime, XFL, OS.
+    buf.extend_from_slice(&GZIP_MAGIC);
+    buf.push(0x08);
+    buf.push(0);
+    buf.extend_from_slice(&[0, 0, 0, 0]);
+    buf.push(0);
+    buf.push(0xff);
 
-    // For a real implementation, deflate the data here. Since we don't have
-    // flate2, we'll store the raw data as a "stored" deflate block.
-    // A stored deflate block: BFINAL=1, BTYPE=00, then LEN/NLEN, then data.
-    let len = data.len() as u16;
-    let nlen = !len;
-    buf.push(0x01); // BFINAL=1, BTYPE=00 (stored).
-    buf.extend_from_slice(&len.to_le_bytes());
-    buf.extend_from_slice(&nlen.to_le_bytes());
-    buf.extend_from_slice(data);
+    // Write stored (BTYPE=00) deflate blocks in 65535-byte chunks. The final
+    // block has BFINAL=1; all earlier blocks have BFINAL=0.
+    const CHUNK: usize = 65535;
+    let mut offset = 0usize;
+    loop {
+        let chunk_end = (offset + CHUNK).min(data.len());
+        let chunk = &data[offset..chunk_end];
+        let final_block = chunk_end == data.len();
+        let bfinal = if final_block { 1u8 } else { 0u8 };
+        buf.push(bfinal); // BFINAL + BTYPE=00 (stored).
+        let len = chunk.len() as u16;
+        let nlen = !len;
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&nlen.to_le_bytes());
+        buf.extend_from_slice(chunk);
+        if final_block {
+            break;
+        }
+        offset = chunk_end;
+    }
 
-    // CRC32 and ISIZE trailer.
+    // GZIP trailer: CRC32 and ISIZE (mod 2^32).
     let crc = crc32(data);
     buf.extend_from_slice(&crc.to_le_bytes());
     buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
 
     Ok(buf)
+}
+
+/// Unwrap a gzip container that uses stored (uncompressed) DEFLATE blocks.
+///
+/// Returns the raw stored payload. Returns an error if the gzip stream uses
+/// a real compression method (DEFLATE with non-stored blocks) — that requires
+/// the `flate2` crate.
+pub fn gzip_unwrap(data: &[u8]) -> std::io::Result<Vec<u8>> {
+    if data.len() < 18 || data[0] != GZIP_MAGIC[0] || data[1] != GZIP_MAGIC[1] {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Not a gzip file",
+        ));
+    }
+    let method = data[2];
+    if method != 8 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Unsupported gzip compression method {}", method),
+        ));
+    }
+    let flg = data[3];
+    let mut pos = 10usize;
+    // Skip optional header fields based on FLG bits.
+    if flg & 0x04 != 0 {
+        // FEXTRA: 2-byte length then that many bytes.
+        if pos + 2 > data.len() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Truncated gzip header"));
+        }
+        let xlen = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+        pos += 2 + xlen;
+    }
+    if flg & 0x08 != 0 {
+        // FNAME: null-terminated string.
+        while pos < data.len() && data[pos] != 0 {
+            pos += 1;
+        }
+        pos += 1;
+    }
+    if flg & 0x10 != 0 {
+        // FCOMMENT: null-terminated string.
+        while pos < data.len() && data[pos] != 0 {
+            pos += 1;
+        }
+        pos += 1;
+    }
+    if flg & 0x02 != 0 {
+        // FHCRC: 2 bytes.
+        pos += 2;
+    }
+
+    // Parse the stored deflate blocks.
+    let mut out = Vec::new();
+    loop {
+        if pos >= data.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Truncated deflate stream",
+            ));
+        }
+        let header = data[pos];
+        pos += 1;
+        let bfinal = header & 0x01 != 0;
+        let btype = (header >> 1) & 0x03;
+        match btype {
+            0 => {
+                // Stored block: skip byte alignment (none needed), then LEN/NLEN.
+                if pos + 4 > data.len() {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Truncated stored block"));
+                }
+                let len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+                pos += 4; // skip LEN and NLEN
+                if pos + len > data.len() {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Truncated stored block data"));
+                }
+                out.extend_from_slice(&data[pos..pos + len]);
+                pos += len;
+            }
+            1 | 2 => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "Compressed DEFLATE blocks require the flate2 crate",
+                ));
+            }
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Reserved DEFLATE block type",
+                ));
+            }
+        }
+        if bfinal {
+            break;
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -901,23 +1006,14 @@ impl ArchiveTool {
                 Ok(extracted)
             }
             ArchiveFormat::Tar | ArchiveFormat::TarGz => {
-                // For tar.gz, we'd need to gunzip. Since our gzip_wrap doesn't
-                // actually compress, we handle the stored case. For real
-                // gzip, integrate flate2.
+                // For tar.gz, unwrap the gzip container to recover the tar.
                 let tar_data = if format == ArchiveFormat::TarGz {
-                    // Strip gzip header (29 bytes) and trailer (8 bytes) for
-                    // our stored format. This only works for our gzip_wrap
-                    // output; real gzip requires a proper inflater.
-                    if data.len() > 37 && data[0] == GZIP_MAGIC[0] && data[1] == GZIP_MAGIC[1] {
-                        // Find the stored deflate block.
-                        // Header is 10 bytes, then stored block header is 5 bytes.
-                        data[15..data.len() - 8].to_vec()
-                    } else {
-                        return Err(ToolError::new(
+                    gzip_unwrap(&data).map_err(|e| {
+                        ToolError::new(
                             "ARCHIVE_ERROR",
-                            "Real gzip decompression requires the flate2 crate",
-                        ));
-                    }
+                            format!("Failed to decompress gzip: {}", e),
+                        )
+                    })?
                 } else {
                     data
                 };
@@ -988,14 +1084,12 @@ impl ArchiveTool {
             }
             ArchiveFormat::Tar | ArchiveFormat::TarGz => {
                 let tar_data = if format == ArchiveFormat::TarGz {
-                    if data.len() > 37 && data[0] == GZIP_MAGIC[0] && data[1] == GZIP_MAGIC[1] {
-                        data[15..data.len() - 8].to_vec()
-                    } else {
-                        return Err(ToolError::new(
+                    gzip_unwrap(&data).map_err(|e| {
+                        ToolError::new(
                             "ARCHIVE_ERROR",
-                            "Real gzip decompression requires the flate2 crate",
-                        ));
-                    }
+                            format!("Failed to decompress gzip: {}", e),
+                        )
+                    })?
                 } else {
                     data
                 };
@@ -1394,5 +1488,103 @@ mod tests {
             .await;
         assert!(result.is_ok());
         assert!(dir.path().join("out.tar").exists());
+    }
+
+    #[test]
+    fn test_gzip_roundtrip() {
+        let data = b"hello world".to_vec();
+        let wrapped = gzip_wrap(&data).unwrap();
+        assert_eq!(&wrapped[..2], &GZIP_MAGIC);
+        let unwrapped = gzip_unwrap(&wrapped).unwrap();
+        assert_eq!(unwrapped, data);
+    }
+
+    #[test]
+    fn test_gzip_roundtrip_large() {
+        // Larger than a single stored block (65535 bytes) to exercise
+        // multi-block handling.
+        let data = vec![0xABu8; 200_000];
+        let wrapped = gzip_wrap(&data).unwrap();
+        let unwrapped = gzip_unwrap(&wrapped).unwrap();
+        assert_eq!(unwrapped, data);
+    }
+
+    #[test]
+    fn test_gzip_unwrap_rejects_compressed() {
+        // A fake deflate stream with BTYPE=01 (fixed Huffman) should be
+        // rejected as requiring flate2.
+        let mut gz = Vec::new();
+        gz.extend_from_slice(&GZIP_MAGIC);
+        gz.push(0x08);
+        gz.push(0);
+        gz.extend_from_slice(&[0, 0, 0, 0]);
+        gz.push(0);
+        gz.push(0xff);
+        gz.push(0x03); // BFINAL=1, BTYPE=01.
+        gz.extend_from_slice(&[0, 0, 0, 0]); // dummy data
+        gz.extend_from_slice(&[0, 0, 0, 0]); // CRC
+        gz.extend_from_slice(&[0, 0, 0, 0]); // ISIZE
+        let result = gzip_unwrap(&gz);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_archive_tool_create_targz_and_extract() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("a.txt"), "hello targz").unwrap();
+
+        let tool = ArchiveTool::new(dir.path().to_path_buf());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "create",
+                "source": "src",
+                "output": "out.tar.gz",
+                "format": "tar.gz",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(dir.path().join("out.tar.gz").exists());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "extract",
+                "source": "out.tar.gz",
+                "output": "extracted_targz",
+            }))
+            .await;
+        assert!(result.is_ok());
+        let content =
+            std::fs::read_to_string(dir.path().join("extracted_targz").join("a.txt")).unwrap();
+        assert_eq!(content, "hello targz");
+    }
+
+    #[tokio::test]
+    async fn test_archive_tool_list_targz() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("a.txt"), "hello").unwrap();
+
+        let tool = ArchiveTool::new(dir.path().to_path_buf());
+        tool.execute(serde_json::json!({
+            "operation": "create",
+            "source": "src",
+            "output": "out.tar.gz",
+            "format": "tar.gz",
+        }))
+        .await
+        .unwrap();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "list",
+                "source": "out.tar.gz",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().content.contains("a.txt"));
     }
 }

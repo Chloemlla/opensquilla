@@ -210,16 +210,17 @@ impl ProcessMonitorTool {
 
     /// Kill a process by PID.
     async fn kill_process(&self, pid: u32, force: bool) -> ToolResult<()> {
+        let pid_str = pid.to_string();
         let (program, args) = if self.is_windows {
             if force {
-                ("taskkill", vec!["/F", "/PID", &pid.to_string()])
+                ("taskkill", vec![String::from("/F"), String::from("/PID"), pid_str])
             } else {
-                ("taskkill", vec!["/PID", &pid.to_string()])
+                ("taskkill", vec![String::from("/PID"), pid_str])
             }
         } else if force {
-            ("kill", vec!["-9", &pid.to_string()])
+            ("kill", vec![String::from("-9"), pid_str])
         } else {
-            ("kill", vec![&pid.to_string()])
+            ("kill", vec![pid_str])
         };
 
         let output = tokio::process::Command::new(program)

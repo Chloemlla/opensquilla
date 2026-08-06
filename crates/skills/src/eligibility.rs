@@ -1003,35 +1003,20 @@ impl FeatureGateSet {
 }
 
 /// The default set of feature gates evaluated by the checker.
+///
+/// The set is intentionally empty of built-ins: unknown gates fall through to
+/// [`check_builtin_feature_gate`], which evaluates them dynamically against
+/// the current host. Callers can override individual gates via
+/// [`FeatureGateSet::set`].
 pub fn default_feature_gates() -> FeatureGateSet {
-    let mut set = FeatureGateSet::new();
-    for name in [
-        "network",
-        "docker",
-        "git",
-        "python",
-        "node",
-        "npm",
-        "rust",
-        "go",
-        "java",
-        "sandbox",
-        "tty",
-        "gui",
-        "ffmpeg",
-        "curl",
-        "wget",
-        "aws",
-        "gcloud",
-    ] {
-        set.set(name, false);
-    }
-    set.with_allow_unknown(false)
+    FeatureGateSet::new().with_allow_unknown(false)
 }
 
-fn check_builtin_feature_gate(name: &str, checker: &EligibilityChecker) -> bool {
+/// Evaluate a built-in feature gate by name against the current host.
+pub fn check_builtin_feature_gate(name: &str, checker: &EligibilityChecker) -> bool {
     match name {
         "network" => checker.network_available(),
+        "filesystem" | "fs" => true,
         "docker" => checker.is_binary_available("docker"),
         "git" => checker.is_binary_available("git"),
         "python" | "python3" => {
@@ -1326,13 +1311,13 @@ mod tests {
     #[test]
     fn env_var_requirement() {
         let checker = EligibilityChecker::new();
-        std::env::set_var("OSQ_ELIG_TEST_VAR", "1");
+        unsafe { std::env::set_var("OSQ_ELIG_TEST_VAR", "1") };
         let requires = SkillRequires {
             env_vars: Some(vec!["OSQ_ELIG_TEST_VAR".to_string()]),
             ..SkillRequires::default()
         };
         assert!(checker.check(&requires).is_eligible());
-        std::env::remove_var("OSQ_ELIG_TEST_VAR");
+        unsafe { std::env::remove_var("OSQ_ELIG_TEST_VAR") };
 
         // The env var cache must be invalidated for the change to be seen.
         checker.clear_cache();
@@ -1428,12 +1413,12 @@ mod tests {
     fn memory_check() {
         let checker = EligibilityChecker::for_host(test_host());
         let requires = SkillRequires {
-            min_memory_mib: Some(100),
+            min_memory_mb: Some(100),
             ..SkillRequires::default()
         };
         assert!(checker.check(&requires).is_eligible());
         let requires = SkillRequires {
-            min_memory_mib: Some(1024 * 1024),
+            min_memory_mb: Some(1024 * 1024),
             ..SkillRequires::default()
         };
         assert!(!checker.check(&requires).is_eligible());
@@ -1470,13 +1455,13 @@ mod tests {
     #[test]
     fn dependency_env_check_works() {
         let checker = EligibilityChecker::new();
-        std::env::set_var("OSQ_DEP_TEST", "1");
+        unsafe { std::env::set_var("OSQ_DEP_TEST", "1") };
         let dep = SkillDependency::Env {
             name: "OSQ_DEP_TEST".to_string(),
         };
         let status = checker.check_dependency(&dep);
         assert!(status.satisfied);
-        std::env::remove_var("OSQ_DEP_TEST");
+        unsafe { std::env::remove_var("OSQ_DEP_TEST") };
         checker.clear_cache();
         let status2 = checker.check_dependency(&dep);
         assert!(!status2.satisfied);

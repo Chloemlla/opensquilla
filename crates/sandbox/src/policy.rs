@@ -861,7 +861,7 @@ impl SandboxPolicy {
 }
 
 /// Result of a sandbox execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SandboxResult {
     pub exit_code: i32,
     pub stdout: String,

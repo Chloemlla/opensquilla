@@ -30,7 +30,6 @@ use opensquilla_desktop_lib::state::AppState;
 use opensquilla_desktop_lib::workbench;
 use opensquilla_desktop_lib::{
     TrayEvent, commands,
-    commands::{app_info, ping, reload_config},
     deep_link,
     tray::{TrayIconState, build_tray_menu, rebuild_menu},
     updater, window,
@@ -39,11 +38,41 @@ use opensquilla_engine::{AgentRuntime, TurnRunnerBuilder};
 use opensquilla_session::SessionStorage;
 use std::sync::Arc;
 use tauri::{
-    Emitter, Manager, TrayIconBuilder, WindowEvent,
-    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    Emitter, Manager, WindowEvent,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
+// ---------------------------------------------------------------------------
+// Inline commands (must be defined in the binary crate so that Tauri v2's
+// __cmd__ macros are visible to generate_handler!).
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn ping() -> &'static str {
+    "pong"
+}
+
+#[tauri::command]
+async fn app_info(_app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let info = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "name": env!("CARGO_PKG_NAME"),
+        "tauri": "2",
+    });
+    Ok(info)
+}
+
+#[tauri::command]
+async fn reload_config(
+    state: tauri::State<'_, opensquilla_desktop_lib::state::AppState>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.config().await;
+    let config = opensquilla_core::config::Config::clone(&guard);
+    drop(guard);
+    serde_json::to_value(&config).map_err(|e| e.to_string())
+}
 
 /// Entry point. Builds the Tokio runtime and hands control to Tauri.
 fn main() {
@@ -222,11 +251,12 @@ fn main() {
             let window = app
                 .get_webview_window(window::MAIN_WINDOW_LABEL)
                 .expect("main window missing");
+            let window_clone = window.clone();
             window.on_window_event(move |event| {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = window.hide();
-                    let _ = window.app_handle().emit("window://hidden", ());
+                    let _ = window_clone.hide();
+                    let _ = window_clone.app_handle().emit("window://hidden", ());
                 }
             });
 

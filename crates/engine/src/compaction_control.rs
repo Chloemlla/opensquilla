@@ -169,6 +169,121 @@ pub fn projected_reclaim(dropped_messages: usize, avg_tokens_per_message: u64) -
     dropped_messages as u64 * avg_tokens_per_message
 }
 
+/// A concrete compaction plan for a conversation.
+#[derive(Debug, Clone)]
+pub struct CompactionPlan {
+    /// The strategy to apply.
+    pub strategy: CompactionStrategy,
+    /// The number of messages to drop.
+    pub messages_to_drop: usize,
+    /// The estimated tokens to reclaim.
+    pub reclaimable_tokens: u64,
+    /// The estimated tokens remaining after compaction.
+    pub remaining_tokens: u64,
+    /// The message count remaining after compaction.
+    pub remaining_messages: usize,
+    /// The urgency of the compaction.
+    pub urgent: bool,
+    /// Whether the plan is a no-op (nothing to do).
+    pub is_noop: bool,
+}
+
+impl CompactionPlan {
+    /// Whether the plan drops any messages.
+    pub fn reclaims_messages(&self) -> bool {
+        self.messages_to_drop > 0
+    }
+}
+
+/// Plan a compaction for the given conversation profile.
+///
+/// This is the "planning" half of compaction: given the token count, message
+/// count, and context window, it decides the strategy, how many messages to
+/// drop, and the projected savings — without mutating the conversation.
+///
+/// `message_count` and `avg_tokens_per_message` are used to estimate the
+/// per-message cost. The plan keeps at least `min_keep` messages.
+pub fn plan_compaction(
+    token_count: u64,
+    message_count: usize,
+    context_window_tokens: u64,
+    avg_tokens_per_message: u64,
+    min_keep: usize,
+) -> CompactionPlan {
+    let decision = decide_compaction(&CompactionInput {
+        token_count,
+        message_count,
+        context_window_tokens,
+        ..Default::default()
+    });
+
+    let (strategy, urgent) = match decision {
+        CompactionDecision::NoCompaction => {
+            return CompactionPlan {
+                strategy: CompactionStrategy::Summarize,
+                messages_to_drop: 0,
+                reclaimable_tokens: 0,
+                remaining_tokens: token_count,
+                remaining_messages: message_count,
+                urgent: false,
+                is_noop: true,
+            };
+        }
+        CompactionDecision::Compact(s) => (s, false),
+        CompactionDecision::UrgentCompaction(s) => (s, true),
+    };
+
+    // Estimate how many messages must be dropped to get under budget.
+    let budget = truncation_budget(message_count.max(4).max(min_keep));
+    let keep = budget.max(min_keep);
+    let messages_to_drop = message_count.saturating_sub(keep);
+
+    let reclaimable = projected_reclaim(messages_to_drop, avg_tokens_per_message.max(1));
+    let remaining_tokens = token_count.saturating_sub(reclaimable);
+    let remaining_messages = message_count.saturating_sub(messages_to_drop);
+
+    CompactionPlan {
+        strategy,
+        messages_to_drop,
+        reclaimable_tokens: reclaimable,
+        remaining_tokens,
+        remaining_messages,
+        urgent,
+        is_noop: false,
+    }
+}
+
+/// Estimate the average token size of messages given a total and count.
+pub fn average_message_tokens(token_count: u64, message_count: usize) -> u64 {
+    if message_count == 0 {
+        0
+    } else {
+        token_count / message_count as u64
+    }
+}
+
+/// Whether a conversation needs compaction before the next generation round.
+///
+/// This combines the token threshold with a lookahead: if the current round's
+/// estimated output would push the total over the urgent threshold, compaction
+/// is warranted even when the current tokens are under the trigger.
+pub fn should_compact_before_generation(
+    token_count: u64,
+    context_window_tokens: u64,
+    estimated_output_tokens: u64,
+) -> bool {
+    let input = CompactionInput {
+        token_count,
+        context_window_tokens,
+        ..Default::default()
+    };
+    let threshold = input.threshold_tokens();
+    let urgent = input.urgent_tokens();
+    token_count >= threshold
+        || token_count + estimated_output_tokens >= urgent
+        || token_count.saturating_add(estimated_output_tokens) >= context_window_tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

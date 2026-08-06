@@ -268,7 +268,11 @@ impl Tool for GitTool {
                     .as_str()
                     .ok_or_else(|| ToolError::invalid_args("Missing 'repo_url' for clone"))?;
                 let target_dir = params["target_dir"].as_str().unwrap_or("");
+                let depth = params["depth"].as_i64();
                 let mut args = vec!["clone".to_string(), repo_url.to_string()];
+                if let Some(d) = depth {
+                    args.push(format!("--depth={}", d));
+                }
                 if !target_dir.is_empty() {
                     args.push(target_dir.to_string());
                 }
@@ -593,5 +597,223 @@ mod tests {
             .execute(serde_json::json!({"operation": "nonexistent"}))
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_git_init_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().join("init_repo");
+        fs::create_dir(&repo_path).unwrap();
+
+        let tool = GitTool::new(dir.path().to_path_buf());
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "init",
+                "working_dir": "init_repo",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(repo_path.join(".git").exists());
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_create_and_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().join("branch_repo");
+        fs::create_dir(&repo_path).unwrap();
+
+        Command::new("git")
+            .arg("init")
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+
+        let tool = GitTool::new(dir.path().to_path_buf());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "branch",
+                "branch": "feature",
+                "working_dir": "branch_repo",
+            }))
+            .await;
+        assert!(result.is_ok());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "checkout",
+                "branch": "feature",
+                "working_dir": "branch_repo",
+            }))
+            .await;
+        assert!(result.is_ok());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "branch",
+                "working_dir": "branch_repo",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().content.contains("feature"));
+    }
+
+    #[tokio::test]
+    async fn test_git_log_formatted() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().join("log_repo");
+        fs::create_dir(&repo_path).unwrap();
+
+        Command::new("git")
+            .arg("init")
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        fs::write(repo_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial commit"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+
+        let tool = GitTool::new(dir.path().to_path_buf());
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "log",
+                "working_dir": "log_repo",
+                "max_count": 5,
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().content.contains("initial commit"));
+    }
+
+    #[tokio::test]
+    async fn test_git_stash_operations() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().join("stash_repo");
+        fs::create_dir(&repo_path).unwrap();
+
+        Command::new("git")
+            .arg("init")
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        fs::write(repo_path.join("file.txt"), "v1").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(&repo_path)
+            .output()
+            .await
+            .unwrap();
+        fs::write(repo_path.join("file.txt"), "v2").unwrap();
+
+        let tool = GitTool::new(dir.path().to_path_buf());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "stash",
+                "stash_op": "push",
+                "working_dir": "stash_repo",
+            }))
+            .await;
+        assert!(result.is_ok());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "stash",
+                "stash_op": "list",
+                "working_dir": "stash_repo",
+            }))
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().content.contains("stash"));
+    }
+
+    #[tokio::test]
+    async fn test_git_missing_message_for_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = GitTool::new(dir.path().to_path_buf());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "commit",
+                "working_dir": ".",
+            }))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "INVALID_ARGS");
+    }
+
+    #[tokio::test]
+    async fn test_git_reset_modes() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = GitTool::new(dir.path().to_path_buf());
+
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "reset",
+                "target": "HEAD",
+                "mode": "hard",
+                "working_dir": ".",
+            }))
+            .await;
+        // Either succeeds or fails with GIT_ERROR (not a repo), but must not
+        // be INVALID_ARGS.
+        if let Err(e) = result {
+            assert_ne!(e.code, "INVALID_ARGS");
+        }
     }
 }

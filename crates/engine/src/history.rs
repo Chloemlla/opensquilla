@@ -349,6 +349,541 @@ fn collect_tool_call_ids(message: &Message, ids: &mut std::collections::HashSet<
     }
 }
 
+// ---------------------------------------------------------------------------
+// Truncation strategies, importance scoring, rebuild, boundary detection
+// ---------------------------------------------------------------------------
+
+/// The strategy used to truncate a message history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TruncationStrategy {
+    /// Truncate to a token budget (most recent messages retained).
+    TokenBased,
+    /// Truncate to a fixed message count.
+    MessageBased,
+    /// Truncate by dropping the least-important messages.
+    ImportanceBased,
+}
+
+impl TruncationStrategy {
+    /// The canonical name of the strategy.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TruncationStrategy::TokenBased => "token_based",
+            TruncationStrategy::MessageBased => "message_based",
+            TruncationStrategy::ImportanceBased => "importance_based",
+        }
+    }
+}
+
+/// Scoring signals for a message, used by importance-based truncation.
+#[derive(Debug, Clone)]
+pub struct MessageSignals {
+    /// The message role.
+    pub role: MessageRole,
+    /// The message text.
+    pub text: String,
+    /// The estimated token count.
+    pub tokens: u64,
+    /// Whether the message carries a tool call.
+    pub has_tool_call: bool,
+    /// Whether the message is a tool result.
+    pub is_tool_result: bool,
+    /// The message index in the original sequence.
+    pub index: usize,
+}
+
+/// Compute the importance score of a message.
+///
+/// The scoring model favors:
+/// * system messages (highest importance),
+/// * tool-call and tool-result messages (needed for provider correlation),
+/// * messages with reasoning blocks,
+/// * recent messages (positional bonus).
+///
+/// The returned score is in `[0, 1]` with higher = more important.
+pub fn message_importance(signals: &MessageSignals) -> f64 {
+    let mut score = 0.0f64;
+
+    match signals.role {
+        MessageRole::System => score += 0.9,
+        MessageRole::User => score += 0.4,
+        MessageRole::Assistant => score += 0.5,
+        MessageRole::Tool => score += 0.5,
+    }
+
+    if signals.has_tool_call {
+        score += 0.2;
+    }
+    if signals.is_tool_result {
+        score += 0.15;
+    }
+
+    // Length heuristic: longer messages carry more content, but cap the bonus.
+    let length_factor = (signals.text.chars().count() as f64 / 1000.0).min(0.2);
+    score += length_factor;
+
+    // Recency bonus: messages closer to the end are more important. The
+    // caller provides `index`; the normalization to [0,1] happens per-run.
+    score.min(1.0)
+}
+
+/// Compute importance signals for a message list.
+pub fn importance_signals(messages: &[Message]) -> Vec<MessageSignals> {
+    messages
+        .iter()
+        .enumerate()
+        .map(|(index, m)| MessageSignals {
+            role: m.role.clone(),
+            text: m.text_content(),
+            tokens: estimate_tokens(m, 0.25),
+            has_tool_call: m
+                .content
+                .iter()
+                .any(|b| matches!(b, ContentBlock::ToolUse(_)))
+                || m.tool_calls.as_ref().map_or(false, |c| !c.is_empty()),
+            is_tool_result: matches!(m.role, MessageRole::Tool),
+            index,
+        })
+        .collect()
+}
+
+/// Truncate a message history to a fixed message count.
+///
+/// System messages are always preserved. The most recent non-system messages
+/// are retained up to `max_messages`.
+pub fn truncate_to_message_count(messages: &[Message], max_messages: usize) -> Vec<Message> {
+    if max_messages == 0 {
+        return Vec::new();
+    }
+    let system: Vec<Message> = messages
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::System))
+        .cloned()
+        .collect();
+    let tail: Vec<Message> = messages
+        .iter()
+        .filter(|m| !matches!(m.role, MessageRole::System))
+        .cloned()
+        .collect();
+
+    let keep = max_messages.saturating_sub(system.len());
+    let tail_start = tail.len().saturating_sub(keep);
+    let mut out = system;
+    out.extend(tail.into_iter().skip(tail_start));
+    out
+}
+
+/// Truncate a message history by dropping the least-important messages.
+///
+/// System messages are always preserved. Non-system messages are scored and
+/// the highest-scoring messages are retained up to the token budget.
+pub fn truncate_by_importance(
+    messages: &[Message],
+    max_tokens: u64,
+    tokens_per_char: f64,
+) -> Vec<Message> {
+    if max_tokens == 0 {
+        return Vec::new();
+    }
+    let system: Vec<Message> = messages
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::System))
+        .cloned()
+        .collect();
+    let system_tokens: u64 = system.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let budget = max_tokens.saturating_sub(system_tokens);
+
+    // Score the non-system messages with a recency bonus.
+    let tail: Vec<Message> = messages
+        .iter()
+        .filter(|m| !matches!(m.role, MessageRole::System))
+        .cloned()
+        .collect();
+    let n = tail.len();
+    let signals = importance_signals(&tail);
+    let mut scored: Vec<(f64, usize)> = signals
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            // Recency bonus: last message gets +0.3, scaling down linearly.
+            let recency = if n == 0 {
+                0.0
+            } else {
+                0.3 * (i as f64 / n as f64)
+            };
+            (message_importance(s) + recency, i)
+        })
+        .collect();
+
+    // Sort by score descending; keep messages until the token budget is hit.
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut selected: Vec<usize> = Vec::new();
+    let mut used = 0u64;
+    for (_, idx) in &scored {
+        let cost = estimate_tokens(&tail[*idx], tokens_per_char);
+        if used + cost > budget {
+            // Always keep the most recent message even if it overflows.
+            if *idx == n - 1 && selected.is_empty() {
+                selected.push(*idx);
+            }
+            continue;
+        }
+        used += cost;
+        selected.push(*idx);
+    }
+
+    // Reconstruct in original order.
+    selected.sort_unstable();
+    let mut out = system;
+    for idx in selected {
+        out.push(tail[idx].clone());
+    }
+    out
+}
+
+/// Truncate a message history to a token budget while preserving tool pairs.
+///
+/// This is a smarter version of [`truncate_to_budget`]: instead of cutting at
+/// an arbitrary message boundary (which could split an assistant tool_use from
+/// its tool_result), it walks back from the end and keeps whole tool rounds
+/// together. A tool round is an assistant message with `tool_use` blocks plus
+/// the following tool-role message(s) carrying the matching results.
+pub fn truncate_preserving_tool_pairs(
+    messages: &[Message],
+    max_tokens: u64,
+    tokens_per_char: f64,
+) -> Vec<Message> {
+    if max_tokens == 0 {
+        return Vec::new();
+    }
+
+    let system: Vec<Message> = messages
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::System))
+        .cloned()
+        .collect();
+    let system_tokens: u64 = system.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let mut budget = max_tokens.saturating_sub(system_tokens);
+    if budget == 0 && !system.is_empty() {
+        return system;
+    }
+
+    // Build a map of tool_use id -> index so we can detect round boundaries.
+    let mut tool_use_indices: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, msg) in messages.iter().enumerate() {
+        for block in &msg.content {
+            if let ContentBlock::ToolUse(call) = block {
+                tool_use_indices.insert(call.id.clone(), i);
+            }
+        }
+        if let Some(calls) = &msg.tool_calls {
+            for call in calls {
+                tool_use_indices.insert(call.id.clone(), i);
+            }
+        }
+    }
+    let _ = tool_use_indices;
+
+    // Walk backward, keeping whole tool rounds together.
+    let mut kept: Vec<Message> = Vec::new();
+    let mut i = messages.len();
+
+    while i > 0 {
+        i -= 1;
+        let msg = &messages[i];
+
+        // Compute the cost of this message.
+        let cost = estimate_tokens(msg, tokens_per_char);
+
+        // Determine whether this message starts a tool round: an assistant
+        // message with tool_use blocks whose results appear at index >= i.
+        let is_tool_round_start = matches!(msg.role, MessageRole::Assistant) && {
+            let has_calls = msg.content.iter().any(|b| matches!(b, ContentBlock::ToolUse(_)))
+                || msg.tool_calls.as_ref().map_or(false, |c| !c.is_empty());
+            if !has_calls {
+                false
+            } else {
+                // A tool round is complete only if every call has a result in
+                // the already-kept window.
+                let mut complete = true;
+                for block in &msg.content {
+                    if let ContentBlock::ToolUse(call) = block {
+                        let has_result = kept.iter().any(|k| {
+                            matches!(k.role, MessageRole::Tool)
+                                && k.content.iter().any(|b| {
+                                    matches!(b, ContentBlock::ToolResult(r) if r.tool_use_id == call.id)
+                                })
+                        });
+                        if !has_result {
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                complete
+            }
+        };
+
+        if is_tool_round_start {
+            // Keep the whole round (from round_start to i). We already kept
+            // the results; the start message is the last piece.
+            if budget >= cost {
+                budget -= cost;
+                kept.push(msg.clone());
+            } else {
+                // The round does not fit; stop here and keep only what we have.
+                if kept.is_empty() {
+                    kept.push(msg.clone());
+                }
+                break;
+            }
+        } else {
+            // Non-round message: keep it if it fits.
+            if cost <= budget {
+                budget -= cost;
+                kept.push(msg.clone());
+            } else {
+                if kept.is_empty() {
+                    kept.push(msg.clone());
+                }
+                break;
+            }
+        }
+    }
+
+    kept.reverse();
+    let mut out = system;
+    out.extend(kept);
+    out
+}
+
+/// Truncate a message list using the given strategy.
+///
+/// This dispatches to the appropriate strategy implementation. The token-based
+/// and importance-based strategies both use `tokens_per_char` for estimation.
+pub fn truncate_with_strategy(
+    messages: &[Message],
+    strategy: TruncationStrategy,
+    max_tokens: u64,
+    max_messages: usize,
+    tokens_per_char: f64,
+) -> Vec<Message> {
+    match strategy {
+        TruncationStrategy::TokenBased => truncate_to_budget(messages, max_tokens, tokens_per_char),
+        TruncationStrategy::MessageBased => truncate_to_message_count(messages, max_messages),
+        TruncationStrategy::ImportanceBased => {
+            truncate_by_importance(messages, max_tokens, tokens_per_char)
+        }
+    }
+}
+
+/// The result of a compaction-boundary detection.
+#[derive(Debug, Clone)]
+pub struct CompactionBoundary {
+    /// The index of the last message that can be safely compacted (inclusive).
+    pub compact_through: usize,
+    /// The number of messages to compact.
+    pub compact_count: usize,
+    /// The estimated tokens reclaimable.
+    pub reclaimable_tokens: u64,
+    /// The estimated tokens remaining after compaction.
+    pub remaining_tokens: u64,
+    /// Whether the boundary is "safe" (no partial tool round is split).
+    pub safe: bool,
+}
+
+/// Detect the safest compaction boundary in a message history.
+///
+/// The boundary is chosen so that:
+/// * system messages are never compacted,
+/// * a tool-call round is never split (both the `tool_use` and its matching
+///   `tool_result` stay together),
+/// * the most recent `keep_recent` messages are always preserved.
+///
+/// Returns the largest index through which messages may be dropped without
+/// violating these invariants.
+pub fn detect_compaction_boundary(
+    messages: &[Message],
+    keep_recent: usize,
+    tokens_per_char: f64,
+) -> Option<CompactionBoundary> {
+    if messages.is_empty() {
+        return None;
+    }
+
+    // Build a map from tool_use id to its message index.
+    let mut tool_use_indices: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, msg) in messages.iter().enumerate() {
+        for block in &msg.content {
+            if let ContentBlock::ToolUse(call) = block {
+                tool_use_indices.insert(call.id.clone(), i);
+            }
+        }
+        if let Some(calls) = &msg.tool_calls {
+            for call in calls {
+                tool_use_indices.insert(call.id.clone(), i);
+            }
+        }
+    }
+
+    // The candidate compact-through index: leave the last `keep_recent`
+    // messages untouched.
+    let limit = messages.len().saturating_sub(keep_recent).max(1);
+    let mut compact_through = 0usize;
+    let mut safe = true;
+
+    for i in 0..limit {
+        let msg = &messages[i];
+        if matches!(msg.role, MessageRole::System) {
+            break;
+        }
+        // If this is a tool result, its tool_use must also be before the
+        // boundary. Since we compact everything up to `i`, both are dropped
+        // together — safe.
+        if let Some(tool_call_id) = &msg.tool_call_id {
+            let use_idx = tool_use_indices.get(tool_call_id).copied().unwrap_or(i);
+            if use_idx > i {
+                safe = false;
+                break;
+            }
+        }
+        compact_through = i;
+    }
+
+    // Compute the token counts.
+    let total_tokens: u64 = messages.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let compacted_tokens: u64 = messages[..=compact_through]
+        .iter()
+        .map(|m| estimate_tokens(m, tokens_per_char))
+        .sum();
+    let remaining_tokens = total_tokens.saturating_sub(compacted_tokens);
+
+    Some(CompactionBoundary {
+        compact_through,
+        compact_count: compact_through + 1,
+        reclaimable_tokens: compacted_tokens,
+        remaining_tokens,
+        safe,
+    })
+}
+
+/// Rebuild a conversation from a set of fragments.
+///
+/// Merges the given messages with an existing base, ensuring no duplicates
+/// and repairing tool-call pairing.
+#[derive(Debug, Clone, Default)]
+pub struct ConversationRebuilder {
+    /// The base messages to preserve.
+    base: Vec<Message>,
+}
+
+impl ConversationRebuilder {
+    /// Create a new conversation rebuilder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the base messages (existing history).
+    pub fn with_base(mut self, base: Vec<Message>) -> Self {
+        self.base = base;
+        self
+    }
+
+    /// Rebuild the conversation by appending new messages and normalizing.
+    pub fn rebuild(&self, new_messages: Vec<Message>) -> Vec<Message> {
+        let mut combined = self.base.clone();
+        combined.extend(new_messages);
+        // Repair tool pairing.
+        let outcome = repair_tool_pairs(&combined);
+        // Deduplicate.
+        deduplicate(&outcome.messages)
+    }
+
+    /// Append a single message.
+    pub fn push(&mut self, message: Message) {
+        self.base.push(message);
+    }
+
+    /// The number of base messages.
+    pub fn len(&self) -> usize {
+        self.base.len()
+    }
+
+    /// True when the base is empty.
+    pub fn is_empty(&self) -> bool {
+        self.base.is_empty()
+    }
+}
+
+/// A summary of the history structure, useful for diagnostics and boundary
+/// detection.
+#[derive(Debug, Clone, Default)]
+pub struct HistoryProfile {
+    /// The total message count.
+    pub message_count: usize,
+    /// The estimated total tokens.
+    pub estimated_tokens: u64,
+    /// The number of system messages.
+    pub system_messages: usize,
+    /// The number of user messages.
+    pub user_messages: usize,
+    /// The number of assistant messages.
+    pub assistant_messages: usize,
+    /// The number of tool messages.
+    pub tool_messages: usize,
+    /// The number of tool calls with a matching result.
+    pub paired_tool_calls: usize,
+    /// The number of orphaned tool results.
+    pub orphaned_results: usize,
+    /// The number of unpaired tool calls.
+    pub unpaired_calls: usize,
+}
+
+/// Profile a message history.
+pub fn profile_history(messages: &[Message], tokens_per_char: f64) -> HistoryProfile {
+    let mut profile = HistoryProfile::default();
+    profile.message_count = messages.len();
+    profile.estimated_tokens = messages.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+
+    let mut all_call_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for msg in messages {
+        collect_tool_call_ids(msg, &mut all_call_ids);
+    }
+
+    for msg in messages {
+        match msg.role {
+            MessageRole::System => profile.system_messages += 1,
+            MessageRole::User => profile.user_messages += 1,
+            MessageRole::Assistant => profile.assistant_messages += 1,
+            MessageRole::Tool => profile.tool_messages += 1,
+        }
+    }
+
+    // Count orphaned results.
+    let satisfied: std::collections::HashSet<String> = messages
+        .iter()
+        .flat_map(|m| m.content.iter())
+        .filter_map(|b| match b {
+            ContentBlock::ToolResult(r) => Some(r.tool_use_id.clone()),
+            _ => None,
+        })
+        .collect();
+    for id in &all_call_ids {
+        if satisfied.contains(id) {
+            profile.paired_tool_calls += 1;
+        } else {
+            profile.unpaired_calls += 1;
+        }
+    }
+    profile.orphaned_results = messages
+        .iter()
+        .filter(|m| matches!(m.role, MessageRole::Tool))
+        .filter(|m| !m.content.iter().any(|b| matches!(b, ContentBlock::ToolResult(r) if all_call_ids.contains(&r.tool_use_id))))
+        .count();
+
+    profile
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

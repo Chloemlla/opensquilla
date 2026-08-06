@@ -689,3 +689,480 @@ fn split_host_port(s: &str, default_port: u16) -> Result<(String, u16), String> 
         Ok((s.to_string(), default_port))
     }
 }
+
+/// A sliding-window rate limiter keyed by an arbitrary string (client address,
+/// domain, user id, ...).
+///
+/// The limiter allows at most `limit` events per `window` duration per key.
+/// Buckets are stored in a `DashMap` and lazily evicted once they fall out of
+/// the window, so memory stays bounded by the number of active keys.
+#[derive(Clone)]
+pub struct RateLimiter {
+    buckets: Arc<dashmap::DashMap<String, RateBucket>>,
+    limit: usize,
+    window: Duration,
+}
+
+#[derive(Debug, Clone)]
+struct RateBucket {
+    events: Vec<DateTime<Utc>>,
+}
+
+impl RateLimiter {
+    /// Create a limiter allowing `limit` events per `window`.
+    pub fn new(limit: usize, window: Duration) -> Self {
+        Self {
+            buckets: Arc::new(dashmap::DashMap::new()),
+            limit,
+            window,
+        }
+    }
+
+    /// A limiter for the default proxy policy: 120 requests per minute per key.
+    pub fn default_proxy() -> Self {
+        Self::new(120, Duration::from_secs(60))
+    }
+
+    /// Allow a single request from `key`. Returns `true` when within the limit.
+    pub fn allow(&self, key: &str) -> bool {
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::from_std(self.window).unwrap_or_default();
+        let mut bucket = self
+            .buckets
+            .entry(key.to_string())
+            .or_insert(RateBucket { events: Vec::new() });
+        bucket.events.retain(|t| *t > cutoff);
+        if bucket.events.len() >= self.limit {
+            return false;
+        }
+        bucket.events.push(now);
+        true
+    }
+
+    /// Check whether `key` is currently rate-limited without consuming a slot.
+    pub fn is_limited(&self, key: &str) -> bool {
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::from_std(self.window).unwrap_or_default();
+        let bucket = self.buckets.get(key);
+        match bucket {
+            Some(b) => b.events.iter().filter(|t| **t > cutoff).count() >= self.limit,
+            None => false,
+        }
+    }
+
+    /// Number of requests allowed to `key` in the current window.
+    pub fn remaining(&self, key: &str) -> usize {
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::from_std(self.window).unwrap_or_default();
+        let bucket = self.buckets.get(key);
+        let count = match bucket {
+            Some(b) => b.events.iter().filter(|t| **t > cutoff).count(),
+            None => 0,
+        };
+        self.limit.saturating_sub(count)
+    }
+
+    /// Remove a key (frees its bucket).
+    pub fn reset(&self, key: &str) {
+        self.buckets.remove(key);
+    }
+
+    /// The configured per-window limit.
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    /// The configured window.
+    pub fn window(&self) -> Duration {
+        self.window
+    }
+}
+
+/// A token bucket for outbound connection throttling.
+///
+/// Distinct from [`RateLimiter`] (which is per-key): this throttles the total
+/// number of connections the proxy makes per unit time, e.g. 50 connect
+/// attempts per second, smoothing bursts. Tokens refill continuously based on
+/// elapsed time since the last access.
+#[derive(Clone)]
+pub struct TokenBucket {
+    state: Arc<std::sync::Mutex<BucketState>>,
+    capacity: f64,
+    refill_per_sec: f64,
+}
+
+#[derive(Debug)]
+struct BucketState {
+    tokens: f64,
+    last_refill: std::time::Instant,
+}
+
+impl TokenBucket {
+    /// Create a bucket with `capacity` tokens, refilling `refill_per_sec`
+    /// tokens per second.
+    pub fn new(capacity: u64, refill_per_sec: u64) -> Self {
+        Self {
+            state: Arc::new(std::sync::Mutex::new(BucketState {
+                tokens: capacity as f64,
+                last_refill: std::time::Instant::now(),
+            })),
+            capacity: capacity as f64,
+            refill_per_sec: refill_per_sec as f64,
+        }
+    }
+
+    /// Try to consume one token, refilling first. Returns `true` if a token
+    /// was available.
+    pub fn try_consume(&self) -> bool {
+        let mut state = self.state.lock().unwrap();
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(state.last_refill).as_secs_f64();
+        if elapsed > 0.0 {
+            state.tokens = (state.tokens + elapsed * self.refill_per_sec).min(self.capacity);
+            state.last_refill = now;
+        }
+        if state.tokens >= 1.0 {
+            state.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Refill the bucket to capacity.
+    pub fn refill(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.tokens = self.capacity;
+        state.last_refill = std::time::Instant::now();
+    }
+
+    /// Add `n` tokens (capped at capacity).
+    pub fn add(&self, n: u64) {
+        let mut state = self.state.lock().unwrap();
+        state.tokens = (state.tokens + n as f64).min(self.capacity);
+        state.last_refill = std::time::Instant::now();
+    }
+
+    /// Remaining tokens (current instantaneous balance).
+    pub fn available(&self) -> u64 {
+        let state = self.state.lock().unwrap();
+        state.tokens.floor() as u64
+    }
+}
+
+/// The result of a domain allowlist check, including the matched rule and a
+/// human-readable reason for audit.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DomainCheck {
+    pub allowed: bool,
+    pub domain: String,
+    /// The allowlist rule that matched (for allow), or the reason for denial.
+    pub detail: String,
+}
+
+/// A static domain allowlist with wildcard support.
+#[derive(Debug, Clone, Default)]
+pub struct DomainAllowlist {
+    domains: Arc<dashmap::DashSet<String>>,
+}
+
+impl DomainAllowlist {
+    /// Create an empty allowlist.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create from an iterator of domains.
+    pub fn from_domains<I: IntoIterator<Item = String>>(domains: I) -> Self {
+        let set = Arc::new(dashmap::DashSet::new());
+        for d in domains {
+            set.insert(d.trim().to_lowercase());
+        }
+        Self { domains: set }
+    }
+
+    /// Add a domain.
+    pub fn add(&self, domain: &str) {
+        self.domains.insert(domain.trim().to_lowercase());
+    }
+
+    /// Check a domain against the allowlist.
+    pub fn check(&self, domain: &str) -> DomainCheck {
+        let d = domain.to_lowercase();
+        if self.domains.is_empty() {
+            return DomainCheck {
+                allowed: false,
+                domain: domain.to_string(),
+                detail: "allowlist is empty; nothing is allowed".to_string(),
+            };
+        }
+        if self.domains.contains(&d) {
+            return DomainCheck {
+                allowed: true,
+                domain: domain.to_string(),
+                detail: format!("exact match for '{d}'"),
+            };
+        }
+        for allowed in self.domains.iter() {
+            if let Some(suffix) = allowed.strip_prefix("*.") {
+                if d == suffix || d.ends_with(&format!(".{suffix}")) {
+                    return DomainCheck {
+                        allowed: true,
+                        domain: domain.to_string(),
+                        detail: format!("wildcard match for '{}'", &*allowed),
+                    };
+                }
+            }
+        }
+        DomainCheck {
+            allowed: false,
+            domain: domain.to_string(),
+            detail: format!("'{d}' is not in the allowlist"),
+        }
+    }
+
+    /// Number of domains in the allowlist.
+    pub fn len(&self) -> usize {
+        self.domains.len()
+    }
+
+    /// Is the allowlist empty?
+    pub fn is_empty(&self) -> bool {
+        self.domains.is_empty()
+    }
+}
+
+/// DNS resolution checks that complement the allowlist.
+///
+/// Verifies that a hostname resolves and that every resolved address passes
+/// the SSRF guard (not in a blocked CIDR). This is used by the proxy before
+/// opening an upstream connection.
+pub struct DnsChecker {
+    resolver: trust_dns_resolver::TokioAsyncResolver,
+    blocked: Arc<RwLock<Vec<IpRange>>>,
+}
+
+impl DnsChecker {
+    /// Create a DNS checker from the system resolver configuration.
+    pub async fn new() -> Result<Self, String> {
+        let resolver = trust_dns_resolver::TokioAsyncResolver::tokio_from_system_conf()
+            .map_err(|e| format!("failed to create DNS resolver: {e}"))?;
+        Ok(Self {
+            resolver,
+            blocked: Arc::new(RwLock::new(Vec::new())),
+        })
+    }
+
+    /// Set the blocked CIDR ranges.
+    pub async fn set_blocked_ranges(&self, ranges: Vec<IpRange>) {
+        *self.blocked.write().await = ranges;
+    }
+
+    /// Resolve a hostname to a list of addresses.
+    pub async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, String> {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return Ok(vec![ip]);
+        }
+        let response = self
+            .resolver
+            .lookup_ip(host)
+            .await
+            .map_err(|e| format!("DNS resolution failed: {e}"))?;
+        Ok(response.iter().collect())
+    }
+
+    /// Resolve a hostname and check every address against the blocked ranges.
+    /// Returns `Ok(())` only if at least one address resolves and none are
+    /// blocked. Returns the resolved addresses on success so the caller can
+    /// connect to one.
+    pub async fn resolve_and_check(&self, host: &str) -> Result<Vec<IpAddr>, String> {
+        let ips = self.resolve(host).await?;
+        if ips.is_empty() {
+            return Err(format!("no addresses resolved for '{host}'"));
+        }
+        let ranges = self.blocked.read().await;
+        for ip in &ips {
+            if ranges.iter().any(|r| r.contains(ip)) {
+                return Err(format!(
+                    "resolved address {ip} for '{host}' is inside a blocked CIDR range"
+                ));
+            }
+        }
+        Ok(ips)
+    }
+
+    /// Check whether a specific IP is blocked.
+    pub async fn is_ip_blocked(&self, ip: &IpAddr) -> bool {
+        let ranges = self.blocked.read().await;
+        ranges.iter().any(|r| r.contains(ip))
+    }
+}
+
+/// A per-request audit logger that captures the full lifecycle of a proxied
+/// request: received, allowed, connected, completed, with timing.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProxyRequestLog {
+    pub id: String,
+    pub peer: String,
+    pub method: String,
+    pub host: String,
+    pub port: u16,
+    pub target_ip: Option<IpAddr>,
+    pub allowed: bool,
+    pub decision: String,
+    pub started_at: DateTime<Utc>,
+    pub connected_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub bytes_up: u64,
+    pub bytes_down: u64,
+    pub error: Option<String>,
+}
+
+/// A ring buffer of recent proxy request logs, bounded by capacity.
+#[derive(Clone)]
+pub struct RequestLogBuffer {
+    logs: Arc<tokio::sync::RwLock<std::collections::VecDeque<ProxyRequestLog>>>,
+    capacity: usize,
+}
+
+impl RequestLogBuffer {
+    /// Create a buffer holding up to `capacity` recent logs.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            logs: Arc::new(tokio::sync::RwLock::new(
+                std::collections::VecDeque::with_capacity(capacity),
+            )),
+            capacity,
+        }
+    }
+
+    /// Append a log, dropping the oldest when at capacity.
+    pub async fn push(&self, log: ProxyRequestLog) {
+        let mut logs = self.logs.write().await;
+        if logs.len() >= self.capacity {
+            logs.pop_front();
+        }
+        logs.push_back(log);
+    }
+
+    /// Snapshot all logs (oldest first).
+    pub async fn snapshot(&self) -> Vec<ProxyRequestLog> {
+        self.logs.read().await.iter().cloned().collect()
+    }
+
+    /// Recent logs matching a decision.
+    pub async fn by_decision(&self, decision: &str) -> Vec<ProxyRequestLog> {
+        self.logs
+            .read()
+            .await
+            .iter()
+            .filter(|l| l.decision == decision)
+            .cloned()
+            .collect()
+    }
+
+    /// Number of logs held.
+    pub async fn len(&self) -> usize {
+        self.logs.read().await.len()
+    }
+
+    /// Is the buffer empty?
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
+}
+
+/// Convenience constructor for a default SSRF-prevention blocked-range list
+/// parsed from [`crate::policy::default_blocked_cidrs`].
+pub fn default_blocked_ranges() -> Result<Vec<IpRange>, String> {
+    crate::policy::default_blocked_cidrs()
+        .iter()
+        .map(|c| IpRange::parse(c))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rate_limiter_blocks_after_limit() {
+        let limiter = RateLimiter::new(3, Duration::from_secs(60));
+        assert!(limiter.allow("client-1"));
+        assert!(limiter.allow("client-1"));
+        assert!(limiter.allow("client-1"));
+        assert!(!limiter.allow("client-1"));
+        assert_eq!(limiter.remaining("client-1"), 0);
+        // A different key is not limited.
+        assert!(limiter.allow("client-2"));
+    }
+
+    #[test]
+    fn token_bucket_consumes() {
+        let bucket = TokenBucket::new(2, 1);
+        assert!(bucket.try_consume());
+        assert!(bucket.try_consume());
+        assert!(!bucket.try_consume());
+        bucket.refill();
+        assert!(bucket.try_consume());
+    }
+
+    #[test]
+    fn domain_allowlist_wildcards() {
+        let wl = DomainAllowlist::from_domains(vec![
+            "example.com".to_string(),
+            "*.sub.example.com".to_string(),
+        ]);
+        assert!(wl.check("example.com").allowed);
+        assert!(wl.check("api.sub.example.com").allowed);
+        assert!(!wl.check("badexample.com").allowed);
+        assert!(!wl.check("other.org").allowed);
+    }
+
+    #[test]
+    fn empty_allowlist_denies_all() {
+        let wl = DomainAllowlist::new();
+        assert!(!wl.check("example.com").allowed);
+    }
+
+    #[test]
+    fn ip_range_contains() {
+        let r = IpRange::parse("192.168.0.0/16").unwrap();
+        assert!(r.contains(&"192.168.1.1".parse().unwrap()));
+        assert!(!r.contains(&"10.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn default_blocked_ranges_parse() {
+        let ranges = default_blocked_ranges().unwrap();
+        assert!(ranges.iter().any(|r| r.cidr == "127.0.0.0/8"));
+    }
+
+    #[tokio::test]
+    async fn request_log_buffer_rotates() {
+        let buf = RequestLogBuffer::new(2);
+        for i in 0..3 {
+            buf.push(ProxyRequestLog {
+                id: format!("r{i}"),
+                peer: "127.0.0.1:1".to_string(),
+                method: "CONNECT".to_string(),
+                host: "example.com".to_string(),
+                port: 443,
+                target_ip: None,
+                allowed: true,
+                decision: "allowed".to_string(),
+                started_at: Utc::now(),
+                connected_at: None,
+                completed_at: None,
+                bytes_up: 0,
+                bytes_down: 0,
+                error: None,
+            })
+            .await;
+        }
+        assert_eq!(buf.len().await, 2);
+        let logs = buf.snapshot().await;
+        assert_eq!(logs[0].id, "r1");
+        assert_eq!(logs[1].id, "r2");
+    }
+}

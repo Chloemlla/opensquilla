@@ -66,7 +66,7 @@ impl TurnGenerator for ProviderTurnGenerator {
 ///
 /// `session_id` resumes an existing session, `prompt` runs a one-shot message,
 /// and `standalone` selects direct `TurnRunner` execution instead of gateway
-/// RPC.
+/// RPC. `attach` lists file paths to attach to the session before chatting.
 pub async fn run_chat(
     config: Config,
     session_id: Option<String>,
@@ -75,15 +75,40 @@ pub async fn run_chat(
     prompt: Option<String>,
     standalone: bool,
 ) -> Result<()> {
+    run_chat_with_attachments(config, session_id, provider, model, prompt, standalone, Vec::new())
+        .await
+}
+
+/// Entry point for the `chat` subcommand with attachment support.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_chat_with_attachments(
+    config: Config,
+    session_id: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    prompt: Option<String>,
+    standalone: bool,
+    attach: Vec<String>,
+) -> Result<()> {
     let manager = util::build_session_manager(&config)?;
     let provider_name = provider.unwrap_or_else(|| util::default_provider(&config));
     let model_name = model.unwrap_or_else(|| util::default_model(&config));
 
-    let active_session = util::resolve_or_create_session(&manager, session_id.as_deref()).await?;
+    let mut active_session = util::resolve_or_create_session(&manager, session_id.as_deref()).await?;
     info!(
         "Chat session {} provider={} model={} standalone={}",
         active_session.id, provider_name, model_name, standalone
     );
+
+    // Attach any provided files to the session.
+    for path in &attach {
+        match attach_file(&manager, &active_session.id, path) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("Warning: failed to attach {path}: {e}");
+            }
+        }
+    }
 
     match prompt {
         Some(msg) => {

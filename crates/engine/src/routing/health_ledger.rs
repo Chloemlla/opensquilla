@@ -368,6 +368,106 @@ impl ProviderHealthLedger {
             }
         }
     }
+
+    /// Snapshot the current bench state for persistence.
+    ///
+    /// Returns the (provider, model) pairs currently benched along with the
+    /// timestamp until which they are benched (in the ledger's monotonic
+    /// clock domain).
+    pub fn snapshot(&self) -> Vec<BenchEntry> {
+        let mut entries = Vec::new();
+        let now = (self.clock)();
+        let benched = self.benched_until.lock().unwrap_or_else(|e| e.into_inner());
+        for (key, until) in benched.iter() {
+            if *until > now {
+                entries.push(BenchEntry {
+                    provider: key.provider.clone(),
+                    model: key.model.clone(),
+                    benched_until_s: *until,
+                });
+            }
+        }
+        entries
+    }
+
+    /// Restore bench state from a persisted snapshot.
+    ///
+    /// Entries whose cooldown has already expired are dropped.
+    pub fn restore(&self, entries: &[BenchEntry]) -> usize {
+        let now = (self.clock)();
+        let mut benched = self.benched_until.lock().unwrap_or_else(|e| e.into_inner());
+        let mut restored = 0usize;
+        for entry in entries {
+            if entry.benched_until_s <= now {
+                continue;
+            }
+            let key = deployment_key(&entry.provider, &entry.model);
+            benched.insert(key, entry.benched_until_s);
+            restored += 1;
+        }
+        restored
+    }
+
+    /// The number of deployments currently tracked (strikes + benched).
+    pub fn tracked_count(&self) -> usize {
+        let strikes = self.strikes.lock().map(|s| s.len()).unwrap_or(0);
+        let benched = self.benched_until.lock().map(|b| b.len()).unwrap_or(0);
+        strikes + benched
+    }
+
+    /// Clear all strikes and benches.
+    pub fn clear(&self) {
+        self.strikes.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.benched_until.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+}
+
+/// A persisted bench entry for the health ledger.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BenchEntry {
+    /// The provider id.
+    pub provider: String,
+    /// The model id.
+    pub model: String,
+    /// The timestamp until which the deployment is benched (in the ledger's
+    /// monotonic clock domain).
+    pub benched_until_s: f64,
+}
+
+/// Persist the health ledger's bench state to a JSON file.
+///
+/// The write is atomic (temp file + rename). A missing directory is created.
+pub fn save_health_ledger(
+    ledger: &ProviderHealthLedger,
+    path: &std::path::Path,
+) -> Result<(), opensquilla_core::error::Error> {
+    let entries = ledger.snapshot();
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let payload = serde_json::to_string_pretty(&entries)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, &payload)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Load a health ledger's bench state from a JSON file.
+///
+/// A missing or corrupt file is treated as an empty state.
+pub fn load_health_ledger(
+    ledger: &ProviderHealthLedger,
+    path: &std::path::Path,
+) -> usize {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return 0;
+    };
+    let Ok(entries) = serde_json::from_str::<Vec<BenchEntry>>(&raw) else {
+        return 0;
+    };
+    ledger.restore(&entries)
 }
 
 /// A process-wide shared ledger, constructed lazily with the pinned defaults.

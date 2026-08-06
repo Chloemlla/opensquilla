@@ -201,6 +201,337 @@ impl DreamConsolidator for HeuristicConsolidator {
     }
 }
 
+// ---------------------------------------------------------------------------
+// LLM-backed consolidator
+// ---------------------------------------------------------------------------
+
+/// A chat callback used by [`LlmConsolidator`] to generate consolidation
+/// text. The memory crate does not depend on the provider crate; callers
+/// inject a thin closure over their LLM client.
+#[async_trait::async_trait]
+pub trait DreamLlm: Send + Sync {
+    /// Complete a single chat turn and return the assistant's text.
+    async fn complete(&self, system: &str, user: &str) -> CoreResult<String>;
+}
+
+/// An LLM-backed consolidator. Builds structured prompts from consolidation
+/// candidates and asks the injected [`DreamLlm`] to produce merged memories.
+pub struct LlmConsolidator {
+    llm: Arc<dyn DreamLlm>,
+    language: String,
+}
+
+impl LlmConsolidator {
+    pub fn new(llm: Arc<dyn DreamLlm>) -> Self {
+        Self {
+            llm,
+            language: "en".to_string(),
+        }
+    }
+
+    /// Set the output language for generated consolidations.
+    pub fn with_language(mut self, language: impl Into<String>) -> Self {
+        self.language = language.into();
+        self
+    }
+
+    fn build_consolidation_prompt(&self, candidates: &[ConsolidationCandidate]) -> (String, String) {
+        let system = if self.language.starts_with("zh") {
+            "你是一个记忆整合助手。把相似的记忆合并成一条简洁、信息密集的摘要。\
+             保留姓名、数字、日期等关键细节。为每条候选输出一行 JSON 对象。"
+        } else {
+            "You are a memory consolidation assistant. Merge similar memories into a single \
+             concise, information-dense summary. Preserve names, numbers, dates, and concrete \
+             details. Output one JSON object per candidate on a single line."
+        };
+
+        let mut user = String::from("Consolidate these memory clusters:\n\n");
+        for (i, candidate) in candidates.iter().enumerate() {
+            user.push_str(&format!(
+                "[Cluster {}] type={} similarity={:.2} members={}\n{}\n\n",
+                i,
+                candidate.memory_type,
+                candidate.similarity,
+                candidate.memory_ids.len(),
+                candidate.cluster_content
+            ));
+        }
+        user.push_str(
+            "Return a JSON array of objects, each with fields: \
+             \"content\" (string), \"importance\" (number 0-1), \"tags\" (array of strings).",
+        );
+        (system.to_string(), user)
+    }
+
+    fn parse_response(&self, raw: &str) -> Vec<serde_json::Value> {
+        // Extract the first JSON array from the response (tolerant of
+        // markdown fences and prose around it).
+        if let Some(start) = raw.find('[') {
+            if let Some(end) = raw.rfind(']') {
+                let slice = &raw[start..=end];
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(slice) {
+                    if let serde_json::Value::Array(items) = v {
+                        return items;
+                    }
+                }
+            }
+        }
+        serde_json::from_str(raw)
+            .map(|v: serde_json::Value| match v {
+                serde_json::Value::Array(items) => items,
+                other => vec![other],
+            })
+            .unwrap_or_default()
+    }
+}
+
+#[async_trait::async_trait]
+impl DreamConsolidator for LlmConsolidator {
+    async fn consolidate(
+        &self,
+        candidates: &[ConsolidationCandidate],
+    ) -> CoreResult<Vec<ConsolidatedMemory>> {
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (system, user) = self.build_consolidation_prompt(candidates);
+        let raw = self.llm.complete(&system, &user).await?;
+        let parsed = self.parse_response(&raw);
+
+        let mut out = Vec::new();
+        for (i, item) in parsed.iter().enumerate() {
+            let candidate = &candidates[i.min(candidates.len() - 1)];
+            let content = item
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .unwrap_or_else(|| candidate.cluster_content.clone());
+            let importance = item
+                .get("importance")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.7)
+                .clamp(0.0, 1.0);
+            let tags: Vec<String> = item
+                .get("tags")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|t| t.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            out.push(ConsolidatedMemory {
+                agent_id: candidate.agent_id,
+                content,
+                memory_type: format!("dream_{}", candidate.memory_type),
+                importance,
+                tags,
+                source_memory_ids: candidate.memory_ids.clone(),
+                metadata: serde_json::json!({
+                    "similarity": candidate.similarity,
+                    "consolidation_method": "llm",
+                    "language": self.language,
+                }),
+            });
+        }
+
+        // If the LLM produced fewer results than candidates, fill the rest
+        // deterministically so no candidate is lost.
+        if out.len() < candidates.len() {
+            let fillers = heuristic_consolidate(&candidates[out.len()..]);
+            out.extend(fillers);
+        }
+        Ok(out)
+    }
+
+    async fn resolve_contradiction(
+        &self,
+        a: &MemoryEntry,
+        b: &MemoryEntry,
+    ) -> CoreResult<Option<ConsolidatedMemory>> {
+        let system = if self.language.starts_with("zh") {
+            "你是一个记忆仲裁助手。两个记忆相互矛盾，请生成一条解决矛盾的合并记忆。"
+        } else {
+            "You are a memory arbitration assistant. Two memories contradict each other. \
+             Generate a single merged memory that resolves the conflict."
+        };
+        let user = format!(
+            "Memory A: {}\n\nMemory B: {}\n\nReturn a JSON object with \
+             fields: \"content\" (string), \"importance\" (number), \"tags\" (array).",
+            a.content, b.content
+        );
+        let raw = self.llm.complete(system, &user).await?;
+        let parsed = self.parse_response(&raw);
+        if parsed.is_empty() {
+            return Ok(None);
+        }
+        let item = &parsed[0];
+        let content = item
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| {
+                format!(
+                    "[Dream] Resolved contradiction between two memories:\n{}\n---\n{}",
+                    a.content, b.content
+                )
+            });
+        let importance = item
+            .get("importance")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(a.importance.max(b.importance))
+            .clamp(0.0, 1.0);
+        let tags: Vec<String> = item
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+            .unwrap_or_else(|| vec!["dream".to_string(), "resolved".to_string()]);
+
+        Ok(Some(ConsolidatedMemory {
+            agent_id: a.agent_id,
+            content,
+            memory_type: "dream_resolved".to_string(),
+            importance,
+            tags,
+            source_memory_ids: vec![a.id, b.id],
+            metadata: serde_json::json!({
+                "resolved": true,
+                "consolidation_method": "llm",
+            }),
+        }))
+    }
+
+    fn name(&self) -> &str {
+        "llm"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Memory merging and importance scoring
+// ---------------------------------------------------------------------------
+
+/// Merge two memories into a single [`MemoryEntry`]. The merged entry keeps
+/// the higher importance, the union of tags, the more recent timestamps, and
+/// a concatenated content body with provenance.
+pub fn merge_memories(a: &MemoryEntry, b: &MemoryEntry) -> MemoryEntry {
+    let mut content = String::new();
+    content.push_str(&a.content);
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str("---\n");
+    content.push_str(&b.content);
+
+    let mut tags = a.tags.clone();
+    for t in &b.tags {
+        if !tags.contains(t) {
+            tags.push(t.clone());
+        }
+    }
+
+    let importance = a.importance.max(b.importance).clamp(0.0, 1.0);
+    let created_at = a.created_at.min(b.created_at);
+    let updated_at = chrono::Utc::now();
+
+    let mut metadata = a.metadata.clone();
+    if let Some(obj) = metadata.as_object_mut() {
+        obj.insert(
+            "merged_from".to_string(),
+            serde_json::json!([a.id.0.to_string(), b.id.0.to_string()]),
+        );
+        obj.insert("merged_at".to_string(), serde_json::json!(updated_at.to_rfc3339()));
+    } else {
+        metadata = serde_json::json!({
+            "merged_from": [a.id.0.to_string(), b.id.0.to_string()],
+            "merged_at": updated_at.to_rfc3339(),
+        });
+    }
+
+    let mut merged = MemoryEntry::new(
+        opensquilla_core::types::MemoryId(uuid::Uuid::new_v4()),
+        a.agent_id,
+        content,
+        "dream".to_string(),
+        if a.memory_type == b.memory_type {
+            a.memory_type.clone()
+        } else {
+            format!("merged_{}_{}", a.memory_type, b.memory_type)
+        },
+        importance,
+        metadata,
+    );
+    merged.tags = tags;
+    merged.created_at = created_at;
+    merged.updated_at = updated_at;
+    merged.importance_score = importance;
+    merged
+}
+
+/// Heuristic importance scoring for a memory.
+///
+/// Combines several signals into a score in `[0, 1]`:
+/// - recency (newer memories are initially more salient)
+/// - length of content (a proxy for information content, with diminishing
+///   returns beyond a band)
+/// - number of tags
+/// - an optional explicit base score.
+pub fn score_importance(
+    content: &str,
+    created_at: chrono::DateTime<chrono::Utc>,
+    tag_count: usize,
+    base: f64,
+) -> f64 {
+    let now = chrono::Utc::now();
+    let age_days = (now - created_at).num_days().max(0) as f64;
+    // Recency: halve the score every 30 days.
+    let recency = 0.5f64.powf(age_days / 30.0);
+
+    let chars = content.chars().count() as f64;
+    // Information-content proxy: grows to 1.0 around 300 chars then holds.
+    let length = (chars / 300.0).min(1.0);
+
+    let tag_boost = (tag_count as f64 * 0.1).min(0.3);
+
+    let combined = base * 0.4 + recency * 0.3 + length * 0.2 + tag_boost;
+    combined.clamp(0.0, 1.0)
+}
+
+/// Recompute the importance of every memory for an agent using
+/// [`score_importance`], updating the store. Returns the number updated.
+pub fn reindex_importance(
+    store: &crate::store::MemoryStore,
+    agent_id: &uuid::Uuid,
+) -> CoreResult<usize> {
+    let memories = store.list_memories(agent_id, None, u64::MAX, 0)?;
+    let mut updated = 0usize;
+    for mut memory in memories {
+        let new_importance = score_importance(
+            &memory.content,
+            memory.created_at,
+            memory.tags.len(),
+            memory.importance,
+        );
+        if (new_importance - memory.importance).abs() > 0.001 {
+            memory.set_importance(new_importance);
+            store.update_memory(&memory)?;
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+/// Build a merged memory from a set of cluster members.
+pub fn merge_cluster_members(members: &[MemoryEntry]) -> Option<MemoryEntry> {
+    let first = members.first()?;
+    let second = members.get(1)?;
+    let mut merged = merge_memories(first, second);
+    for member in &members[2..] {
+        merged = merge_memories(&merged, member);
+    }
+    Some(merged)
+}
+
 /// The consolidation engine.
 pub struct DreamEngine {
     store: MemoryStore,
@@ -269,6 +600,47 @@ impl DreamEngine {
             }
             None => true,
         }
+    }
+
+    /// The next time a dream cycle is due. Returns `None` when no cycle has
+    /// run yet (i.e. a cycle is due immediately).
+    pub fn next_dream_due_at(&self) -> Option<DateTime<Utc>> {
+        let last = self
+            .last_consolidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        last.map(|t| {
+            t + chrono::Duration::seconds((self.consolidation_interval_hours * 3600.0) as i64)
+        })
+    }
+
+    /// Run a dream cycle only if one is due. Returns `None` when not due.
+    pub async fn run_dream_if_due(&self, agent_id: &Uuid) -> CoreResult<Option<DreamSummary>> {
+        if self.is_due() {
+            Ok(Some(self.run_dream_cycle(agent_id).await?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Merge two memories into one, persist the merged entry, and delete both
+    /// originals. Returns the merged memory id.
+    pub fn merge_and_store(
+        &self,
+        a: &MemoryEntry,
+        b: &MemoryEntry,
+    ) -> CoreResult<opensquilla_core::types::MemoryId> {
+        let merged = merge_memories(a, b);
+        self.store.insert_memory(&merged)?;
+        self.store.delete_memory(&a.id)?;
+        self.store.delete_memory(&b.id)?;
+        info!("Merged memories {:?} and {:?} into {:?}", a.id, b.id, merged.id);
+        Ok(merged.id)
+    }
+
+    /// Recompute importance scores for every memory of an agent.
+    pub fn refresh_importance(&self, agent_id: &Uuid) -> CoreResult<usize> {
+        reindex_importance(&self.store, agent_id)
     }
 
     /// Run one full dream cycle for an agent.
@@ -1164,5 +1536,253 @@ mod tests {
         );
         let summary = engine.consolidate(&agent).unwrap();
         assert_eq!(summary.total_memories, 3);
+    }
+
+    #[test]
+    fn test_merge_memories_combines() {
+        let mut a = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            Uuid::new_v4(),
+            "user prefers dark mode".to_string(),
+            "test".to_string(),
+            "preference".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        );
+        a.tags = vec!["ui".to_string()];
+        let mut b = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            a.agent_id,
+            "user uses vim keybindings".to_string(),
+            "test".to_string(),
+            "preference".to_string(),
+            0.9,
+            serde_json::Value::Null,
+        );
+        b.tags = vec!["editor".to_string()];
+
+        let merged = merge_memories(&a, &b);
+        assert!(merged.content.contains("dark mode"));
+        assert!(merged.content.contains("vim"));
+        assert!(merged.tags.contains(&"ui".to_string()));
+        assert!(merged.tags.contains(&"editor".to_string()));
+        assert_eq!(merged.importance, 0.9);
+        assert_eq!(merged.memory_type, "preference");
+    }
+
+    #[test]
+    fn test_score_importance_recency_and_length() {
+        let now = Utc::now();
+        let fresh = score_importance("x".repeat(300).as_str(), now, 1, 0.5);
+        let old = score_importance(
+            "x".repeat(300).as_str(),
+            now - chrono::Duration::days(365),
+            1,
+            0.5,
+        );
+        assert!(fresh > old);
+        assert!((0.0..=1.0).contains(&fresh));
+        assert!((0.0..=1.0).contains(&old));
+    }
+
+    #[test]
+    fn test_reindex_importance_updates() {
+        let store = MemoryStore::in_memory().unwrap();
+        let agent = Uuid::new_v4();
+        let mut entry = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "content".to_string(),
+            "test".to_string(),
+            "episodic".to_string(),
+            0.0,
+            serde_json::Value::Null,
+        );
+        store.insert_memory(&entry).unwrap();
+
+        let updated = reindex_importance(&store, &agent).unwrap();
+        assert!(updated >= 1);
+        let stored = store.list_memories(&agent, None, 10, 0).unwrap()[0].clone();
+        assert!(stored.importance > 0.0);
+    }
+
+    #[test]
+    fn test_merge_and_store_replaces_two() {
+        let store = MemoryStore::in_memory().unwrap();
+        let engine = DreamEngine::new(store.clone());
+        let agent = Uuid::new_v4();
+        let a = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "first fact".to_string(),
+            "test".to_string(),
+            "episodic".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        );
+        let b = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "second fact".to_string(),
+            "test".to_string(),
+            "episodic".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        );
+        store.insert_memory(&a).unwrap();
+        store.insert_memory(&b).unwrap();
+
+        let merged_id = engine.merge_and_store(&a, &b).unwrap();
+        assert!(store.get_memory(&merged_id).unwrap().is_some());
+        assert!(store.get_memory(&a.id).unwrap().is_none());
+        assert!(store.get_memory(&b.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_next_dream_due_at() {
+        let engine = DreamEngine::new(MemoryStore::in_memory().unwrap());
+        assert!(engine.next_dream_due_at().is_none());
+        engine
+            .last_consolidation
+            .lock()
+            .unwrap()
+            .replace(Utc::now());
+        let next = engine.next_dream_due_at().unwrap();
+        assert!(next > Utc::now());
+    }
+
+    #[test]
+    fn test_merge_cluster_members_anchors() {
+        let agent = Uuid::new_v4();
+        let a = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "fact one".to_string(),
+            "test".to_string(),
+            "episodic".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        );
+        let b = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "fact two".to_string(),
+            "test".to_string(),
+            "episodic".to_string(),
+            0.6,
+            serde_json::Value::Null,
+        );
+        let c = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "fact three".to_string(),
+            "test".to_string(),
+            "episodic".to_string(),
+            0.7,
+            serde_json::Value::Null,
+        );
+        let merged = merge_cluster_members(&[a, b, c]).unwrap();
+        assert!(merged.content.contains("fact one"));
+        assert!(merged.content.contains("fact three"));
+        assert_eq!(merged.importance, 0.7);
+    }
+
+    struct FakeLlm {
+        response: String,
+    }
+
+    #[async_trait::async_trait]
+    impl DreamLlm for FakeLlm {
+        async fn complete(&self, _system: &str, _user: &str) -> CoreResult<String> {
+            Ok(self.response.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_consolidator_parses_json() {
+        let llm = Arc::new(FakeLlm {
+            response: r#"[
+                {"content": "user prefers dark mode in all tools", "importance": 0.8, "tags": ["ui"]}
+            ]"#
+            .to_string(),
+        });
+        let consolidator = LlmConsolidator::new(llm);
+        let agent = Uuid::new_v4();
+        let candidates = vec![ConsolidationCandidate {
+            agent_id: agent,
+            memory_ids: vec![MemoryId(Uuid::new_v4()), MemoryId(Uuid::new_v4())],
+            similarity: 0.7,
+            cluster_content: "dark mode\n---\ndark themes".to_string(),
+            memory_type: "preference".to_string(),
+        }];
+        let consolidated = consolidator.consolidate(&candidates).await.unwrap();
+        assert_eq!(consolidated.len(), 1);
+        assert!(consolidated[0].content.contains("dark mode"));
+        assert_eq!(consolidated[0].importance, 0.8);
+        assert!(consolidated[0].tags.contains(&"ui".to_string()));
+        assert_eq!(consolidated[0].memory_type, "dream_preference");
+    }
+
+    #[tokio::test]
+    async fn test_llm_consolidator_falls_back_to_heuristic() {
+        // An LLM response with no parseable JSON array should fall back to
+        // the heuristic fillers so no candidate is lost.
+        let llm = Arc::new(FakeLlm {
+            response: "I can't help with that.".to_string(),
+        });
+        let consolidator = LlmConsolidator::new(llm);
+        let agent = Uuid::new_v4();
+        let candidates = vec![
+            ConsolidationCandidate {
+                agent_id: agent,
+                memory_ids: vec![MemoryId(Uuid::new_v4())],
+                similarity: 0.6,
+                cluster_content: "first cluster content".to_string(),
+                memory_type: "episodic".to_string(),
+            },
+            ConsolidationCandidate {
+                agent_id: agent,
+                memory_ids: vec![MemoryId(Uuid::new_v4())],
+                similarity: 0.6,
+                cluster_content: "second cluster content".to_string(),
+                memory_type: "episodic".to_string(),
+            },
+        ];
+        let consolidated = consolidator.consolidate(&candidates).await.unwrap();
+        assert_eq!(consolidated.len(), 2);
+        assert_eq!(consolidated[0].metadata["consolidation_method"], "heuristic");
+    }
+
+    #[tokio::test]
+    async fn test_llm_consolidator_resolves_contradiction() {
+        let llm = Arc::new(FakeLlm {
+            response: r#"{"content": "user likes dark mode but only at night", "importance": 0.7, "tags": ["ui", "resolved"]}"#
+                .to_string(),
+        });
+        let consolidator = LlmConsolidator::new(llm);
+        let agent = Uuid::new_v4();
+        let a = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "user prefers dark mode".to_string(),
+            "test".to_string(),
+            "preference".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        );
+        let b = MemoryEntry::new(
+            MemoryId(Uuid::new_v4()),
+            agent,
+            "user prefers light mode".to_string(),
+            "test".to_string(),
+            "preference".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        );
+        let resolved = consolidator.resolve_contradiction(&a, &b).await.unwrap();
+        assert!(resolved.is_some());
+        let merged = resolved.unwrap();
+        assert!(merged.content.contains("dark mode"));
+        assert_eq!(merged.importance, 0.7);
     }
 }

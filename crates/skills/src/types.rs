@@ -34,7 +34,7 @@ use std::str::FromStr;
 ///
 /// When two layers define a skill with the same `id`, the higher-priority
 /// layer wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SkillLayer {
     /// External extra directories (lowest priority)
@@ -42,6 +42,7 @@ pub enum SkillLayer {
     Extra,
     /// Bundled built-in skills
     #[serde(alias = "bundled", alias = "builtin", alias = "built-in")]
+    #[default]
     Bundled,
     /// Community-managed installations
     #[serde(alias = "managed")]
@@ -578,15 +579,15 @@ pub struct SkillRequires {
 impl SkillRequires {
     /// Whether this requires set imposes no constraints at all.
     pub fn is_empty(&self) -> bool {
-        self.os.as_deref().is_none_or(Vec::is_empty)
-            && self.binaries.as_deref().is_none_or(Vec::is_empty)
-            && self.env_vars.as_deref().is_none_or(Vec::is_empty)
-            && self.capabilities.as_deref().is_none_or(Vec::is_empty)
+        self.os.as_deref().is_none_or(|v| v.is_empty())
+            && self.binaries.as_deref().is_none_or(|v| v.is_empty())
+            && self.env_vars.as_deref().is_none_or(|v| v.is_empty())
+            && self.capabilities.as_deref().is_none_or(|v| v.is_empty())
             && self.min_version.is_none()
-            && self.files.as_deref().is_none_or(Vec::is_empty)
-            && self.tools.as_deref().is_none_or(Vec::is_empty)
-            && self.tool_versions.as_ref().is_none_or(HashMap::is_empty)
-            && self.arch.as_deref().is_none_or(Vec::is_empty)
+            && self.files.as_deref().is_none_or(|v| v.is_empty())
+            && self.tools.as_deref().is_none_or(|v| v.is_empty())
+            && self.tool_versions.as_ref().is_none_or(|v| v.is_empty())
+            && self.arch.as_deref().is_none_or(|v| v.is_empty())
             && self.min_memory_mb.is_none()
             && self.network.is_none()
     }
@@ -633,7 +634,7 @@ impl SkillDependency {
 // ---------------------------------------------------------------------------
 
 /// The type of a meta-skill step.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StepType {
     /// Run a sub-agent with a prompt
@@ -1179,7 +1180,7 @@ impl SkillSpec {
 // ---------------------------------------------------------------------------
 
 /// How well a skill matched a search query, used for relevance ranking.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMatch {
     /// The skill that matched.
     pub skill: SkillSpec,
@@ -1189,6 +1190,45 @@ pub struct SkillMatch {
     pub matched_fields: Vec<String>,
     /// Query terms that matched.
     pub matched_terms: Vec<String>,
+}
+
+impl Default for SkillMatch {
+    fn default() -> Self {
+        Self {
+            skill: SkillSpec {
+                id: String::new(),
+                name: String::new(),
+                kind: SkillKind::default(),
+                description: String::new(),
+                version: None,
+                author: None,
+                layer: SkillLayer::default(),
+                requires: SkillRequires::default(),
+                tags: Vec::new(),
+                steps: Vec::new(),
+                outputs: HashMap::new(),
+                raw_frontmatter: String::new(),
+                source_path: None,
+                body: String::new(),
+                visibility: SkillVisibility::default(),
+                scope: SkillScope::default(),
+                license: None,
+                homepage: None,
+                metadata: None,
+                allowed_tools: Vec::new(),
+                disable_model_invocation: false,
+                contexts: Vec::new(),
+                args: Vec::new(),
+                dependencies: Vec::new(),
+                disabled: false,
+                loaded_at: None,
+                mtime_ns: None,
+            },
+            score: 0.0,
+            matched_fields: Vec::new(),
+            matched_terms: Vec::new(),
+        }
+    }
 }
 
 impl SkillMatch {

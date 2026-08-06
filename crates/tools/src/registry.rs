@@ -450,22 +450,38 @@ impl ToolRegistry {
         // Shell and code execution.
         registry.register(crate::shell::ExecCommandTool::new(30))?;
         registry.register(crate::shell::BackgroundProcessTool::new())?;
+        registry.register(crate::shell::EnhancedExecTool::default())?;
         registry.register(crate::code_exec::CodeExecTool::default())?;
 
-        // Filesystem, patch, and git (all rooted at the working directory).
+        // Filesystem, patch, git, diff, and archive (all rooted at the
+        // working directory).
         registry.register(crate::filesystem::FilesystemTool::new(working_dir.clone()))?;
         registry.register(crate::patch::ApplyPatchTool::new(working_dir.clone()))?;
+        registry.register(crate::patch::ReversePatchTool::new(working_dir.clone()))?;
+        registry.register(crate::patch::ThreeWayMergeTool::new(working_dir.clone()))?;
+        registry.register(crate::patch::ResolveConflictsTool::new(working_dir.clone()))?;
         registry.register(crate::git::GitTool::new(working_dir.clone()))?;
+        registry.register(crate::diff::DiffTool::new(working_dir.clone()))?;
+        registry.register(crate::diff::DirDiffTool::new(working_dir.clone()))?;
+        registry.register(crate::archive::ArchiveTool::new(working_dir.clone()))?;
+
+        // System process monitoring.
+        registry.register(crate::process_monitor::ProcessMonitorTool::new())?;
 
         // Web.
         registry.register(crate::web::WebSearchTool::default())?;
         registry.register(crate::web::WebFetchTool::default())?;
         registry.register(crate::web::HttpRequestTool::default())?;
+        registry.register(crate::web::WebExtractTool::default())?;
 
-        // Media: image, pdf, tts, plus the combined media dispatcher.
+        // Media: image, pdf, tts, transcription, plus the combined media dispatcher.
         registry.register(crate::media::ImageTool::new(working_dir.clone()))?;
         registry.register(crate::media::PdfTool::new(working_dir.clone()))?;
         registry.register(crate::media::TtsTool::new(None))?;
+        registry.register(crate::media::TranscriptionTool::new(
+            working_dir.clone(),
+            None,
+        ))?;
         registry.register(crate::media::MediaTool::new(working_dir.clone(), None))?;
 
         // Artifact generation.
@@ -474,6 +490,16 @@ impl ToolRegistry {
             working_dir.clone(),
         ))?;
         registry.register(crate::artifacts::GenerateJsonTool::new(working_dir.clone()))?;
+
+        // File authoring: pdf/xlsx/csv/html generation + readers.
+        // Note: generate_json and generate_markdown are already registered by
+        // the artifacts module above, so they are intentionally not duplicated.
+        registry.register(crate::file_authoring::GeneratePdfTool::new(working_dir.clone()))?;
+        registry.register(crate::file_authoring::GenerateXlsxTool::new(working_dir.clone()))?;
+        registry.register(crate::file_authoring::GenerateCsvTool::new(working_dir.clone()))?;
+        registry.register(crate::file_authoring::GenerateHtmlTool::new(working_dir.clone()))?;
+        registry.register(crate::file_authoring::ReadXlsxTool::new(working_dir.clone()))?;
+        registry.register(crate::file_authoring::ReadCsvTool::new(working_dir))?;
 
         // Memory tools share a single in-memory store.
         let memory_store = opensquilla_memory::MemoryStore::in_memory().map_err(|e| {
@@ -823,6 +849,41 @@ mod tests {
             assert!(
                 names.contains(&expected.to_string()),
                 "missing built-in tool '{}' (registered: {:?})",
+                expected,
+                names
+            );
+        }
+
+        // The expanded tool families must all be present.
+        for expected in [
+            // Shell enhancements.
+            "exec_command_enhanced",
+            // Filesystem enhancements.
+            "reverse_patch",
+            "merge_three_way",
+            "resolve_conflicts",
+            // Diffing.
+            "diff_files",
+            "diff_directories",
+            // Archives.
+            "archive",
+            // Process monitoring.
+            "process_monitor",
+            // Web extraction.
+            "web_extract",
+            // Media transcription.
+            "transcribe_audio",
+            // File authoring.
+            "generate_pdf",
+            "generate_xlsx",
+            "generate_csv",
+            "generate_html",
+            "read_xlsx",
+            "read_csv",
+        ] {
+            assert!(
+                names.contains(&expected.to_string()),
+                "missing expanded tool '{}' (registered: {:?})",
                 expected,
                 names
             );

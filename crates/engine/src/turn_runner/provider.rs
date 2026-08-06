@@ -145,6 +145,201 @@ pub struct ProviderCallReport {
     pub error_message: Option<String>,
 }
 
+/// The failover ordering strategy for the provider stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailoverOrder {
+    /// Try the primary first, then fallbacks in registration order.
+    PrimaryFirst,
+    /// Try the most recently successful provider first.
+    LastSuccessfulFirst,
+    /// Round-robin across all providers.
+    RoundRobin,
+}
+
+impl FailoverOrder {
+    /// The canonical name of the strategy.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailoverOrder::PrimaryFirst => "primary_first",
+            FailoverOrder::LastSuccessfulFirst => "last_successful_first",
+            FailoverOrder::RoundRobin => "round_robin",
+        }
+    }
+}
+
+/// A provider failover policy describing how fallback generators are ordered
+/// and selected.
+#[derive(Debug, Clone)]
+pub struct ProviderFailoverPolicy {
+    /// The ordering strategy.
+    pub order: FailoverOrder,
+    /// Whether a failed fallback is skipped for the rest of the turn.
+    pub skip_failed_fallbacks: bool,
+    /// The maximum number of fallbacks tried before surfacing the error.
+    pub max_fallbacks: u32,
+}
+
+impl Default for ProviderFailoverPolicy {
+    fn default() -> Self {
+        Self {
+            order: FailoverOrder::PrimaryFirst,
+            skip_failed_fallbacks: true,
+            max_fallbacks: 2,
+        }
+    }
+}
+
+impl ProviderFailoverPolicy {
+    /// Create a new failover policy.
+    pub fn new(order: FailoverOrder) -> Self {
+        Self {
+            order,
+            ..Default::default()
+        }
+    }
+
+    /// Set whether failed fallbacks are skipped for the turn.
+    pub fn with_skip_failed(mut self, skip: bool) -> Self {
+        self.skip_failed_fallbacks = skip;
+        self
+    }
+
+    /// Set the maximum number of fallbacks tried.
+    pub fn with_max_fallbacks(mut self, max: u32) -> Self {
+        self.max_fallbacks = max;
+        self
+    }
+}
+
+/// A per-turn tracker of provider outcomes, used by the failover policy.
+#[derive(Debug, Clone, Default)]
+pub struct ProviderOutcomeTracker {
+    /// The provider names that succeeded this turn, in order.
+    pub successes: Vec<String>,
+    /// The provider names that failed this turn.
+    pub failures: Vec<String>,
+}
+
+impl ProviderOutcomeTracker {
+    /// Create a new empty tracker.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a success for a provider.
+    pub fn record_success(&mut self, provider: &str) {
+        if !self.successes.iter().any(|p| p == provider) {
+            self.successes.push(provider.to_string());
+        }
+    }
+
+    /// Record a failure for a provider.
+    pub fn record_failure(&mut self, provider: &str) {
+        if !self.failures.iter().any(|p| p == provider) {
+            self.failures.push(provider.to_string());
+        }
+    }
+
+    /// Whether a provider failed earlier in the turn.
+    pub fn has_failed(&self, provider: &str) -> bool {
+        self.failures.iter().any(|p| p == provider)
+    }
+
+    /// The most recently successful provider, if any.
+    pub fn last_successful(&self) -> Option<&str> {
+        self.successes.last().map(|s| s.as_str())
+    }
+
+    /// Reorder fallback generators according to the policy.
+    ///
+    /// `primary` is the primary generator; `fallbacks` are the registered
+    /// fallbacks. Returns the ordered candidate list (primary first unless
+    /// the policy says otherwise).
+    pub fn order_candidates<'a>(
+        &self,
+        primary: &'a dyn TurnGenerator,
+        fallbacks: &'a [Arc<dyn TurnGenerator>],
+        policy: &ProviderFailoverPolicy,
+    ) -> Vec<&'a dyn TurnGenerator> {
+        let mut candidates: Vec<&dyn TurnGenerator> = Vec::new();
+        let mut used: Vec<String> = Vec::new();
+        let is_used = |name: &str, used: &Vec<String>| used.iter().any(|u| u == name);
+
+        // Primary is always first for PrimaryFirst.
+        let order = policy.order;
+        match order {
+            FailoverOrder::PrimaryFirst => {
+                if !is_used(primary.provider_name(), &used) {
+                    candidates.push(primary);
+                    used.push(primary.provider_name().to_string());
+                }
+                for fb in fallbacks {
+                    if policy.skip_failed_fallbacks && self.has_failed(fb.provider_name()) {
+                        continue;
+                    }
+                    if !is_used(fb.provider_name(), &used) {
+                        candidates.push(fb.as_ref());
+                        used.push(fb.provider_name().to_string());
+                    }
+                }
+            }
+            FailoverOrder::LastSuccessfulFirst => {
+                if let Some(last) = self.last_successful() {
+                    if let Some(fb) = fallbacks
+                        .iter()
+                        .find(|f| f.provider_name() == last && !self.has_failed(last))
+                    {
+                        candidates.push(fb.as_ref());
+                        used.push(last.to_string());
+                    }
+                }
+                if !is_used(primary.provider_name(), &used) {
+                    candidates.push(primary);
+                    used.push(primary.provider_name().to_string());
+                }
+                for fb in fallbacks {
+                    if policy.skip_failed_fallbacks && self.has_failed(fb.provider_name()) {
+                        continue;
+                    }
+                    if !is_used(fb.provider_name(), &used) {
+                        candidates.push(fb.as_ref());
+                        used.push(fb.provider_name().to_string());
+                    }
+                }
+            }
+            FailoverOrder::RoundRobin => {
+                // Start after the most recent success.
+                let mut all: Vec<&dyn TurnGenerator> = Vec::new();
+                for fb in fallbacks {
+                    all.push(fb.as_ref());
+                }
+                all.push(primary);
+                let start = self
+                    .last_successful()
+                    .and_then(|last| all.iter().position(|c| c.provider_name() == last))
+                    .map(|i| (i + 1) % all.len())
+                    .unwrap_or(0);
+                for i in 0..all.len() {
+                    let idx = (start + i) % all.len();
+                    let candidate = all[idx];
+                    if policy.skip_failed_fallbacks && self.has_failed(candidate.provider_name()) {
+                        continue;
+                    }
+                    if !is_used(candidate.provider_name(), &used) {
+                        candidates.push(candidate);
+                        used.push(candidate.provider_name().to_string());
+                    }
+                }
+            }
+        }
+
+        // Cap the number of candidates tried.
+        let max = policy.max_fallbacks.max(1) as usize;
+        candidates.truncate(max + 1);
+        candidates
+    }
+}
+
 /// The provider stage in the turn pipeline.
 #[derive(Debug)]
 pub struct ProviderStage {

@@ -260,7 +260,7 @@ pub async fn add_memory(
         agent_id,
         content.clone(),
         "cli".to_string(),
-        &memory_type,
+        memory_type.clone(),
         importance,
         serde_json::Value::Null,
     );

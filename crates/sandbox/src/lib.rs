@@ -10,6 +10,7 @@
 //! concrete types (e.g. [`LinuxSandbox`]) additionally keep their inherent
 //! `execute` methods for callers that select a backend explicitly.
 
+pub mod command_rules;
 pub mod error;
 pub mod governance;
 pub mod linux;
@@ -17,18 +18,26 @@ pub mod macos;
 pub mod metrics;
 pub mod network;
 pub mod noop;
+pub mod path_rules;
 pub mod policy;
 pub mod profile;
+pub mod sandbox_manager;
 pub mod seatbelt;
 pub mod seccomp;
 pub mod stale_output_cache;
+pub mod supervisor;
 pub mod whitelist;
 pub mod windows;
 
+pub use command_rules::{
+    CommandAssessment, CommandRule, RiskTier, assess_command, assess_with_rules,
+    command_basename, default_command_rules, profile_id_for_command,
+};
 pub use error::{SandboxError, SandboxErrorKind};
 pub use governance::{
-    ApprovalQueue, ApprovalRequest, ApprovalStatus, GovernanceEvent, GovernanceEventKind,
-    GovernanceMetrics, RejectionEntry,
+    ApprovalQueue, ApprovalRequest, ApprovalStatus, ApproverChannel, EscalationPolicy,
+    GovernanceAuditEntry, GovernanceAuditTrail, GovernanceCoordinator, GovernanceDecision,
+    GovernanceEvent, GovernanceEventKind, GovernanceMetrics, RejectionEntry,
 };
 pub use linux::LinuxSandbox;
 pub use macos::MacOsSandbox;
@@ -36,16 +45,33 @@ pub use metrics::{
     AggregateMetrics, ExecutionMetrics, MetricsCollector, Rusage, SyscallClass, SyscallCounter,
 };
 pub use network::{
-    IpRange, NetworkConfig, NetworkMode, NetworkProxy, ProxyAuditEntry, ProxyHandle,
+    DnsChecker, DomainAllowlist, DomainCheck, IpRange, NetworkConfig, NetworkMode, NetworkProxy,
+    ProxyAuditEntry, ProxyHandle, ProxyRequestLog, RateLimiter, RequestLogBuffer, TokenBucket,
+    default_blocked_ranges,
 };
 pub use noop::NoopSandbox;
+pub use path_rules::{
+    PathAccessController, PathDecision, is_readable, is_writable, whitelist_from_filesystem,
+};
 pub use policy::{
     AuditEntry, FilesystemPolicy, NetworkPolicy, OperationClass, PolicyValidationError,
     ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult, classify_operation,
 };
 pub use profile::{ProfileNotes, ProfileRegistry, SandboxProfile};
-pub use seatbelt::{SeatbeltCategory, SeatbeltOperation, SeatbeltProfile};
-pub use stale_output_cache::{CacheEntry, NullStaleOutputCache, StaleOutputCache};
+pub use sandbox_manager::{
+    ManagedSandbox, RunRequest, SandboxBuilder, SandboxManager, SandboxOutcome,
+};
+pub use seatbelt::operations::{SeatbeltCategory, SeatbeltOperation};
+pub use seatbelt::SeatbeltProfile;
+pub use seccomp::{
+    AllowRule, ArgComparator, BpfProgram, ComparisonOp, SeccompAction, SeccompInstruction,
+    SeccompPolicy, SeccompFilterBuilder, syscall_name_to_number,
+};
+pub use stale_output_cache::{
+    CacheEntry, NullStaleOutputCache, StaleOutputCache, TtlPolicy, VerifiedEntry,
+    VerifiedOutputCache, content_hash,
+};
+pub use supervisor::{DenialTracker, ResourcePoller, ResourceSample, SpawnOptions, SupervisedChild, SupervisedRun, spawn_supervised};
 pub use whitelist::{AccessIntent, AccessMode, AccessVerdict, PathRule, PathWhitelist};
 pub use windows::WindowsSandbox;
 

@@ -38,8 +38,10 @@ pub mod bundled;
 // --- loader ---------------------------------------------------------------
 
 pub use loader::{
+    CacheInvalidationReport, CacheTracker, FileSignature, LayerPriorityResolver, LayerResolution,
     LoadReport, LoadWarning, LoaderConfig, SkillLoadError, SkillLoader, extract_frontmatter,
-    manifest_to_spec,
+    manifest_to_spec, normalize_frontmatter, normalize_manifest, skill_id_from_path,
+    validate_skill_file,
 };
 
 // --- types ----------------------------------------------------------------
@@ -59,24 +61,31 @@ pub use injector::{
 // --- eligibility ----------------------------------------------------------
 
 pub use eligibility::{
-    CheckStatus, CurrentHost, EligibilityChecker, EligibilityReport, RequirementKind,
+    CheckStatus, CurrentHost, DependencyKind, DependencyResolutionReport, DependencyStatus,
+    EligibilityChecker, EligibilityReport, FeatureGateSet, OsDistribution, RequirementKind,
+    check_builtin_feature_gate, default_feature_gates, detect_os_distribution,
+    detect_package_manager,
 };
 
 // --- meta -----------------------------------------------------------------
 
 pub use meta::{
-    AgentExecutor, Dag, ExecutionContext, LlmChat, LlmChatExecutor, LlmClassifyExecutor,
-    MetaEvent, MetaOrchestrator, MetaRun, SkillExecExecutor, SkillResolver, StepExecutor,
-    SubAgentRunner, ToolCallExecutor, ToolInvoker, UserInputExecutor, UserInputHandler,
-    coerce_to_choice, evaluate_when, is_truthy, render_args, render_template, spawn_orchestrator,
+    AgentExecutor, Dag, DagValidation, ExecutionContext, LlmChat, LlmChatExecutor,
+    LlmClassifyExecutor, MetaEvent, MetaOrchestrator, MetaRun, MetaRunRecord, MetaRunStats,
+    SkillExecExecutor, SkillResolver, StepExecutor, SubAgentRunner, ToolCallExecutor, ToolInvoker,
+    UserInputExecutor, UserInputHandler, coerce_to_choice, evaluate_when, is_truthy, render_args,
+    render_bilingual_step, render_template, spawn_orchestrator, when_references_language,
 };
 
 // --- hub ------------------------------------------------------------------
 
 pub use hub::{
-    ClawHubSource, GitHubSource, InstallOptions, InstallResult, LocalDirSource, LockEntry, LockFile,
-    ScanFinding, ScanResult, ScanStrategy, SecurityScanner, SecurityWarning, Severity, SkillBundle,
-    SkillHub, SkillInstaller, SkillMeta, SkillSearchIndex, SkillSource, TrustLevel,
+    ClawHubSource, GitHubSource, InstallOptions, InstallProgress, InstallResult, LocalDirSource,
+    LockDiff, LockEntry, LockFile, NullProgressReporter, PackageOptions, PackageResult,
+    ProgressReporter, ScanFinding, ScanResult, ScanStrategy, SecurityScanner, SecurityWarning,
+    Severity, SkillBundle, SkillHub, SkillInstaller, SkillMeta, SkillPackager, SkillSearchIndex,
+    SkillSource, TracingProgressReporter, TrustLevel, VersionRequest, VersionResolution,
+    VersionResolver,
 };
 
 // --- manifest --------------------------------------------------------------

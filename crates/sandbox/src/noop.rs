@@ -153,6 +153,8 @@ struct RlimitSpec {
     mem: Option<u64>,
     nproc: Option<u64>,
     fsize: Option<u64>,
+    nofile: Option<u64>,
+    core: Option<u64>,
 }
 
 impl RlimitSpec {
@@ -162,6 +164,8 @@ impl RlimitSpec {
             mem: p.resource_limits.memory_bytes,
             nproc: p.resource_limits.max_processes,
             fsize: p.resource_limits.file_size_bytes,
+            nofile: p.resource_limits.open_fds,
+            core: p.resource_limits.core_size_bytes,
         }
     }
 }
@@ -243,6 +247,24 @@ fn apply_rlimits(limits: &RlimitSpec) -> Result<(), std::io::Error> {
                 rlim_max: fsize,
             };
             if libc::setrlimit(libc::RLIMIT_FSIZE, &lim) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+        if let Some(nofile) = limits.nofile {
+            let lim = libc::rlimit {
+                rlim_cur: nofile,
+                rlim_max: nofile,
+            };
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+        if let Some(core) = limits.core {
+            let lim = libc::rlimit {
+                rlim_cur: core,
+                rlim_max: core,
+            };
+            if libc::setrlimit(libc::RLIMIT_CORE, &lim) != 0 {
                 return Err(std::io::Error::last_os_error());
             }
         }

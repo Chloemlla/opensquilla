@@ -13,7 +13,7 @@
 //! enforcement hooks in `engine/agent.py`.
 
 use crate::agent::UsageEvent;
-use crate::pricing::{cost, ModelPrice, PricingCache, PricingResult};
+use crate::pricing::{cost, PricingCache};
 use opensquilla_core::types::Usage;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -510,6 +510,32 @@ impl SessionBudgetTracker {
         Usage::new(self.input_tokens(), self.output_tokens())
     }
 
+    /// Build a structured report of the session budget state.
+    pub fn report(&self) -> SessionBudgetReport {
+        let check = self.check();
+        SessionBudgetReport {
+            session_id: self.session_id.clone(),
+            input_tokens: self.input_tokens(),
+            output_tokens: self.output_tokens(),
+            total_tokens: self.total_tokens(),
+            cost_usd: self.cost_usd(),
+            turn_count: self.turn_count(),
+            token_limit: self.config.token.max_total_tokens,
+            cost_limit_usd: self.config.cost.max_session_usd,
+            budget_status: match check {
+                BudgetCheckResult::Ok => "ok".to_string(),
+                BudgetCheckResult::Warning { .. } => "warning".to_string(),
+                BudgetCheckResult::Exceeded { .. } => "exceeded".to_string(),
+            },
+            utilization_fraction: if self.config.cost.max_session_usd > 0.0 {
+                self.cost_usd() / self.config.cost.max_session_usd
+            } else {
+                0.0
+            },
+            per_model: self.per_model_usage(),
+        }
+    }
+
     /// Reset all counters to zero (for a new session).
     pub fn reset(&self) {
         self.input_tokens.store(0, Ordering::SeqCst);
@@ -521,6 +547,45 @@ impl SessionBudgetTracker {
             per_model.clear();
         }
         debug!(session = %self.session_id, "budget tracker reset");
+    }
+}
+
+/// A structured report of a session's budget state.
+#[derive(Debug, Clone)]
+pub struct SessionBudgetReport {
+    /// The session id.
+    pub session_id: String,
+    /// Total input tokens.
+    pub input_tokens: u64,
+    /// Total output tokens.
+    pub output_tokens: u64,
+    /// Total tokens.
+    pub total_tokens: u64,
+    /// Total cost in USD.
+    pub cost_usd: f64,
+    /// The number of turns recorded.
+    pub turn_count: u64,
+    /// The token limit.
+    pub token_limit: u64,
+    /// The cost limit in USD.
+    pub cost_limit_usd: f64,
+    /// The budget status token (`ok` | `warning` | `exceeded`).
+    pub budget_status: String,
+    /// The fraction of the cost limit consumed.
+    pub utilization_fraction: f64,
+    /// Per-model usage.
+    pub per_model: HashMap<String, ModelUsageEntry>,
+}
+
+impl SessionBudgetReport {
+    /// Whether the budget is exceeded.
+    pub fn is_exceeded(&self) -> bool {
+        self.budget_status == "exceeded"
+    }
+
+    /// Whether the budget is in warning territory.
+    pub fn is_warning(&self) -> bool {
+        self.budget_status == "warning"
     }
 }
 

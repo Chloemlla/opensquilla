@@ -294,6 +294,162 @@ fn truncate_chars(text: &str, max: usize) -> &str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// MIME detection
+// ---------------------------------------------------------------------------
+
+/// A detected MIME family for an attachment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MimeFamily {
+    /// Image content (`image/*`).
+    Image,
+    /// PDF content (`application/pdf`).
+    Pdf,
+    /// Text content (`text/*`).
+    Text,
+    /// JSON content (`application/json`).
+    Json,
+    /// Audio content (`audio/*`).
+    Audio,
+    /// Video content (`video/*`).
+    Video,
+    /// Spreadsheet content (`application/vnd.*spreadsheet*`).
+    Spreadsheet,
+    /// Office document content.
+    Office,
+    /// Unknown / binary content.
+    Binary,
+}
+
+impl MimeFamily {
+    /// The canonical family token.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MimeFamily::Image => "image",
+            MimeFamily::Pdf => "pdf",
+            MimeFamily::Text => "text",
+            MimeFamily::Json => "json",
+            MimeFamily::Audio => "audio",
+            MimeFamily::Video => "video",
+            MimeFamily::Spreadsheet => "spreadsheet",
+            MimeFamily::Office => "office",
+            MimeFamily::Binary => "binary",
+        }
+    }
+
+    /// Classify a MIME type string into a family.
+    pub fn classify(mime_type: &str) -> Self {
+        let lower = mime_type.trim().to_ascii_lowercase();
+        if lower.starts_with("image/") {
+            MimeFamily::Image
+        } else if lower.starts_with("audio/") {
+            MimeFamily::Audio
+        } else if lower.starts_with("video/") {
+            MimeFamily::Video
+        } else if lower == "application/pdf" {
+            MimeFamily::Pdf
+        } else if lower == "application/json"
+            || lower.ends_with("+json")
+        {
+            MimeFamily::Json
+        } else if lower.starts_with("text/") {
+            MimeFamily::Text
+        } else if lower.contains("spreadsheet") || lower.contains("excel") {
+            MimeFamily::Spreadsheet
+        } else if lower.contains("msword")
+            || lower.contains("officedocument")
+            || lower.contains("powerpoint")
+            || lower.contains("presentation")
+        {
+            MimeFamily::Office
+        } else {
+            MimeFamily::Binary
+        }
+    }
+}
+
+/// Infer a MIME type from a file name extension.
+///
+/// This is a small extension table that mirrors the Python backend's
+/// `attachment_stage.py` media-type inference. Returns `None` when the
+/// extension is unknown.
+pub fn mime_from_extension(name: &str) -> Option<String> {
+    let ext = name.rsplit('.').next()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png".to_string()),
+        "jpg" | "jpeg" => Some("image/jpeg".to_string()),
+        "gif" => Some("image/gif".to_string()),
+        "webp" => Some("image/webp".to_string()),
+        "svg" => Some("image/svg+xml".to_string()),
+        "bmp" => Some("image/bmp".to_string()),
+        "pdf" => Some("application/pdf".to_string()),
+        "txt" | "md" | "markdown" => Some("text/plain".to_string()),
+        "csv" => Some("text/csv".to_string()),
+        "json" => Some("application/json".to_string()),
+        "xml" | "html" | "htm" => Some("text/html".to_string()),
+        "yaml" | "yml" => Some("application/yaml".to_string()),
+        "mp3" => Some("audio/mpeg".to_string()),
+        "wav" => Some("audio/wav".to_string()),
+        "ogg" => Some("audio/ogg".to_string()),
+        "mp4" => Some("video/mp4".to_string()),
+        "webm" => Some("video/webm".to_string()),
+        "xls" => Some("application/vnd.ms-excel".to_string()),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string()),
+        "doc" => Some("application/msword".to_string()),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string()),
+        "ppt" => Some("application/vnd.ms-powerpoint".to_string()),
+        "pptx" => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation".to_string()),
+        "zip" => Some("application/zip".to_string()),
+        "gz" | "tgz" => Some("application/gzip".to_string()),
+        "7z" => Some("application/x-7z-compressed".to_string()),
+        _ => None,
+    }
+}
+
+/// A best-effort MIME-type detector using magic bytes.
+///
+/// Returns `None` when the bytes are too short or unrecognized. This is a
+/// lightweight detector; callers should prefer an explicit MIME type when
+/// provided.
+pub fn sniff_mime_type(bytes: &[u8]) -> Option<String> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    // PDF: %PDF
+    if bytes.starts_with(b"%PDF") {
+        return Some("application/pdf".to_string());
+    }
+    // PNG: 89 50 4E 47
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Some("image/png".to_string());
+    }
+    // JPEG: FF D8 FF
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg".to_string());
+    }
+    // GIF: GIF8
+    if bytes.starts_with(b"GIF8") {
+        return Some("image/gif".to_string());
+    }
+    // WebP: RIFF....WEBP
+    if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp".to_string());
+    }
+    // ZIP (also the container for docx/xlsx/pptx).
+    if bytes.starts_with(b"PK\x03\x04") {
+        return Some("application/zip".to_string());
+    }
+    // JSON: starts with { or [
+    if bytes[0] == b'{' || bytes[0] == b'[' {
+        return Some("application/json".to_string());
+    }
+    // Text: printable ASCII.
+    if bytes.iter().all(|b| b.is_ascii_graphic() || b.is_ascii_whitespace()) {
+        return Some("text/plain".to_string());
+    }
+    None
+}
+
 impl fmt::Display for AttachmentDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "attachment '{}' ({})", self.id, self.mime_type)

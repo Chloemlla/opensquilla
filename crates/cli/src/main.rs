@@ -2,11 +2,11 @@ use clap::Parser;
 use opensquilla_cli::commands::{
     AgentAction, ChannelAction, Command, ConfigAction, CostAction, GatewayAction, InitAction,
     ModelAction, MemoryAction, OnboardAction, ProviderAction, RouterAction, SandboxAction,
-    SchedulerAction, SessionAction, SkillAction,
+    SchedulerAction, SearchAction, SessionAction, SkillAction, StatusAction, ToolAction,
 };
 use opensquilla_cli::{
     agent, channels, chat, config, cost, doctor, gateway, init, memory, models, onboard,
-    providers, router, sandbox, scheduler, sessions, skills, tui,
+    providers, router, sandbox, scheduler, search, sessions, skills, status, tools, tui,
 };
 use opensquilla_core::config::Config;
 use tracing::info;
@@ -66,13 +66,14 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             attach,
         } => {
             info!("Dispatching chat command (standalone={standalone})");
-            chat::run_chat(
+            chat::run_chat_with_attachments(
                 config.clone(),
                 session,
                 provider,
                 model,
                 prompt,
                 standalone,
+                attach,
             )
             .await?;
         }
@@ -309,6 +310,12 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             });
             init::run_init(action).await?;
         }
+        Command::Status { action } => {
+            let action = action.unwrap_or(StatusAction::Full);
+            status::run_status(action).await?;
+        }
+        Command::Search { action } => search::run_search(action).await?,
+        Command::Tools { action } => tools::run_tool(action).await?,
         Command::Tui => {
             info!("Dispatching TUI command");
             tui::run_tui().await?;

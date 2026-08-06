@@ -593,3 +593,540 @@ pub async fn run_auto_reject_worker(queue: ApprovalQueue, interval_secs: u64) {
         let _ = queue.cleanup_expired().await;
     }
 }
+
+/// Escalation policy: decides who must approve an operation based on its
+/// classification and the resource it touches.
+///
+/// The default policy routes credential-access and system-modification
+/// operations to a "security" approver channel, package installs to a
+/// "release" channel, and everything else to a "default" channel. Operations
+/// touching denied paths always escalate to "security".
+#[derive(Debug, Clone)]
+pub struct EscalationPolicy {
+    /// Map of operation classification → approver channel.
+    routing: std::collections::HashMap<String, ApproverChannel>,
+    /// The default channel when no routing matches.
+    default_channel: ApproverChannel,
+    /// Operations that require dual approval (two distinct approvers).
+    dual_approval_operations: std::collections::HashSet<String>,
+    /// Paths that, when touched, force escalation to the security channel.
+    sensitive_paths: Vec<String>,
+}
+
+/// A named approver channel (e.g. "security", "release", "default").
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ApproverChannel(pub String);
+
+impl ApproverChannel {
+    /// The default approver channel.
+    pub fn default_channel() -> Self {
+        Self("default".to_string())
+    }
+
+    /// The security approver channel.
+    pub fn security() -> Self {
+        Self("security".to_string())
+    }
+
+    /// The release approver channel.
+    pub fn release() -> Self {
+        Self("release".to_string())
+    }
+
+    /// The channel name.
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for EscalationPolicy {
+    fn default() -> Self {
+        let mut routing = std::collections::HashMap::new();
+        routing.insert(
+            "credential_access".to_string(),
+            ApproverChannel::security(),
+        );
+        routing.insert(
+            "system_modification".to_string(),
+            ApproverChannel::security(),
+        );
+        routing.insert(
+            "package_install".to_string(),
+            ApproverChannel::release(),
+        );
+        routing.insert("code_execution".to_string(), ApproverChannel::security());
+        Self {
+            routing,
+            default_channel: ApproverChannel::default_channel(),
+            dual_approval_operations: ["package_install", "system_modification"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            sensitive_paths: vec![
+                "/etc/shadow".to_string(),
+                "/etc/sudoers".to_string(),
+                "/root/.ssh".to_string(),
+                "/etc/ssh".to_string(),
+                "/etc/kubernetes".to_string(),
+                "/var/run/docker.sock".to_string(),
+                "/etc/passwd".to_string(),
+            ],
+        }
+    }
+}
+
+impl EscalationPolicy {
+    /// Create a new policy with the default routing.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Route an operation classification to a specific channel.
+    pub fn route(mut self, operation: impl Into<String>, channel: ApproverChannel) -> Self {
+        self.routing.insert(operation.into(), channel);
+        self
+    }
+
+    /// Set the default channel.
+    pub fn default_to(mut self, channel: ApproverChannel) -> Self {
+        self.default_channel = channel;
+        self
+    }
+
+    /// Mark an operation as requiring dual approval.
+    pub fn require_dual_approval(mut self, operation: impl Into<String>) -> Self {
+        self.dual_approval_operations.insert(operation.into());
+        self
+    }
+
+    /// Add a sensitive path that forces escalation.
+    pub fn sensitive_path(mut self, path: impl Into<String>) -> Self {
+        self.sensitive_paths.push(path.into());
+        self
+    }
+
+    /// Resolve the approver channel for an operation and the paths it touches.
+    pub fn resolve_channel(&self, operation: &str, touched_paths: &[&str]) -> ApproverChannel {
+        // Sensitive paths always escalate to security.
+        for path in touched_paths {
+            if self.sensitive_paths.iter().any(|s| path.starts_with(s.as_str())) {
+                return ApproverChannel::security();
+            }
+        }
+        self.routing
+            .get(operation)
+            .cloned()
+            .unwrap_or_else(|| self.default_channel.clone())
+    }
+
+    /// Does this operation require dual approval?
+    pub fn requires_dual_approval(&self, operation: &str) -> bool {
+        self.dual_approval_operations.contains(operation)
+    }
+
+    /// Get all configured sensitive paths.
+    pub fn sensitive_paths(&self) -> &[String] {
+        &self.sensitive_paths
+    }
+}
+
+impl Default for ApproverChannel {
+    fn default() -> Self {
+        Self::default_channel()
+    }
+}
+
+/// A persistent audit trail of governance decisions.
+///
+/// Wraps an append-only log with rotation and query support. Each entry is a
+/// [`GovernanceAuditEntry`] capturing the who/what/when/decision of every
+/// governance event.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GovernanceAuditEntry {
+    pub timestamp: DateTime<Utc>,
+    pub request_id: String,
+    pub operation: String,
+    pub command: String,
+    pub channel: String,
+    pub decision: GovernanceDecision,
+    pub actor: String,
+    pub reason: String,
+}
+
+/// The outcome recorded in an audit entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GovernanceDecision {
+    Submitted,
+    Approved,
+    Rejected,
+    Expired,
+    AutoRejected,
+    Escalated,
+}
+
+/// Append-only audit trail backed by an in-memory ring buffer with optional
+/// disk persistence.
+#[derive(Clone)]
+pub struct GovernanceAuditTrail {
+    entries: Arc<Mutex<std::collections::VecDeque<GovernanceAuditEntry>>>,
+    capacity: usize,
+    path: Arc<Mutex<Option<PathBuf>>>,
+}
+
+impl GovernanceAuditTrail {
+    /// Create a trail with the given in-memory capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(capacity))),
+            capacity,
+            path: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Attach a persistence path. The trail is appended to this file on every
+    /// `record` call.
+    pub async fn with_persistence(self, path: impl Into<PathBuf>) -> Self {
+        *self.path.lock().await = Some(path.into());
+        self
+    }
+
+    /// Record an audit entry.
+    pub async fn record(&self, entry: GovernanceAuditEntry) {
+        let mut entries = self.entries.lock().await;
+        if entries.len() >= self.capacity {
+            entries.pop_front();
+        }
+        entries.push_back(entry.clone());
+        drop(entries);
+        if let Some(path) = self.path.lock().await.clone() {
+            if let Err(e) = self.append_to_disk(&path, &entry).await {
+                warn!("governance audit: append failed: {e}");
+            }
+        }
+    }
+
+    /// Snapshot all entries (oldest first).
+    pub async fn entries(&self) -> Vec<GovernanceAuditEntry> {
+        self.entries.lock().await.iter().cloned().collect()
+    }
+
+    /// Query entries matching a predicate.
+    pub async fn query<F>(&self, predicate: F) -> Vec<GovernanceAuditEntry>
+    where
+        F: Fn(&GovernanceAuditEntry) -> bool,
+    {
+        self.entries
+            .lock()
+            .await
+            .iter()
+            .filter(|e| predicate(e))
+            .cloned()
+            .collect()
+    }
+
+    /// Entries for a specific operation.
+    pub async fn for_operation(&self, operation: &str) -> Vec<GovernanceAuditEntry> {
+        self.query(|e| e.operation == operation).await
+    }
+
+    /// Count of entries by decision.
+    pub async fn counts_by_decision(&self) -> std::collections::HashMap<GovernanceDecision, u64> {
+        let mut counts = std::collections::HashMap::new();
+        for entry in self.entries.lock().await.iter() {
+            *counts.entry(entry.decision).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    /// Number of entries currently held.
+    pub async fn len(&self) -> usize {
+        self.entries.lock().await.len()
+    }
+
+    /// Is the trail empty?
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
+
+    /// Clear all in-memory entries.
+    pub async fn clear(&self) {
+        self.entries.lock().await.clear();
+    }
+
+    async fn append_to_disk(
+        &self,
+        path: &Path,
+        entry: &GovernanceAuditEntry,
+    ) -> Result<(), String> {
+        use tokio::io::AsyncWriteExt;
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("audit mkdir: {e}"))?;
+        }
+        let line = serde_json::to_string(entry)
+            .map_err(|e| format!("audit serialize: {e}"))?;
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .await
+            .map_err(|e| format!("audit open: {e}"))?;
+        file.write_all(line.as_bytes())
+            .await
+            .map_err(|e| format!("audit write: {e}"))?;
+        file.write_all(b"\n")
+            .await
+            .map_err(|e| format!("audit newline: {e}"))?;
+        Ok(())
+    }
+}
+
+/// A governance coordinator that ties together the approval queue, escalation
+/// policy and audit trail.
+#[derive(Clone)]
+pub struct GovernanceCoordinator {
+    pub queue: ApprovalQueue,
+    pub escalation: Arc<EscalationPolicy>,
+    pub audit: GovernanceAuditTrail,
+}
+
+impl GovernanceCoordinator {
+    /// Create a coordinator with default settings.
+    pub fn new() -> Self {
+        Self {
+            queue: ApprovalQueue::new(),
+            escalation: Arc::new(EscalationPolicy::new()),
+            audit: GovernanceAuditTrail::new(10_000),
+        }
+    }
+
+    /// Create a coordinator with custom components.
+    pub fn with_components(
+        queue: ApprovalQueue,
+        escalation: EscalationPolicy,
+        audit: GovernanceAuditTrail,
+    ) -> Self {
+        Self {
+            queue,
+            escalation: Arc::new(escalation),
+            audit,
+        }
+    }
+
+    /// Submit an operation for approval, recording the escalation channel.
+    pub async fn submit(
+        &self,
+        operation: &str,
+        command: &str,
+        args: &[String],
+        reason: &str,
+        touched_paths: &[&str],
+    ) -> Result<String, String> {
+        let channel = self.escalation.resolve_channel(operation, touched_paths);
+        let dual = self.escalation.requires_dual_approval(operation);
+        // A non-default channel (security/release) or a dual-approval
+        // requirement counts as an escalation.
+        let escalated = dual || channel != ApproverChannel::default_channel();
+        let request_id = self.queue.submit(operation, command, args, reason).await?;
+        self.audit
+            .record(GovernanceAuditEntry {
+                timestamp: Utc::now(),
+                request_id: request_id.clone(),
+                operation: operation.to_string(),
+                command: command.to_string(),
+                channel: channel.name().to_string(),
+                decision: if escalated {
+                    GovernanceDecision::Escalated
+                } else {
+                    GovernanceDecision::Submitted
+                },
+                actor: "system".to_string(),
+                reason: reason.to_string(),
+            })
+            .await;
+        Ok(request_id)
+    }
+
+    /// Approve a request, recording the approver.
+    pub async fn approve(
+        &self,
+        request_id: &str,
+        approver: &str,
+    ) -> Result<(), String> {
+        self.queue.approve(request_id).await?;
+        let pending = self.queue.get_pending().await;
+        let req = pending
+            .iter()
+            .find(|r| r.id == request_id)
+            .cloned()
+            .or_else(|| {
+                // The request may have been removed from pending after
+                // approval; reconstruct a minimal entry for the audit.
+                Some(ApprovalRequest {
+                    id: request_id.to_string(),
+                    operation: String::new(),
+                    command: String::new(),
+                    args: vec![],
+                    reason: String::new(),
+                    requested_at: Utc::now(),
+                    expires_at: Utc::now(),
+                    status: ApprovalStatus::Approved,
+                })
+            });
+        if let Some(req) = req {
+            self.audit
+                .record(GovernanceAuditEntry {
+                    timestamp: Utc::now(),
+                    request_id: request_id.to_string(),
+                    operation: req.operation,
+                    command: req.command,
+                    channel: String::new(),
+                    decision: GovernanceDecision::Approved,
+                    actor: approver.to_string(),
+                    reason: "approved".to_string(),
+                })
+                .await;
+        }
+        Ok(())
+    }
+
+    /// Reject a request, recording the rejecter and reason.
+    pub async fn reject(
+        &self,
+        request_id: &str,
+        reason: &str,
+        rejected_by: &str,
+    ) -> Result<(), String> {
+        self.queue.reject(request_id, reason, rejected_by).await?;
+        self.audit
+            .record(GovernanceAuditEntry {
+                timestamp: Utc::now(),
+                request_id: request_id.to_string(),
+                operation: String::new(),
+                command: String::new(),
+                channel: String::new(),
+                decision: GovernanceDecision::Rejected,
+                actor: rejected_by.to_string(),
+                reason: reason.to_string(),
+            })
+            .await;
+        Ok(())
+    }
+}
+
+impl Default for GovernanceCoordinator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn queue_submit_approve_reject() {
+        let q = ApprovalQueue::new();
+        let id = q
+            .submit("code_execution", "python", &["-c".to_string()], "test")
+            .await
+            .unwrap();
+        assert_eq!(q.pending_count().await, 1);
+        q.approve(&id).await.unwrap();
+        let metrics = q.metrics().await;
+        assert_eq!(metrics.total_approved, 1);
+    }
+
+    #[tokio::test]
+    async fn cooldown_blocks_resubmit() {
+        let q = ApprovalQueue::new().with_cooldown(3600);
+        let id = q
+            .submit("code_execution", "python", &[], "test")
+            .await
+            .unwrap();
+        q.reject(&id, "no", "tester").await.unwrap();
+        let again = q
+            .submit("code_execution", "python", &[], "test")
+            .await;
+        assert!(again.is_err());
+    }
+
+    #[test]
+    fn escalation_routes_credential_access_to_security() {
+        let policy = EscalationPolicy::new();
+        let channel = policy.resolve_channel("credential_access", &[]);
+        assert_eq!(channel, ApproverChannel::security());
+    }
+
+    #[test]
+    fn escalation_sensitive_path_overrides() {
+        let policy = EscalationPolicy::new();
+        let channel = policy.resolve_channel("file_read", &["/etc/shadow"]);
+        assert_eq!(channel, ApproverChannel::security());
+    }
+
+    #[test]
+    fn escalation_dual_approval() {
+        let policy = EscalationPolicy::new();
+        assert!(policy.requires_dual_approval("package_install"));
+        assert!(!policy.requires_dual_approval("file_read"));
+    }
+
+    #[tokio::test]
+    async fn audit_trail_records_and_queries() {
+        let trail = GovernanceAuditTrail::new(100);
+        trail
+            .record(GovernanceAuditEntry {
+                timestamp: Utc::now(),
+                request_id: "r1".to_string(),
+                operation: "code_execution".to_string(),
+                command: "python".to_string(),
+                channel: "security".to_string(),
+                decision: GovernanceDecision::Submitted,
+                actor: "system".to_string(),
+                reason: "test".to_string(),
+            })
+            .await;
+        assert_eq!(trail.len().await, 1);
+        let ops = trail.for_operation("code_execution").await;
+        assert_eq!(ops.len(), 1);
+        let other = trail.for_operation("other").await;
+        assert!(other.is_empty());
+    }
+
+    #[tokio::test]
+    async fn audit_trail_rotates_at_capacity() {
+        let trail = GovernanceAuditTrail::new(3);
+        for i in 0..5 {
+            trail
+                .record(GovernanceAuditEntry {
+                    timestamp: Utc::now(),
+                    request_id: format!("r{i}"),
+                    operation: "op".to_string(),
+                    command: "cmd".to_string(),
+                    channel: "default".to_string(),
+                    decision: GovernanceDecision::Submitted,
+                    actor: "system".to_string(),
+                    reason: String::new(),
+                })
+                .await;
+        }
+        assert_eq!(trail.len().await, 3);
+    }
+
+    #[tokio::test]
+    async fn coordinator_submit_records_audit() {
+        let coord = GovernanceCoordinator::new();
+        let id = coord
+            .submit("credential_access", "cat", &["/etc/shadow".to_string()], "test", &["/etc/shadow"])
+            .await
+            .unwrap();
+        assert!(!id.is_empty());
+        let entries = coord.audit.entries().await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].decision, GovernanceDecision::Escalated);
+        assert_eq!(entries[0].channel, "security");
+    }
+}

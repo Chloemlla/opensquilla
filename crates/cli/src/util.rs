@@ -190,3 +190,174 @@ pub async fn resolve_or_create_session(
             .map_err(|e| anyhow::anyhow!("Failed to create session: {e}")),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+
+/// Format a byte count as a human-readable string (e.g., "1.5 MiB").
+pub fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+/// Format a duration in milliseconds as a human-readable string.
+pub fn human_duration(ms: u64) -> String {
+    if ms < 1_000 {
+        format!("{ms} ms")
+    } else if ms < 60_000 {
+        format!("{:.1} s", ms as f64 / 1_000.0)
+    } else if ms < 3_600_000 {
+        format!("{:.1} min", ms as f64 / 60_000.0)
+    } else {
+        format!("{:.1} h", ms as f64 / 3_600_000.0)
+    }
+}
+
+/// Format a large number with thousands separators.
+pub fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let bytes = s.as_bytes();
+    let mut out = String::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && (bytes.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(*b as char);
+    }
+    out
+}
+
+/// Truncate a string to `max` display characters, appending `…`.
+pub fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let cut: String = s.chars().take(max).collect();
+        format!("{cut}…")
+    }
+}
+
+/// Parse a `KEY=VALUE` environment string into a pair.
+pub fn parse_env_pair(s: &str) -> Option<(String, String)> {
+    s.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+}
+
+/// Read the current timestamp as an RFC3339 string.
+pub fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
+// ---------------------------------------------------------------------------
+// JSON output helpers
+// ---------------------------------------------------------------------------
+
+/// Print a value as pretty JSON to stdout.
+pub fn print_json(value: &impl serde::Serialize) -> Result<()> {
+    let json = serde_json::to_string_pretty(value).context("Failed to serialize JSON")?;
+    println!("{json}");
+    Ok(())
+}
+
+/// Print a value as compact JSON to stdout.
+pub fn print_json_compact(value: &impl serde::Serialize) -> Result<()> {
+    let json = serde_json::to_string(value).context("Failed to serialize JSON")?;
+    println!("{json}");
+    Ok(())
+}
+
+/// Write a JSON value to a file atomically.
+pub fn write_json_file(path: &std::path::Path, value: &impl serde::Serialize) -> Result<()> {
+    let json = serde_json::to_string_pretty(value).context("Failed to serialize JSON")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).ok();
+    }
+    // Write to a temp file then rename for atomicity.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json).with_context(|| format!("Failed to write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem helpers
+// ---------------------------------------------------------------------------
+
+/// Recursively compute the total size of a directory in bytes.
+pub fn dir_size(path: &std::path::Path) -> u64 {
+    fn walk(dir: &std::path::Path, total: &mut u64) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    walk(&p, total);
+                } else if let Ok(meta) = entry.metadata() {
+                    *total += meta.len();
+                }
+            }
+        }
+    }
+    let mut total = 0u64;
+    walk(path, &mut total);
+    total
+}
+
+/// Count the number of files in a directory tree.
+pub fn file_count(path: &std::path::Path) -> u64 {
+    fn walk(dir: &std::path::Path, total: &mut u64) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    walk(&p, total);
+                } else {
+                    *total += 1;
+                }
+            }
+        }
+    }
+    let mut total = 0u64;
+    walk(path, &mut total);
+    total
+}
+
+// ---------------------------------------------------------------------------
+// Network helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a TCP port is open on a host.
+pub async fn port_open(host: &str, port: u16) -> bool {
+    tokio::net::TcpStream::connect((host, port)).await.is_ok()
+}
+
+/// Get the process id of the running gateway, if any.
+pub fn gateway_pid() -> Option<u32> {
+    let path = data_dir().join("gateway.pid");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+/// Read the log tail from a file, returning the last `n` lines.
+pub fn log_tail(path: &std::path::Path, n: usize) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .map(|c| {
+            let lines: Vec<String> = c.lines().map(|l| l.to_string()).collect();
+            let start = lines.len().saturating_sub(n);
+            lines[start..].to_vec()
+        })
+        .unwrap_or_default()
+}

@@ -26,7 +26,7 @@ use crate::table::{Alignment, Color, Column, KeyValue, Style, Table};
 use crate::util;
 
 /// Cost subcommands.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, clap::Subcommand)]
 pub enum CostAction {
     /// Show a summary of spending over a time range.
     Summary {

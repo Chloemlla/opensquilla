@@ -27,27 +27,26 @@ use tokio::time::Duration;
 /// dedicated tokio task so that `get_output` returns the actual process
 /// output rather than an empty string (the audit bug). A completion handle
 /// records the exit status once the process and its drain task finish.
-#[derive(Debug)]
-struct BackgroundProcess {
+pub struct BackgroundProcess {
     /// The command that was started.
     command: String,
     /// The process ID on the system.
-    pid: Option<u32>,
+    pub pid: Option<u32>,
     /// The accumulated stdout so far (shared with the drain task).
-    stdout: Arc<Mutex<String>>,
+    pub stdout: Arc<Mutex<String>>,
     /// The accumulated stderr so far (shared with the drain task).
-    stderr: Arc<Mutex<String>>,
+    pub stderr: Arc<Mutex<String>>,
     /// Whether the process has completed.
-    completed: bool,
+    pub completed: bool,
     /// The exit code, if completed.
-    exit_code: Option<i32>,
+    pub exit_code: Option<i32>,
     /// The timestamp when the process was started.
     started_at: Instant,
     /// Handle to the drain task that reads stdout/stderr to EOF and records
     /// the exit status. Resolving it finalizes `completed`/`exit_code`.
     drain_handle: Option<JoinHandle<()>>,
     /// The child process handle, kept so `stop` can kill it.
-    child: Option<Child>,
+    pub child: Option<Child>,
 }
 
 impl BackgroundProcess {
@@ -820,7 +819,8 @@ impl ProcessRegistry {
                 if signal == Signal::Term {
                     let pid = process.pid.to_string();
                     let _ = tokio::process::Command::new("taskkill")
-                        .args(["/PID", &pid])
+                        .arg("/PID")
+                        .arg(&pid)
                         .output()
                         .await;
                 } else {
@@ -834,8 +834,9 @@ impl ProcessRegistry {
                 }
             } else if let Some(signum) = signal.unix_number() {
                 let pid = process.pid.to_string();
+                let flag = format!("-{}", signum);
                 let _ = tokio::process::Command::new("kill")
-                    .args(["-".to_string() + &signum.to_string(), &pid])
+                    .args([flag, pid])
                     .output()
                     .await;
             }
@@ -1004,8 +1005,10 @@ impl EnvFilter {
 
 /// A supervisor that watches a background process and enforces a timeout.
 ///
-/// If the process exceeds its timeout, the supervisor kills it. The supervisor
-/// runs as a separate tokio task and can be cancelled.
+/// If the process exceeds its timeout, the supervisor invokes the kill
+/// closure. When the supervisor is dropped with `kill_on_drop` enabled, it
+/// also invokes the kill closure unless the timeout already fired. The
+/// supervisor runs as a separate tokio task and can be cancelled.
 pub struct ProcessSupervisor {
     /// The process ID being supervised.
     process_id: String,
@@ -1015,16 +1018,23 @@ pub struct ProcessSupervisor {
     kill_on_drop: bool,
     /// Handle to the supervisor task.
     handle: Option<JoinHandle<()>>,
+    /// The kill closure, shared between the timeout task and the Drop impl.
+    kill_fn: Option<Arc<std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>>>,
 }
 
 impl ProcessSupervisor {
     /// Start supervising a process.
     ///
-    /// The `kill_fn` is called if the timeout expires.
+    /// The `kill_fn` is called if the timeout expires or (when
+    /// `kill_on_drop` is true) when the supervisor is dropped.
     pub fn start<F>(process_id: String, timeout_secs: u64, kill_on_drop: bool, kill_fn: F) -> Self
     where
         F: FnOnce() + Send + 'static,
     {
+        type SharedKill = std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>;
+        let kill_fn: Option<Arc<SharedKill>> = Some(Arc::new(std::sync::Mutex::new(Some(Box::new(kill_fn)))));
+        let kill_for_task = kill_fn.clone();
+
         let pid = process_id.clone();
         let handle = tokio::spawn(async move {
             if timeout_secs > 0 {
@@ -1038,7 +1048,13 @@ impl ProcessSupervisor {
                     timeout_secs = timeout_secs,
                     "Process timed out, killing"
                 );
-                kill_fn();
+                if let Some(mutex) = kill_for_task.as_ref() {
+                    if let Ok(mut guard) = mutex.lock() {
+                        if let Some(f) = guard.take() {
+                            f();
+                        }
+                    }
+                }
             } else {
                 // No timeout; the supervisor just waits forever (until cancelled).
                 std::future::pending::<()>().await;
@@ -1050,14 +1066,17 @@ impl ProcessSupervisor {
             timeout_secs,
             kill_on_drop,
             handle: Some(handle),
+            kill_fn,
         }
     }
 
-    /// Cancel the supervisor (stops the timeout enforcement).
+    /// Cancel the supervisor (stops the timeout enforcement and kill-on-drop).
     pub fn cancel(&mut self) {
         if let Some(handle) = self.handle.take() {
             handle.abort();
         }
+        // Release the kill closure so it is never invoked.
+        self.kill_fn = None;
     }
 
     /// Get the process ID being supervised.
@@ -1073,7 +1092,26 @@ impl ProcessSupervisor {
 
 impl Drop for ProcessSupervisor {
     fn drop(&mut self) {
-        self.cancel();
+        // Abort the timeout task so it cannot race the kill-on-drop below.
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+        // If kill-on-drop is enabled and the kill closure is still present
+        // (the timeout never fired), invoke it now.
+        if self.kill_on_drop {
+            if let Some(mutex) = self.kill_fn.take() {
+                if let Ok(mut guard) = mutex.lock() {
+                    if let Some(f) = guard.take() {
+                        tracing::debug!(
+                            process_id = %self.process_id,
+                            "Killing supervised process on drop"
+                        );
+                        f();
+                    }
+                }
+            }
+        }
+        self.kill_fn = None;
     }
 }
 
@@ -1612,7 +1650,8 @@ impl Tool for SignalProcessTool {
                 if let Some(pid) = process.pid {
                     let pid_str = pid.to_string();
                     let _ = tokio::process::Command::new("taskkill")
-                        .args(["/PID", &pid_str])
+                        .arg("/PID")
+                        .arg(&pid_str)
                         .output()
                         .await;
                 }
@@ -1621,7 +1660,8 @@ impl Tool for SignalProcessTool {
                     let signum_str = format!("-{}", signum);
                     let pid_str = pid.to_string();
                     let _ = tokio::process::Command::new("kill")
-                        .args([&signum_str, &pid_str])
+                        .arg(&signum_str)
+                        .arg(&pid_str)
                         .output()
                         .await;
                 }

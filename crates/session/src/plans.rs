@@ -13,7 +13,7 @@ use crate::storage::SessionStorage;
 // ---------------------------------------------------------------------------
 
 /// Status of an individual step within a plan revision.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanStepStatus {
     Proposed,
@@ -751,6 +751,241 @@ impl PlanStateMachine {
         revision.metadata = serde_json::Value::Object(meta);
         self.storage.update_plan_revision(&revision)
     }
+
+    /// Public wrapper around the internal snapshot persistence, used by
+    /// callers that construct or mutate a [`PlanSnapshot`] directly.
+    pub fn save_snapshot_public(&self, snapshot: &PlanSnapshot) -> CoreResult<()> {
+        self.save_snapshot(snapshot)
+    }
+
+    // -----------------------------------------------------------------------
+    // Progress & analytics
+    // -----------------------------------------------------------------------
+
+    /// Compute the progress of a plan revision as a percentage `[0, 100]`
+    /// based on the ratio of completed to total steps.
+    pub fn plan_progress(&self, revision_id: &Uuid) -> CoreResult<f64> {
+        let snapshot = self.snapshot(revision_id)?;
+        if snapshot.steps.is_empty() {
+            return Ok(0.0);
+        }
+        let completed = snapshot
+            .steps
+            .iter()
+            .filter(|s| s.status == PlanStepStatus::Completed)
+            .count();
+        Ok(completed as f64 * 100.0 / snapshot.steps.len() as f64)
+    }
+
+    /// Count steps by status for a revision.
+    pub fn step_status_counts(
+        &self,
+        revision_id: &Uuid,
+    ) -> CoreResult<std::collections::HashMap<PlanStepStatus, usize>> {
+        let snapshot = self.snapshot(revision_id)?;
+        let mut counts = std::collections::HashMap::new();
+        for step in &snapshot.steps {
+            *counts.entry(step.status.clone()).or_insert(0) += 1;
+        }
+        Ok(counts)
+    }
+
+    /// The next runnable step ids: steps that are `Approved` with all their
+    /// dependencies completed. Ordered by id.
+    pub fn next_runnable_steps(&self, revision_id: &Uuid) -> CoreResult<Vec<String>> {
+        let snapshot = self.snapshot(revision_id)?;
+        let completed: std::collections::HashSet<&str> = snapshot
+            .steps
+            .iter()
+            .filter(|s| s.status == PlanStepStatus::Completed)
+            .map(|s| s.id.as_str())
+            .collect();
+
+        let mut runnable: Vec<PlanStep> = snapshot
+            .steps
+            .iter()
+            .filter(|s| {
+                s.status == PlanStepStatus::Approved
+                    && s.dependencies.iter().all(|d| completed.contains(d.as_str()))
+            })
+            .cloned()
+            .collect();
+        runnable.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(runnable.into_iter().map(|s| s.id).collect())
+    }
+
+    /// Reorder the steps of a revision. The provided `step_ids` must be a
+    /// permutation of the existing step ids. Reordering updates `metadata`
+    /// only; it does not create a new revision.
+    pub fn reorder_steps(&self, revision_id: &Uuid, step_ids: &[String]) -> CoreResult<()> {
+        let mut snapshot = self.snapshot(revision_id)?;
+        self.require_active(&snapshot.revision)?;
+
+        let existing: std::collections::HashSet<String> =
+            snapshot.steps.iter().map(|s| s.id.clone()).collect();
+        let requested: std::collections::HashSet<&String> = step_ids.iter().collect();
+        if requested.len() != existing.len() || requested.iter().any(|id| !existing.contains(*id)) {
+            return Err(CoreError::InvalidInput(
+                "step_ids must be a permutation of the existing step ids".into(),
+            ));
+        }
+
+        let by_id: std::collections::HashMap<String, PlanStep> = snapshot
+            .steps
+            .drain(..)
+            .map(|s| (s.id.clone(), s))
+            .collect();
+        snapshot.steps = step_ids
+            .iter()
+            .filter_map(|id| by_id.get(id).cloned())
+            .collect();
+        self.save_snapshot(&snapshot)
+    }
+
+    /// Validate that a step's dependencies are acyclic and refer to existing
+    /// steps. Returns the set of dependency cycles found (empty when valid).
+    pub fn validate_step_dependencies(
+        &self,
+        revision_id: &Uuid,
+    ) -> CoreResult<Vec<Vec<String>>> {
+        let snapshot = self.snapshot(revision_id)?;
+        let mut graph: std::collections::HashMap<String, Vec<String>> = snapshot
+            .steps
+            .iter()
+            .map(|s| (s.id.clone(), s.dependencies.clone()))
+            .collect();
+
+        // Count in-degrees only for dependencies that actually exist.
+        let mut indegree: std::collections::HashMap<String, usize> = graph
+            .iter()
+            .map(|(id, deps)| {
+                (
+                    id.clone(),
+                    deps.iter().filter(|d| graph.contains_key(*d)).count(),
+                )
+            })
+            .collect();
+
+        let mut queue: Vec<String> = indegree
+            .iter()
+            .filter(|(_, d)| **d == 0)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut visited = 0usize;
+        while let Some(id) = queue.pop() {
+            visited += 1;
+            let deps_copy: Vec<String> = graph.get(&id).cloned().unwrap_or_default();
+            for dep in deps_copy {
+                if let Some(count) = indegree.get_mut(&dep) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        queue.push(dep.clone());
+                    }
+                }
+            }
+        }
+
+        let mut cycles = Vec::new();
+        if visited < graph.len() {
+            let remaining: Vec<String> = indegree
+                .iter()
+                .filter(|(_, d)| **d > 0)
+                .map(|(id, _)| id.clone())
+                .collect();
+            if !remaining.is_empty() {
+                cycles.push(remaining);
+            }
+        }
+        Ok(cycles)
+    }
+
+    // -----------------------------------------------------------------------
+    // Plan export / import
+    // -----------------------------------------------------------------------
+
+    /// Export a plan revision (with steps, runs, and approvals) to JSON.
+    pub fn export_plan(&self, revision_id: &Uuid) -> CoreResult<String> {
+        let snapshot = self.snapshot(revision_id)?;
+        let runs = self.list_runs(revision_id)?;
+        let approvals = self.approval_log(revision_id)?;
+        let export = PlanExport {
+            revision: snapshot.revision,
+            steps: snapshot.steps,
+            runs,
+            approvals,
+            exported_at: Utc::now(),
+        };
+        serde_json::to_string_pretty(&export)
+            .map_err(|e| CoreError::Internal(format!("plan export serialization failed: {}", e)))
+    }
+
+    /// Import a plan from an exported JSON string into a session.
+    ///
+    /// Creates a new revision in the given session with the exported plan
+    /// text and steps. The original revision id is recorded in metadata.
+    pub fn import_plan(&self, session_id: Uuid, json: &str) -> CoreResult<PlanRevision> {
+        let export: PlanExport = serde_json::from_str(json)
+            .map_err(|e| CoreError::InvalidInput(format!("invalid plan export JSON: {}", e)))?;
+        let mut metadata = serde_json::json!({
+            "steps": steps_to_value(&export.steps),
+            "imported_from": export.revision.id.to_string(),
+            "imported_at": Utc::now().to_rfc3339(),
+        });
+        if let Some(obj) = metadata.as_object_mut() {
+            for (k, v) in export
+                .revision
+                .metadata
+                .as_object()
+                .unwrap_or(&serde_json::Map::new())
+            {
+                if k != "steps" {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        self.create_plan(session_id, export.revision.plan.clone(), metadata)
+    }
+
+    /// Import a plan and immediately activate it.
+    pub fn import_plan_active(&self, session_id: Uuid, json: &str) -> CoreResult<PlanRevision> {
+        let revision = self.import_plan(session_id, json)?;
+        self.activate_plan(&revision.id)
+    }
+
+    /// Whether all steps of a revision are completed.
+    pub fn is_complete(&self, revision_id: &Uuid) -> CoreResult<bool> {
+        let snapshot = self.snapshot(revision_id)?;
+        Ok(!snapshot.steps.is_empty()
+            && snapshot
+                .steps
+                .iter()
+                .all(|s| s.status == PlanStepStatus::Completed))
+    }
+
+    /// A human-readable one-line status string for a plan.
+    pub fn status_line(&self, revision_id: &Uuid) -> CoreResult<String> {
+        let snapshot = self.snapshot(revision_id)?;
+        let progress = self.plan_progress(revision_id)?;
+        let counts = self.step_status_counts(revision_id)?;
+        Ok(format!(
+            "plan '{}' status={:?} progress={:.0}% steps={} completed={}",
+            snapshot.revision.plan.chars().take(40).collect::<String>(),
+            snapshot.revision.status,
+            progress,
+            snapshot.steps.len(),
+            counts.get(&PlanStepStatus::Completed).copied().unwrap_or(0)
+        ))
+    }
+}
+
+/// The complete serializable state of a plan (revision + steps + runs).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanExport {
+    pub revision: PlanRevision,
+    pub steps: Vec<PlanStep>,
+    pub runs: Vec<PlanRun>,
+    pub approvals: Vec<StepApproval>,
+    pub exported_at: DateTime<Utc>,
 }
 
 fn find_mut_step<'a>(steps: &'a mut [PlanStep], step_id: &str) -> CoreResult<&'a mut PlanStep> {
@@ -963,11 +1198,147 @@ mod tests {
         let session_id = Uuid::new_v4();
         let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         m.activate_plan(&plan.id).unwrap();
-        m.revise_plan(&plan.id, "- revised", None).unwrap();
+        m.revise_plan(&plan.id, "- revised".to_string(), None).unwrap();
 
         let revisions = m.list_revisions(&session_id).unwrap();
         assert_eq!(revisions.len(), 2);
         assert_eq!(revisions[0].version, 2);
         assert_eq!(revisions[1].version, 1);
+    }
+
+    #[test]
+    fn plan_progress_tracks_completion() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m
+            .create_plan_from_goal(session_id, "- step one\n- step two\n- step three")
+            .unwrap();
+        m.activate_plan(&plan.id).unwrap();
+
+        assert_eq!(m.plan_progress(&plan.id).unwrap(), 0.0);
+        m.approve_step(&plan.id, "1", None).unwrap();
+        m.complete_step(&plan.id, "1").unwrap();
+        assert_eq!(m.plan_progress(&plan.id).unwrap(), 100.0 / 3.0);
+    }
+
+    #[test]
+    fn step_status_counts_groups() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m
+            .create_plan_from_goal(session_id, "- step one\n- step two")
+            .unwrap();
+        m.activate_plan(&plan.id).unwrap();
+        m.approve_step(&plan.id, "1", None).unwrap();
+        m.complete_step(&plan.id, "1").unwrap();
+        m.reject_step(&plan.id, "2", "nope").unwrap();
+
+        let counts = m.step_status_counts(&plan.id).unwrap();
+        assert_eq!(counts.get(&PlanStepStatus::Completed).copied().unwrap_or(0), 1);
+        assert_eq!(counts.get(&PlanStepStatus::Rejected).copied().unwrap_or(0), 1);
+    }
+
+    #[test]
+    fn next_runnable_steps_requires_deps() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m.create_plan(&session_id, "- first\n- second\n- third", serde_json::Value::Null).unwrap();
+        m.activate_plan(&plan.id).unwrap();
+
+        // Approve all steps.
+        m.approve_step(&plan.id, "1", None).unwrap();
+        m.approve_step(&plan.id, "2", None).unwrap();
+        m.approve_step(&plan.id, "3", None).unwrap();
+
+        // All three runnable since no dependencies set.
+        let runnable = m.next_runnable_steps(&plan.id).unwrap();
+        assert_eq!(runnable.len(), 3);
+
+        m.complete_step(&plan.id, "1").unwrap();
+        let runnable2 = m.next_runnable_steps(&plan.id).unwrap();
+        assert_eq!(runnable2.len(), 2);
+    }
+
+    #[test]
+    fn reorder_steps_requires_permutation() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m
+            .create_plan_from_goal(session_id, "- a\n- b\n- c")
+            .unwrap();
+        m.activate_plan(&plan.id).unwrap();
+
+        m.reorder_steps(&plan.id, &["3".to_string(), "1".to_string(), "2".to_string()])
+            .unwrap();
+        let steps = m.list_steps(&plan.id).unwrap();
+        assert_eq!(steps[0].id, "3");
+
+        // A non-permutation is rejected.
+        assert!(m.reorder_steps(&plan.id, &["1".to_string(), "2".to_string()]).is_err());
+        assert!(m.reorder_steps(&plan.id, &["1".to_string(), "2".to_string(), "ghost".to_string()]).is_err());
+    }
+
+    #[test]
+    fn validate_step_dependencies_detects_cycle() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m.create_plan(&session_id, "- a\n- b", serde_json::Value::Null).unwrap();
+        m.activate_plan(&plan.id).unwrap();
+
+        // Build a cycle via metadata manipulation.
+        let mut snapshot = m.snapshot(&plan.id).unwrap();
+        snapshot.steps[0].dependencies = vec!["2".to_string()];
+        snapshot.steps[1].dependencies = vec!["1".to_string()];
+        m.save_snapshot_public(&snapshot).unwrap();
+
+        let cycles = m.validate_step_dependencies(&plan.id).unwrap();
+        assert!(!cycles.is_empty());
+    }
+
+    #[test]
+    fn export_import_plan_roundtrip() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m
+            .create_plan_from_goal(session_id, "- step one\n- step two")
+            .unwrap();
+        m.activate_plan(&plan.id).unwrap();
+        m.approve_step(&plan.id, "1", Some("lead")).unwrap();
+
+        let json = m.export_plan(&plan.id).unwrap();
+
+        let imported = m.import_plan(Uuid::new_v4(), &json).unwrap();
+        assert_eq!(imported.plan, plan.plan);
+        assert_eq!(m.list_steps(&imported.id).unwrap().len(), 2);
+
+        let active = m.import_plan_active(Uuid::new_v4(), &json).unwrap();
+        assert_eq!(active.status, PlanStatus::Active);
+    }
+
+    #[test]
+    fn is_complete_all_steps_done() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m
+            .create_plan_from_goal(session_id, "- only step")
+            .unwrap();
+        m.activate_plan(&plan.id).unwrap();
+        assert!(!m.is_complete(&plan.id).unwrap());
+        m.approve_step(&plan.id, "1", None).unwrap();
+        m.complete_step(&plan.id, "1").unwrap();
+        assert!(m.is_complete(&plan.id).unwrap());
+    }
+
+    #[test]
+    fn status_line_is_readable() {
+        let m = machine();
+        let session_id = Uuid::new_v4();
+        let plan = m
+            .create_plan_from_goal(session_id, "- step one")
+            .unwrap();
+        m.activate_plan(&plan.id).unwrap();
+        let line = m.status_line(&plan.id).unwrap();
+        assert!(line.contains("progress="));
+        assert!(line.contains("steps=1"));
     }
 }

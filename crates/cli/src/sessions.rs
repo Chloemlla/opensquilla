@@ -224,11 +224,6 @@ pub async fn export_session(id: String, output: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// Create a new empty session with an optional name.
-pub async fn create_session(name: Option<String>) -> Result<()> {
-    create_session(name, None).await
-}
-
 /// Create a new session with optional name and mode.
 pub async fn create_session(name: Option<String>, mode: Option<String>) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
@@ -249,11 +244,6 @@ pub async fn create_session(name: Option<String>, mode: Option<String>) -> Resul
         .map_err(|e| anyhow::anyhow!("Failed to create session: {e}"))?;
     println!("Created session {} ({})", session.id, session.name);
     Ok(())
-}
-
-/// Print the full transcript for a session.
-pub async fn show_messages(id: String) -> Result<()> {
-    show_messages(id, None).await
 }
 
 /// Print the transcript for a session with an optional limit.
@@ -289,7 +279,7 @@ pub async fn fork_session(id: String) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
 
     let forked = manager
-        .fork_session(&uid, &format!("Fork of {}", original.name))
+        .fork_session(&uid, "cli".to_string(), Some(format!("Fork of {}", original.name)))
         .map_err(|e| anyhow::anyhow!("Failed to fork session: {e}"))?;
     println!("Forked session {} -> {}", original.id, forked.id);
     println!("  Name: {}", forked.name);
@@ -369,16 +359,17 @@ pub async fn compact_session_cmd(id: String) -> Result<()> {
     let entries = manager
         .get_transcript(&uid, 500, 0)
         .map_err(|e| anyhow::anyhow!("Failed to load transcript: {e}"))?;
-    let summary = format!(
-        "Compacted session with {} messages, {} tokens.",
-        entries.len(),
-        entries.iter().map(|e| e.token_count).sum::<u64>()
-    );
-    let tokens = entries.iter().map(|e| e.token_count).sum::<u64>();
-    manager
-        .compact_session(&uid, &summary, tokens)
+    let report = manager
+        .compact(&uid)
         .map_err(|e| anyhow::anyhow!("Failed to compact session: {e}"))?;
-    println!("Compacted session {id}: {summary}");
+    println!(
+        "Compacted session {id}: {} entries, {} -> {} tokens ({})",
+        report.entries_compacted,
+        report.tokens_before,
+        report.tokens_after,
+        report.strategy
+    );
+    let _ = entries;
     Ok(())
 }
 

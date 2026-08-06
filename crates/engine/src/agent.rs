@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, instrument, warn};
 
 /// The current state of an agent in its lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AgentState {
     /// The agent is initializing and not yet ready to process turns.
     Initializing,
@@ -55,6 +55,13 @@ pub enum AgentState {
     Error(String),
     /// The agent has been stopped and is no longer active.
     Stopped,
+    /// The agent's turn was interrupted (crash, shutdown, network) and needs
+    /// recovery before it can continue.
+    Interrupted,
+    /// The agent is compacting its conversation history.
+    Compacting,
+    /// The agent is awaiting a retry after a transient failure.
+    Retrying { attempt: u32 },
 }
 
 impl fmt::Display for AgentState {
@@ -70,6 +77,9 @@ impl fmt::Display for AgentState {
             AgentState::Completed => write!(f, "completed"),
             AgentState::Error(e) => write!(f, "error({})", e),
             AgentState::Stopped => write!(f, "stopped"),
+            AgentState::Interrupted => write!(f, "interrupted"),
+            AgentState::Compacting => write!(f, "compacting"),
+            AgentState::Retrying { attempt } => write!(f, "retrying(attempt={})", attempt),
         }
     }
 }
@@ -83,24 +93,35 @@ pub fn is_valid_transition(from: &AgentState, to: &AgentState) -> bool {
         (Initializing, _) => matches!(to, Idle | Stopped | Error(_)),
         (Idle, _) => matches!(
             to,
-            Thinking | Processing | Paused | WaitingForUser | Stopped | Error(_)
+            Thinking | Processing | Paused | WaitingForUser | Stopped | Error(_) | Interrupted
         ),
         (Thinking, _) => matches!(
             to,
-            WaitingForTool | WaitingForUser | Completed | Idle | Stopped | Error(_)
+            WaitingForTool | WaitingForUser | Completed | Idle | Stopped | Error(_) | Compacting
+                | Retrying { .. } | Interrupted
         ),
         (WaitingForTool, _) => {
             matches!(
                 to,
-                Thinking | Completed | WaitingForUser | Stopped | Error(_)
+                Thinking | Completed | WaitingForUser | Stopped | Error(_) | Interrupted
+                    | Retrying { .. }
             )
         }
-        (WaitingForUser, _) => matches!(to, Idle | Thinking | Stopped | Error(_)),
-        (Processing, _) => matches!(to, Idle | Paused | Completed | Stopped | Error(_)),
+        (WaitingForUser, _) => matches!(to, Idle | Thinking | Stopped | Error(_) | Interrupted),
+        (Processing, _) => matches!(
+            to,
+            Idle | Paused | Completed | Stopped | Error(_) | Interrupted
+        ),
         (Paused, _) => matches!(to, Idle | Stopped | Error(_)),
         (Completed, _) => matches!(to, Idle | Thinking | Stopped | Error(_)),
         (Error(_), _) => matches!(to, Idle | Stopped | Initializing),
         (Stopped, _) => matches!(to, Idle | Initializing),
+        (Interrupted, _) => matches!(to, Idle | Thinking | Stopped | Error(_) | Completed),
+        (Compacting, _) => matches!(to, Thinking | WaitingForTool | Completed | Stopped | Error(_)),
+        (Retrying { .. }, _) => matches!(
+            to,
+            Thinking | WaitingForTool | Completed | Error(_) | Stopped | Idle
+        ),
     }
 }
 
@@ -241,7 +262,7 @@ impl Default for AgentConfig {
 }
 
 /// An error raised by the agent state machine.
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error, serde::Serialize, serde::Deserialize)]
 pub enum AgentError {
     /// An error surfaced by the underlying provider/generator.
     #[error("Provider error: {0}")]
@@ -358,7 +379,7 @@ impl UsageEvent {
 }
 
 /// Per-model usage accumulated by the agent.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ModelUsage {
     /// Input tokens consumed through this model.
     pub input_tokens: u64,
@@ -369,7 +390,7 @@ pub struct ModelUsage {
 }
 
 /// Accumulated token usage across all turns of an agent.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct UsageStats {
     /// Total input tokens across all turns.
     pub total_input_tokens: u64,
@@ -830,6 +851,8 @@ pub struct Agent {
     turn_count: u64,
     /// The most recent error, if any.
     last_error: Option<AgentError>,
+    /// Background processes spawned by this agent.
+    bg_processes: BackgroundProcessManager,
 }
 
 impl Agent {
@@ -861,6 +884,7 @@ impl Agent {
             created_at: chrono::Utc::now(),
             turn_count: 0,
             last_error: None,
+            bg_processes: BackgroundProcessManager::new(),
         }
     }
 
@@ -941,7 +965,7 @@ impl Agent {
     }
 
     /// Get the configured tool executor, if any.
-    pub fn tool_executor(&self) -> Option<Arc<crate::runtime::ToolExecutor>> {
+    pub fn tool_executor(&self) -> Option<Arc<dyn crate::runtime::ToolExecutor>> {
         self.tool_executor.clone()
     }
 
@@ -1776,6 +1800,945 @@ impl Agent {
     }
 }
 
+/// The phase of a turn the agent is currently in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TurnPhase {
+    /// The turn has not started.
+    NotStarted,
+    /// The pre-turn pipeline is running.
+    Pipeline,
+    /// The bootstrap stage is running.
+    Bootstrap,
+    /// Context compaction is running.
+    Compaction,
+    /// The provider is generating a response.
+    Generating,
+    /// Tool calls are being executed.
+    ToolExecution,
+    /// The stream is being consumed.
+    Streaming,
+    /// Finalization is running.
+    Finalizing,
+    /// The turn completed.
+    Completed,
+    /// The turn failed.
+    Failed,
+}
+
+impl fmt::Display for TurnPhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TurnPhase::NotStarted => write!(f, "not_started"),
+            TurnPhase::Pipeline => write!(f, "pipeline"),
+            TurnPhase::Bootstrap => write!(f, "bootstrap"),
+            TurnPhase::Compaction => write!(f, "compaction"),
+            TurnPhase::Generating => write!(f, "generating"),
+            TurnPhase::ToolExecution => write!(f, "tool_execution"),
+            TurnPhase::Streaming => write!(f, "streaming"),
+            TurnPhase::Finalizing => write!(f, "finalizing"),
+            TurnPhase::Completed => write!(f, "completed"),
+            TurnPhase::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+/// The decision for how to proceed after a tool call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolCallDecision {
+    /// Continue the loop: append the result and call the provider again.
+    Continue,
+    /// Retry the same tool call after a delay.
+    Retry {
+        /// The delay before retrying, in milliseconds.
+        delay_ms: u64,
+        /// The number of retries already attempted.
+        attempt: u32,
+    },
+    /// Abort the entire turn with an error.
+    Abort {
+        /// The error message.
+        message: String,
+    },
+    /// Stop the tool loop but continue the turn (e.g. budget exhausted).
+    StopLoop {
+        /// The reason the loop stopped.
+        reason: String,
+    },
+}
+
+impl ToolCallDecision {
+    /// Whether the loop should continue.
+    pub fn should_continue(&self) -> bool {
+        matches!(self, ToolCallDecision::Continue)
+    }
+
+    /// Whether the tool call should be retried.
+    pub fn should_retry(&self) -> bool {
+        matches!(self, ToolCallDecision::Retry { .. })
+    }
+
+    /// Whether the turn should be aborted.
+    pub fn should_abort(&self) -> bool {
+        matches!(self, ToolCallDecision::Abort { .. })
+    }
+}
+
+/// A per-turn budget for tool calls.
+#[derive(Debug, Clone)]
+pub struct ToolCallBudget {
+    /// The maximum number of tool rounds.
+    pub max_rounds: u32,
+    /// The maximum number of tool calls per round.
+    pub max_calls_per_round: u32,
+    /// The maximum total number of tool calls per turn.
+    pub max_total_calls: u32,
+}
+
+impl Default for ToolCallBudget {
+    fn default() -> Self {
+        Self {
+            max_rounds: 10,
+            max_calls_per_round: 8,
+            max_total_calls: 32,
+        }
+    }
+}
+
+impl ToolCallBudget {
+    /// Create a new tool call budget.
+    pub fn new(max_rounds: u32, max_calls_per_round: u32, max_total_calls: u32) -> Self {
+        Self {
+            max_rounds: max_rounds.max(1),
+            max_calls_per_round: max_calls_per_round.max(1),
+            max_total_calls: max_total_calls.max(1),
+        }
+    }
+
+    /// Whether the round budget is exhausted.
+    pub fn round_exhausted(&self, round: u32) -> bool {
+        round >= self.max_rounds
+    }
+
+    /// Whether the total-call budget is exhausted.
+    pub fn total_exhausted(&self, total_calls: u32) -> bool {
+        total_calls >= self.max_total_calls
+    }
+}
+
+/// A manager for background processes spawned by the agent.
+///
+/// Mirrors the Python `background_process` tool's process registry. Tracks
+/// every spawned child so the agent can wait on, stop, or list them.
+#[derive(Debug, Default)]
+pub struct BackgroundProcessManager {
+    /// The tracked processes, keyed by their id.
+    processes: std::sync::Mutex<std::collections::HashMap<String, Arc<BackgroundProcess>>>,
+}
+
+impl BackgroundProcessManager {
+    /// Create a new empty process manager.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a background process.
+    pub fn register(&self, process: Arc<BackgroundProcess>) {
+        self.processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(process.id().to_string(), process);
+    }
+
+    /// Get a process by id.
+    pub fn get(&self, id: &str) -> Option<Arc<BackgroundProcess>> {
+        self.processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(id)
+            .cloned()
+    }
+
+    /// Remove a process by id, returning it if present.
+    pub fn remove(&self, id: &str) -> Option<Arc<BackgroundProcess>> {
+        self.processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id)
+    }
+
+    /// List all tracked process ids.
+    pub fn list_ids(&self) -> Vec<String> {
+        self.processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /// The number of tracked processes.
+    pub fn len(&self) -> usize {
+        self.processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
+    }
+
+    /// True when no processes are tracked.
+    pub fn is_empty(&self) -> bool {
+        self.processes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
+    /// Stop all tracked processes, returning the number stopped.
+    pub async fn stop_all(&self) -> usize {
+        let ids = self.list_ids();
+        let mut stopped = 0usize;
+        for id in ids {
+            if let Some(process) = self.remove(&id) {
+                let _ = process.stop().await;
+                stopped += 1;
+            }
+        }
+        stopped
+    }
+
+    /// Prune processes that are no longer running.
+    pub async fn prune_finished(&self) -> usize {
+        let ids = self.list_ids();
+        let mut pruned = 0usize;
+        for id in ids {
+            if let Some(process) = self.get(&id) {
+                if !process.is_running().await {
+                    self.remove(&id);
+                    pruned += 1;
+                }
+            }
+        }
+        pruned
+    }
+}
+
+/// The result of a git operation with extra metadata for the 13 subprocess
+/// git operations from the Python backend.
+#[derive(Debug, Clone)]
+pub struct GitOpResult {
+    /// The result of the git operation.
+    pub result: GitResult,
+    /// The git operation that was run.
+    pub operation: GitOperation,
+    /// The extra arguments passed.
+    pub args: Vec<String>,
+}
+
+impl GitOpResult {
+    /// The primary output text.
+    pub fn output(&self) -> String {
+        self.result.output()
+    }
+
+    /// Whether the operation succeeded.
+    pub fn success(&self) -> bool {
+        self.result.success
+    }
+}
+
+/// The error classification outcome for an agent error.
+#[derive(Debug, Clone)]
+pub struct ErrorClassification {
+    /// The classified category.
+    pub category: ErrorCategory,
+    /// Whether the error is transient (worth a retry).
+    pub transient: bool,
+    /// Whether the error is a provider-side failure.
+    pub provider_side: bool,
+    /// The suggested recovery action.
+    pub recovery: RecoveryAction,
+    /// A normalized error code for telemetry.
+    pub code: String,
+}
+
+/// The category of an agent error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    /// A rate-limit or quota error.
+    RateLimit,
+    /// A timeout error.
+    Timeout,
+    /// An authentication / authorization error.
+    Auth,
+    /// A provider-side error (5xx, overloaded, transport).
+    Provider,
+    /// A tool execution error.
+    Tool,
+    /// A context-overflow error.
+    ContextOverflow,
+    /// An input validation error.
+    InvalidInput,
+    /// An internal engine error.
+    Internal,
+    /// A state-machine error.
+    State,
+    /// An unknown error.
+    Unknown,
+}
+
+/// Classify an [`AgentError`] into a structured [`ErrorClassification`].
+///
+/// This extends [`Agent::handle_error`] with a deterministic category,
+/// transient flag, provider-side flag, and telemetry code.
+pub fn classify_error(error: &AgentError) -> ErrorClassification {
+    use ErrorCategory::*;
+    match error {
+        AgentError::Provider(msg) => {
+            let lower = msg.to_ascii_lowercase();
+            if lower.contains("rate") || lower.contains("429") {
+                ErrorClassification {
+                    category: RateLimit,
+                    transient: true,
+                    provider_side: true,
+                    recovery: RecoveryAction::Retry { delay_ms: 1000 },
+                    code: "RATE_LIMITED".to_string(),
+                }
+            } else if lower.contains("auth") || lower.contains("401") || lower.contains("403") {
+                ErrorClassification {
+                    category: Auth,
+                    transient: false,
+                    provider_side: true,
+                    recovery: RecoveryAction::FailOver {
+                        message: msg.clone(),
+                    },
+                    code: "AUTH_FAILED".to_string(),
+                }
+            } else if lower.contains("timeout") || lower.contains("timed out") {
+                ErrorClassification {
+                    category: Timeout,
+                    transient: true,
+                    provider_side: true,
+                    recovery: RecoveryAction::Retry { delay_ms: 250 },
+                    code: "TIMEOUT".to_string(),
+                }
+            } else if lower.contains("context") || lower.contains("token")
+                || lower.contains("too long") || lower.contains("window")
+            {
+                ErrorClassification {
+                    category: ContextOverflow,
+                    transient: false,
+                    provider_side: true,
+                    recovery: RecoveryAction::FailOver {
+                        message: msg.clone(),
+                    },
+                    code: "CONTEXT_OVERFLOW".to_string(),
+                }
+            } else if lower.contains("overloaded") || lower.contains("503")
+                || lower.contains("502") || lower.contains("network")
+            {
+                ErrorClassification {
+                    category: Provider,
+                    transient: true,
+                    provider_side: true,
+                    recovery: RecoveryAction::Retry { delay_ms: 500 },
+                    code: "PROVIDER_TRANSIENT".to_string(),
+                }
+            } else {
+                ErrorClassification {
+                    category: Provider,
+                    transient: false,
+                    provider_side: true,
+                    recovery: RecoveryAction::FailOver {
+                        message: msg.clone(),
+                    },
+                    code: "PROVIDER_ERROR".to_string(),
+                }
+            }
+        }
+        AgentError::Timeout { seconds } => ErrorClassification {
+            category: Timeout,
+            transient: true,
+            provider_side: false,
+            recovery: RecoveryAction::Retry { delay_ms: 500 },
+            code: "TIMEOUT".to_string(),
+        },
+        AgentError::Tool { .. } => ErrorClassification {
+            category: Tool,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::Continue,
+            code: "TOOL_ERROR".to_string(),
+        },
+        AgentError::State { .. } => ErrorClassification {
+            category: State,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::Stop {
+                message: "Invalid state transition".to_string(),
+            },
+            code: "STATE_ERROR".to_string(),
+        },
+        AgentError::MaxTurnsReached => ErrorClassification {
+            category: Internal,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::Stop {
+                message: "Maximum turns reached".to_string(),
+            },
+            code: "MAX_TURNS".to_string(),
+        },
+        AgentError::MaxToolCallsReached => ErrorClassification {
+            category: Internal,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::Continue,
+            code: "MAX_TOOL_CALLS".to_string(),
+        },
+        AgentError::Io(_) => ErrorClassification {
+            category: Internal,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::FailOver {
+                message: error.to_string(),
+            },
+            code: "IO_ERROR".to_string(),
+        },
+        AgentError::Serialization(_) => ErrorClassification {
+            category: Internal,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::FailOver {
+                message: error.to_string(),
+            },
+            code: "SERIALIZATION".to_string(),
+        },
+        AgentError::InvalidInput(_) => ErrorClassification {
+            category: InvalidInput,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::FailOver {
+                message: error.to_string(),
+            },
+            code: "INVALID_INPUT".to_string(),
+        },
+        AgentError::StopRequested => ErrorClassification {
+            category: Unknown,
+            transient: false,
+            provider_side: false,
+            recovery: RecoveryAction::Stop {
+                message: "Stop requested".to_string(),
+            },
+            code: "STOP_REQUESTED".to_string(),
+        },
+    }
+}
+
+/// A structured result for a tool-call execution within the agent loop.
+#[derive(Debug, Clone)]
+pub struct ToolRoundResult {
+    /// The decision after this round.
+    pub decision: ToolCallDecision,
+    /// The tool calls executed in this round.
+    pub calls: Vec<ToolCall>,
+    /// The results produced.
+    pub results: Vec<ToolResult>,
+    /// The tool round number.
+    pub round: u32,
+    /// The total number of tool calls across all rounds so far.
+    pub total_calls: u32,
+}
+
+impl Agent {
+    /// Run the explicit tool-call loop with retry/abort/continue decisions.
+    ///
+    /// This is the full state-machine loop mirroring the Python
+    /// `Agent._turn_generator`, with per-round tool-call decisions:
+    ///
+    /// * `Continue` — the result is appended and the provider is called again.
+    /// * `Retry` — a transient tool failure is retried with backoff.
+    /// * `Abort` — an unrecoverable tool error aborts the turn.
+    /// * `StopLoop` — the budget is exhausted and the turn ends.
+    ///
+    /// Returns the final messages and the resulting state.
+    #[instrument(skip(self), fields(agent_id = %self.id))]
+    pub async fn run_turn_loop(&mut self, messages: Vec<Message>) -> TurnOutcome {
+        let start = Instant::now();
+        self.state = AgentState::Thinking;
+
+        let mut working = self.conversation.clone();
+        working.extend(messages);
+
+        let budget = ToolCallBudget::new(
+            self.config.max_turns.max(1),
+            self.config.max_tool_calls_per_turn,
+            (self.config.max_turns * self.config.max_tool_calls_per_turn).max(1),
+        );
+        let mut round = 0u32;
+        let mut total_calls = 0u32;
+
+        loop {
+            // Context-window management before generation.
+            if self.should_compact() {
+                self.state = AgentState::Compacting;
+                if self.compact_history().is_some() {
+                    working = self.conversation.clone();
+                }
+            }
+
+            // Generate the next response.
+            self.state = AgentState::Thinking;
+            let response = match self.generator.generate(&working).await {
+                Ok(response) => response,
+                Err(e) => {
+                    let message = format!("Provider error: {e}");
+                    self.state = AgentState::Error(e.to_string());
+                    return TurnOutcome::Error {
+                        message,
+                        messages: working.clone(),
+                        usage: self.usage.to_usage(),
+                    };
+                }
+            };
+
+            // Track usage for this round.
+            let input_tokens = estimate_message_tokens(&working);
+            let output_tokens = estimate_message_tokens(&response);
+            let model = self.generator.model_name().to_string();
+            let provider = self.generator.provider_name().to_string();
+            self.track_usage(UsageEvent::new(model, provider, input_tokens, output_tokens));
+
+            let calls = crate::turn_control::pending_tool_calls(&response);
+
+            // Final text surface: no tool calls.
+            if calls.is_empty() {
+                working.extend(response);
+                self.conversation = working;
+                self.state = AgentState::Completed;
+                self.turn_count += 1;
+                let duration_ms = start.elapsed().as_millis() as u64;
+                return TurnOutcome::Complete {
+                    messages: self.conversation.clone(),
+                    usage: self.usage.to_usage(),
+                    duration_ms,
+                };
+            }
+
+            // Round budget check.
+            if budget.round_exhausted(round) {
+                warn!(
+                    agent_id = %self.id,
+                    round = round,
+                    max_rounds = budget.max_rounds,
+                    "tool round budget exhausted"
+                );
+                working.extend(response);
+                self.conversation = working;
+                self.state = AgentState::Completed;
+                self.turn_count += 1;
+                let duration_ms = start.elapsed().as_millis() as u64;
+                return TurnOutcome::Complete {
+                    messages: self.conversation.clone(),
+                    usage: self.usage.to_usage(),
+                    duration_ms,
+                };
+            }
+
+            // Execute the tool calls for this round with decision handling.
+            self.state = AgentState::WaitingForTool;
+            let turn_ctx = self.create_turn_context(working.clone());
+            let round_result = self
+                .execute_tool_round(&turn_ctx, &calls, round, total_calls, &budget)
+                .await;
+
+            match round_result.decision {
+                ToolCallDecision::Abort { message } => {
+                    self.state = AgentState::Error(message.clone());
+                    return TurnOutcome::Error {
+                        message,
+                        messages: working.clone(),
+                        usage: self.usage.to_usage(),
+                    };
+                }
+                ToolCallDecision::StopLoop { .. } => {
+                    working.extend(response);
+                    working.push(self.process_tool_results(round_result.results));
+                    self.conversation = working;
+                    self.state = AgentState::Completed;
+                    self.turn_count += 1;
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    return TurnOutcome::Complete {
+                        messages: self.conversation.clone(),
+                        usage: self.usage.to_usage(),
+                        duration_ms,
+                    };
+                }
+                ToolCallDecision::Continue | ToolCallDecision::Retry { .. } => {
+                    working.extend(response);
+                    working.push(self.process_tool_results(round_result.results));
+                    self.conversation = working.clone();
+                }
+            }
+
+            round += 1;
+            total_calls += round_result.calls.len() as u32;
+        }
+    }
+
+    /// Execute a single round of tool calls with decision handling.
+    ///
+    /// Transient failures (timeouts, rate limits) are retried up to the
+    /// configured limit; unrecoverable failures abort the round.
+    pub async fn execute_tool_round(
+        &self,
+        context: &TurnContext,
+        calls: &[ToolCall],
+        round: u32,
+        total_calls: u32,
+        budget: &ToolCallBudget,
+    ) -> ToolRoundResult {
+        if calls.is_empty() {
+            return ToolRoundResult {
+                decision: ToolCallDecision::StopLoop {
+                    reason: "no tool calls".to_string(),
+                },
+                calls: Vec::new(),
+                results: Vec::new(),
+                round,
+                total_calls,
+            };
+        }
+
+        // Total-call budget check.
+        if budget.total_exhausted(total_calls + calls.len() as u32) {
+            return ToolRoundResult {
+                decision: ToolCallDecision::StopLoop {
+                    reason: "total tool call budget exhausted".to_string(),
+                },
+                calls: calls.to_vec(),
+                results: Vec::new(),
+                round,
+                total_calls,
+            };
+        }
+
+        let max_calls = context.max_tool_calls_per_turn as usize;
+        let mut results: Vec<ToolResult> = Vec::with_capacity(calls.len());
+        let mut abort: Option<String> = None;
+
+        for (i, call) in calls.iter().enumerate() {
+            if i >= max_calls {
+                results.push(ToolResult::error(
+                    &call.id,
+                    format!(
+                        "Max tool calls per round ({}) exceeded",
+                        context.max_tool_calls_per_turn
+                    ),
+                ));
+                continue;
+            }
+
+            // Execute with retry for transient failures.
+            let result = self.execute_tool_call_with_retry(call).await;
+            if result.is_error {
+                // Classify the error message for a decision.
+                let lower = result.content.to_ascii_lowercase();
+                if lower.contains("timeout") || lower.contains("rate limit") {
+                    // Transient: already retried; surface the error result.
+                    results.push(result);
+                } else if lower.contains("permission") || lower.contains("disabled") {
+                    // Unrecoverable within this tool.
+                    results.push(result);
+                } else if lower.contains("no tool executor") {
+                    abort = Some(result.content.clone());
+                    results.push(result);
+                    break;
+                } else {
+                    results.push(result);
+                }
+            } else {
+                results.push(result);
+            }
+        }
+
+        let decision = if let Some(message) = abort {
+            ToolCallDecision::Abort { message }
+        } else {
+            ToolCallDecision::Continue
+        };
+
+        ToolRoundResult {
+            decision,
+            calls: calls.to_vec(),
+            results,
+            round,
+            total_calls,
+        }
+    }
+
+    /// Execute a tool call with automatic retry for transient failures.
+    ///
+    /// The retry budget is one immediate retry for timeouts and rate limits,
+    /// matching the Python loop's transient-error handling.
+    pub async fn execute_tool_call_with_retry(&self, call: &ToolCall) -> ToolResult {
+        let first = self.execute_tool_call(call).await;
+        if !first.is_error {
+            return first;
+        }
+        let lower = first.content.to_ascii_lowercase();
+        if lower.contains("timeout") || lower.contains("timed out") || lower.contains("rate limit") {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let retry = self.execute_tool_call(call).await;
+            if !retry.is_error {
+                return retry;
+            }
+            // Return the retry error, annotated with the retry count.
+            return ToolResult::error(&call.id, format!("{} (after 1 retry)", retry.content));
+        }
+        first
+    }
+
+    /// Git operation helpers — the 13 subprocess git operations from the
+    /// Python backend, plus their higher-level wrappers.
+    ///
+    /// These wrap [`Agent::git_operation`] with the exact argument shapes the
+    /// Python tools use, so the agent exposes the same surface.
+
+    /// `git status --short` in the workspace.
+    pub async fn git_status(&self) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Status, &[]).await
+    }
+
+    /// `git diff` (optionally limited to a path).
+    pub async fn git_diff(&self, path: Option<&str>) -> Result<GitOpResult> {
+        let args = path.map(|p| vec![p.to_string()]).unwrap_or_default();
+        self.git_op(GitOperation::Diff, &args).await
+    }
+
+    /// `git add <paths...>`.
+    pub async fn git_add(&self, paths: &[String]) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Add, paths).await
+    }
+
+    /// `git commit -m <message>`.
+    pub async fn git_commit(&self, message: &str) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Commit, &["-m".to_string(), message.to_string()])
+            .await
+    }
+
+    /// `git push` (optionally with remote and branch).
+    pub async fn git_push(&self, remote: Option<&str>, branch: Option<&str>) -> Result<GitOpResult> {
+        let mut args = Vec::new();
+        if let Some(r) = remote {
+            args.push(r.to_string());
+        }
+        if let Some(b) = branch {
+            args.push(b.to_string());
+        }
+        self.git_op(GitOperation::Push, &args).await
+    }
+
+    /// `git pull` (optionally with remote and branch).
+    pub async fn git_pull(&self, remote: Option<&str>, branch: Option<&str>) -> Result<GitOpResult> {
+        let mut args = Vec::new();
+        if let Some(r) = remote {
+            args.push(r.to_string());
+        }
+        if let Some(b) = branch {
+            args.push(b.to_string());
+        }
+        self.git_op(GitOperation::Pull, &args).await
+    }
+
+    /// `git log --oneline -n <limit>`.
+    pub async fn git_log(&self, limit: Option<u32>) -> Result<GitOpResult> {
+        let args = limit.map(|n| vec!["-n".to_string(), n.to_string()]).unwrap_or_default();
+        self.git_op(GitOperation::Log, &args).await
+    }
+
+    /// `git clone <url> [dir]`.
+    pub async fn git_clone(&self, url: &str, dir: Option<&str>) -> Result<GitOpResult> {
+        let mut args = vec![url.to_string()];
+        if let Some(d) = dir {
+            args.push(d.to_string());
+        }
+        self.git_op(GitOperation::Clone, &args).await
+    }
+
+    /// `git checkout <branch-or-commit>`.
+    pub async fn git_checkout(&self, target: &str) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Checkout, &[target.to_string()]).await
+    }
+
+    /// `git branch` listing.
+    pub async fn git_branch(&self) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Branch, &[]).await
+    }
+
+    /// `git remote -v` listing.
+    pub async fn git_remote(&self) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Remote, &[]).await
+    }
+
+    /// `git tag` listing.
+    pub async fn git_tag(&self) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Tag, &[]).await
+    }
+
+    /// `git show <ref>`.
+    pub async fn git_show(&self, reference: &str) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Show, &[reference.to_string()]).await
+    }
+
+    /// `git merge <branch>`.
+    pub async fn git_merge(&self, branch: &str) -> Result<GitOpResult> {
+        self.git_op(GitOperation::Merge, &[branch.to_string()]).await
+    }
+
+    /// Execute a git operation and wrap it with the operation metadata.
+    pub async fn git_op(&self, op: GitOperation, args: &[String]) -> Result<GitOpResult> {
+        let result = self.git_operation(op, args).await?;
+        Ok(GitOpResult {
+            result,
+            operation: op,
+            args: args.to_vec(),
+        })
+    }
+
+    /// Restore the agent from an interrupted state.
+    ///
+    /// Resets the conversation to the last known-good checkpoint and moves
+    /// the agent back to `Idle` so a new turn can begin.
+    pub fn recover_from_interruption(&mut self) {
+        if self.state == AgentState::Interrupted {
+            let _ = self.repair_history();
+            self.state = AgentState::Idle;
+            debug!(agent_id = %self.id, "agent recovered from interruption");
+        }
+    }
+
+    /// Snapshot the agent's current state for crash recovery.
+    ///
+    /// The snapshot captures the conversation, state, usage, and turn count.
+    /// [`Agent::restore`] can reconstruct the agent from it after a crash.
+    pub fn snapshot(&self) -> AgentSnapshot {
+        AgentSnapshot {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            state: self.state.clone(),
+            conversation: self.conversation.clone(),
+            turn_count: self.turn_count,
+            usage: self.usage.clone(),
+            created_at: self.created_at,
+            last_error: self.last_error.clone(),
+        }
+    }
+
+    /// Restore agent state from a snapshot.
+    pub fn restore(&mut self, snapshot: AgentSnapshot) {
+        self.id = snapshot.id;
+        self.name = snapshot.name;
+        self.state = snapshot.state;
+        self.conversation = snapshot.conversation;
+        self.turn_count = snapshot.turn_count;
+        self.usage = snapshot.usage;
+        self.created_at = snapshot.created_at;
+        self.last_error = snapshot.last_error;
+        debug!(agent_id = %self.id, "agent state restored from snapshot");
+    }
+
+    /// Advance the agent one step through the state machine, returning the
+    /// new state.
+    ///
+    /// This is a convenience for orchestrators that drive the machine
+    /// manually: it applies the transition table and records the change.
+    pub fn step(&mut self, next: AgentState) -> Result<AgentState> {
+        self.transition(next)?;
+        Ok(self.state.clone())
+    }
+
+    /// The phase of the current turn (derived from the agent state).
+    pub fn turn_phase(&self) -> TurnPhase {
+        match &self.state {
+            AgentState::Initializing | AgentState::Idle => TurnPhase::NotStarted,
+            AgentState::Processing => TurnPhase::Pipeline,
+            AgentState::Thinking => TurnPhase::Generating,
+            AgentState::WaitingForTool => TurnPhase::ToolExecution,
+            AgentState::Compacting => TurnPhase::Compaction,
+            AgentState::Completed => TurnPhase::Completed,
+            AgentState::Error(_) => TurnPhase::Failed,
+            AgentState::Stopped => TurnPhase::Failed,
+            AgentState::Paused | AgentState::WaitingForUser => TurnPhase::NotStarted,
+            AgentState::Interrupted | AgentState::Retrying { .. } => TurnPhase::Generating,
+        }
+    }
+
+    /// Register a background process with this agent's process manager.
+    pub fn register_background_process(&mut self, process: Arc<BackgroundProcess>) {
+        self.bg_processes.register(process);
+    }
+
+    /// Get the agent's background process manager.
+    pub fn background_processes(&self) -> &BackgroundProcessManager {
+        &self.bg_processes
+    }
+
+    /// Stop all background processes spawned by this agent.
+    pub async fn stop_background_processes(&mut self) -> usize {
+        self.bg_processes.stop_all().await
+    }
+}
+
+/// A serializable snapshot of an agent's state, for crash recovery.
+///
+/// The snapshot is in-memory only; use [`AgentSnapshot::to_crash_snapshot`]
+/// for a persistence-ready [`crate::recovery::CrashSnapshot`].
+#[derive(Debug, Clone)]
+pub struct AgentSnapshot {
+    /// The agent id.
+    pub id: String,
+    /// The agent name.
+    pub name: String,
+    /// The agent's current state.
+    pub state: AgentState,
+    /// The conversation history.
+    pub conversation: Vec<Message>,
+    /// The number of turns executed.
+    pub turn_count: u64,
+    /// The accumulated usage.
+    pub usage: UsageStats,
+    /// When the agent was created.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The last error, if any.
+    pub last_error: Option<AgentError>,
+}
+
+impl AgentSnapshot {
+    /// Convert to a `CrashSnapshot` for persistence.
+    pub fn to_crash_snapshot(
+        &self,
+        session_id: &str,
+        tool_round: u32,
+        max_tool_rounds: u32,
+    ) -> crate::recovery::CrashSnapshot {
+        let messages_json =
+            serde_json::to_string(&self.conversation).unwrap_or_else(|_| "[]".to_string());
+        crate::recovery::CrashSnapshot {
+            turn_id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.to_string(),
+            agent_id: self.id.clone(),
+            agent_state: self.state.to_string(),
+            model: String::new(),
+            provider: String::new(),
+            tool_round,
+            max_tool_rounds,
+            messages_json,
+            usage: self.usage.to_usage(),
+            created_at_ms: crate::recovery::crash::current_epoch_ms(),
+            updated_at_ms: crate::recovery::crash::current_epoch_ms(),
+            finalized: false,
+        }
+    }
+}
+
 /// A `ToolExecutor` backed by the tools crate's dispatch engine.
 ///
 /// Bridges [`crate::runtime::ToolExecutor`] to
@@ -1918,6 +2881,182 @@ impl AgentRegistry {
     /// Iterate over all agents.
     pub fn iter(&self) -> impl Iterator<Item = &Agent> {
         self.agents.iter()
+    }
+
+    /// Find an agent by display name.
+    pub fn find_by_name(&self, name: &str) -> Option<&Agent> {
+        self.agents.iter().find(|a| a.name() == name)
+    }
+
+    /// Take a snapshot of every registered agent.
+    pub fn snapshots(&self) -> Vec<AgentSnapshot> {
+        self.agents.iter().map(|a| a.snapshot()).collect()
+    }
+}
+
+/// A placeholder generator that always errors.
+///
+/// Used by [`AgentRegistry`] recovery paths and tests where an agent is
+/// constructed from a snapshot and its generator is replaced later.
+#[derive(Debug, Default)]
+pub struct PlaceholderGenerator {
+    /// The placeholder model name.
+    pub model: String,
+    /// The placeholder provider name.
+    pub provider: String,
+}
+
+impl PlaceholderGenerator {
+    /// Create a new placeholder generator.
+    pub fn new() -> Self {
+        Self {
+            model: "placeholder".to_string(),
+            provider: "placeholder".to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl TurnGenerator for PlaceholderGenerator {
+    async fn generate(&self, _messages: &[Message]) -> Result<Vec<Message>> {
+        Err(Error::InvalidInput(
+            "placeholder generator cannot generate; the agent must be bound to a real generator"
+                .to_string(),
+        ))
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn provider_name(&self) -> &str {
+        &self.provider
+    }
+}
+
+/// A builder for constructing an [`Agent`] with full configuration.
+#[derive(Debug)]
+pub struct AgentBuilder {
+    /// The agent id.
+    id: String,
+    /// The display name.
+    name: Option<String>,
+    /// The configuration.
+    config: AgentConfig,
+    /// The tool executor.
+    tool_executor: Option<Arc<dyn crate::runtime::ToolExecutor>>,
+    /// Initial conversation messages.
+    conversation: Vec<Message>,
+}
+
+impl AgentBuilder {
+    /// Create a new builder for the given agent id.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: None,
+            config: AgentConfig::default(),
+            tool_executor: None,
+            conversation: Vec::new(),
+        }
+    }
+
+    /// Set the display name.
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set the full configuration.
+    pub fn with_config(mut self, config: AgentConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// Set the maximum number of turns.
+    pub fn max_turns(mut self, max: u32) -> Self {
+        self.config.max_turns = max;
+        self
+    }
+
+    /// Set the tool-call limit per turn.
+    pub fn max_tool_calls(mut self, max: u32) -> Self {
+        self.config.max_tool_calls_per_turn = max;
+        self
+    }
+
+    /// Set the command timeout in seconds.
+    pub fn timeout_seconds(mut self, seconds: u64) -> Self {
+        self.config.timeout_seconds = seconds;
+        self
+    }
+
+    /// Enable or disable tool execution.
+    pub fn allow_tools(mut self, allowed: bool) -> Self {
+        self.config.allow_tool_execution = allowed;
+        self
+    }
+
+    /// Enable or disable subprocess execution.
+    pub fn allow_subprocess(mut self, allowed: bool) -> Self {
+        self.config.allow_subprocess = allowed;
+        self
+    }
+
+    /// Set the workspace directory.
+    pub fn workspace(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.config.workspace_dir = Some(dir.into());
+        self
+    }
+
+    /// Set the default model.
+    pub fn default_model(mut self, model: impl Into<String>) -> Self {
+        self.config.default_model = model.into();
+        self
+    }
+
+    /// Set the default provider.
+    pub fn default_provider(mut self, provider: impl Into<String>) -> Self {
+        self.config.default_provider = provider.into();
+        self
+    }
+
+    /// Set the system prompt.
+    pub fn system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.config.system_prompt = prompt.into();
+        self
+    }
+
+    /// Set the context window size.
+    pub fn context_window(mut self, tokens: u64) -> Self {
+        self.config.context_window_tokens = tokens;
+        self
+    }
+
+    /// Attach a tool executor.
+    pub fn tool_executor(mut self, executor: Arc<dyn crate::runtime::ToolExecutor>) -> Self {
+        self.tool_executor = Some(executor);
+        self
+    }
+
+    /// Seed the initial conversation.
+    pub fn with_conversation(mut self, messages: Vec<Message>) -> Self {
+        self.conversation = messages;
+        self
+    }
+
+    /// Build the agent.
+    pub fn build(self, generator: Box<dyn TurnGenerator>) -> Agent {
+        let mut agent = Agent::with_config(self.id, generator, self.config);
+        if let Some(name) = self.name {
+            agent.set_name(name);
+        }
+        if let Some(executor) = self.tool_executor {
+            agent.set_tool_executor(executor);
+        }
+        agent.conversation = self.conversation;
+        agent.initialize();
+        agent
     }
 }
 

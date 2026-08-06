@@ -75,6 +75,8 @@ pub struct ModelSelectOutcome {
 #[derive(Debug)]
 pub struct ModelSelectStep {
     config: ModelSelectConfig,
+    /// The ordered fallback model chain used when no default is configured.
+    fallbacks: Vec<FallbackModel>,
 }
 
 impl ModelSelectStep {
@@ -86,12 +88,22 @@ impl ModelSelectStep {
                 default_provider: default_provider.into(),
                 ..Default::default()
             },
+            fallbacks: Vec::new(),
         }
     }
 
     /// Create a step from a full configuration.
     pub fn with_config(config: ModelSelectConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            fallbacks: Vec::new(),
+        }
+    }
+
+    /// Create a step with a fallback chain.
+    pub fn with_fallbacks(mut self, fallbacks: Vec<FallbackModel>) -> Self {
+        self.fallbacks = fallbacks;
+        self
     }
 }
 
@@ -150,7 +162,24 @@ impl ModelSelectStep {
             }
         }
 
-        // 3. Configured default.
+        // 3. Fallback chain resolution. When the default model is unavailable
+        //    (empty), walk the configured fallback list and bind the first
+        //    available model.
+        if self.config.default_model.is_empty() && !self.fallbacks.is_empty() {
+            if let Some((model, provider)) = self.resolve_fallback_chain(ctx) {
+                ctx.set_metadata("resolved_model", &model);
+                ctx.set_metadata("provider_name", &provider);
+                ctx.set_metadata("model_source", "fallback_chain");
+                return ModelSelectOutcome {
+                    model,
+                    provider,
+                    routed_tier: None,
+                    source: "fallback_chain".to_string(),
+                };
+            }
+        }
+
+        // 4. Configured default.
         debug!(
             model = %self.config.default_model,
             provider = %self.config.default_provider,
@@ -164,6 +193,65 @@ impl ModelSelectStep {
             provider: self.config.default_provider.clone(),
             routed_tier: None,
             source: "default".to_string(),
+        }
+    }
+
+    /// Walk the configured fallback chain and bind the first available model.
+    ///
+    /// A fallback is "available" when the pipeline metadata has no signal that
+    /// it is disabled (e.g. a prior failure recorded under `fallback_<model>`
+    /// metadata) and its model id is non-empty.
+    fn resolve_fallback_chain(&self, ctx: &PipelineContext) -> Option<(String, String)> {
+        for fallback in &self.fallbacks {
+            if fallback.model.is_empty() {
+                continue;
+            }
+            // Skip a fallback that a prior attempt marked as failed.
+            let marker = format!("fallback_failed_{}", fallback.model);
+            if ctx.get_metadata(&marker).is_some() {
+                debug!(model = %fallback.model, "skipping failed fallback model");
+                continue;
+            }
+            let provider = if fallback.provider.is_empty() {
+                self.config.default_provider.clone()
+            } else {
+                fallback.provider.clone()
+            };
+            return Some((fallback.model.clone(), provider));
+        }
+        None
+    }
+
+    /// The configured fallback chain.
+    pub fn fallbacks(&self) -> &[FallbackModel] {
+        &self.fallbacks
+    }
+
+    /// Append a fallback model to the chain.
+    pub fn add_fallback(mut self, model: impl Into<String>, provider: impl Into<String>) -> Self {
+        self.fallbacks.push(FallbackModel {
+            model: model.into(),
+            provider: provider.into(),
+        });
+        self
+    }
+}
+
+/// A fallback model entry for the model-select step.
+#[derive(Debug, Clone)]
+pub struct FallbackModel {
+    /// The fallback model id.
+    pub model: String,
+    /// The provider serving the fallback model (empty = default provider).
+    pub provider: String,
+}
+
+impl FallbackModel {
+    /// Create a new fallback model entry.
+    pub fn new(model: impl Into<String>, provider: impl Into<String>) -> Self {
+        Self {
+            model: model.into(),
+            provider: provider.into(),
         }
     }
 }

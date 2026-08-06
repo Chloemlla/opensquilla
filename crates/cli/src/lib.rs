@@ -43,9 +43,12 @@ pub mod router;
 pub mod rpc;
 pub mod sandbox;
 pub mod scheduler;
+pub mod search;
 pub mod sessions;
 pub mod skills;
+pub mod status;
 pub mod table;
+pub mod tools;
 pub mod tui;
 pub mod util;
 

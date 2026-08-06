@@ -15,7 +15,7 @@
 //! It mirrors the Python backend's `engine/tool_executor.py` and the
 //! tool execution lifecycle embedded in `engine/agent.py`.
 
-use crate::agent::{RecoveryAction, ToolDispatchExecutor};
+use crate::agent::RecoveryAction;
 use crate::turn_control;
 use async_trait::async_trait;
 use opensquilla_core::error::{Error, Result};
@@ -445,6 +445,8 @@ pub struct ToolExecutionEngine {
     limiter: ToolConcurrencyLimiter,
     /// The default execution config.
     default_config: ToolExecutionConfig,
+    /// The permission policy gate (when attached).
+    policy: Option<ToolPolicy>,
 }
 
 impl ToolExecutionEngine {
@@ -455,12 +457,19 @@ impl ToolExecutionEngine {
             cache: ToolResultCache::default(),
             limiter: ToolConcurrencyLimiter::default(),
             default_config: ToolExecutionConfig::default(),
+            policy: None,
         }
     }
 
     /// Set the result cache.
     pub fn with_cache(mut self, cache: ToolResultCache) -> Self {
         self.cache = cache;
+        self
+    }
+
+    /// Attach a permission policy that gates every execution.
+    pub fn with_policy(mut self, policy: ToolPolicy) -> Self {
+        self.policy = Some(policy);
         self
     }
 
@@ -512,6 +521,36 @@ impl ToolExecutionEngine {
         config: &ToolExecutionConfig,
     ) -> ToolExecutionOutcome {
         let start = Instant::now();
+
+        // 0. Permission policy gate.
+        if let Some(policy) = &self.policy {
+            let permission = policy.evaluate(call);
+            if !permission.is_allowed() {
+                let reason = match permission {
+                    ToolPermission::Deny { reason } => reason,
+                    ToolPermission::RequiresConfirmation { reason } => {
+                        format!("confirmation required: {reason}")
+                    }
+                    ToolPermission::Allow => unreachable!(),
+                };
+                debug!(
+                    tool = %call.name,
+                    call_id = %call.id,
+                    reason = %reason,
+                    "tool call blocked by policy"
+                );
+                return ToolExecutionOutcome {
+                    call: call.clone(),
+                    result: Some(ToolResult::error(&call.id, reason.clone())),
+                    error: None,
+                    error_kind: Some(ToolErrorKind::PermissionDenied(reason)),
+                    duration: start.elapsed(),
+                    attempts: 1,
+                    from_cache: false,
+                    truncated: false,
+                };
+            }
+        }
 
         // 1. Cache lookup.
         if config.cache_result {
@@ -724,7 +763,167 @@ pub trait ToolExecutionHook: Send + Sync + fmt::Debug {
     async fn on_error(&self, call: &ToolCall, kind: &ToolErrorKind) -> Result<()>;
 }
 
-/// A logging hook that records tool execution events.
+/// The permission decision for a tool call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolPermission {
+    /// The tool call is allowed.
+    Allow,
+    /// The tool call is denied.
+    Deny {
+        /// The reason for the denial.
+        reason: String,
+    },
+    /// The tool call requires confirmation.
+    RequiresConfirmation {
+        /// The reason confirmation is required.
+        reason: String,
+    },
+}
+
+impl ToolPermission {
+    /// Whether the tool call is allowed.
+    pub fn is_allowed(&self) -> bool {
+        matches!(self, ToolPermission::Allow)
+    }
+
+    /// Whether the tool call is denied.
+    pub fn is_denied(&self) -> bool {
+        matches!(self, ToolPermission::Deny { .. })
+    }
+}
+
+/// A rule that decides whether a tool call is permitted.
+///
+/// Rules are evaluated in order; the first non-`Allow` result wins. When no
+/// rule fires, the policy's default permission applies.
+#[derive(Debug, Clone)]
+pub struct ToolPermissionRule {
+    /// The tool name pattern this rule applies to (exact match, or `*` for
+    /// all tools).
+    pub tool_pattern: String,
+    /// The permission this rule grants.
+    pub permission: ToolPermission,
+}
+
+impl ToolPermissionRule {
+    /// Create a new permission rule.
+    pub fn new(tool_pattern: impl Into<String>, permission: ToolPermission) -> Self {
+        Self {
+            tool_pattern: tool_pattern.into(),
+            permission,
+        }
+    }
+
+    /// Whether this rule applies to the given tool name.
+    pub fn applies_to(&self, tool_name: &str) -> bool {
+        self.tool_pattern == "*" || self.tool_pattern == tool_name
+    }
+}
+
+/// A policy for gating tool execution.
+///
+/// The policy evaluates registered rules and applies the default permission
+/// when no rule matches. It supports a separate default for subprocess tools
+/// (shell, git, code execution) so dangerous tools are gated by default.
+#[derive(Debug, Clone)]
+pub struct ToolPolicy {
+    /// The ordered permission rules.
+    rules: Vec<ToolPermissionRule>,
+    /// The default permission for matched tools.
+    default_permission: ToolPermission,
+    /// The default permission for subprocess tools (when stricter).
+    subprocess_permission: ToolPermission,
+}
+
+impl Default for ToolPolicy {
+    fn default() -> Self {
+        Self {
+            rules: Vec::new(),
+            default_permission: ToolPermission::Allow,
+            subprocess_permission: ToolPermission::Deny {
+                reason: "subprocess execution not permitted by policy".to_string(),
+            },
+        }
+    }
+}
+
+impl ToolPolicy {
+    /// Create a new policy with the given default permission.
+    pub fn new(default_permission: ToolPermission) -> Self {
+        Self {
+            default_permission,
+            ..Default::default()
+        }
+    }
+
+    /// A permissive policy that allows everything.
+    pub fn permissive() -> Self {
+        Self {
+            default_permission: ToolPermission::Allow,
+            subprocess_permission: ToolPermission::Allow,
+            rules: Vec::new(),
+        }
+    }
+
+    /// A restrictive policy that denies everything except explicitly allowed
+    /// tools.
+    pub fn restrictive() -> Self {
+        Self {
+            default_permission: ToolPermission::Deny {
+                reason: "tool not permitted by policy".to_string(),
+            },
+            subprocess_permission: ToolPermission::Deny {
+                reason: "subprocess execution not permitted by policy".to_string(),
+            },
+            rules: Vec::new(),
+        }
+    }
+
+    /// Add a permission rule.
+    pub fn add_rule(mut self, rule: ToolPermissionRule) -> Self {
+        self.rules.push(rule);
+        self
+    }
+
+    /// Set the default permission for subprocess tools.
+    pub fn with_subprocess_permission(mut self, permission: ToolPermission) -> Self {
+        self.subprocess_permission = permission;
+        self
+    }
+
+    /// Evaluate the policy for a tool call.
+    pub fn evaluate(&self, call: &ToolCall) -> ToolPermission {
+        // Rules first (in order).
+        for rule in &self.rules {
+            if rule.applies_to(&call.name) {
+                return rule.permission.clone();
+            }
+        }
+
+        // Subprocess tools use the stricter default.
+        if crate::agent::is_subprocess_tool(&call.name) {
+            return self.subprocess_permission.clone();
+        }
+
+        self.default_permission.clone()
+    }
+
+    /// Evaluate a batch of tool calls, returning the denied calls.
+    pub fn evaluate_batch(&self, calls: &[ToolCall]) -> Vec<(ToolCall, ToolPermission)> {
+        calls
+            .iter()
+            .filter(|c| !self.evaluate(c).is_allowed())
+            .map(|c| (c.clone(), self.evaluate(c)))
+            .collect()
+    }
+
+    /// Whether a tool call is allowed.
+    pub fn is_allowed(&self, call: &ToolCall) -> bool {
+        self.evaluate(call).is_allowed()
+    }
+}
+
+/// A logging tool hook that records tool execution events.
 #[derive(Debug)]
 pub struct LoggingToolHook;
 
@@ -766,6 +965,7 @@ pub struct ToolExecutionEngineBuilder {
     cache: Option<ToolResultCache>,
     limiter: Option<ToolConcurrencyLimiter>,
     config: ToolExecutionConfig,
+    policy: Option<ToolPolicy>,
 }
 
 impl ToolExecutionEngineBuilder {
@@ -776,6 +976,7 @@ impl ToolExecutionEngineBuilder {
             cache: None,
             limiter: None,
             config: ToolExecutionConfig::default(),
+            policy: None,
         }
     }
 
@@ -794,6 +995,12 @@ impl ToolExecutionEngineBuilder {
     /// Set the concurrency limiter.
     pub fn limiter(mut self, limiter: ToolConcurrencyLimiter) -> Self {
         self.limiter = Some(limiter);
+        self
+    }
+
+    /// Attach a permission policy.
+    pub fn policy(mut self, policy: ToolPolicy) -> Self {
+        self.policy = Some(policy);
         self
     }
 
@@ -824,6 +1031,9 @@ impl ToolExecutionEngineBuilder {
         }
         if let Some(limiter) = self.limiter {
             engine = engine.with_limiter(limiter);
+        }
+        if let Some(policy) = self.policy {
+            engine = engine.with_policy(policy);
         }
         engine
     }

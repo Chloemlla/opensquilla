@@ -25,6 +25,7 @@
 
 use crate::types::{SkillSpec, SkillStep, StepOutput, StepType};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -149,6 +150,56 @@ pub fn render_template(template: &str, variables: &HashMap<String, Value>) -> St
     build_tera()
         .render_str(template, &ctx)
         .unwrap_or_else(|_| template.to_string())
+}
+
+/// Pick the language-aware prompt for a step.
+///
+/// When the step declares a `prompt_bilingual` map in its `metadata`
+/// (`{"en": ..., "zh": ...}`) and a `language` variable is present in the
+/// context, the matching language body is used. Falls back to the step's
+/// plain `prompt`.
+pub fn render_bilingual_step(
+    step: &SkillStep,
+    variables: &HashMap<String, Value>,
+    default_language: &str,
+) -> String {
+    let language = variables
+        .get("language")
+        .and_then(|v| v.as_str())
+        .unwrap_or(default_language);
+
+    // A step may carry bilingual bodies in metadata.bilingual.
+    let bilingual = step
+        .metadata
+        .get("bilingual")
+        .and_then(|v| v.as_object());
+    let body = if let Some(map) = bilingual {
+        let key = if language.to_ascii_lowercase().starts_with("zh") {
+            "zh"
+        } else {
+            "en"
+        };
+        map.get(key)
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .or_else(|| map.get("en").and_then(|v| v.as_str()).map(String::from))
+    } else {
+        None
+    };
+
+    match body {
+        Some(b) => render_template(&b, variables),
+        None => render_template(step.prompt.as_deref().unwrap_or(""), variables),
+    }
+}
+
+/// Whether a step's `when` expression mentions the `language` variable, which
+/// the orchestrator can use to decide if re-evaluation is needed.
+pub fn when_references_language(step: &SkillStep) -> bool {
+    step.when
+        .as_deref()
+        .map(|w| w.contains("language"))
+        .unwrap_or(false)
 }
 
 /// Renders `tool_args` / `with_args` maps, treating string values as templates.
@@ -725,6 +776,154 @@ impl Dag {
     pub fn is_fully_reachable(&self) -> bool {
         self.order.len() == self.steps.len()
     }
+
+    /// Run full validation and return a structured [`DagValidation`] result
+    /// that names the specific problems (cycles, unknown deps, empty ids,
+    /// duplicate ids).
+    pub fn validate(&self) -> DagValidation {
+        let mut issues: Vec<String> = Vec::new();
+        let mut seen_ids: HashSet<&str> = HashSet::new();
+        for step in &self.steps {
+            if step.id.is_empty() {
+                issues.push("a step has an empty id".to_string());
+            }
+            if !seen_ids.insert(step.id.as_str()) {
+                issues.push(format!("duplicate step id '{}'", step.id));
+            }
+        }
+        // Unknown dependencies.
+        let ids: HashSet<&str> = self.steps.iter().map(|s| s.id.as_str()).collect();
+        for edge in &self.edges {
+            if !ids.contains(edge.from.as_str()) {
+                issues.push(format!("step '{}' depends on unknown step '{}'", edge.to, edge.from));
+            }
+        }
+        // Cycles: a topological order shorter than the step count implies one.
+        if !self.is_fully_reachable() {
+            let ordered: HashSet<&str> = self.order.iter().map(|s| s.as_str()).collect();
+            let in_cycle: Vec<String> = self
+                .steps
+                .iter()
+                .map(|s| s.id.clone())
+                .filter(|id| !ordered.contains(id.as_str()))
+                .collect();
+            issues.push(format!(
+                "dependency cycle among steps: {:?}",
+                in_cycle
+            ));
+        }
+        DagValidation {
+            valid: issues.is_empty(),
+            issues,
+        }
+    }
+
+    /// Compute the critical path: the longest dependency chain from any root
+    /// to any leaf, expressed as a list of step ids.
+    pub fn critical_path(&self) -> Vec<String> {
+        let mut depth: HashMap<String, usize> = HashMap::new();
+        let mut parent: HashMap<String, String> = HashMap::new();
+        for step_id in &self.order {
+            let deps = self.dependencies_of(step_id);
+            let best = deps
+                .iter()
+                .map(|d| depth.get(d).copied().unwrap_or(0))
+                .max()
+                .unwrap_or(0);
+            depth.insert(step_id.clone(), best + 1);
+            if let Some(best_dep) = deps.iter().max_by_key(|d| depth.get(d).copied().unwrap_or(0)) {
+                parent.insert(step_id.clone(), best_dep.clone());
+            }
+        }
+
+        let (leaf, _) = depth
+            .iter()
+            .max_by_key(|(_, d)| **d)
+            .map(|(id, d)| (id.clone(), *d))
+            .unwrap_or_default();
+
+        let mut path = Vec::new();
+        let mut cursor = Some(leaf);
+        while let Some(id) = cursor {
+            path.push(id.clone());
+            cursor = parent.get(&id).cloned();
+        }
+        path.reverse();
+        path
+    }
+
+    /// The critical path length in edges.
+    pub fn critical_path_length(&self) -> usize {
+        self.critical_path().len().saturating_sub(1)
+    }
+
+    /// The total estimated effort across all steps, using each step's
+    /// `priority` as a weight (defaulting to 1).
+    pub fn total_effort(&self) -> usize {
+        self.steps.iter().map(|s| s.priority.unwrap_or(1).max(1) as usize).sum()
+    }
+
+    /// Compute independent clusters (weakly-connected components) of the DAG.
+    /// Each cluster is a set of step ids that share no dependency edges with
+    /// the other clusters. Useful for parallelizing independent sub-workflows.
+    pub fn independent_clusters(&self) -> Vec<Vec<String>> {
+        let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
+        for step in &self.steps {
+            adjacency.entry(step.id.clone()).or_default();
+        }
+        for edge in &self.edges {
+            adjacency.entry(edge.from.clone()).or_default().push(edge.to.clone());
+            adjacency.entry(edge.to.clone()).or_default().push(edge.from.clone());
+        }
+
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut clusters: Vec<Vec<String>> = Vec::new();
+        for step in &self.steps {
+            if visited.contains(&step.id) {
+                continue;
+            }
+            let mut stack = vec![step.id.clone()];
+            let mut cluster = Vec::new();
+            while let Some(id) = stack.pop() {
+                if !visited.insert(id.clone()) {
+                    continue;
+                }
+                cluster.push(id.clone());
+                if let Some(neighbors) = adjacency.get(&id) {
+                    for n in neighbors {
+                        if !visited.contains(n) {
+                            stack.push(n.clone());
+                        }
+                    }
+                }
+            }
+            cluster.sort();
+            clusters.push(cluster);
+        }
+        clusters
+    }
+
+    /// The number of steps that are leaves (no dependents).
+    pub fn leaf_count(&self) -> usize {
+        self.steps
+            .iter()
+            .filter(|s| self.dependents_of(&s.id).is_empty())
+            .count()
+    }
+
+    /// The number of root steps.
+    pub fn root_count(&self) -> usize {
+        self.roots().len()
+    }
+}
+
+/// The result of [`Dag::validate`].
+#[derive(Debug, Clone, Default)]
+pub struct DagValidation {
+    /// Whether the DAG has no problems.
+    pub valid: bool,
+    /// Human-readable problems, empty when valid.
+    pub issues: Vec<String>,
 }
 
 fn build_edges(steps: &[SkillStep]) -> Vec<DagEdge> {
@@ -837,6 +1036,52 @@ struct RunState {
     cancelled: Arc<AtomicBool>,
 }
 
+/// A completed run's summary, retained for history and observability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaRunRecord {
+    pub run_id: String,
+    pub skill_id: String,
+    pub success: bool,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub completed_at: chrono::DateTime<chrono::Utc>,
+    pub duration_ms: u64,
+    pub steps_total: usize,
+    pub steps_completed: usize,
+    pub error: Option<String>,
+}
+
+/// Aggregate statistics over all recorded runs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MetaRunStats {
+    pub total_runs: usize,
+    pub successful_runs: usize,
+    pub failed_runs: usize,
+    pub cancelled_runs: usize,
+    pub total_steps_executed: usize,
+    pub total_duration_ms: u64,
+    pub avg_duration_ms: f64,
+}
+
+impl MetaRunStats {
+    /// The overall success rate in `[0, 1]` (1.0 when no runs recorded).
+    pub fn success_rate(&self) -> f64 {
+        if self.total_runs == 0 {
+            1.0
+        } else {
+            self.successful_runs as f64 / self.total_runs as f64
+        }
+    }
+
+    /// The average steps per run.
+    pub fn avg_steps_per_run(&self) -> f64 {
+        if self.total_runs == 0 {
+            0.0
+        } else {
+            self.total_steps_executed as f64 / self.total_runs as f64
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MetaOrchestrator
 // ---------------------------------------------------------------------------
@@ -861,6 +1106,8 @@ pub struct MetaOrchestrator {
     workspace_dir: Option<PathBuf>,
     /// Active run states keyed by run id.
     runs: Arc<RwLock<HashMap<String, RunState>>>,
+    /// Completed run history, newest first, bounded.
+    history: Arc<RwLock<VecDeque<MetaRunRecord>>>,
 }
 
 impl MetaOrchestrator {
@@ -882,6 +1129,7 @@ impl MetaOrchestrator {
             max_parallelism: Some(4),
             workspace_dir: None,
             runs: Arc::new(RwLock::new(HashMap::new())),
+            history: Arc::new(RwLock::new(VecDeque::new())),
         };
 
         orch.register_executor(Arc::new(AgentExecutor::new(orch.deps.clone())));
@@ -988,12 +1236,31 @@ impl MetaOrchestrator {
         }
 
         let orchestrator = Arc::new(self.clone_handle());
+        let skill_id = skill.id.clone();
+        let steps_total = skill.steps.len();
         tokio::spawn(async move {
+            let started_at = chrono::Utc::now();
             let result = orchestrator
                 .execute_with_cancel(&skill, initial_context, cancel_flag.clone())
                 .await;
+            let completed_at = chrono::Utc::now();
+            let duration_ms = (completed_at - started_at).num_milliseconds().max(0) as u64;
+            let (success, error, steps_completed) = match result {
+                Ok(outputs) => (true, None, outputs.len()),
+                Err(e) => (false, Some(e), 0),
+            };
+            orchestrator.record_run(MetaRunRecord {
+                run_id: run_id.clone(),
+                skill_id: skill_id.clone(),
+                success,
+                started_at,
+                completed_at,
+                duration_ms,
+                steps_total,
+                steps_completed,
+                error,
+            });
             orchestrator.finish_run(&run_id);
-            let _ = result;
         });
 
         Ok(MetaRun {
@@ -1040,7 +1307,72 @@ impl MetaOrchestrator {
             max_parallelism: self.max_parallelism,
             workspace_dir: self.workspace_dir.clone(),
             runs: self.runs.clone(),
+            history: self.history.clone(),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Run history and statistics
+    // -----------------------------------------------------------------------
+
+    /// Record a completed run into the history buffer (newest first, bounded
+    /// to the most recent 200 runs).
+    fn record_run(&self, record: MetaRunRecord) {
+        if let Ok(mut history) = self.history.write() {
+            history.push_front(record);
+            while history.len() > 200 {
+                history.pop_back();
+            }
+        }
+    }
+
+    /// The full run history, newest first.
+    pub fn run_history(&self) -> Vec<MetaRunRecord> {
+        self.history
+            .read()
+            .map(|h| h.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// The most recent N runs, newest first.
+    pub fn recent_runs(&self, n: usize) -> Vec<MetaRunRecord> {
+        self.run_history().into_iter().take(n).collect()
+    }
+
+    /// The total number of recorded runs.
+    pub fn total_runs(&self) -> usize {
+        self.history.read().map(|h| h.len()).unwrap_or(0)
+    }
+
+    /// Aggregate statistics over all recorded runs.
+    pub fn run_stats(&self) -> MetaRunStats {
+        let history = self.run_history();
+        let mut stats = MetaRunStats {
+            total_runs: history.len(),
+            ..Default::default()
+        };
+        for record in &history {
+            if record.success {
+                stats.successful_runs += 1;
+            } else {
+                stats.failed_runs += 1;
+            }
+            stats.total_steps_executed += record.steps_total;
+            stats.total_duration_ms += record.duration_ms;
+        }
+        // Cancelled runs are recorded as failures by the run task.
+        stats.cancelled_runs = 0;
+        stats.avg_duration_ms = if stats.total_runs > 0 {
+            stats.total_duration_ms as f64 / stats.total_runs as f64
+        } else {
+            0.0
+        };
+        stats
+    }
+
+    /// The success rate over all recorded runs, in `[0, 1]`.
+    pub fn success_rate(&self) -> f64 {
+        self.run_stats().success_rate()
     }
 
     /// Execute a meta-skill's DAG workflow.
@@ -2247,5 +2579,236 @@ mod tests {
             coerce_to_choice("maybe", &["yes".to_string(), "no".to_string()]),
             None
         );
+    }
+
+    #[test]
+    fn dag_validation_detects_problems() {
+        let steps = vec![{
+            let mut s = SkillStep::new("a", StepType::Agent);
+            s.depends_on = Some(vec!["ghost".to_string()]);
+            s
+        }];
+        let dag = Dag {
+            steps: steps.clone(),
+            order: vec!["a".to_string()],
+            edges: build_edges(&steps),
+        };
+        let validation = dag.validate();
+        assert!(!validation.valid);
+        assert!(validation.issues.iter().any(|i| i.contains("unknown step")));
+    }
+
+    #[test]
+    fn dag_critical_path_is_longest_chain() {
+        let steps = vec![
+            SkillStep::new("a", StepType::Agent),
+            {
+                let mut s = SkillStep::new("b", StepType::LlmChat);
+                s.depends_on = Some(vec!["a".to_string()]);
+                s
+            },
+            {
+                let mut s = SkillStep::new("c", StepType::ToolCall);
+                s.depends_on = Some(vec!["b".to_string()]);
+                s
+            },
+            {
+                // A parallel short chain: d -> e (length 2), shorter than a->b->c.
+                let mut s = SkillStep::new("d", StepType::Agent);
+                s.prompt = Some("d".to_string());
+                s
+            },
+        ];
+        let dag = Dag::new(&steps).unwrap();
+        let critical = dag.critical_path();
+        assert_eq!(critical, vec!["a", "b", "c"]);
+        assert_eq!(dag.critical_path_length(), 2);
+    }
+
+    #[test]
+    fn dag_independent_clusters() {
+        let steps = vec![
+            {
+                let mut s = SkillStep::new("a", StepType::Agent);
+                s.depends_on = Some(vec!["b".to_string()]);
+                s
+            },
+            SkillStep::new("b", StepType::Agent),
+            SkillStep::new("c", StepType::Agent),
+            SkillStep::new("d", StepType::Agent),
+        ];
+        let dag = Dag::new(&steps).unwrap();
+        let clusters = dag.independent_clusters();
+        // Cluster 1 = {a, b}; cluster 2 = {c}; cluster 3 = {d}.
+        assert!(clusters.len() >= 2);
+        let ab = clusters.iter().find(|c| c.contains(&"a".to_string())).unwrap();
+        assert!(ab.contains(&"b".to_string()));
+    }
+
+    #[test]
+    fn dag_counts_roots_and_leaves() {
+        let steps = vec![
+            SkillStep::new("a", StepType::Agent),
+            {
+                let mut s = SkillStep::new("b", StepType::Agent);
+                s.depends_on = Some(vec!["a".to_string()]);
+                s
+            },
+            {
+                let mut s = SkillStep::new("c", StepType::Agent);
+                s.depends_on = Some(vec!["a".to_string()]);
+                s
+            },
+        ];
+        let dag = Dag::new(&steps).unwrap();
+        assert_eq!(dag.root_count(), 1);
+        assert_eq!(dag.leaf_count(), 2);
+    }
+
+    #[test]
+    fn dag_total_effort_sums_priorities() {
+        let steps = vec![
+            {
+                let mut s = SkillStep::new("a", StepType::Agent);
+                s.priority = Some(2);
+                s
+            },
+            SkillStep::new("b", StepType::Agent),
+        ];
+        let dag = Dag::new(&steps).unwrap();
+        assert_eq!(dag.total_effort(), 3);
+    }
+
+    #[test]
+    fn render_bilingual_step_selects_language() {
+        let mut step = SkillStep::new("s1", StepType::LlmChat);
+        step.prompt = Some("English fallback".to_string());
+        step.metadata.insert(
+            "bilingual".to_string(),
+            json!({
+                "en": "Hello {{ name }}",
+                "zh": "你好 {{ name }}"
+            }),
+        );
+
+        let mut vars = HashMap::new();
+        vars.insert("name".to_string(), json!("World"));
+        vars.insert("language".to_string(), json!("zh"));
+        let zh = render_bilingual_step(&step, &vars, "en");
+        assert_eq!(zh, "你好 World");
+
+        vars.insert("language".to_string(), json!("en"));
+        let en = render_bilingual_step(&step, &vars, "en");
+        assert_eq!(en, "Hello World");
+
+        // Missing language uses the default.
+        let no_lang = HashMap::new();
+        let fallback = render_bilingual_step(&step, &no_lang, "zh");
+        assert_eq!(fallback, "你好 World");
+    }
+
+    #[test]
+    fn when_references_language_detection() {
+        let mut step = SkillStep::new("s1", StepType::Agent);
+        assert!(!when_references_language(&step));
+        step.when = Some("language == \"zh\"".to_string());
+        assert!(when_references_language(&step));
+    }
+
+    #[test]
+    fn dag_validation_clean_dag() {
+        let steps = vec![
+            SkillStep::new("a", StepType::Agent),
+            {
+                let mut s = SkillStep::new("b", StepType::LlmChat);
+                s.depends_on = Some(vec!["a".to_string()]);
+                s
+            },
+        ];
+        let dag = Dag::new(&steps).unwrap();
+        assert!(dag.validate().valid);
+    }
+
+    #[test]
+    fn run_stats_aggregate_records() {
+        let orch = MetaOrchestrator::new();
+        let now = chrono::Utc::now();
+        orch.record_run(MetaRunRecord {
+            run_id: "r1".to_string(),
+            skill_id: "s1".to_string(),
+            success: true,
+            started_at: now,
+            completed_at: now + chrono::Duration::milliseconds(100),
+            duration_ms: 100,
+            steps_total: 3,
+            steps_completed: 3,
+            error: None,
+        });
+        orch.record_run(MetaRunRecord {
+            run_id: "r2".to_string(),
+            skill_id: "s1".to_string(),
+            success: false,
+            started_at: now,
+            completed_at: now + chrono::Duration::milliseconds(50),
+            duration_ms: 50,
+            steps_total: 3,
+            steps_completed: 0,
+            error: Some("boom".to_string()),
+        });
+
+        assert_eq!(orch.total_runs(), 2);
+        let stats = orch.run_stats();
+        assert_eq!(stats.total_runs, 2);
+        assert_eq!(stats.successful_runs, 1);
+        assert_eq!(stats.failed_runs, 1);
+        assert_eq!(stats.total_duration_ms, 150);
+        assert!((stats.success_rate() - 0.5).abs() < 1e-9);
+
+        let recent = orch.recent_runs(1);
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].run_id, "r2");
+    }
+
+    #[test]
+    fn run_history_is_newest_first_and_bounded() {
+        let orch = MetaOrchestrator::new();
+        let now = chrono::Utc::now();
+        for i in 0..250 {
+            orch.record_run(MetaRunRecord {
+                run_id: format!("r{}", i),
+                skill_id: "s".to_string(),
+                success: true,
+                started_at: now,
+                completed_at: now,
+                duration_ms: 0,
+                steps_total: 1,
+                steps_completed: 1,
+                error: None,
+            });
+        }
+        let history = orch.run_history();
+        assert_eq!(history.len(), 200);
+        assert_eq!(history[0].run_id, "r249");
+    }
+
+    #[test]
+    fn run_stats_empty_defaults() {
+        let orch = MetaOrchestrator::new();
+        let stats = orch.run_stats();
+        assert_eq!(stats.total_runs, 0);
+        assert_eq!(stats.success_rate(), 1.0);
+        assert_eq!(stats.avg_duration_ms, 0.0);
+    }
+
+    #[test]
+    fn meta_run_stats_avg_math() {
+        let mut stats = MetaRunStats::default();
+        stats.total_runs = 2;
+        stats.total_duration_ms = 300;
+        stats.avg_duration_ms = stats.total_duration_ms as f64 / stats.total_runs as f64;
+        assert_eq!(stats.avg_duration_ms, 150.0);
+        assert_eq!(stats.avg_steps_per_run(), 0.0);
+        stats.total_steps_executed = 6;
+        assert_eq!(stats.avg_steps_per_run(), 3.0);
     }
 }

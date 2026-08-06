@@ -57,7 +57,6 @@ pub async fn show_skill(name: String) -> Result<()> {
     let skill = loader
         .get_skill(&name)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
 
     println!("Skill:        {}", skill.name);
@@ -69,12 +68,6 @@ pub async fn show_skill(name: String) -> Result<()> {
     println!("  Tags:        {}", skill.tags.join(", "));
     println!("  Steps:       {}", skill.steps.len());
     Ok(())
-}
-
-/// Install a skill from a GitHub repo, ClawHub, or a local directory.
-/// Wrapper that calls install_skill with scan enabled by default.
-pub async fn install_skill(source: String) -> Result<()> {
-    install_skill(source, false).await
 }
 
 /// Uninstall a skill by name.
@@ -128,7 +121,6 @@ pub async fn enable_skill(name: String) -> Result<()> {
     let _skill = loader
         .get_skill(&name)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
 
     // Skills are enabled by default once installed; this is a no-op confirmation.
@@ -143,7 +135,6 @@ pub async fn disable_skill(name: String) -> Result<()> {
     let _skill = loader
         .get_skill(&name)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
 
     // In a full implementation this would mark the skill as disabled in a
@@ -155,10 +146,23 @@ pub async fn disable_skill(name: String) -> Result<()> {
 /// Update an installed skill.
 pub async fn update_skill(name: String) -> Result<()> {
     let hub = build_hub()?;
-    hub.update(&name)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to update skill: {e}"))?;
-    println!("{} Skill '{name}' updated.", crate::table::ok());
+    let results = hub
+        .update(Some(&name))
+        .await;
+    for result in results {
+        match result {
+            Ok(r) => {
+                if r.success {
+                    println!("{} Skill '{}' updated.", crate::table::ok(), r.name);
+                } else {
+                    println!("{} Skill update failed: {}", crate::table::fail(), r.message);
+                }
+            }
+            Err(e) => {
+                println!("{} Skill update error: {e}", crate::table::fail());
+            }
+        }
+    }
     Ok(())
 }
 
@@ -169,7 +173,6 @@ pub async fn info_skill(name: String) -> Result<()> {
     let skill = loader
         .get_skill(&name)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load skill: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Skill '{name}' not found"))?;
 
     println!("Skill: {}", skill.name);

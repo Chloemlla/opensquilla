@@ -82,7 +82,7 @@ pub struct LoadWarning {
 }
 
 /// Summary of a scan operation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct LoadReport {
     /// Number of layer directories scanned.
     pub scanned_dirs: usize,
@@ -454,7 +454,7 @@ impl SkillLoader {
     /// Remove a skill by id, returning the removed spec.
     pub fn remove_skill(&self, id: &str) -> Option<SkillSpec> {
         let removed = self.skills.remove(id).map(|(_, v)| v)?;
-        for entry in self.layers.iter_mut() {
+        for mut entry in self.layers.iter_mut() {
             entry.value_mut().retain(|s| s != id);
         }
         Some(removed)
@@ -650,7 +650,7 @@ impl SkillLoader {
 
     /// When the last full scan completed, if any.
     pub fn last_scan_time(&self) -> Option<Instant> {
-        self.last_scan.read().ok().copied().flatten()
+        self.last_scan.read().ok().and_then(|guard| *guard)
     }
 
     /// Number of cache entries (files tracked).
@@ -1043,10 +1043,10 @@ pub fn manifest_to_spec(
         spec.requires = requires;
     }
     if let Some(metadata) = manifest.metadata {
-        // Merge nested metadata.tags into the top-level tags.
-        for tag in &metadata.tags {
-            if !spec.tags.contains(tag) {
-                spec.tags.push(tag.clone());
+        // Merge nested metadata classification into the top-level tags.
+        if let Some(ref class) = metadata.classification {
+            if !spec.tags.contains(class) {
+                spec.tags.push(class.clone());
             }
         }
         if spec.allowed_tools.is_empty() {
@@ -1151,6 +1151,349 @@ fn determine_layer_from_path(
 }
 
 // ---------------------------------------------------------------------------
+// Frontmatter normalization
+// ---------------------------------------------------------------------------
+
+/// Normalize a SKILL.md frontmatter block before YAML parsing.
+///
+/// Handles:
+/// - A leading UTF-8 BOM.
+/// - Windows CRLF line endings.
+/// - A missing trailing newline.
+/// - Leading blank lines before the opening `---`.
+///
+/// Returns the normalized frontmatter text (without the delimiters).
+pub fn normalize_frontmatter(content: &str) -> Result<String, SkillLoadError> {
+    let content = content.trim_start_matches('\u{feff}');
+    let normalized = content.replace("\r\n", "\n");
+    let trimmed = normalized.trim_start();
+
+    if !trimmed.starts_with("---") {
+        return Err(SkillLoadError::MissingFrontmatter {
+            path: PathBuf::new(),
+        });
+    }
+
+    let after_first = &trimmed[3..];
+    let closing = find_frontmatter_close(after_first);
+    match closing {
+        Some(end) => Ok(after_first[..end].trim().to_string()),
+        None => {
+            if after_first.trim().is_empty() {
+                Err(SkillLoadError::UnclosedFrontmatter {
+                    path: PathBuf::new(),
+                })
+            } else {
+                Ok(after_first.trim().to_string())
+            }
+        }
+    }
+}
+
+/// Normalize the raw frontmatter into a canonical [`crate::types::SkillManifest`],
+/// applying `schema_version` detection and merging `metadata.tags` into the
+/// top-level `tags` list.
+pub fn normalize_manifest(mut manifest: crate::types::SkillManifest) -> crate::types::SkillManifest {
+    // Fold nested metadata classification into the top-level tags.
+    if let Some(meta) = &manifest.metadata {
+        if let Some(ref class) = meta.classification {
+            if !manifest.tags.contains(class) {
+                manifest.tags.push(class.clone());
+            }
+        }
+        if manifest.allowed_tools.is_empty() {
+            manifest.allowed_tools = meta.allowed_tools.clone();
+        }
+    }
+    // Default the kind to Meta when steps are present.
+    if manifest.kind.is_none() && !manifest.steps.is_empty() {
+        manifest.kind = Some(SkillKind::Meta);
+    }
+    manifest
+}
+
+/// Derive a skill id from a SKILL.md path (the parent directory name,
+/// normalized to a slug).
+pub fn skill_id_from_path(path: &Path) -> Option<String> {
+    path.parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_lowercase().replace(' ', "_"))
+        .filter(|s| !s.is_empty())
+}
+
+/// The signature of a SKILL.md file: path + mtime + size. Used by
+/// [`LayerPriorityResolver`] and cache invalidation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSignature {
+    pub path: PathBuf,
+    pub mtime_ns: u64,
+    pub size: u64,
+}
+
+impl FileSignature {
+    /// Build a signature for a path, or `None` if the file cannot be stat'd.
+    pub fn of(path: &Path) -> Option<Self> {
+        let meta = std::fs::metadata(path).ok()?;
+        let modified = meta.modified().ok()?;
+        Some(Self {
+            path: path.to_path_buf(),
+            mtime_ns: mtime_to_ns(modified),
+            size: meta.len(),
+        })
+    }
+}
+
+/// A resolution result for a skill id across the six layers.
+#[derive(Debug, Clone)]
+pub struct LayerResolution {
+    /// The skill id being resolved.
+    pub id: String,
+    /// The winning layer.
+    pub winner: SkillLayer,
+    /// All layers that define this skill id, from lowest to highest priority.
+    pub candidates: Vec<(SkillLayer, PathBuf)>,
+    /// Whether a higher-priority layer shadowed lower ones.
+    pub shadowed: Vec<SkillLayer>,
+}
+
+/// Resolves layer priority for skill ids across the six-layer coverage
+/// system. Higher-priority layers (WORKSPACE > PROJECT > PERSONAL > MANAGED >
+/// BUNDLED > EXTRA) shadow lower-priority definitions of the same id.
+#[derive(Debug, Clone, Default)]
+pub struct LayerPriorityResolver {
+    /// Registered directories per layer.
+    dirs: HashMap<SkillLayer, Vec<PathBuf>>,
+}
+
+impl LayerPriorityResolver {
+    /// Create an empty resolver.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a directory for a layer.
+    pub fn register(&mut self, layer: SkillLayer, dir: PathBuf) {
+        self.dirs.entry(layer).or_default().push(dir);
+    }
+
+    /// Register many directories for a layer.
+    pub fn register_all<I>(&mut self, layer: SkillLayer, dirs: I)
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
+        for dir in dirs {
+            self.register(layer, dir);
+        }
+    }
+
+    /// All registered directories.
+    pub fn all_dirs(&self) -> Vec<(SkillLayer, PathBuf)> {
+        let mut out = Vec::new();
+        for layer in SkillLayer::ALL {
+            for dir in self.dirs.get(&layer).cloned().unwrap_or_default() {
+                out.push((layer, dir));
+            }
+        }
+        out
+    }
+
+    /// Find every candidate SKILL.md path for a skill id, ordered from
+    /// lowest-priority layer to highest. Paths are checked for existence.
+    pub fn find_candidates(&self, id: &str) -> Vec<(SkillLayer, PathBuf)> {
+        let mut out = Vec::new();
+        for layer in SkillLayer::ALL {
+            if let Some(dirs) = self.dirs.get(&layer) {
+                for dir in dirs {
+                    let candidate = dir.join(id).join("SKILL.md");
+                    if candidate.is_file() {
+                        out.push((layer, candidate));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Resolve the winning definition for a skill id. Returns `None` when the
+    /// skill is not present in any registered directory.
+    pub fn resolve(&self, id: &str) -> Option<LayerResolution> {
+        let candidates = self.find_candidates(id);
+        if candidates.is_empty() {
+            return None;
+        }
+        let winner = *candidates
+            .iter()
+            .max_by_key(|(layer, _)| layer.priority())
+            .map(|(layer, _)| layer)?;
+        let shadowed: Vec<SkillLayer> = candidates
+            .iter()
+            .filter(|(layer, _)| *layer != winner)
+            .map(|(layer, _)| *layer)
+            .collect();
+        Some(LayerResolution {
+            id: id.to_string(),
+            winner,
+            candidates,
+            shadowed,
+        })
+    }
+
+    /// Resolve and return only the winning path for a skill id.
+    pub fn resolve_path(&self, id: &str) -> Option<PathBuf> {
+        self.resolve(id).map(|r| {
+            r.candidates
+                .into_iter()
+                .find(|(layer, _)| *layer == r.winner)
+                .map(|(_, path)| path)
+                .unwrap_or_default()
+        })
+    }
+
+    /// Report how many skill ids would be shadowed across all registered
+    /// directories (a deduplication diagnostic).
+    pub fn shadow_count(&self) -> usize {
+        let mut ids: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut total = 0usize;
+        for (_, dir) in self.all_dirs() {
+            if !dir.is_dir() {
+                continue;
+            }
+            for entry in WalkDir::new(&dir)
+                .max_depth(self.max_depth())
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.file_name() == "SKILL.md" {
+                    if let Some(id) = entry.path().parent().and_then(|p| p.file_name()) {
+                        let key = id.to_string_lossy().to_string();
+                        let count = ids.entry(key).or_insert(0);
+                        if *count > 0 {
+                            total += 1;
+                        }
+                        *count += 1;
+                    }
+                }
+            }
+        }
+        total
+    }
+
+    fn max_depth(&self) -> usize {
+        3
+    }
+}
+
+/// The result of a cache invalidation pass.
+#[derive(Debug, Clone, Default)]
+pub struct CacheInvalidationReport {
+    /// Files that were stale and removed from the cache.
+    pub invalidated: Vec<PathBuf>,
+    /// Files whose mtime changed but content hash was unchanged (no reparse
+    /// needed).
+    pub unchanged: Vec<PathBuf>,
+    /// Files that could not be stat'd and were dropped.
+    pub missing: Vec<PathBuf>,
+}
+
+/// A helper that coordinates cache invalidation for the loader.
+///
+/// Tracks the set of known file signatures so callers can detect deletions
+/// and modifications without a full re-scan.
+#[derive(Debug, Default)]
+pub struct CacheTracker {
+    /// Known signatures keyed by path.
+    signatures: std::collections::HashMap<PathBuf, FileSignature>,
+}
+
+impl CacheTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a signature for a path.
+    pub fn record(&mut self, sig: FileSignature) {
+        self.signatures.insert(sig.path.clone(), sig);
+    }
+
+    /// Drop the signature for a path.
+    pub fn forget(&mut self, path: &Path) {
+        self.signatures.remove(path);
+    }
+
+    /// The known signature for a path, if any.
+    pub fn signature(&self, path: &Path) -> Option<&FileSignature> {
+        self.signatures.get(path)
+    }
+
+    /// Invalidate the cache against the current filesystem state.
+    ///
+    /// Returns files that were removed (missing from disk), files whose mtime
+    /// advanced (changed), and files that are unchanged. The caller can then
+    /// decide what to reparse.
+    pub fn invalidate(&mut self) -> CacheInvalidationReport {
+        let mut report = CacheInvalidationReport::default();
+        let paths: Vec<PathBuf> = self.signatures.keys().cloned().collect();
+        for path in paths {
+            match FileSignature::of(&path) {
+                None => {
+                    self.signatures.remove(&path);
+                    report.missing.push(path);
+                }
+                Some(current) => {
+                    let known = self.signatures.get(&path).cloned().unwrap();
+                    if current == known {
+                        report.unchanged.push(path);
+                    } else {
+                        // mtime or size changed; re-parse.
+                        self.signatures.insert(path.clone(), current);
+                        report.invalidated.push(path);
+                    }
+                }
+            }
+        }
+        report
+    }
+
+    /// The number of tracked files.
+    pub fn len(&self) -> usize {
+        self.signatures.len()
+    }
+
+    /// Whether no files are tracked.
+    pub fn is_empty(&self) -> bool {
+        self.signatures.is_empty()
+    }
+}
+
+/// Validate a SKILL.md file's frontmatter without loading it into the
+/// registry. Returns the derived id and any validation warnings.
+pub fn validate_skill_file(path: &Path) -> Result<(String, Vec<String>), SkillLoadError> {
+    let content = std::fs::read_to_string(path).map_err(|e| SkillLoadError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let (frontmatter, body) = extract_frontmatter(&content)?;
+    let manifest: crate::types::SkillManifest =
+        serde_yaml::from_str(&frontmatter).map_err(|e| SkillLoadError::Yaml {
+            path: path.to_path_buf(),
+            message: e.to_string(),
+        })?;
+    let layer = SkillLayer::from_str_loose(
+        manifest
+            .layer
+            .as_deref()
+            .unwrap_or("managed"),
+    )
+    .unwrap_or(SkillLayer::Managed);
+    let spec = manifest_to_spec(manifest, layer, path.to_path_buf(), body, frontmatter)?;
+    let mut warnings = Vec::new();
+    if spec.is_meta() && spec.steps.is_empty() {
+        warnings.push(format!("meta-skill '{}' has no steps", spec.id));
+    }
+    Ok((spec.id, warnings))
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1227,11 +1570,11 @@ metadata:
         assert_eq!(spec.tags, vec!["a".to_string(), "b".to_string()]);
         assert_eq!(
             spec.requires.os.as_deref(),
-            Some(&vec!["linux".to_string(), "macos".to_string()])
+            Some(&["linux".to_string(), "macos".to_string()] as &[String])
         );
         assert_eq!(
             spec.requires.binaries.as_deref(),
-            Some(&vec!["git".to_string()])
+            Some(&["git".to_string()] as &[String])
         );
         assert!(spec.is_always());
         assert!(spec.body.contains("# Body"));
@@ -1444,5 +1787,116 @@ steps:
         assert_eq!(spec.steps.len(), 2);
         assert_eq!(spec.steps[0].step_type, StepType::LlmClassify);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn normalize_frontmatter_handles_bom_crlf() {
+        let content = "\u{feff}---\r\nid: foo\r\nname: Foo\r\n---\r\nBody";
+        let normalized = normalize_frontmatter(content).unwrap();
+        assert!(normalized.contains("id: foo"));
+        assert!(!normalized.contains("\r"));
+    }
+
+    #[test]
+    fn normalize_manifest_folds_tags_and_kind() {
+        let yaml = "name: X\nsteps:\n  - id: s1\n    type: agent\nmetadata:\n  tags: [nested]\n";
+        let manifest: crate::types::SkillManifest = serde_yaml::from_str(yaml).unwrap();
+        let normalized = normalize_manifest(manifest);
+        assert!(normalized.tags.contains(&"nested".to_string()));
+        assert_eq!(normalized.kind, Some(SkillKind::Meta));
+    }
+
+    #[test]
+    fn skill_id_from_path_derives_dirname() {
+        let path = PathBuf::from("/tmp/skills/git-workflow/SKILL.md");
+        assert_eq!(skill_id_from_path(&path).as_deref(), Some("git-workflow"));
+    }
+
+    #[test]
+    fn layer_priority_resolver_shadows_lower() {
+        let root = temp_dir("layer-resolve");
+        let bundled = root.join("bundled");
+        let personal = root.join("personal");
+        let project = root.join("project");
+        std::fs::create_dir_all(bundled.join("same")).unwrap();
+        std::fs::create_dir_all(personal.join("same")).unwrap();
+        std::fs::create_dir_all(project.join("same")).unwrap();
+        std::fs::write(bundled.join("same/SKILL.md"), "---\nid: same\n---\n").unwrap();
+        std::fs::write(personal.join("same/SKILL.md"), "---\nid: same\n---\n").unwrap();
+        std::fs::write(project.join("same/SKILL.md"), "---\nid: same\n---\n").unwrap();
+
+        let mut resolver = LayerPriorityResolver::new();
+        resolver.register(SkillLayer::Bundled, bundled);
+        resolver.register(SkillLayer::Personal, personal);
+        resolver.register(SkillLayer::Project, project);
+
+        let resolution = resolver.resolve("same").unwrap();
+        assert_eq!(resolution.winner, SkillLayer::Project);
+        assert!(resolution.shadowed.contains(&SkillLayer::Bundled));
+        assert!(resolution.shadowed.contains(&SkillLayer::Personal));
+        assert!(resolver.resolve_path("same").unwrap().ends_with("project/same/SKILL.md"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn cache_tracker_detects_changes() {
+        let dir = temp_dir("cache-tracker");
+        let file = dir.join("SKILL.md");
+        std::fs::write(&file, "---\nid: x\n---\n").unwrap();
+        let sig = FileSignature::of(&file).unwrap();
+        let mut tracker = CacheTracker::new();
+        tracker.record(sig.clone());
+
+        // Unchanged.
+        let report = tracker.invalidate();
+        assert_eq!(report.unchanged.len(), 1);
+        assert!(report.invalidated.is_empty());
+
+        // Modify the file.
+        std::fs::write(&file, "---\nid: x\nname: X\n---\n").unwrap();
+        let report2 = tracker.invalidate();
+        assert!(!report2.invalidated.is_empty());
+
+        // Delete the file.
+        std::fs::remove_file(&file).unwrap();
+        let report3 = tracker.invalidate();
+        assert!(!report3.missing.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn validate_skill_file_reports_warnings() {
+        let dir = temp_dir("validate-file");
+        let skill = dir.join("novalid");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nid: novalid\nname: NoValid\nkind: meta\n---\n",
+        )
+        .unwrap();
+        let (id, warnings) = validate_skill_file(&skill.join("SKILL.md")).unwrap();
+        assert_eq!(id, "novalid");
+        assert!(warnings.iter().any(|w| w.contains("no steps")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn file_signature_changes_with_size() {
+        let dir = temp_dir("file-sig");
+        let file = dir.join("SKILL.md");
+        std::fs::write(&file, "short").unwrap();
+        let sig1 = FileSignature::of(&file).unwrap();
+        std::fs::write(&file, "a much longer content string here").unwrap();
+        let sig2 = FileSignature::of(&file).unwrap();
+        assert_ne!(sig1.size, sig2.size);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn layer_priority_resolver_returns_none_for_missing() {
+        let resolver = LayerPriorityResolver::new();
+        assert!(resolver.resolve("not-here").is_none());
+        assert!(resolver.resolve_path("not-here").is_none());
     }
 }

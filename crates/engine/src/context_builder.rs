@@ -208,6 +208,37 @@ impl TokenBudgetAllocation {
         self.output_fraction *= scale;
         self
     }
+
+    /// Create an allocation from a context window with explicit role ratios.
+    ///
+    /// The ratios are normalized so they sum to at most 1.0.
+    pub fn from_window_with_ratios(
+        context_window: u64,
+        system: f64,
+        history: f64,
+        tools: f64,
+        output: f64,
+    ) -> Self {
+        let total = system + history + tools + output;
+        let (s, h, t, o) = if total > 1.0 {
+            (system / total, history / total, tools / total, output / total)
+        } else {
+            (system, history, tools, output)
+        };
+        Self {
+            context_window: context_window.max(1),
+            system_fraction: s.clamp(0.0, 1.0),
+            history_fraction: h.clamp(0.0, 1.0),
+            tools_fraction: t.clamp(0.0, 1.0),
+            output_fraction: o.clamp(0.0, 1.0),
+        }
+    }
+
+    /// The recommended maximum output tokens for a request, derived from the
+    /// output reservation.
+    pub fn recommended_max_output_tokens(&self) -> u32 {
+        self.output_tokens().min(u32::MAX as u64) as u32
+    }
 }
 
 /// A token estimator trait, so the context builder can use an exact tokenizer
@@ -240,7 +271,7 @@ pub trait TokenEstimator: Send + Sync + std::fmt::Debug {
 }
 
 /// A character-based token estimator: roughly 1 token per 4 characters.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct CharTokenEstimator {
     /// The number of characters per token (default 4).
     pub chars_per_token: f64,
@@ -520,13 +551,13 @@ impl SystemPromptAssembler {
         let mut remaining_budget = self.max_tokens.saturating_sub(required_tokens);
 
         // Truncate optional sections (lowest priority first) until they fit.
-        let mut truncated: Vec<&SystemPromptSection> = Vec::new();
+        let mut truncated: Vec<SystemPromptSection> = Vec::new();
         for section in optional.iter().rev() {
             let body = section.effective_body();
             let cost = self.estimator.estimate_text(body);
             if cost <= remaining_budget {
                 remaining_budget -= cost;
-                truncated.push(section);
+                truncated.push((*section).clone());
             } else {
                 // Try to fit a truncated version of this section.
                 let affordable_tokens = remaining_budget;
@@ -536,7 +567,7 @@ impl SystemPromptAssembler {
                     if !truncated_body.is_empty() {
                         let mut truncated_section = (*section).clone();
                         truncated_section.body = format!("{truncated_body}\n[...truncated]");
-                        truncated.push(&truncated_section);
+                        truncated.push(truncated_section);
                         remaining_budget = 0;
                     }
                 }
@@ -546,7 +577,7 @@ impl SystemPromptAssembler {
         truncated.reverse();
 
         let mut all_sections: Vec<&SystemPromptSection> = required.clone();
-        all_sections.extend(truncated);
+        all_sections.extend(truncated.iter());
 
         let mut out = String::new();
         for section in &all_sections {

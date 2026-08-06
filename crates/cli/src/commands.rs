@@ -5,6 +5,9 @@ use crate::cost::CostAction;
 use crate::init::InitAction;
 use crate::onboard::OnboardAction;
 use crate::router::RouterAction;
+use crate::search::SearchAction;
+use crate::status::StatusAction;
+use crate::tools::ToolAction;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -163,6 +166,24 @@ pub enum Command {
     Init {
         #[command(subcommand)]
         action: Option<InitAction>,
+    },
+
+    /// Show a system status overview
+    Status {
+        #[command(subcommand)]
+        action: Option<StatusAction>,
+    },
+
+    /// Run a web search
+    Search {
+        #[command(subcommand)]
+        action: SearchAction,
+    },
+
+    /// Inspect and test the built-in tool registry
+    Tools {
+        #[command(subcommand)]
+        action: ToolAction,
     },
 
     /// Launch terminal UI

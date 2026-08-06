@@ -11,6 +11,7 @@ use crate::models::{
     AgentTask, CompactedTranscriptEntry, CompactionHistory, ProjectWorkspace, RoutingDecision,
     Session, SessionAttachment, SessionContextState, SessionFork, SessionLock, SessionMetadata,
     SessionMode, SessionStatus, SessionSummary, SessionTag, TaskStatus, TranscriptEntry,
+    UsageEventItem,
 };
 use crate::storage::SessionStorage;
 use crate::usage_ledger::UsageLedger;
@@ -1237,6 +1238,437 @@ impl SessionManager {
         }
         Ok(copied)
     }
+
+    // -----------------------------------------------------------------------
+    // Session recovery
+    // -----------------------------------------------------------------------
+
+    /// Recover sessions that were left in an inconsistent state by a crash or
+    /// an interrupted compaction.
+    ///
+    /// - Sessions stuck in `Compacting` are restored to `Active`.
+    /// - Expired session locks are released.
+    /// - Sessions paused for longer than `max_paused` are archived (only when
+    ///   `archive_long_paused` is `true`).
+    ///
+    /// Returns a [`RecoveryReport`] describing what was repaired.
+    pub fn recover(&self, archive_long_paused: bool, max_paused: chrono::Duration) -> CoreResult<RecoveryReport> {
+        let sessions = self.storage.list_all_sessions(u64::MAX, 0)?;
+        let now = Utc::now();
+        let mut report = RecoveryReport {
+            interrupted_compactions: 0,
+            expired_locks_released: 0,
+            long_paused_archived: 0,
+            resumed_ids: Vec::new(),
+        };
+
+        for session in sessions {
+            // 1. Interrupted compaction -> restore to Active.
+            if session.status == SessionStatus::Compacting {
+                let mut updated = session.clone();
+                updated.status = SessionStatus::Active;
+                updated.updated_at = now;
+                self.storage.update_session(&updated)?;
+                self.active_sessions.insert(updated.id, updated.clone());
+                report.interrupted_compactions += 1;
+                report.resumed_ids.push(updated.id);
+                warn!("Recovered session {} from interrupted compaction", session.id);
+            }
+
+            // 2. Expired locks -> release.
+            if let Some(lock) = self.storage.get_session_lock(&session.id)? {
+                if let Some(expires_at) = lock.expires_at {
+                    if expires_at < now {
+                        self.storage.release_session_lock(&session.id)?;
+                        report.expired_locks_released += 1;
+                    }
+                }
+            }
+
+            // 3. Long-paused sessions -> archive (best-effort).
+            if archive_long_paused
+                && session.status == SessionStatus::Paused
+                && (now - session.last_active_at) > max_paused
+            {
+                let mut updated = session.clone();
+                updated.status = SessionStatus::Archived;
+                updated.updated_at = now;
+                self.storage.update_session(&updated)?;
+                self.active_sessions.insert(updated.id, updated.clone());
+                report.long_paused_archived += 1;
+            }
+        }
+
+        if report.interrupted_compactions > 0 || report.expired_locks_released > 0 || report.long_paused_archived > 0 {
+            info!(
+                "Session recovery repaired {} sessions ({} compactions, {} locks, {} paused)",
+                report.resumed_ids.len(),
+                report.interrupted_compactions,
+                report.expired_locks_released,
+                report.long_paused_archived,
+            );
+        }
+        Ok(report)
+    }
+
+    /// Detect whether a session needs recovery (was left `Compacting`).
+    pub fn needs_recovery(&self, session_id: &Uuid) -> CoreResult<bool> {
+        Ok(self
+            .storage
+            .get_session(session_id)?
+            .map(|s| s.status == SessionStatus::Compacting)
+            .unwrap_or(false))
+    }
+
+    /// Resume every session that is currently marked `Compacting` back to
+    /// `Active`. Returns the number of sessions resumed.
+    pub fn recover_interrupted_compactions(&self) -> CoreResult<usize> {
+        let report = self.recover(false, chrono::Duration::days(30))?;
+        Ok(report.interrupted_compactions as usize)
+    }
+
+    // -----------------------------------------------------------------------
+    // Compaction triggers
+    // -----------------------------------------------------------------------
+
+    /// Whether a session has outgrown the compaction threshold (estimated from
+    /// its token counter).
+    pub fn needs_compaction(&self, session_id: &Uuid, threshold: u64) -> CoreResult<bool> {
+        let session = self.require_session(session_id)?;
+        Ok(session.total_tokens > threshold)
+    }
+
+    /// Compact a session if it has outgrown `threshold`. Returns `None` when
+    /// no compaction was needed, or `Some(report)` after a compaction ran.
+    pub fn compact_if_needed(&self, session_id: &Uuid, threshold: u64) -> CoreResult<Option<CompactionReport>> {
+        if self.needs_compaction(session_id, threshold)? {
+            Ok(Some(self.compact(session_id)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Estimate the current context-window token count for a session: the sum
+    /// of all un-compacted transcript entries plus the active summary.
+    pub fn context_window_tokens(&self, session_id: &Uuid) -> CoreResult<u64> {
+        let entries = self.storage.list_by_session(session_id)?;
+        let active_tokens: u64 = entries
+            .iter()
+            .filter(|e| !e.compacted)
+            .map(|e| e.token_count)
+            .sum();
+        let summary_tokens = self
+            .storage
+            .get_active_summary(session_id)?
+            .map(|s| s.token_count)
+            .unwrap_or(0);
+        Ok(active_tokens + summary_tokens)
+    }
+
+    // -----------------------------------------------------------------------
+    // Usage ledger integration
+    // -----------------------------------------------------------------------
+
+    /// Record a usage event against a session and fold the cost into the
+    /// session's `total_cost_usd`.
+    pub fn record_usage(
+        &self,
+        session_id: &Uuid,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        model: &str,
+        provider: &str,
+    ) -> CoreResult<crate::models::UsageEvent> {
+        self.require_session(session_id)?;
+
+        // Persist into the storage ledger (single transaction).
+        let cost = crate::usage_ledger::UsageLedger::compute_cost_for(
+            prompt_tokens,
+            completion_tokens,
+            model,
+        );
+        let event = crate::models::UsageEvent {
+            id: Uuid::new_v4(),
+            session_id: *session_id,
+            timestamp: Utc::now(),
+            provider: provider.to_string(),
+            model: model.to_string(),
+            request_id: None,
+            total_cost_nanodollars: cost,
+            metadata: serde_json::Value::Null,
+        };
+        let items = vec![
+            crate::models::UsageEventItem {
+                id: Uuid::new_v4(),
+                usage_event_id: event.id,
+                session_id: *session_id,
+                kind: "prompt".to_string(),
+                units: prompt_tokens,
+                cost_nanodollars: 0,
+                metadata: serde_json::Value::Null,
+            },
+            UsageEventItem {
+                id: Uuid::new_v4(),
+                usage_event_id: event.id,
+                session_id: *session_id,
+                kind: "completion".to_string(),
+                units: completion_tokens,
+                cost_nanodollars: cost,
+                metadata: serde_json::Value::Null,
+            },
+        ];
+        let persisted = self.storage.record_usage_event(&event, &items)?;
+
+        // Also keep the in-memory ledger in sync.
+        self.ledger
+            .record(*session_id, prompt_tokens, completion_tokens, model.to_string(), provider.to_string());
+
+        // Fold the event cost into the session row.
+        let mut session = self.require_session(session_id)?;
+        session.total_cost_usd += cost as f64 / 1_000_000_000.0;
+        session.total_tokens += prompt_tokens + completion_tokens;
+        session.updated_at = Utc::now();
+        self.storage.update_session(&session)?;
+        self.active_sessions.insert(session.id, session.clone());
+
+        Ok(persisted)
+    }
+
+    /// Get the cumulative usage totals for a session.
+    pub fn usage_totals(&self, session_id: &Uuid) -> CoreResult<UsageTotals> {
+        let summary = self
+            .storage
+            .get_usage_summary(session_id)
+            .unwrap_or_else(|_| {
+                self.ledger.get_summary(session_id).unwrap_or_else(|| crate::usage_ledger::UsageSummary {
+                    total_prompt_tokens: 0,
+                    total_completion_tokens: 0,
+                    total_cost_nanodollars: 0,
+                    total_calls: 0,
+                    by_model: std::collections::HashMap::new(),
+                })
+            });
+        Ok(UsageTotals {
+            session_id: *session_id,
+            prompt_tokens: summary.total_prompt_tokens,
+            completion_tokens: summary.total_completion_tokens,
+            cost_nanodollars: summary.total_cost_nanodollars,
+            total_calls: summary.total_calls,
+        })
+    }
+
+    /// The current ledger event count for a session (a proxy watermark).
+    pub fn ledger_watermark(&self, session_id: &Uuid) -> CoreResult<usize> {
+        Ok(self.ledger.get_entries(session_id).len())
+    }
+
+    /// Reconcile a session's usage totals from the ledger back into the
+    /// session row.
+    pub fn reconcile_usage(&self, session_id: &Uuid) -> CoreResult<UsageTotals> {
+        let totals = self.usage_totals(session_id)?;
+        let mut session = self.require_session(session_id)?;
+        session.total_cost_usd = totals.cost_nanodollars as f64 / 1_000_000_000.0;
+        session.total_tokens = totals.prompt_tokens + totals.completion_tokens;
+        session.updated_at = Utc::now();
+        self.storage.update_session(&session)?;
+        self.active_sessions.insert(session.id, session.clone());
+        Ok(totals)
+    }
+
+    // -----------------------------------------------------------------------
+    // Material cleanup hooks
+    // -----------------------------------------------------------------------
+
+    /// Delete every attachment of a session (metadata only; the caller is
+    /// responsible for removing the underlying files). Returns the count.
+    pub fn clear_attachments(&self, session_id: &Uuid) -> CoreResult<usize> {
+        let attachments = self.storage.list_session_attachments(session_id)?;
+        for attachment in &attachments {
+            self.storage.delete_session_attachment(&attachment.id)?;
+        }
+        Ok(attachments.len())
+    }
+
+    /// Remove all workspaces associated with a session. Returns the count.
+    pub fn clear_workspaces(&self, session_id: &Uuid) -> CoreResult<usize> {
+        let workspaces = self.storage.list_project_workspaces_by_session(session_id)?;
+        for workspace in &workspaces {
+            self.storage.delete_project_workspace(&workspace.id)?;
+        }
+        Ok(workspaces.len())
+    }
+
+    /// Release every lock held on a session. Returns the count released.
+    pub fn clear_locks(&self, session_id: &Uuid) -> CoreResult<usize> {
+        let mut released = 0;
+        if self.storage.get_session_lock(session_id)?.is_some() {
+            self.storage.release_session_lock(session_id)?;
+            released = 1;
+        }
+        Ok(released)
+    }
+
+    /// Delete a session and all of its material rows: transcript, compacted
+    /// entries, summaries, tags, metadata, attachments, workspaces, fork
+    /// records, routing decisions, and compaction history. This is the "deep
+    /// delete" counterpart to [`SessionManager::delete_session`].
+    pub fn delete_session_deep(&self, session_id: &Uuid) -> CoreResult<usize> {
+        let _session = self.require_session(session_id)?;
+        self.storage.delete_session(session_id)?;
+        self.active_sessions.remove(session_id);
+
+        let mut removed = 1u64;
+        // Attachments
+        let attachments = self.storage.list_session_attachments(session_id).unwrap_or_default();
+        removed += attachments.len() as u64;
+        for attachment in attachments {
+            let _ = self.storage.delete_session_attachment(&attachment.id);
+        }
+        // Workspaces
+        let workspaces = self.storage.list_project_workspaces_by_session(session_id).unwrap_or_default();
+        removed += workspaces.len() as u64;
+        for workspace in workspaces {
+            let _ = self.storage.delete_project_workspace(&workspace.id);
+        }
+        info!("Deep-deleted session {} ({} rows)", session_id, removed);
+        Ok(removed as usize)
+    }
+
+    /// Run a cleanup pass across all sessions: release expired locks, and
+    /// optionally prune archived sessions idle longer than `max_idle`.
+    pub fn cleanup(&self, max_idle: Option<chrono::Duration>) -> CoreResult<CleanupReport> {
+        let sessions = self.storage.list_all_sessions(u64::MAX, 0)?;
+        let now = Utc::now();
+        let mut report = CleanupReport {
+            expired_locks_released: 0,
+            sessions_pruned: 0,
+            sessions_touched: sessions.len() as u64,
+        };
+
+        for session in sessions {
+            if let Some(lock) = self.storage.get_session_lock(&session.id)? {
+                if let Some(expires_at) = lock.expires_at {
+                    if expires_at < now {
+                        self.storage.release_session_lock(&session.id)?;
+                        report.expired_locks_released += 1;
+                    }
+                }
+            }
+            if let Some(max_idle) = max_idle {
+                if session.status == SessionStatus::Archived
+                    && (now - session.last_active_at) > max_idle
+                {
+                    self.storage.delete_session(&session.id)?;
+                    self.active_sessions.remove(&session.id);
+                    report.sessions_pruned += 1;
+                }
+            }
+        }
+        info!(
+            "Session cleanup: {} expired locks released, {} sessions pruned",
+            report.expired_locks_released, report.sessions_pruned
+        );
+        Ok(report)
+    }
+
+    // -----------------------------------------------------------------------
+    // Fork / branch helpers
+    // -----------------------------------------------------------------------
+
+    /// Create a full-copy fork (transcript included) of a session.
+    pub fn fork_with_transcript(&self, source_id: &Uuid, fork_event: &str) -> CoreResult<Session> {
+        let config = ForkConfig {
+            fork_event: fork_event.to_string(),
+            copy_transcript: true,
+            ..Default::default()
+        };
+        self.fork(source_id, config)
+    }
+
+    /// Kill a session and all of its active tasks (marking them `Cancelled`).
+    pub fn kill_with_tasks(&self, session_id: &Uuid) -> CoreResult<()> {
+        let tasks = self.storage.list_agent_tasks_by_session(session_id)?;
+        for task in tasks {
+            if matches!(
+                task.status,
+                TaskStatus::Queued | TaskStatus::Running
+            ) {
+                self.update_task_status(&task.id, TaskStatus::Cancelled, None, None)?;
+            }
+        }
+        self.kill_session(session_id)
+    }
+
+    /// Verify a fork record exists between a parent and child, and return it.
+    pub fn get_fork_relationship(&self, parent_id: &Uuid, child_id: &Uuid) -> CoreResult<Option<SessionFork>> {
+        Ok(self
+            .storage
+            .list_session_forks_by_source(parent_id)?
+            .into_iter()
+            .find(|f| f.child_session_id == *child_id))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Report types
+// ---------------------------------------------------------------------------
+
+/// Summary of what [`SessionManager::recover`] repaired.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RecoveryReport {
+    /// Sessions restored from `Compacting` back to `Active`.
+    pub interrupted_compactions: usize,
+    /// Expired locks that were released.
+    pub expired_locks_released: usize,
+    /// Long-paused sessions that were archived.
+    pub long_paused_archived: usize,
+    /// Session ids that were resumed.
+    pub resumed_ids: Vec<Uuid>,
+}
+
+impl RecoveryReport {
+    /// The total number of repairs performed.
+    pub fn total(&self) -> usize {
+        self.interrupted_compactions + self.expired_locks_released + self.long_paused_archived
+    }
+
+    /// Whether any repairs were needed.
+    pub fn needed_repairs(&self) -> bool {
+        self.total() > 0
+    }
+}
+
+/// Cumulative usage totals for a session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageTotals {
+    pub session_id: Uuid,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub cost_nanodollars: u64,
+    pub total_calls: u64,
+}
+
+impl UsageTotals {
+    /// The total token count (prompt + completion).
+    pub fn total_tokens(&self) -> u64 {
+        self.prompt_tokens + self.completion_tokens
+    }
+
+    /// The total cost in dollars.
+    pub fn cost_usd(&self) -> f64 {
+        self.cost_nanodollars as f64 / 1_000_000_000.0
+    }
+}
+
+/// Summary of what [`SessionManager::cleanup`] performed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CleanupReport {
+    /// Expired locks released across all sessions.
+    pub expired_locks_released: usize,
+    /// Archived sessions pruned by the idle threshold.
+    pub sessions_pruned: usize,
+    /// Sessions examined during the pass.
+    pub sessions_touched: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -1577,5 +2009,224 @@ mod tests {
         assert!(value.get("session").is_some());
         assert!(value.get("transcript").is_some());
         assert_eq!(value["transcript"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recover_restores_interrupted_compaction() {
+        let m = manager();
+        let s = create(&m, "interrupted");
+        // Simulate a crash that left the session in Compacting.
+        let mut session = m.get(&s.id).unwrap().unwrap();
+        session.status = SessionStatus::Compacting;
+        m.storage.update_session(&session).unwrap();
+
+        let report = m.recover(false, Duration::days(30)).unwrap();
+        assert_eq!(report.interrupted_compactions, 1);
+        assert_eq!(m.get(&s.id).unwrap().unwrap().status, SessionStatus::Active);
+    }
+
+    #[test]
+    fn recover_archives_long_paused() {
+        let m = manager();
+        let s = create(&m, "long-paused");
+        m.pause_session(&s.id).unwrap();
+        // Backdate the session.
+        let mut session = m.get(&s.id).unwrap().unwrap();
+        session.last_active_at = Utc::now() - Duration::days(30);
+        m.storage.update_session(&session).unwrap();
+
+        let report = m.recover(true, Duration::days(7)).unwrap();
+        assert_eq!(report.long_paused_archived, 1);
+        assert_eq!(m.get(&s.id).unwrap().unwrap().status, SessionStatus::Archived);
+    }
+
+    #[test]
+    fn recover_releases_expired_locks() {
+        let m = manager();
+        let s = create(&m, "expired-lock");
+        m.lock_session(&s.id, "runner", Some(1)).unwrap();
+        // Manually expire the lock by backdating it.
+        if let Some(mut lock) = m.get_lock(&s.id).unwrap() {
+            lock.expires_at = Some(Utc::now() - Duration::seconds(1));
+            m.storage.acquire_session_lock(&lock).unwrap();
+        }
+
+        let report = m.recover(false, Duration::days(30)).unwrap();
+        assert_eq!(report.expired_locks_released, 1);
+        assert!(!m.is_locked(&s.id).unwrap());
+    }
+
+    #[test]
+    fn needs_recovery_detects_compacting() {
+        let m = manager();
+        let s = create(&m, "detect");
+        assert!(!m.needs_recovery(&s.id).unwrap());
+        let mut session = m.get(&s.id).unwrap().unwrap();
+        session.status = SessionStatus::Compacting;
+        m.storage.update_session(&session).unwrap();
+        assert!(m.needs_recovery(&s.id).unwrap());
+    }
+
+    #[test]
+    fn compact_if_needed_skips_under_threshold() {
+        let m = manager();
+        let s = create(&m, "skip-compact");
+        m.add_message(&s.id, "user".into(), "hello".into(), 10)
+            .unwrap();
+        assert!(m.compact_if_needed(&s.id, 1000).unwrap().is_none());
+    }
+
+    #[test]
+    fn compact_if_needed_triggers_over_threshold() {
+        let m = manager();
+        let s = create(&m, "do-compact");
+        for i in 0..60 {
+            m.add_message(&s.id, "user".into(), format!("line {}", i), 100)
+                .unwrap();
+        }
+        let result = m.compact_if_needed(&s.id, 4096).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn context_window_tokens_counts_uncompacted() {
+        let m = manager();
+        let s = create(&m, "context-window");
+        m.add_message(&s.id, "user".into(), "a".into(), 100)
+            .unwrap();
+        m.add_message(&s.id, "user".into(), "b".into(), 200)
+            .unwrap();
+        assert_eq!(m.context_window_tokens(&s.id).unwrap(), 300);
+    }
+
+    #[test]
+    fn record_usage_folds_cost_into_session() {
+        let m = manager();
+        let s = create(&m, "usage");
+        let event = m
+            .record_usage(&s.id, 1000, 500, "gpt-4o", "openai")
+            .unwrap();
+        assert!(event.total_cost_nanodollars > 0);
+
+        let fetched = m.get(&s.id).unwrap().unwrap();
+        assert!(fetched.total_tokens >= 1500);
+        assert!(fetched.total_cost_usd > 0.0);
+
+        let totals = m.usage_totals(&s.id).unwrap();
+        assert_eq!(totals.prompt_tokens, 1000);
+        assert_eq!(totals.completion_tokens, 500);
+        assert!(totals.cost_usd() > 0.0);
+    }
+
+    #[test]
+    fn reconcile_usage_syncs_session() {
+        let m = manager();
+        let s = create(&m, "reconcile");
+        m.record_usage(&s.id, 200, 100, "claude-3-5-sonnet", "anthropic")
+            .unwrap();
+        // Force the session row out of sync.
+        let mut session = m.get(&s.id).unwrap().unwrap();
+        session.total_tokens = 0;
+        m.storage.update_session(&session).unwrap();
+
+        let totals = m.reconcile_usage(&s.id).unwrap();
+        assert_eq!(totals.prompt_tokens, 200);
+        let fetched = m.get(&s.id).unwrap().unwrap();
+        assert!(fetched.total_tokens >= 300);
+    }
+
+    #[test]
+    fn clear_attachments_and_workspaces() {
+        let m = manager();
+        let s = create(&m, "cleanup-material");
+        m.attach(&s.id, "file.txt", "text/plain", 10, "uri://x", serde_json::Value::Null)
+            .unwrap();
+        m.add_workspace(&s.id, "proj", "/tmp/proj", serde_json::Value::Null)
+            .unwrap();
+
+        assert_eq!(m.clear_attachments(&s.id).unwrap(), 1);
+        assert_eq!(m.clear_workspaces(&s.id).unwrap(), 1);
+        assert!(m.list_attachments(&s.id).unwrap().is_empty());
+        assert!(m.list_workspaces(&s.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn cleanup_prunes_and_releases() {
+        let m = manager();
+        let old = create(&m, "old-archived");
+        m.archive_session(&old.id).unwrap();
+        let mut session = m.get(&old.id).unwrap().unwrap();
+        session.last_active_at = Utc::now() - Duration::days(30);
+        m.storage.update_session(&session).unwrap();
+
+        let report = m.cleanup(Some(Duration::days(7))).unwrap();
+        assert_eq!(report.sessions_pruned, 1);
+        assert!(m.get(&old.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn fork_with_transcript_copies_messages() {
+        let m = manager();
+        let s = create(&m, "fork-full");
+        for i in 0..3 {
+            m.add_message(&s.id, "user".into(), format!("msg {}", i), 10)
+                .unwrap();
+        }
+        let fork = m.fork_with_transcript(&s.id, "full-copy").unwrap();
+        assert_eq!(m.full_transcript(&fork.id).unwrap().len(), 3);
+        assert_eq!(fork.fork_event.as_deref(), Some("full-copy"));
+    }
+
+    #[test]
+    fn kill_with_tasks_cancels_running() {
+        let m = manager();
+        let s = create(&m, "kill-tasks");
+        let task = m.spawn_task(&s.id, "agent", serde_json::Value::Null).unwrap();
+        m.update_task_status(&task.id, TaskStatus::Running, None, None)
+            .unwrap();
+
+        m.kill_with_tasks(&s.id).unwrap();
+        let tasks = m.list_tasks(&s.id).unwrap();
+        assert!(tasks.iter().all(|t| t.status == TaskStatus::Cancelled));
+        assert_eq!(m.get(&s.id).unwrap().unwrap().status, SessionStatus::Killed);
+    }
+
+    #[test]
+    fn get_fork_relationship_finds_record() {
+        let m = manager();
+        let s = create(&m, "rel");
+        let f = m
+            .fork(&s.id, ForkConfig::default())
+            .unwrap();
+        let rel = m.get_fork_relationship(&s.id, &f.id).unwrap();
+        assert!(rel.is_some());
+        assert_eq!(rel.unwrap().child_session_id, f.id);
+    }
+
+    #[test]
+    fn ledger_watermark_counts_entries() {
+        let m = manager();
+        let s = create(&m, "watermark");
+        assert_eq!(m.ledger_watermark(&s.id).unwrap(), 0);
+        m.record_usage(&s.id, 10, 5, "gpt-4o-mini", "openai")
+            .unwrap();
+        assert_eq!(m.ledger_watermark(&s.id).unwrap(), 1);
+    }
+
+    #[test]
+    fn delete_session_deep_removes_rows() {
+        let m = manager();
+        let s = create(&m, "deep-delete");
+        for i in 0..3 {
+            m.add_message(&s.id, "user".into(), format!("msg {}", i), 10)
+                .unwrap();
+        }
+        m.attach(&s.id, "f.txt", "text/plain", 5, "uri://f", serde_json::Value::Null)
+            .unwrap();
+        m.add_tag(&s.id, "t").unwrap();
+
+        let removed = m.delete_session_deep(&s.id).unwrap();
+        assert!(removed >= 2);
+        assert!(m.get(&s.id).unwrap().is_none());
     }
 }

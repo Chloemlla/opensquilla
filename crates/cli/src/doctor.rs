@@ -141,3 +141,86 @@ fn print_issue(issue: &HealthIssue) {
         println!("      suggestion: {suggestion}");
     }
 }
+
+/// Run the full set of health checks and print a JSON report.
+pub async fn run_doctor_json() -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let health = HealthCheck::new(&config);
+    let result = health.run_full_check().await;
+
+    let report = serde_json::json!({
+        "status": format!("{:?}", result.status).to_lowercase(),
+        "timestamp": result.timestamp.to_rfc3339(),
+        "uptime_seconds": result.uptime_seconds,
+        "components": result.components.iter().map(|c| serde_json::json!({
+            "name": c.name,
+            "status": format!("{:?}", c.status).to_lowercase(),
+            "description": c.description,
+            "latency_ms": c.latency_ms,
+            "details": c.details,
+        })).collect::<Vec<_>>(),
+        "issues": result.issues.iter().map(|i| serde_json::json!({
+            "component": i.component,
+            "severity": format!("{:?}", i.severity).to_lowercase(),
+            "message": i.message,
+            "suggestion": i.suggestion,
+        })).collect::<Vec<_>>(),
+    });
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).context("Failed to serialize report")?
+    );
+    Ok(())
+}
+
+/// Run the full check and print a JSON report filtered to a subsystem.
+pub async fn run_doctor_check_json(subsystem: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let health = HealthCheck::new(&config);
+    let result = health.run_full_check().await;
+
+    let needle = subsystem.to_lowercase();
+    let matches: Vec<_> = result
+        .components
+        .iter()
+        .filter(|c| c.name.to_lowercase().contains(&needle))
+        .collect();
+
+    if matches.is_empty() {
+        let available: Vec<&str> = result.components.iter().map(|c| c.name.as_str()).collect();
+        anyhow::bail!(
+            "No subsystem matching '{subsystem}'. Available: {}",
+            if available.is_empty() {
+                "none".to_string()
+            } else {
+                available.join(", ")
+            }
+        );
+    }
+
+    let report = serde_json::json!({
+        "subsystem": subsystem,
+        "components": matches.iter().map(|c| serde_json::json!({
+            "name": c.name,
+            "status": format!("{:?}", c.status).to_lowercase(),
+            "description": c.description,
+            "latency_ms": c.latency_ms,
+            "details": c.details,
+        })).collect::<Vec<_>>(),
+        "issues": result.issues.iter()
+            .filter(|i| i.component.to_lowercase().contains(&needle))
+            .map(|i| serde_json::json!({
+                "component": i.component,
+                "severity": format!("{:?}", i.severity).to_lowercase(),
+                "message": i.message,
+                "suggestion": i.suggestion,
+            })).collect::<Vec<_>>(),
+    });
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).context("Failed to serialize report")?
+    );
+    Ok(())
+}

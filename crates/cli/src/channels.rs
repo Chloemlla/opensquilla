@@ -125,6 +125,82 @@ pub async fn disconnect_channel(id: String) -> Result<()> {
     Ok(())
 }
 
+/// Send a test message to a configured channel.
+pub async fn send_message(name: String, message: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = ChannelManager::new();
+    let cfg = config
+        .find_channel(&name)
+        .ok_or_else(|| anyhow::anyhow!("Channel '{name}' is not configured"))?;
+    let handle = init_channel(&manager, cfg)?;
+
+    let outgoing = opensquilla_channels::types::OutgoingMessage::new(
+        handle.channel_id().to_string(),
+        handle.channel_type(),
+        message.clone(),
+    );
+    handle
+        .send_message(&outgoing)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to send message: {e}"))?;
+    println!("{} Message sent to '{name}': {message}", crate::table::ok());
+    info!("Message sent to channel {name}");
+    Ok(())
+}
+
+/// Start all enabled channels.
+pub async fn start_all_channels() -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = ChannelManager::new();
+    let mut started = 0u32;
+    let mut failed = 0u32;
+
+    for cfg in &config.channels {
+        if !cfg.enabled {
+            continue;
+        }
+        match init_channel(&manager, cfg) {
+            Ok(handle) => {
+                println!(
+                    "{} Started channel: {} ({:?})",
+                    crate::table::ok(),
+                    handle.name(),
+                    handle.channel_type()
+                );
+                started += 1;
+            }
+            Err(e) => {
+                println!(
+                    "{} Failed to start channel {}: {e}",
+                    crate::table::fail(),
+                    cfg.name
+                );
+                failed += 1;
+            }
+        }
+    }
+
+    println!();
+    println!("Started {started} channel(s), {failed} failed.");
+    Ok(())
+}
+
+/// Stop all channels.
+pub async fn stop_all_channels() -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = ChannelManager::new();
+    let mut stopped = 0u32;
+
+    for cfg in &config.channels {
+        if init_channel(&manager, cfg).is_ok() {
+            stopped += 1;
+        }
+    }
+
+    println!("Stopped {stopped} channel(s).");
+    Ok(())
+}
+
 /// Initialize a channel from its config declaration.
 fn init_channel(
     manager: &ChannelManager,

@@ -11,9 +11,13 @@
 //! - [`turn_capture`]  — turn-level incremental persistence
 //! - [`session_source`]— session-derived memory documents
 //! - [`profile_import`]— external config import (JSON/YAML/TOML + LLM)
+//! - [`index`]         — FTS5 index management, reindexing, statistics
+//! - [`consolidation`] — deduplication, clustering, memory aging
 
+pub mod consolidation;
 pub mod dream;
 pub mod embedding;
+pub mod index;
 pub mod manager;
 pub mod profile_import;
 pub mod retrieval;
@@ -23,8 +27,13 @@ pub mod sync;
 pub mod turn_capture;
 pub mod types;
 
+pub use consolidation::{
+    AgingAssessment, ConsolidationConfig, ConsolidationReport, Consolidator, DuplicatePair,
+    MemoryCluster,
+};
 pub use dream::{DreamConfig, DreamConsolidator, DreamEngine, DreamEvent, DreamSummary};
 pub use embedding::{EmbeddingConfig, EmbeddingProvider};
+pub use index::{AgentCount, FtsIndexManager, IndexStats, ReindexReport};
 pub use manager::MemoryManager;
 pub use profile_import::{
     ConfigType, ExtractedMemory, ImportPlan, ImportResult, ImportSource, ImportSummary,

@@ -30,44 +30,6 @@ use crate::updater::{self, DesktopUpdatePlatform, UpdateStateHandle};
 use crate::window::{self, ZoomCommand};
 
 // ---------------------------------------------------------------------------
-// Ping / app info (kept here for the basic-command registration in main.rs)
-// ---------------------------------------------------------------------------
-
-/// Simple liveness ping used by the frontend to confirm the IPC bridge is up.
-#[tauri::command]
-pub async fn ping() -> &'static str {
-    "pong"
-}
-
-/// Return application metadata (name, version, identifier).
-#[tauri::command]
-pub async fn app_info(app: AppHandle) -> TauriResult<serde_json::Value> {
-    Ok(serde_json::json!({
-        "name": "OpenSquilla",
-        "version": app.package_info().version.to_string(),
-        "identifier": app.config().identifier.clone(),
-    }))
-}
-
-/// Reload the OpenSquilla configuration from disk into the managed state.
-#[tauri::command]
-pub async fn reload_config(state: State<'_, AppState>) -> TauriResult<serde_json::Value> {
-    use opensquilla_core::config::Config;
-    let config = Config::load().map_err(|e| TauriError::internal(e.to_string()))?;
-    let providers = config.providers.len();
-    let channels = config.channels.len();
-    {
-        let mut cfg = state.config_mut().await;
-        *cfg = config;
-    }
-    Ok(serde_json::json!({
-        "reloaded": true,
-        "providers": providers,
-        "channels": channels,
-    }))
-}
-
-// ---------------------------------------------------------------------------
 // Session import / export
 // ---------------------------------------------------------------------------
 
@@ -434,9 +396,12 @@ pub async fn install_update(
         s.version = Some(update.version.clone());
     });
     update
-        .download_and_install(|progress, total| {
-            tracing::debug!(progress, total, "update download progress");
-        })
+        .download_and_install(
+            |progress, total| {
+                tracing::debug!(progress, total, "update download progress");
+            },
+            || {},
+        )
         .await
         .map_err(|e| TauriError::internal(format!("update install failed: {e}")))?;
 

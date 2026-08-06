@@ -159,6 +159,174 @@ impl MetaResolutionStep {
     }
 }
 
+/// Parsed SKILL.md frontmatter, mirroring the Python skills loader's
+/// `_parse_skill_frontmatter`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillFrontmatter {
+    /// The skill name.
+    pub name: String,
+    /// A short description.
+    pub description: String,
+    /// The skill kind (`"skill"` or `"meta"`).
+    pub kind: String,
+    /// Whether the skill is always visible.
+    pub always: bool,
+    /// Whether the model may invoke this skill directly.
+    pub allow_model_invocation: bool,
+    /// Required tools.
+    pub requires_tools: Vec<String>,
+    /// Skills this skill requires.
+    pub requires_skills: Vec<String>,
+    /// Toolsets this skill falls back to.
+    pub fallback_for_toolsets: Vec<String>,
+    /// Whether the skill auto-triggers on matching messages.
+    pub auto_trigger: bool,
+    /// Trigger phrases for auto-trigger.
+    pub triggers: Vec<String>,
+    /// The original raw frontmatter.
+    pub raw: String,
+}
+
+/// Parse a SKILL.md document's YAML frontmatter block.
+///
+/// The frontmatter is the `---`-delimited block at the top of the file.
+/// Missing or malformed frontmatter yields a default [`SkillFrontmatter`]
+/// with `name` derived from the first heading line.
+pub fn parse_skill_frontmatter(content: &str) -> SkillFrontmatter {
+    let raw = extract_frontmatter(content).unwrap_or_default();
+    if raw.is_empty() {
+        // No frontmatter: derive the name from the first `# heading`.
+        let name = content
+            .lines()
+            .find(|l| l.trim_start().starts_with('#'))
+            .map(|l| l.trim_start_matches('#').trim().to_string())
+            .unwrap_or_default();
+        return SkillFrontmatter {
+            name,
+            ..Default::default()
+        };
+    }
+
+    let mut frontmatter = SkillFrontmatter {
+        raw: raw.clone(),
+        ..Default::default()
+    };
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("---") {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let key = key.trim().to_lowercase();
+        let value = value.trim().to_string();
+        match key.as_str() {
+            "name" => frontmatter.name = unquote(&value),
+            "description" => frontmatter.description = unquote(&value),
+            "kind" => frontmatter.kind = unquote(&value),
+            "always" => frontmatter.always = parse_bool(&value),
+            "allow_model_invocation" => frontmatter.allow_model_invocation = parse_bool(&value),
+            "requires_tools" => frontmatter.requires_tools = parse_list(&value),
+            "requires_skills" => frontmatter.requires_skills = parse_list(&value),
+            "fallback_for_toolsets" => frontmatter.fallback_for_toolsets = parse_list(&value),
+            "auto_trigger" => frontmatter.auto_trigger = parse_bool(&value),
+            "triggers" => frontmatter.triggers = parse_list(&value),
+            _ => {}
+        }
+    }
+
+    frontmatter
+}
+
+/// Extract the `---`-delimited frontmatter block from a document.
+pub fn extract_frontmatter(content: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() || !lines[0].trim().starts_with("---") {
+        return None;
+    }
+    let mut block = Vec::new();
+    for line in lines.iter().skip(1) {
+        if line.trim().starts_with("---") {
+            return Some(block.join("\n"));
+        }
+        block.push(*line);
+    }
+    None
+}
+
+/// Convert a parsed [`SkillFrontmatter`] into a [`MetaSkill`].
+impl From<SkillFrontmatter> for MetaSkill {
+    fn from(fm: SkillFrontmatter) -> Self {
+        Self {
+            id: fm.name.clone(),
+            name: fm.name,
+            description: fm.description,
+        }
+    }
+}
+
+/// Convert a parsed [`SkillFrontmatter`] into a `crate::steps::SkillSpec`.
+///
+/// This bridges the frontmatter parser to the skills filter so a SKILL.md
+/// catalog can feed the gate directly.
+pub fn frontmatter_to_skill_spec(
+    fm: &SkillFrontmatter,
+) -> crate::steps::SkillSpec {
+    crate::steps::SkillSpec {
+        id: fm.name.clone(),
+        name: fm.name.clone(),
+        description: fm.description.clone(),
+        kind: if fm.kind.is_empty() {
+            "skill".to_string()
+        } else {
+            fm.kind.clone()
+        },
+        always: fm.always,
+        disable_model_invocation: !fm.allow_model_invocation,
+        requires_tools: fm.requires_tools.clone(),
+        fallback_for_toolsets: fm.fallback_for_toolsets.clone(),
+    }
+}
+
+/// Strip surrounding quotes from a string.
+fn unquote(value: &str) -> String {
+    let value = value.trim();
+    if value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+    {
+        value[1..value.len() - 1].to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+/// Parse a boolean value from YAML-ish text.
+fn parse_bool(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "true" | "yes" | "1" | "on"
+    )
+}
+
+/// Parse a list value from YAML-ish text.
+///
+/// Accepts `[a, b, c]`, `["a", "b"]`, and comma-separated scalar values.
+fn parse_list(value: &str) -> Vec<String> {
+    let value = value.trim();
+    let inner = value
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(value);
+    inner
+        .split(',')
+        .map(|item| unquote(item.trim()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 impl Default for MetaResolutionStep {
     fn default() -> Self {
         Self::new()

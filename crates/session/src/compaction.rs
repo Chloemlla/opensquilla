@@ -73,6 +73,34 @@ pub struct CompactionEstimate {
     pub summary_tokens: u64,
 }
 
+/// A full context-window usage estimate for a session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextEstimate {
+    /// The session this estimate applies to.
+    pub session_id: Uuid,
+    /// Tokens consumed by un-compacted transcript entries.
+    pub active_tokens: u64,
+    /// Estimated tokens consumed by the active summary.
+    pub summary_tokens: u64,
+    /// Estimated tokens consumed by the system prompt.
+    pub system_tokens: u64,
+    /// Total estimated tokens.
+    pub total_tokens: u64,
+    /// The session's compaction target budget.
+    pub budget_tokens: u64,
+    /// Whether the session exceeds its budget.
+    pub over_budget: bool,
+    /// Utilization of the budget in `[0, 1]`.
+    pub utilization: f64,
+}
+
+impl ContextEstimate {
+    /// The token slack (budget - total), possibly negative.
+    pub fn slack(&self) -> i64 {
+        self.budget_tokens as i64 - self.total_tokens as i64
+    }
+}
+
 /// A fully-resolved compaction decision: which entries to compact, which to
 /// retain, and the projected token effect.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,6 +396,88 @@ impl CompactionPlanner {
         strategy: CompactionStrategy,
     ) -> CoreResult<CompactionEstimate> {
         self.estimate_for(session, entries, strategy)
+    }
+
+    /// Select compaction boundaries that respect message-pair semantics.
+    ///
+    /// Returns a list of entry indexes at which a "natural" boundary exists:
+    /// after a complete `user -> assistant` (or `assistant -> user`) exchange.
+    /// Compacting between these boundaries preserves conversational coherence
+    /// better than slicing at arbitrary entry positions.
+    pub fn select_boundaries(&self, entries: &[TranscriptEntry]) -> Vec<usize> {
+        if entries.is_empty() {
+            return Vec::new();
+        }
+        let mut boundaries = Vec::new();
+        for i in 0..entries.len().saturating_sub(1) {
+            let cur = entries[i].role.as_str();
+            let next = entries[i + 1].role.as_str();
+            // A boundary exists when the role changes and neither is a
+            // transient tool/system frame.
+            let role_switched = cur != next;
+            let cur_transient = matches!(cur, "tool" | "system" | "function");
+            let next_transient = matches!(next, "tool" | "system" | "function");
+            if role_switched && !cur_transient && !next_transient {
+                boundaries.push(i + 1);
+            }
+        }
+        // Always allow a boundary at the very start.
+        if !boundaries.contains(&0) {
+            boundaries.insert(0, 0);
+        }
+        boundaries
+    }
+
+    /// Choose the largest natural boundary index that does not exceed
+    /// `max_index`. Used to round a compaction cutoff down to a coherent
+    /// exchange boundary.
+    pub fn floor_to_boundary(&self, entries: &[TranscriptEntry], max_index: usize) -> usize {
+        let boundaries = self.select_boundaries(entries);
+        boundaries
+            .into_iter()
+            .filter(|b| *b <= max_index)
+            .max()
+            .unwrap_or(max_index)
+    }
+
+    /// Estimate the full context-window usage of a session: the active
+    /// transcript tokens plus the active summary tokens plus the system
+    /// prompt overhead.
+    pub fn estimate_context_window(&self, session: &Session, entries: &[TranscriptEntry]) -> ContextEstimate {
+        let active_tokens: u64 = entries
+            .iter()
+            .filter(|e| !e.compacted)
+            .map(|e| e.token_count)
+            .sum();
+        let summary_tokens = estimate_summary_tokens(active_tokens);
+        let system_tokens = estimate_token_count(&session.system_prompt);
+        let total = active_tokens + summary_tokens + system_tokens;
+        ContextEstimate {
+            session_id: session.id,
+            active_tokens,
+            summary_tokens,
+            system_tokens,
+            total_tokens: total,
+            budget_tokens: self.target_budget,
+            over_budget: total > self.target_budget,
+            utilization: if self.target_budget > 0 {
+                (total as f64 / self.target_budget as f64).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+        }
+    }
+
+    /// Whether the session would still exceed the budget after a given
+    /// strategy runs.
+    pub fn would_still_exceed(
+        &self,
+        session: &Session,
+        entries: &[TranscriptEntry],
+        strategy: CompactionStrategy,
+    ) -> CoreResult<bool> {
+        let estimate = self.estimate_for(session, entries, strategy)?;
+        Ok(estimate.tokens_after > self.target_budget)
     }
 
     /// Choose the best strategy to reach `target_budget`. Among strategies
@@ -786,6 +896,167 @@ impl CompactionExecutor {
             .get_session(session_id)?
             .ok_or_else(|| CoreError::NotFound(format!("Session {}", session_id)))
     }
+
+    /// Estimate the full context-window usage for a session.
+    pub fn context_estimate(&self, session_id: &Uuid) -> CoreResult<ContextEstimate> {
+        let session = self.require_session(session_id)?;
+        let entries = self.storage.list_by_session(session_id)?;
+        Ok(self.planner.estimate_context_window(&session, &entries))
+    }
+
+    /// Incremental compaction: compact only the oldest `count` un-compacted
+    /// entries, rounding the cutoff down to the nearest conversational
+    /// boundary so exchanges stay intact.
+    pub fn incremental_compact(
+        &self,
+        session_id: &Uuid,
+        count: usize,
+    ) -> CoreResult<CompactionReport> {
+        let session = self.require_session(session_id)?;
+        let entries = self.storage.list_by_session(session_id)?;
+        let un_compacted: Vec<TranscriptEntry> =
+            entries.iter().filter(|e| !e.compacted).cloned().collect();
+        let n = un_compacted.len();
+        if n == 0 {
+            return Ok(self.planner.plan_compaction(&session, &entries)?.to_report("no_op"));
+        }
+
+        let raw_cutoff = count.min(n).saturating_sub(1);
+        let boundary_cutoff = self.planner.floor_to_boundary(&un_compacted, raw_cutoff);
+        let to_compact = un_compacted[..boundary_cutoff.min(n)].to_vec();
+        if to_compact.is_empty() {
+            return Ok(self.planner.plan_compaction(&session, &entries)?.to_report("no_op"));
+        }
+        let retained = un_compacted[boundary_cutoff.min(n)..].to_vec();
+
+        let current_tokens: u64 = un_compacted.iter().map(|e| e.token_count).sum();
+        let estimated_after: u64 = retained.iter().map(|e| e.token_count).sum();
+        let plan = CompactionPlan {
+            session_id: *session_id,
+            strategy: CompactionStrategy::Summarize,
+            entries_to_compact: to_compact,
+            retained_entries: retained,
+            target_budget: self.planner.target_budget(),
+            current_tokens,
+            estimated_savings: current_tokens.saturating_sub(estimated_after),
+            estimated_after,
+        };
+        self.execute_plan(plan, None)
+    }
+
+    /// Compact just enough to fit a target token budget: repeatedly compact
+    /// the oldest boundary group until the retained window fits, or nothing
+    /// more can be compacted.
+    pub fn compact_to_budget(&self, session_id: &Uuid, budget: u64) -> CoreResult<CompactionReport> {
+        let session = self.require_session(session_id)?;
+        let entries = self.storage.list_by_session(session_id)?;
+        let un_compacted: Vec<TranscriptEntry> =
+            entries.iter().filter(|e| !e.compacted).cloned().collect();
+        let mut retained: Vec<TranscriptEntry> = un_compacted.clone();
+        let mut compacted: Vec<TranscriptEntry> = Vec::new();
+        let mut previous_len = usize::MAX;
+
+        while retained_tokens(&retained) > budget && retained.len() < previous_len {
+            previous_len = retained.len();
+            let keep = retained.len().saturating_sub(2); // keep two more newest
+            let cutoff = self.planner.floor_to_boundary(&retained, keep);
+            if cutoff == 0 {
+                break;
+            }
+            // Move the OLDEST `cutoff` entries into the compacted set.
+            let mut oldest: Vec<TranscriptEntry> = retained[..cutoff].to_vec();
+            retained = retained[cutoff..].to_vec();
+            compacted.append(&mut oldest);
+        }
+
+        if compacted.is_empty() {
+            return Ok(CompactionPlan {
+                session_id: *session_id,
+                strategy: CompactionStrategy::TruncateToBudget,
+                entries_to_compact: Vec::new(),
+                retained_entries: retained,
+                target_budget: budget,
+                current_tokens: retained_tokens(&un_compacted),
+                estimated_savings: 0,
+                estimated_after: retained_tokens(&un_compacted),
+            }
+            .to_report("no_op"));
+        }
+
+        let current_tokens = retained_tokens(&un_compacted);
+        let estimated_after = retained_tokens(&retained);
+        let plan = CompactionPlan {
+            session_id: *session_id,
+            strategy: CompactionStrategy::TruncateToBudget,
+            entries_to_compact: compacted,
+            retained_entries: retained,
+            target_budget: budget,
+            current_tokens,
+            estimated_savings: current_tokens.saturating_sub(estimated_after),
+            estimated_after,
+        };
+        self.execute_plan(plan, None)
+    }
+
+    /// Run an LLM-backed summarization over a specific set of entries, without
+    /// applying it. Returns the summary text. Useful for previewing.
+    pub async fn preview_summary(
+        &self,
+        session_id: &Uuid,
+        entries: &[TranscriptEntry],
+    ) -> CoreResult<String> {
+        let session = self.require_session(session_id)?;
+        self.summarizer
+            .summarize(entries, &session)
+            .await
+            .map_err(CoreError::Provider)
+    }
+
+    /// Build a rich summarization prompt from entries, including metadata such
+    /// as entry roles and token counts. This is the prompt the fallback and
+    /// injected summarizers typically consume.
+    pub fn build_summary_prompt_detailed(entries: &[TranscriptEntry]) -> String {
+        let mut prompt = String::from(
+            "Summarize the following conversation exchange for context preservation.\n\
+             Capture: key decisions, user preferences, important facts, open questions.\n\
+             Be concise but information-dense. Preserve names and numbers verbatim.\n\n",
+        );
+        for (i, entry) in entries.iter().enumerate() {
+            prompt.push_str(&format!(
+                "[{}] ({} tokens) {}\n",
+                entry.role,
+                entry.token_count,
+                entry.content
+            ));
+            if i == 0 {
+                continue;
+            }
+        }
+        prompt.push_str("\n---\nSummary:");
+        prompt
+    }
+
+    /// Select the boundary index that splits the transcript so that the
+    /// retained tail fits `budget` tokens, rounding to an exchange boundary.
+    pub fn boundary_for_budget(
+        &self,
+        session_id: &Uuid,
+        budget: u64,
+    ) -> CoreResult<usize> {
+        let entries = self.storage.list_by_session(session_id)?;
+        let un_compacted: Vec<TranscriptEntry> =
+            entries.iter().filter(|e| !e.compacted).cloned().collect();
+        let mut acc: u64 = 0;
+        let mut split = 0usize;
+        for (i, entry) in un_compacted.iter().rev().enumerate() {
+            if acc + entry.token_count > budget {
+                split = un_compacted.len() - i;
+                break;
+            }
+            acc += entry.token_count;
+        }
+        Ok(self.planner.floor_to_boundary(&un_compacted, split))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,5 +1385,157 @@ mod tests {
         engine
             .apply_compaction(&session.id, "summary text", 10)
             .unwrap();
+    }
+
+    #[test]
+    fn select_boundaries_finds_role_switches() {
+        let mut entries = Vec::new();
+        for i in 0..6 {
+            let role = if i % 2 == 0 { "user" } else { "assistant" };
+            entries.push(entry(Uuid::new_v4(), i, 10));
+            entries[i].role = role.to_string();
+        }
+        let planner = CompactionPlanner::new();
+        let boundaries = planner.select_boundaries(&entries);
+        // Boundaries after each role switch: after index 0 (start), 1, 3, 5.
+        assert!(boundaries.contains(&0));
+        assert!(boundaries.contains(&1));
+        assert!(boundaries.contains(&3));
+        assert!(boundaries.contains(&5));
+    }
+
+    #[test]
+    fn floor_to_boundary_rounds_down() {
+        let mut entries = Vec::new();
+        for i in 0..6 {
+            let role = if i % 2 == 0 { "user" } else { "assistant" };
+            entries.push(entry(Uuid::new_v4(), i, 10));
+            entries[i].role = role.to_string();
+        }
+        let planner = CompactionPlanner::new();
+        // Requesting index 4 floors down to the boundary at 3.
+        assert_eq!(planner.floor_to_boundary(&entries, 4), 3);
+        // Requesting index 2 floors down to 1.
+        assert_eq!(planner.floor_to_boundary(&entries, 2), 1);
+    }
+
+    #[test]
+    fn context_estimate_math() {
+        let session = test_session(1000);
+        session_meta_check(&session);
+        let mut entries = Vec::new();
+        for i in 0..4 {
+            entries.push(entry(session.id, i, 100));
+        }
+        let planner = CompactionPlanner::new().with_target_budget(2048);
+        let estimate = planner.estimate_context_window(&session, &entries);
+        assert_eq!(estimate.active_tokens, 400);
+        assert!(!estimate.over_budget);
+        assert!(estimate.total_tokens >= 400);
+        assert!(estimate.slack() > 0);
+    }
+
+    fn session_meta_check(session: &Session) {
+        assert!(session.system_prompt.is_empty());
+    }
+
+    #[test]
+    fn would_still_exceed_detects_insufficient_strategy() {
+        let session = test_session(100_000);
+        let mut entries = Vec::new();
+        for i in 0..20 {
+            entries.push(entry(Uuid::new_v4(), i, 500));
+        }
+        let planner = CompactionPlanner::new()
+            .with_threshold(50)
+            .with_target_budget(100)
+            .with_keep_last(1);
+        assert!(planner.would_still_exceed(&session, &entries, CompactionStrategy::KeepLast).unwrap());
+    }
+
+    #[test]
+    fn incremental_compact_rounds_to_boundary() {
+        let storage = SessionStorage::in_memory().unwrap();
+        let session = test_session(2000);
+        storage.create_session(&session).unwrap();
+        for i in 0..8 {
+            let mut e = entry(session.id, i, 100);
+            e.role = if i % 2 == 0 { "user" } else { "assistant" }.to_string();
+            storage.insert_transcript_entry(&e).unwrap();
+        }
+        let executor = CompactionExecutor::new(storage);
+        // Request compacting 3 oldest entries; floor to boundary 3 (keeps 0..3
+        // compacted is 3 entries because index 3 is a boundary).
+        let report = executor.incremental_compact(&session.id, 3).unwrap();
+        assert!(report.entries_compacted > 0);
+        let entries = executor.storage.list_by_session(&session.id).unwrap();
+        let compacted = entries.iter().filter(|e| e.compacted).count();
+        assert!(compacted > 0);
+    }
+
+    #[test]
+    fn compact_to_budget_fits() {
+        let storage = SessionStorage::in_memory().unwrap();
+        let session = test_session(2000);
+        storage.create_session(&session).unwrap();
+        for i in 0..10 {
+            let mut e = entry(session.id, i, 100);
+            e.role = if i % 2 == 0 { "user" } else { "assistant" }.to_string();
+            storage.insert_transcript_entry(&e).unwrap();
+        }
+        let executor = CompactionExecutor::new(storage);
+        let report = executor.compact_to_budget(&session.id, 300).unwrap();
+        assert!(report.entries_compacted > 0);
+        assert!(report.tokens_after <= 300);
+    }
+
+    #[test]
+    fn boundary_for_budget_returns_index() {
+        let storage = SessionStorage::in_memory().unwrap();
+        let session = test_session(1000);
+        storage.create_session(&session).unwrap();
+        for i in 0..8 {
+            let mut e = entry(session.id, i, 100);
+            e.role = if i % 2 == 0 { "user" } else { "assistant" }.to_string();
+            storage.insert_transcript_entry(&e).unwrap();
+        }
+        let executor = CompactionExecutor::new(storage);
+        let boundary = executor.boundary_for_budget(&session.id, 300).unwrap();
+        assert!(boundary >= 4);
+    }
+
+    #[tokio::test]
+    async fn preview_summary_returns_text() {
+        let storage = SessionStorage::in_memory().unwrap();
+        let session = test_session(1000);
+        storage.create_session(&session).unwrap();
+        let entries: Vec<TranscriptEntry> = (0..3)
+            .map(|i| entry(session.id, i, 10))
+            .collect();
+        let executor = CompactionExecutor::new(storage);
+        let preview = executor.preview_summary(&session.id, &entries).await.unwrap();
+        assert!(preview.contains("message number"));
+    }
+
+    #[test]
+    fn build_summary_prompt_detailed_includes_tokens() {
+        let entries: Vec<TranscriptEntry> = (0..2)
+            .map(|i| entry(Uuid::new_v4(), i, 42))
+            .collect();
+        let prompt = CompactionExecutor::build_summary_prompt_detailed(&entries);
+        assert!(prompt.contains("42 tokens"));
+        assert!(prompt.contains("Summary:"));
+    }
+
+    #[test]
+    fn context_estimate_utilization() {
+        let session = test_session(1000);
+        let entries: Vec<TranscriptEntry> = (0..10)
+            .map(|i| entry(session.id, i, 100))
+            .collect();
+        let planner = CompactionPlanner::new().with_target_budget(200);
+        let estimate = planner.estimate_context_window(&session, &entries);
+        assert!(estimate.over_budget);
+        assert_eq!(estimate.utilization, 1.0);
     }
 }

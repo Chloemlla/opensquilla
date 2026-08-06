@@ -14,7 +14,7 @@ use tracing::info;
 use crate::table::{self, Color, KeyValue, Style};
 
 /// Init subcommands.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, clap::Subcommand)]
 pub enum InitAction {
     /// Initialize a new project in the current or given directory.
     Create {
@@ -178,11 +178,13 @@ fn default_project_config(name: &str) -> Config {
         base_url: None,
         models: vec!["gpt-4o-mini".to_string()],
         default_model: Some("gpt-4o-mini".to_string()),
-        ..Default::default()
+        max_retries: 3,
+        timeout_secs: 60,
     });
     config.skills = Some(opensquilla_core::config::SkillsConfig {
         skill_dirs: vec![".opensquilla/skills".to_string()],
-        ..Default::default()
+        enabled: true,
+        max_execution_time_secs: 300,
     });
     config
 }
@@ -240,7 +242,7 @@ This is an example skill. Skills are markdown files with YAML frontmatter.
 
 Edit this file or add new `.md` files to the `skills/` directory to create
 your own skills.
-"""
+"#
 .to_string()
 }
 
@@ -293,18 +295,12 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).style_str(*self))
+        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
     }
 }
 
 impl BoldStr for String {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).style_str(self))
-    }
-}
-
-impl Style {
-    fn style_str(self, s: &str) -> table::StyledString {
-        table::StyledString::new(s, self)
+        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(self))
     }
 }

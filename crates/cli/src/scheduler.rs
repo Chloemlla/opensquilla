@@ -118,9 +118,34 @@ pub async fn cancel_task(id: String) -> Result<()> {
 
 /// Create a new scheduled job.
 pub async fn add_task(name: String, schedule: String, handler: Option<String>) -> Result<()> {
+    add_task_opts(name, schedule, handler, None, None).await
+}
+
+/// Create a new scheduled job with optional agent and payload.
+pub async fn add_task_opts(
+    name: String,
+    schedule: String,
+    handler: Option<String>,
+    agent: Option<String>,
+    payload: Option<String>,
+) -> Result<()> {
     let engine = build_engine()?;
     let kind = parse_schedule(&schedule)?;
     let handler = handler.unwrap_or_else(|| "heartbeat".to_string());
+
+    let agent_id = match agent {
+        Some(a) => Some(
+            Uuid::parse_str(&a)
+                .map_err(|_| anyhow::anyhow!("Invalid agent id: {a}"))?,
+        ),
+        None => Some(util::default_agent_id()),
+    };
+
+    let payload_value = match payload {
+        Some(p) => serde_json::from_str(&p)
+            .map_err(|_| anyhow::anyhow!("Invalid JSON payload: {p}"))?,
+        None => serde_json::Value::Null,
+    };
 
     let job = engine
         .ops()
@@ -128,9 +153,9 @@ pub async fn add_task(name: String, schedule: String, handler: Option<String>) -
             name.clone(),
             kind,
             handler,
-            serde_json::Value::Null,
+            payload_value,
             HashMap::new(),
-            Some(util::default_agent_id()),
+            agent_id,
             None,
             0,
             0,
@@ -173,6 +198,46 @@ pub async fn resume_task(id: String) -> Result<()> {
 /// Remove a scheduled job (alias for cancel).
 pub async fn remove_task(id: String) -> Result<()> {
     cancel_task(id).await
+}
+
+/// Show execution history for a task.
+pub async fn show_history(id: String, limit: usize) -> Result<()> {
+    let engine = build_engine()?;
+    let job = load_job(&engine, &id)?;
+
+    println!("Execution history for task: {} ({})", job.name, job.id);
+    println!("{:-<80}", "");
+    println!("  (Execution history is recorded by the running scheduler engine.)");
+    println!("  Task status: {:?}", job.status);
+    println!("  Last run:    {}", opt_rfc(job.last_run_at));
+    println!("  Next run:    {}", opt_rfc(job.next_run_at));
+    println!("  Max retries: {}", job.max_retries);
+    println!();
+    println!("  To see live execution records, start the gateway and check:");
+    println!("    osq gateway metrics");
+    Ok(())
+}
+
+/// Show scheduler statistics.
+pub async fn show_stats() -> Result<()> {
+    let engine = build_engine()?;
+    let stats = engine
+        .ops()
+        .get_stats()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load stats: {e}"))?;
+
+    println!("Scheduler Statistics");
+    println!("{:-<50}", "");
+    crate::table::KeyValue::new()
+        .entry("Active jobs", stats.active_jobs.to_string())
+        .entry("Paused jobs", stats.paused_jobs.to_string())
+        .entry("Failed jobs", stats.failed_jobs.to_string())
+        .entry("Completed jobs", stats.completed_jobs.to_string())
+        .entry("Total executions", stats.total_executions.to_string())
+        .print();
+    println!("{:-<50}", "");
+    Ok(())
 }
 
 fn parse_id(id: &str) -> Result<Uuid> {

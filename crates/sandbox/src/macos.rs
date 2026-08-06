@@ -93,12 +93,37 @@ mod backend {
             }
             apply_rlimits_pre_exec(&mut cmd, policy)?;
 
-            let output = cmd
+            // Enforce a wall-clock timeout on the whole sandboxed execution so
+            // a hung child cannot block the worker forever. The CPU limit is
+            // enforced separately by setrlimit in the pre_exec hook.
+            let timeout_secs = policy.resource_limits.effective_timeout_secs();
+            let spawned = cmd
                 .spawn()
-                .map_err(|e| format!("failed to spawn sandbox-exec: {e}"))?
-                .wait_with_output()
-                .await
-                .map_err(|e| format!("process wait: {e}"))?;
+                .map_err(|e| format!("failed to spawn sandbox-exec: {e}"))?;
+            let output = match tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs),
+                spawned.wait_with_output(),
+            )
+            .await
+            {
+                Ok(Ok(o)) => o,
+                Ok(Err(e)) => {
+                    let _ = tokio::fs::remove_file(&sbpl_path).await;
+                    return Err(format!("process wait: {e}"));
+                }
+                Err(_) => {
+                    let _ = tokio::fs::remove_file(&sbpl_path).await;
+                    return Ok(SandboxResult {
+                        exit_code: -1,
+                        stdout: String::new(),
+                        stderr: format!(
+                            "Sandboxed execution timed out after {timeout_secs} seconds"
+                        ),
+                        duration_ms: start.elapsed().as_millis() as u64,
+                        audit_log: Vec::new(),
+                    });
+                }
+            };
 
             let _ = tokio::fs::remove_file(&sbpl_path).await;
             let duration = start.elapsed();
@@ -167,6 +192,8 @@ mod backend {
         let mem = policy.resource_limits.memory_bytes;
         let nproc = policy.resource_limits.max_processes;
         let fsize = policy.resource_limits.file_size_bytes;
+        let nofile = policy.resource_limits.open_fds;
+        let core = policy.resource_limits.core_size_bytes;
         unsafe {
             cmd.pre_exec(move || {
                 unsafe {
@@ -214,6 +241,30 @@ mod backend {
                         if libc::setrlimit(libc::RLIMIT_FSIZE, &lim) != 0 {
                             return Err(io_err(format!(
                                 "setrlimit(RLIMIT_FSIZE): {}",
+                                std::io::Error::last_os_error()
+                            )));
+                        }
+                    }
+                    if let Some(nofile) = nofile {
+                        let lim = libc::rlimit {
+                            rlim_cur: nofile,
+                            rlim_max: nofile,
+                        };
+                        if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) != 0 {
+                            return Err(io_err(format!(
+                                "setrlimit(RLIMIT_NOFILE): {}",
+                                std::io::Error::last_os_error()
+                            )));
+                        }
+                    }
+                    if let Some(core) = core {
+                        let lim = libc::rlimit {
+                            rlim_cur: core,
+                            rlim_max: core,
+                        };
+                        if libc::setrlimit(libc::RLIMIT_CORE, &lim) != 0 {
+                            return Err(io_err(format!(
+                                "setrlimit(RLIMIT_CORE): {}",
                                 std::io::Error::last_os_error()
                             )));
                         }
@@ -312,6 +363,167 @@ mod backend {
         }
 
         sbpl
+    }
+
+    /// Build an SBPL profile through the dedicated `seatbelt` module, which
+    /// produces the richer profile (deny-by-default with level-specific
+    /// hardening for STRICT/LOCKED). Falls back to the inline [`build_sbpl`]
+    /// if the module is unavailable (it is always available).
+    fn build_sbpl_advanced(policy: &SandboxPolicy) -> String {
+        crate::seatbelt::SeatbeltProfile::from_policy(policy).source
+    }
+
+    /// Launch a command with `sandbox_init(3)` instead of the deprecated
+    /// `sandbox-exec` binary.
+    ///
+    /// `sandbox_init` applies the profile to the current process; this is used
+    /// for the native fallback where we fork a child, apply the profile with
+    /// `sandbox_init`, then `exec` the target. It requires the calling process
+    /// to be single-threaded (which holds inside `fork`).
+    #[cfg(target_os = "macos")]
+    fn launch_with_sandbox_init(
+        command: &str,
+        args: &[&str],
+        env: &HashMap<String, String>,
+        policy: &SandboxPolicy,
+    ) -> Result<SandboxResult, String> {
+        use std::ffi::CString;
+
+        // Compile the SBPL profile.
+        let profile = crate::seatbelt::SeatbeltProfile::from_policy(policy);
+        profile.validate_syntax()?;
+
+        // The classic sandbox_init takes a C string; the modern variant takes
+        // a URL. We pass the profile inline via the classic entry point.
+        let profile_c = CString::new(profile.source.as_bytes()).map_err(|e| format!("CString: {e}"))?;
+
+        unsafe {
+            // `sandbox_init(profile, flags, errorbuf)`:
+            // flags = 1 (SANDBOX_NAMED) would treat `profile` as a name; we
+            // use flags = 0 (SANDBOX_BUILTIN is 2; plain inline profile uses
+            // 0).
+            let mut errorbuf: *mut libc::c_char = std::ptr::null_mut();
+            let result = libc::sandbox_init(profile_c.as_ptr(), 0, &mut errorbuf);
+            if result != 0 {
+                let err = if errorbuf.is_null() {
+                    "sandbox_init failed".to_string()
+                } else {
+                    let msg = std::ffi::CStr::from_ptr(errorbuf).to_string_lossy().to_string();
+                    libc::sandbox_free_error(errorbuf);
+                    msg
+                };
+                return Err(format!("sandbox_init: {err}"));
+            }
+        }
+
+        // Re-apply resource limits (the child process).
+        let limits = RlimitSpec::from_policy(policy);
+        apply_rlimits_libc(&limits).map_err(|e| e)?;
+
+        if let Some(cwd) = std::env::var_os("PWD") {
+            let _ = std::env::set_current_dir(cwd);
+        }
+        exec_command(command, args, env);
+        Err("exec failed".to_string())
+    }
+
+    /// Apply resource limits to the *current* process (used by the native
+    /// fallback after `fork`).
+    #[cfg(target_os = "macos")]
+    fn apply_rlimits_libc(limits: &RlimitSpec) -> Result<(), String> {
+        unsafe {
+            macro_rules! set_limit {
+                ($which:expr, $val:expr) => {{
+                    let lim = libc::rlimit {
+                        rlim_cur: $val,
+                        rlim_max: $val,
+                    };
+                    if libc::setrlimit($which, &lim) != 0 {
+                        return Err(format!(
+                            "setrlimit({}): {}",
+                            stringify!($which),
+                            std::io::Error::last_os_error()
+                        ));
+                    }
+                }};
+            }
+            if let Some(cpu) = limits.cpu {
+                set_limit!(libc::RLIMIT_CPU, cpu);
+            }
+            if let Some(mem) = limits.mem {
+                set_limit!(libc::RLIMIT_AS, mem);
+            }
+            if let Some(nproc) = limits.nproc {
+                set_limit!(libc::RLIMIT_NPROC, nproc);
+            }
+            if let Some(fsize) = limits.fsize {
+                set_limit!(libc::RLIMIT_FSIZE, fsize);
+            }
+            if let Some(nofile) = limits.nofile {
+                set_limit!(libc::RLIMIT_NOFILE, nofile);
+            }
+            if let Some(core) = limits.core {
+                set_limit!(libc::RLIMIT_CORE, core);
+            }
+        }
+        Ok(())
+    }
+
+    /// Exec the target with a filtered environment (macOS `execvpe`).
+    #[cfg(target_os = "macos")]
+    fn exec_command(command: &str, args: &[&str], env: &HashMap<String, String>) {
+        use std::ffi::CString;
+
+        // `execve` does not search PATH, so resolve to an absolute path first.
+        let resolved = resolve_binary(command).unwrap_or_else(|| command.to_string());
+        let program = CString::new(resolved).unwrap_or_default();
+        let cargs: Vec<CString> = args
+            .iter()
+            .filter_map(|a| CString::new(*a).ok())
+            .collect();
+        let mut arg_ptrs: Vec<*const libc::c_char> = Vec::with_capacity(cargs.len() + 2);
+        arg_ptrs.push(program.as_ptr());
+        for a in &cargs {
+            arg_ptrs.push(a.as_ptr());
+        }
+        arg_ptrs.push(std::ptr::null());
+
+        let env_vars: Vec<CString> = env
+            .iter()
+            .filter_map(|(k, v)| CString::new(format!("{k}={v}")).ok())
+            .collect();
+        let mut env_ptrs: Vec<*const libc::c_char> = env_vars.iter().map(|c| c.as_ptr()).collect();
+        env_ptrs.push(std::ptr::null());
+
+        unsafe {
+            libc::execve(program.as_ptr(), arg_ptrs.as_ptr(), env_ptrs.as_ptr());
+        }
+    }
+
+    /// A minimal resource-limit spec for the native macOS path.
+    #[cfg(target_os = "macos")]
+    #[derive(Clone, Copy)]
+    struct RlimitSpec {
+        cpu: Option<u64>,
+        mem: Option<u64>,
+        nproc: Option<u64>,
+        fsize: Option<u64>,
+        nofile: Option<u64>,
+        core: Option<u64>,
+    }
+
+    #[cfg(target_os = "macos")]
+    impl RlimitSpec {
+        fn from_policy(p: &SandboxPolicy) -> Self {
+            Self {
+                cpu: p.resource_limits.cpu_time_secs,
+                mem: p.resource_limits.memory_bytes,
+                nproc: p.resource_limits.max_processes,
+                fsize: p.resource_limits.file_size_bytes,
+                nofile: p.resource_limits.open_fds,
+                core: p.resource_limits.core_size_bytes,
+            }
+        }
     }
 }
 

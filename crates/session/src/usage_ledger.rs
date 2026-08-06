@@ -132,6 +132,47 @@ impl UsageLedger {
         self.entries.iter().map(|e| *e.key()).collect()
     }
 
+    /// Compute the approximate cost in nanodollars for a call, exposed for
+    /// callers that persist usage through [`crate::storage::SessionStorage`]
+    /// directly.
+    pub fn compute_cost_for(prompt_tokens: u64, completion_tokens: u64, model: &str) -> u64 {
+        Self::compute_cost_nanodollars(prompt_tokens, completion_tokens, model)
+    }
+
+    /// Reconcile the in-memory totals for a session from the persisted entries.
+    /// Useful after loading entries from storage.
+    pub fn reconcile_from_entries(&self, session_id: Uuid, entries: &[UsageEntry]) -> UsageSummary {
+        let mut summary = UsageSummary {
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_cost_nanodollars: 0,
+            total_calls: entries.len() as u64,
+            by_model: std::collections::HashMap::new(),
+        };
+        for entry in entries {
+            summary.total_prompt_tokens += entry.prompt_tokens;
+            summary.total_completion_tokens += entry.completion_tokens;
+            summary.total_cost_nanodollars += entry.cost_nanodollars;
+            summary
+                .by_model
+                .entry(entry.model.clone())
+                .and_modify(|m: &mut ModelUsage| {
+                    m.calls += 1;
+                    m.prompt_tokens += entry.prompt_tokens;
+                    m.completion_tokens += entry.completion_tokens;
+                    m.cost_nanodollars += entry.cost_nanodollars;
+                })
+                .or_insert(ModelUsage {
+                    calls: 1,
+                    prompt_tokens: entry.prompt_tokens,
+                    completion_tokens: entry.completion_tokens,
+                    cost_nanodollars: entry.cost_nanodollars,
+                });
+        }
+        self.session_totals.insert(session_id, summary.clone());
+        summary
+    }
+
     /// Compute cost in nanodollars (1 nanodollar = 1e-9 USD).
     /// Uses approximate pricing per 1K tokens by model family.
     fn compute_cost_nanodollars(prompt_tokens: u64, completion_tokens: u64, model: &str) -> u64 {

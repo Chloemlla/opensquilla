@@ -445,3 +445,231 @@ impl NullStaleOutputCache {
         0
     }
 }
+
+/// Content hash of a cached payload. Used to detect cache poisoning: if the
+/// stored bytes differ from what a later computation expects, the entry is
+/// invalidated rather than trusted.
+pub fn content_hash(payload: &[u8]) -> String {
+    hex::encode(Sha256::digest(payload))
+}
+
+/// TTL policy for a cache entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TtlPolicy {
+    /// Entry expires after a fixed number of seconds.
+    Fixed(u64),
+    /// Entry expires after a number of seconds, but is refreshed on every
+    /// read (sliding expiration).
+    Sliding(u64),
+    /// Entry never expires.
+    Never,
+}
+
+impl TtlPolicy {
+    /// The nominal TTL in seconds.
+    pub fn ttl_secs(&self) -> u64 {
+        match self {
+            TtlPolicy::Fixed(s) | TtlPolicy::Sliding(s) => *s,
+            TtlPolicy::Never => u64::MAX,
+        }
+    }
+
+    /// Is the entry expired given its stored-at time and the current time?
+    pub fn is_expired(&self, stored_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+        match self {
+            TtlPolicy::Never => false,
+            TtlPolicy::Fixed(secs) | TtlPolicy::Sliding(secs) => {
+                now > stored_at + chrono::Duration::seconds(*secs as i64)
+            }
+        }
+    }
+}
+
+/// A hash-verified cache entry: stores the payload's SHA-256 alongside the
+/// metadata so a tampered file is detected on read.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VerifiedEntry {
+    /// The cache key.
+    pub key: String,
+    /// SHA-256 of the payload, hex-encoded.
+    pub payload_hash: String,
+    /// Payload size in bytes.
+    pub payload_len: u64,
+    /// When the payload was stored.
+    pub stored_at: DateTime<Utc>,
+    /// TTL policy.
+    pub ttl: TtlPolicy,
+}
+
+/// A second, hash-verified cache layered over the raw [`StaleOutputCache`].
+///
+/// The verified cache stores each payload alongside its content hash. On read,
+/// the hash is recomputed; a mismatch means the file was modified out-of-band
+/// and the entry is treated as a miss and purged.
+#[derive(Debug, Clone)]
+pub struct VerifiedOutputCache {
+    root_dir: PathBuf,
+    index: Arc<RwLock<HashMap<String, VerifiedEntry>>>,
+}
+
+impl VerifiedOutputCache {
+    /// Create a verified cache rooted at `root_dir`.
+    pub fn new(root_dir: PathBuf) -> Self {
+        Self {
+            root_dir,
+            index: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    fn entry_path(&self, key: &str) -> PathBuf {
+        self.root_dir.join(format!("verified_{}.bin", key))
+    }
+
+    fn meta_path(&self, key: &str) -> PathBuf {
+        self.root_dir.join(format!("verified_{}.json", key))
+    }
+
+    /// Store a payload under a key with a TTL policy.
+    pub async fn put(&self, key: &str, payload: &[u8], ttl: TtlPolicy) -> Result<(), String> {
+        let entry = VerifiedEntry {
+            key: key.to_string(),
+            payload_hash: content_hash(payload),
+            payload_len: payload.len() as u64,
+            stored_at: Utc::now(),
+            ttl,
+        };
+        if let Some(parent) = self.entry_path(key).parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("verified cache: mkdir: {e}"))?;
+        }
+        tokio::fs::write(self.entry_path(key), payload)
+            .await
+            .map_err(|e| format!("verified cache: write payload: {e}"))?;
+        let meta_json = serde_json::to_vec(&entry)
+            .map_err(|e| format!("verified cache: serialize meta: {e}"))?;
+        tokio::fs::write(self.meta_path(key), &meta_json)
+            .await
+            .map_err(|e| format!("verified cache: write meta: {e}"))?;
+        self.index.write().await.insert(key.to_string(), entry);
+        Ok(())
+    }
+
+    /// Fetch a payload, verifying its content hash. Returns `None` on miss,
+    /// expiry or hash mismatch (and purges the entry on mismatch).
+    pub async fn get(&self, key: &str) -> Option<Vec<u8>> {
+        let meta = match self.index.read().await.get(key).cloned() {
+            Some(m) => m,
+            None => {
+                // Rebuild from disk if present.
+                let meta = serde_json::from_str::<VerifiedEntry>(
+                    &tokio::fs::read_to_string(self.meta_path(key)).await.ok()?,
+                )
+                .ok()?;
+                self.index.write().await.insert(key.to_string(), meta.clone());
+                meta
+            }
+        };
+        if meta.ttl.is_expired(meta.stored_at, Utc::now()) {
+            self.purge(key).await;
+            return None;
+        }
+        let payload = match tokio::fs::read(self.entry_path(key)).await {
+            Ok(p) => p,
+            Err(_) => {
+                self.purge(key).await;
+                return None;
+            }
+        };
+        if content_hash(&payload) != meta.payload_hash {
+            warn!(
+                "verified cache: hash mismatch for key '{}'; purging",
+                key
+            );
+            self.purge(key).await;
+            return None;
+        }
+        Some(payload)
+    }
+
+    /// Remove an entry (both payload and metadata).
+    pub async fn purge(&self, key: &str) -> bool {
+        let removed = self.index.write().await.remove(key).is_some();
+        let _ = tokio::fs::remove_file(self.entry_path(key)).await;
+        let _ = tokio::fs::remove_file(self.meta_path(key)).await;
+        removed
+    }
+
+    /// Number of entries tracked in memory.
+    pub async fn len(&self) -> usize {
+        self.index.read().await.len()
+    }
+
+    /// Is the cache empty?
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
+
+    /// Remove all entries.
+    pub async fn clear(&self) -> usize {
+        let keys: Vec<String> = self.index.read().await.keys().cloned().collect();
+        let mut count = 0;
+        for k in keys {
+            if self.purge(&k).await {
+                count += 1;
+            }
+        }
+        count
+    }
+}
+
+/// The default stale-output cache directory name.
+pub const DEFAULT_CACHE_DIR: &str = "stale_output_cache";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_hash_deterministic() {
+        assert_eq!(content_hash(b"hello"), content_hash(b"hello"));
+        assert_ne!(content_hash(b"hello"), content_hash(b"world"));
+    }
+
+    #[test]
+    fn ttl_policy_expiry() {
+        let now = Utc::now();
+        let fixed = TtlPolicy::Fixed(10);
+        let past = now - chrono::Duration::seconds(11);
+        let recent = now - chrono::Duration::seconds(9);
+        assert!(fixed.is_expired(past, now));
+        assert!(!fixed.is_expired(recent, now));
+        assert!(!TtlPolicy::Never.is_expired(past, now));
+        let sliding = TtlPolicy::Sliding(10);
+        assert!(sliding.is_expired(past, now));
+    }
+
+    #[tokio::test]
+    async fn verified_cache_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("osq_verified_test_{}", uuid::Uuid::new_v4()));
+        let cache = VerifiedOutputCache::new(dir.clone());
+        cache.put("k1", b"payload", TtlPolicy::Never).await.unwrap();
+        assert_eq!(cache.get("k1").await.as_deref(), Some(&b"payload"[..]));
+        assert_eq!(cache.len().await, 1);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn verified_cache_detects_tampering() {
+        let dir = std::env::temp_dir().join(format!("osq_verified_tamper_{}", uuid::Uuid::new_v4()));
+        let cache = VerifiedOutputCache::new(dir.clone());
+        cache.put("k1", b"original", TtlPolicy::Never).await.unwrap();
+        // Tamper with the payload file.
+        tokio::fs::write(cache.entry_path("k1"), b"tampered").await.unwrap();
+        assert_eq!(cache.get("k1").await, None);
+        // Entry should have been purged.
+        assert_eq!(cache.len().await, 0);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+}

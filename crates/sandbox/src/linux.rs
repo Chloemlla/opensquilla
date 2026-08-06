@@ -43,6 +43,7 @@ mod backend {
     use nix::sys::wait::WaitStatus;
     use nix::unistd::ForkResult;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+    use std::path::{Path, PathBuf};
     use std::process::Stdio;
     use tokio::process::Command;
     use tracing::{info, warn};
@@ -353,6 +354,12 @@ mod backend {
                     if let Some(prog) = &seccomp_prog {
                         let _ = apply_seccomp(prog);
                     }
+                    // Landlock LSM filesystem confinement (best-effort; only
+                    // applies on x86_64 kernels with Landlock support).
+                    let _ = apply_landlock_rules(
+                        &opts.policy.filesystem.read_allowed,
+                        &opts.policy.filesystem.write_allowed,
+                    );
                     if let Some(cwd) = opts.working_dir {
                         let _ = std::env::set_current_dir(cwd);
                     }
@@ -421,6 +428,8 @@ mod backend {
         mem: Option<u64>,
         nproc: Option<u64>,
         fsize: Option<u64>,
+        nofile: Option<u64>,
+        core: Option<u64>,
     }
 
     impl RlimitSpec {
@@ -430,6 +439,8 @@ mod backend {
                 mem: p.resource_limits.memory_bytes,
                 nproc: p.resource_limits.max_processes,
                 fsize: p.resource_limits.file_size_bytes,
+                nofile: p.resource_limits.open_fds,
+                core: p.resource_limits.core_size_bytes,
             }
         }
     }
@@ -498,6 +509,30 @@ mod backend {
                 if libc::setrlimit(libc::RLIMIT_FSIZE, &lim) != 0 {
                     return Err(format!(
                         "setrlimit(RLIMIT_FSIZE): {}",
+                        nix::errno::Errno::last()
+                    ));
+                }
+            }
+            if let Some(nofile) = limits.nofile {
+                let lim = libc::rlimit {
+                    rlim_cur: nofile,
+                    rlim_max: nofile,
+                };
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) != 0 {
+                    return Err(format!(
+                        "setrlimit(RLIMIT_NOFILE): {}",
+                        nix::errno::Errno::last()
+                    ));
+                }
+            }
+            if let Some(core) = limits.core {
+                let lim = libc::rlimit {
+                    rlim_cur: core,
+                    rlim_max: core,
+                };
+                if libc::setrlimit(libc::RLIMIT_CORE, &lim) != 0 {
+                    return Err(format!(
+                        "setrlimit(RLIMIT_CORE): {}",
                         nix::errno::Errno::last()
                     ));
                 }
@@ -795,6 +830,322 @@ mod backend {
             return Err(format!("setns: {}", nix::errno::Errno::last()));
         }
         Ok(())
+    }
+
+    /// cgroup v2 controller for CPU, memory and process-count limits.
+    ///
+    /// Creates a dedicated child cgroup under `/sys/fs/cgroup/opensquilla/`
+    /// (creating the parent on first use), writes the controller limits, and
+    /// exposes the process PID to be moved into it before the sandboxed
+    /// program starts. Dropping the controller removes the child cgroup.
+    ///
+    /// cgroup v2 is read from `/sys/fs/cgroup/cgroup.controllers`; if it is
+    /// not present the controller reports `available() == false` and callers
+    /// should fall back to `setrlimit`.
+    pub struct CgroupV2Controller {
+        path: PathBuf,
+    }
+
+    impl CgroupV2Controller {
+        /// The base directory under which per-sandbox cgroups are created.
+        pub fn base_dir() -> PathBuf {
+            PathBuf::from("/sys/fs/cgroup/opensquilla")
+        }
+
+        /// Is cgroup v2 available and mounted?
+        pub fn available() -> bool {
+            let controllers = Self::base_dir().join("cgroup.controllers");
+            // The parent may not exist yet; check the v2 root marker instead.
+            Path::new("/sys/fs/cgroup/cgroup.controllers").exists() || controllers.exists()
+        }
+
+        /// Create a new controller with limits from a policy.
+        pub fn create(limits: &crate::policy::ResourceLimits) -> Result<Self, String> {
+            let base = Self::base_dir();
+            if !base.exists() {
+                std::fs::create_dir_all(&base).map_err(|e| format!("cgroup mkdir: {e}"))?;
+                // Enable controllers the kernel allows.
+                if let Ok(controllers) = std::fs::read_to_string("/sys/fs/cgroup/cgroup.subtree_control")
+                {
+                    let mut enabled = String::new();
+                    for c in ["cpu", "memory", "pids"] {
+                        if controllers.contains(c) {
+                            enabled.push_str(c);
+                            enabled.push(' ');
+                        }
+                    }
+                    let _ = std::fs::write(base.join("cgroup.subtree_control"), enabled.trim());
+                }
+            }
+            let name = format!("sbx_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+            let path = base.join(&name);
+            std::fs::create_dir(&path).map_err(|e| format!("cgroup create: {e}"))?;
+
+            let controller = Self { path };
+            controller.apply_limits(limits)?;
+            Ok(controller)
+        }
+
+        fn apply_limits(&self, limits: &crate::policy::ResourceLimits) -> Result<(), String> {
+            // cpu.max is "quota period"; quota of 100000 us == one core.
+            let period_us = 100_000u64;
+            let quota_us = match limits.cpu_quota_cores {
+                Some(q) => ((q * period_us as f64) as u64).max(1),
+                None => period_us,
+            };
+            self.write("cpu.max", &format!("{quota_us} {period_us}"))?;
+
+            if let Some(mem) = limits.memory_bytes {
+                self.write("memory.max", &mem.to_string())?;
+            } else {
+                self.write("memory.max", "max")?;
+            }
+
+            if let Some(nproc) = limits.max_processes {
+                self.write("pids.max", &nproc.to_string())?;
+            } else {
+                self.write("pids.max", "max")?;
+            }
+
+            // Disable swap so the memory limit is hard.
+            let _ = self.write("memory.swap.max", "0");
+            Ok(())
+        }
+
+        fn write(&self, file: &str, value: &str) -> Result<(), String> {
+            let path = self.path.join(file);
+            std::fs::write(&path, value).map_err(|e| format!("cgroup write {}: {e}", file))
+        }
+
+        /// Move a process into this cgroup by PID.
+        pub fn attach(&self, pid: i32) -> Result<(), String> {
+            let path = self.path.join("cgroup.procs");
+            std::fs::write(&path, pid.to_string()).map_err(|e| format!("cgroup attach: {e}"))
+        }
+
+        /// The cgroup directory path.
+        pub fn path(&self) -> &Path {
+            &self.path
+        }
+
+        /// The leaf name of the cgroup.
+        pub fn name(&self) -> &str {
+            self.path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("sbx")
+        }
+    }
+
+    impl Drop for CgroupV2Controller {
+        fn drop(&mut self) {
+            // Freeze and release the cgroup; best-effort.
+            let _ = std::fs::write(self.path.join("cgroup.freeze"), "1");
+            let _ = std::fs::remove_dir(&self.path);
+        }
+    }
+
+    /// Landlock LSM rules for the native fallback.
+    ///
+    /// Landlock (Linux 5.13+) lets an unprivileged process restrict its own
+    /// filesystem access with no root. This module builds a ruleset that
+    /// denies writes outside the allowed paths and denies reads outside the
+    /// allowed read paths, then restricts the calling process. Must be called
+    /// in the forked child before `exec`.
+    pub fn apply_landlock_rules(
+        read_allowed: &[String],
+        write_allowed: &[String],
+    ) -> Result<(), String> {
+        // Syscall numbers are only stable on x86_64; fall back gracefully
+        // elsewhere.
+        #[cfg(target_arch = "x86_64")]
+        {
+            const LANDLOCK_CREATE_RULESET_VERSION: usize = 0x0000_0001;
+            const LANDLOCK_ACCESS_FS_EXECUTE: u64 = 1 << 0;
+            const LANDLOCK_ACCESS_FS_WRITE_FILE: u64 = 1 << 1;
+            const LANDLOCK_ACCESS_FS_READ_FILE: u64 = 1 << 2;
+            const LANDLOCK_ACCESS_FS_READ_DIR: u64 = 1 << 3;
+            const LANDLOCK_ACCESS_FS_REMOVE_DIR: u64 = 1 << 4;
+            const LANDLOCK_ACCESS_FS_REMOVE_FILE: u64 = 1 << 5;
+            const LANDLOCK_ACCESS_FS_MAKE_CHAR: u64 = 1 << 6;
+            const LANDLOCK_ACCESS_FS_MAKE_DIR: u64 = 1 << 7;
+            const LANDLOCK_ACCESS_FS_MAKE_REG: u64 = 1 << 8;
+            const LANDLOCK_ACCESS_FS_MAKE_SOCK: u64 = 1 << 9;
+            const LANDLOCK_ACCESS_FS_MAKE_FIFO: u64 = 1 << 10;
+            const LANDLOCK_ACCESS_FS_MAKE_BLOCK: u64 = 1 << 11;
+            const LANDLOCK_ACCESS_FS_MAKE_SYM: u64 = 1 << 12;
+            const LANDLOCK_ACCESS_FS_REFER: u64 = 1 << 13;
+            const LANDLOCK_ACCESS_FS_TRUNCATE: u64 = 1 << 14;
+
+            #[repr(C)]
+            #[derive(Default, Clone, Copy)]
+            struct LandlockRulesetAttr {
+                handled_access_fs: u64,
+            }
+            #[repr(C)]
+            #[derive(Default, Clone, Copy)]
+            struct LandlockPathBeneathAttr {
+                allowed_access: u64,
+                parent_fd: i32,
+            }
+
+            unsafe fn syscall3(nr: libc::c_long, a1: usize, a2: usize, a3: usize) -> libc::c_long {
+                libc::syscall(nr, a1, a2, a3)
+            }
+
+            unsafe fn syscall4(
+                nr: libc::c_long,
+                a1: usize,
+                a2: usize,
+                a3: usize,
+                a4: usize,
+            ) -> libc::c_long {
+                libc::syscall(nr, a1, a2, a3, a4)
+            }
+
+            unsafe {
+                // Query the ABI version. If the kernel lacks Landlock, this
+                // returns -1 with EOPNOTSUPP/ENOSYS and we degrade silently.
+                let version = syscall3(
+                    libc::SYS_landlock_create_ruleset,
+                    LANDLOCK_CREATE_RULESET_VERSION,
+                    0,
+                    std::ptr::null::<u8>() as usize,
+                );
+                if version < 0 {
+                    return Ok(());
+                }
+
+                let handled = LANDLOCK_ACCESS_FS_EXECUTE
+                    | LANDLOCK_ACCESS_FS_WRITE_FILE
+                    | LANDLOCK_ACCESS_FS_READ_FILE
+                    | LANDLOCK_ACCESS_FS_READ_DIR
+                    | LANDLOCK_ACCESS_FS_REMOVE_DIR
+                    | LANDLOCK_ACCESS_FS_REMOVE_FILE
+                    | LANDLOCK_ACCESS_FS_MAKE_CHAR
+                    | LANDLOCK_ACCESS_FS_MAKE_DIR
+                    | LANDLOCK_ACCESS_FS_MAKE_REG
+                    | LANDLOCK_ACCESS_FS_MAKE_SOCK
+                    | LANDLOCK_ACCESS_FS_MAKE_FIFO
+                    | LANDLOCK_ACCESS_FS_MAKE_BLOCK
+                    | LANDLOCK_ACCESS_FS_MAKE_SYM
+                    | LANDLOCK_ACCESS_FS_REFER
+                    | LANDLOCK_ACCESS_FS_TRUNCATE;
+
+                let attr = LandlockRulesetAttr {
+                    handled_access_fs: handled,
+                };
+                let ruleset_fd = syscall3(
+                    libc::SYS_landlock_create_ruleset,
+                    0,
+                    &attr as *const LandlockRulesetAttr as usize,
+                    std::mem::size_of::<LandlockRulesetAttr>(),
+                );
+                if ruleset_fd < 0 {
+                    return Err(format!(
+                        "landlock_create_ruleset: {}",
+                        nix::errno::Errno::last()
+                    ));
+                }
+
+                // Allow-read access: read file + dir + execute + truncate (so
+                // programs can execute binaries from read paths).
+                let read_access = LANDLOCK_ACCESS_FS_READ_FILE
+                    | LANDLOCK_ACCESS_FS_READ_DIR
+                    | LANDLOCK_ACCESS_FS_EXECUTE;
+                let write_access = LANDLOCK_ACCESS_FS_WRITE_FILE
+                    | LANDLOCK_ACCESS_FS_REMOVE_DIR
+                    | LANDLOCK_ACCESS_FS_REMOVE_FILE
+                    | LANDLOCK_ACCESS_FS_MAKE_CHAR
+                    | LANDLOCK_ACCESS_FS_MAKE_DIR
+                    | LANDLOCK_ACCESS_FS_MAKE_REG
+                    | LANDLOCK_ACCESS_FS_MAKE_SOCK
+                    | LANDLOCK_ACCESS_FS_MAKE_FIFO
+                    | LANDLOCK_ACCESS_FS_MAKE_BLOCK
+                    | LANDLOCK_ACCESS_FS_MAKE_SYM
+                    | LANDLOCK_ACCESS_FS_TRUNCATE;
+
+                let mut add_rule = |path: &Path, access: u64| -> Result<(), String> {
+                    let fd = libc::open(
+                        path.as_os_str().as_ptr() as *const libc::c_char,
+                        libc::O_PATH | libc::O_CLOEXEC,
+                    );
+                    if fd < 0 {
+                        return Ok(()); // missing path: skip
+                    }
+                    let beneath = LandlockPathBeneathAttr {
+                        allowed_access: access,
+                        parent_fd: fd,
+                    };
+                    let ret = syscall4(
+                        libc::SYS_landlock_add_rule,
+                        ruleset_fd as usize,
+                        0x1, // LANDLOCK_RULE_PATH_BENEATH
+                        &beneath as *const LandlockPathBeneathAttr as usize,
+                        0,
+                    );
+                    libc::close(fd);
+                    if ret != 0 {
+                        return Err(format!(
+                            "landlock_add_rule({}): {}",
+                            path.display(),
+                            nix::errno::Errno::last()
+                        ));
+                    }
+                    Ok(())
+                };
+
+                // Allow read on system directories + explicit read paths.
+                for sysdir in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/opt", "/etc"] {
+                    let _ = add_rule(Path::new(sysdir), read_access);
+                }
+                for p in read_allowed {
+                    let _ = add_rule(Path::new(p), read_access);
+                }
+                for p in write_allowed {
+                    let _ = add_rule(Path::new(p), read_access | write_access);
+                }
+
+                // Restrict the current process.
+                let ret = syscall3(
+                    libc::SYS_landlock_restrict_self,
+                    ruleset_fd as usize,
+                    0,
+                    0,
+                );
+                libc::close(ruleset_fd as i32);
+                if ret != 0 {
+                    return Err(format!(
+                        "landlock_restrict_self: {}",
+                        nix::errno::Errno::last()
+                    ));
+                }
+            }
+            Ok(())
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let _ = (read_allowed, write_allowed);
+            Ok(())
+        }
+    }
+
+    /// Apply cgroup limits to the current process (used by the native
+    /// fallback when a cgroup controller is available).
+    pub fn apply_cgroup_for_self(
+        limits: &crate::policy::ResourceLimits,
+    ) -> Option<CgroupV2Controller> {
+        if !CgroupV2Controller::available() {
+            return None;
+        }
+        match CgroupV2Controller::create(limits) {
+            Ok(c) => {
+                let pid = nix::unistd::getpid().as_raw();
+                let _ = c.attach(pid);
+                Some(c)
+            }
+            Err(_) => None,
+        }
     }
 }
 

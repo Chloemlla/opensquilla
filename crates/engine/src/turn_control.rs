@@ -178,6 +178,151 @@ pub fn is_end_turn(stop_reason: Option<&str>) -> bool {
     )
 }
 
+/// A structured, code-carrying turn control decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnControlDecision {
+    /// The high-level control.
+    pub control: TurnControl,
+    /// A stable machine-readable code.
+    pub code: &'static str,
+    /// The stop reason that drove the decision, if any.
+    pub stop_reason: Option<String>,
+    /// The number of pending tool calls at decision time.
+    pub pending_tool_calls: usize,
+    /// The tool round at decision time.
+    pub tool_round: u32,
+}
+
+impl TurnControlDecision {
+    /// The canonical code for a [`TurnControl`].
+    pub fn code_for(control: &TurnControl) -> &'static str {
+        match control {
+            TurnControl::Continue => "continue",
+            TurnControl::Stop(reason) => match reason {
+                StopReason::EndTurn => "stop_end_turn",
+                StopReason::FinalText => "stop_final_text",
+                StopReason::MaxToolRoundsReached => "stop_max_rounds",
+                StopReason::Halted => "stop_halted",
+            },
+            TurnControl::Error(err) => match err {
+                TurnControlError::Refusal => "error_refusal",
+                TurnControlError::EmptyOutput => "error_empty_output",
+                TurnControlError::UnknownTool(_) => "error_unknown_tool",
+                TurnControlError::MalformedToolCall(_) => "error_malformed_tool_call",
+            },
+        }
+    }
+
+    /// The decision's error detail, if any.
+    pub fn error_detail(&self) -> Option<String> {
+        match &self.control {
+            TurnControl::Error(err) => match err {
+                TurnControlError::UnknownTool(tool) => Some(tool.clone()),
+                TurnControlError::MalformedToolCall(detail) => Some(detail.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// Decide the turn control with a structured, code-carrying result.
+///
+/// This is a convenience wrapper over [`decide_turn_control`] that captures
+/// the decision inputs in the result.
+pub fn decide_turn_control_structured(input: &TurnControlInput<'_>) -> TurnControlDecision {
+    let pending = pending_tool_calls(input.response_messages);
+    let control = decide_turn_control(input);
+    TurnControlDecision {
+        code: TurnControlDecision::code_for(&control),
+        stop_reason: input.stop_reason.map(|s| s.to_string()),
+        pending_tool_calls: pending.len(),
+        tool_round: input.tool_round,
+        control,
+    }
+}
+
+/// Returns true if the stop reason indicates the model wants to use tools.
+pub fn is_tool_use_stop_reason(stop_reason: Option<&str>) -> bool {
+    matches!(stop_reason, Some(reason) if reason.eq_ignore_ascii_case("tool_use"))
+}
+
+/// Returns true if the stop reason indicates the max token budget was hit.
+pub fn is_max_tokens_stop_reason(stop_reason: Option<&str>) -> bool {
+    matches!(stop_reason, Some(reason) if reason.eq_ignore_ascii_case("max_tokens"))
+}
+
+/// Build a [`TurnControlInput`] from a provider stop reason, response
+/// messages, and round budget.
+pub fn build_turn_control_input<'a>(
+    stop_reason: Option<&'a str>,
+    response_messages: &'a [Message],
+    tool_round: u32,
+    max_tool_rounds: u32,
+) -> TurnControlInput<'a> {
+    TurnControlInput {
+        stop_reason,
+        response_messages,
+        tool_round,
+        max_tool_rounds,
+    }
+}
+
+/// Count the number of tool calls in a response, distinguishing text-only
+/// surfaces.
+#[derive(Debug, Clone, Default)]
+pub struct ResponseSurface {
+    /// The number of pending tool calls.
+    pub tool_calls: usize,
+    /// The concatenated text content.
+    pub text: String,
+    /// Whether any reasoning content was produced.
+    pub has_reasoning: bool,
+    /// Whether the surface is entirely empty.
+    pub is_empty: bool,
+}
+
+impl ResponseSurface {
+    /// Analyze a response message list.
+    pub fn analyze(messages: &[Message]) -> Self {
+        let mut tool_calls = 0usize;
+        let mut text = String::new();
+        let mut has_reasoning = false;
+        for msg in messages {
+            if !matches!(msg.role, MessageRole::Assistant) {
+                continue;
+            }
+            for block in &msg.content {
+                match block {
+                    ContentBlock::Text(t) => text.push_str(t),
+                    ContentBlock::Reasoning(r) => {
+                        if !r.is_empty() {
+                            has_reasoning = true;
+                        }
+                    }
+                    ContentBlock::ToolUse(_) => tool_calls += 1,
+                    ContentBlock::ToolResult(_) => {}
+                }
+            }
+            if let Some(calls) = &msg.tool_calls {
+                tool_calls += calls.len();
+            }
+        }
+        let is_empty = tool_calls == 0 && text.trim().is_empty() && !has_reasoning;
+        Self {
+            tool_calls,
+            text,
+            has_reasoning,
+            is_empty,
+        }
+    }
+
+    /// Whether the response is a final text answer.
+    pub fn is_final_text(&self) -> bool {
+        self.tool_calls == 0 && !self.text.trim().is_empty()
+    }
+}
+
 /// Returns true if any response message contains non-empty text content.
 fn has_text_content(messages: &[Message]) -> bool {
     messages

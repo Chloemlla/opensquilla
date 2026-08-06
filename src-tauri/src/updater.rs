@@ -16,7 +16,9 @@
 //! (which release is the channel head) and the *verification* layer for any
 //! side-loaded asset the plugin does not natively cover.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -598,8 +600,8 @@ pub fn candidate_from_channel(
         base_version: manifest.base_version,
         prerelease: manifest.prerelease,
         release_url: manifest.release_url,
-        feed: entry.feed,
-        installer: entry.installer,
+        feed: entry.feed.clone(),
+        installer: entry.installer.clone(),
         archive: entry.archive.clone(),
     }))
 }
@@ -758,10 +760,18 @@ pub struct VerifiedDownloadResult {
 }
 
 /// Options for a verified download.
-#[derive(Debug, Clone)]
 pub struct VerifiedDownloadOptions {
     pub max_bytes: u64,
     pub on_progress: Option<Arc<dyn Fn(u64, Option<u64>) + Send + Sync>>,
+}
+
+impl std::fmt::Debug for VerifiedDownloadOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VerifiedDownloadOptions")
+            .field("max_bytes", &self.max_bytes)
+            .field("on_progress", &self.on_progress.is_some())
+            .finish()
+    }
 }
 
 /// Stream an HTTP response to a file, hashing as it goes, and verify the
@@ -935,6 +945,13 @@ struct SchedulerInner {
     timer_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
+/// Type-erased check callback: a pinned, boxed future returned from a
+/// callable.  Using `Arc<dyn …>` avoids the generic type recursion that
+/// occurs when `request` and `schedule` call each other with fresh closure
+/// types.
+type RunCheck =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
 impl UpdateCheckScheduler {
     /// Create a new scheduler.
     pub fn new() -> Self {
@@ -963,18 +980,14 @@ impl UpdateCheckScheduler {
     }
 
     /// Start the scheduler with an initial delay before the first check.
-    pub async fn start<F, Fut>(self: &Arc<Self>, initial_delay: Duration, run_check: F)
-    where
-        F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = ()> + Send + 'static,
-    {
+    pub async fn start(self: &Arc<Self>, initial_delay: Duration, run_check: RunCheck) {
         let mut inner = self.inner.lock().await;
         if inner.started || inner.stopped {
             return;
         }
         inner.started = true;
         drop(inner);
-        self.schedule(initial_delay, run_check).await;
+        self.schedule(initial_delay, run_check);
     }
 
     /// Stop the scheduler; no further checks will run.
@@ -991,16 +1004,13 @@ impl UpdateCheckScheduler {
     /// `can_check` gates whether a new fetch is permitted (e.g. no download or
     /// install is already in progress). `repeat_delay` is used to re-arm the
     /// recursive timer after the check completes.
-    pub async fn request<F, Fut>(
+    pub async fn request(
         self: &Arc<Self>,
         manual: bool,
         can_check: impl Fn() -> bool + Send + Sync + 'static,
         repeat_delay: Duration,
-        run_check: F,
-    ) where
-        F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = ()> + Send + 'static,
-    {
+        run_check: RunCheck,
+    ) {
         let mut inner = self.inner.lock().await;
         if inner.stopped {
             return;
@@ -1016,7 +1026,8 @@ impl UpdateCheckScheduler {
             // progress, but do not disturb a pending timer.
             if inner.started && inner.timer_handle.is_none() {
                 drop(inner);
-                self.schedule(repeat_delay, run_check).await;
+                let this = self.clone();
+                this.schedule(repeat_delay, run_check);
             }
             return;
         }
@@ -1025,7 +1036,7 @@ impl UpdateCheckScheduler {
             handle.abort();
         }
         let this = self.clone();
-        let handle = tauri::async_runtime::spawn(async move {
+        let handle = tokio::spawn(async move {
             run_check().await;
             let mut inner = this.inner.lock().await;
             inner.in_flight = None;
@@ -1034,35 +1045,36 @@ impl UpdateCheckScheduler {
             let stopped = inner.stopped;
             drop(inner);
             if started && !stopped {
-                this.schedule(repeat_delay, run_check).await;
+                this.schedule(repeat_delay, run_check);
             }
         });
         inner.in_flight = Some(handle);
     }
 
-    async fn schedule<F, Fut>(self: &Arc<Self>, delay: Duration, run_check: F)
-    where
-        F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = ()> + Send + 'static,
-    {
-        let mut inner = self.inner.lock().await;
-        if inner.stopped {
-            return;
-        }
-        if let Some(handle) = inner.timer_handle.take() {
-            handle.abort();
-        }
+    /// Set up a timer to fire after `delay` and then call [`request`].
+    ///
+    /// This is deliberately **not** `async` — returning a concrete
+    /// [`JoinHandle`] instead of an opaque future breaks the type-level
+    /// recursion cycle with [`request`].
+    fn schedule(self: &Arc<Self>, delay: Duration, run_check: RunCheck) {
         let this = self.clone();
-        let run_check = Arc::new(run_check);
-        let handle = tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(delay).await;
-            // Automatic check (manual = false); can_check is always true for a
-            // timer fire — the run_check factory decides what to do.
-            let run_check = (*run_check).clone();
-            this.request(false, || true, delay, move || run_check())
-                .await;
+        tokio::spawn(async move {
+            let mut inner = this.inner.lock().await;
+            if inner.stopped {
+                return;
+            }
+            if let Some(handle) = inner.timer_handle.take() {
+                handle.abort();
+            }
+            drop(inner);
+            let this_inner = this.clone();
+            let handle = tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+                this_inner.request(false, || true, delay, run_check).await;
+            });
+            let mut inner = this.inner.lock().await;
+            inner.timer_handle = Some(handle);
         });
-        inner.timer_handle = Some(handle);
     }
 }
 

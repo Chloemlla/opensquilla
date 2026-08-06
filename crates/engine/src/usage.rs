@@ -477,6 +477,378 @@ impl UsageEventSink for CostTrackingUsageTracker {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-session / per-agent rollups and cost aggregation
+// ---------------------------------------------------------------------------
+
+/// A usage rollup scoped to a single session.
+///
+/// Mirrors the Python `usage_accounting.SessionUsageRollup`: aggregates token
+/// usage, estimated cost, and per-model breakdown for one session.
+#[derive(Debug, Clone, Default)]
+pub struct SessionUsageRollup {
+    /// The session id.
+    pub session_id: String,
+    /// Total input tokens.
+    pub input_tokens: u64,
+    /// Total output tokens.
+    pub output_tokens: u64,
+    /// Total tokens.
+    pub total_tokens: u64,
+    /// Estimated cost in USD.
+    pub cost_usd: f64,
+    /// The number of turns recorded.
+    pub turn_count: u64,
+    /// Per-model usage.
+    pub per_model: HashMap<String, crate::agent::ModelUsage>,
+}
+
+impl SessionUsageRollup {
+    /// Create a new empty rollup for a session.
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Record a usage event into this rollup.
+    pub fn record(&mut self, event: &UsageEvent) {
+        self.input_tokens += event.input_tokens;
+        self.output_tokens += event.output_tokens;
+        self.total_tokens += event.total();
+        self.turn_count += 1;
+        let entry = self.per_model.entry(event.model.clone()).or_default();
+        entry.input_tokens += event.input_tokens;
+        entry.output_tokens += event.output_tokens;
+        entry.calls += 1;
+    }
+
+    /// Set the cost in USD.
+    pub fn with_cost(mut self, cost_usd: f64) -> Self {
+        self.cost_usd = cost_usd;
+        self
+    }
+
+    /// Convert to a core [`Usage`] snapshot.
+    pub fn to_usage(&self) -> Usage {
+        Usage::new(self.input_tokens, self.output_tokens)
+    }
+}
+
+/// A usage rollup scoped to a single agent across sessions.
+#[derive(Debug, Clone, Default)]
+pub struct AgentUsageRollup {
+    /// The agent id.
+    pub agent_id: String,
+    /// Total input tokens.
+    pub input_tokens: u64,
+    /// Total output tokens.
+    pub output_tokens: u64,
+    /// Total tokens.
+    pub total_tokens: u64,
+    /// Estimated cost in USD.
+    pub cost_usd: f64,
+    /// The number of turns recorded.
+    pub turn_count: u64,
+    /// Per-model usage.
+    pub per_model: HashMap<String, crate::agent::ModelUsage>,
+    /// Per-session rollups.
+    pub sessions: HashMap<String, SessionUsageRollup>,
+}
+
+impl AgentUsageRollup {
+    /// Create a new empty rollup for an agent.
+    pub fn new(agent_id: impl Into<String>) -> Self {
+        Self {
+            agent_id: agent_id.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Record a usage event against the agent and (optionally) a session.
+    pub fn record(&mut self, event: &UsageEvent, session_id: Option<&str>) {
+        self.input_tokens += event.input_tokens;
+        self.output_tokens += event.output_tokens;
+        self.total_tokens += event.total();
+        self.turn_count += 1;
+        let entry = self.per_model.entry(event.model.clone()).or_default();
+        entry.input_tokens += event.input_tokens;
+        entry.output_tokens += event.output_tokens;
+        entry.calls += 1;
+
+        if let Some(session_id) = session_id {
+            let session = self.sessions.entry(session_id.to_string()).or_insert_with(|| {
+                SessionUsageRollup::new(session_id)
+            });
+            session.record(event);
+        }
+    }
+
+    /// Merge another agent rollup into this one.
+    pub fn merge(&mut self, other: &AgentUsageRollup) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.total_tokens += other.total_tokens;
+        self.cost_usd += other.cost_usd;
+        self.turn_count += other.turn_count;
+        for (model, usage) in &other.per_model {
+            let entry = self.per_model.entry(model.clone()).or_default();
+            entry.input_tokens += usage.input_tokens;
+            entry.output_tokens += usage.output_tokens;
+            entry.calls += usage.calls;
+        }
+        for (session_id, rollup) in &other.sessions {
+            let session = self.sessions.entry(session_id.clone()).or_insert_with(|| {
+                SessionUsageRollup::new(session_id)
+            });
+            session.input_tokens += rollup.input_tokens;
+            session.output_tokens += rollup.output_tokens;
+            session.total_tokens += rollup.total_tokens;
+            session.cost_usd += rollup.cost_usd;
+            session.turn_count += rollup.turn_count;
+        }
+    }
+
+    /// Convert to a core [`Usage`] snapshot.
+    pub fn to_usage(&self) -> Usage {
+        Usage::new(self.input_tokens, self.output_tokens)
+    }
+}
+
+/// A thread-safe registry of session usage rollups.
+#[derive(Debug, Clone, Default)]
+pub struct SessionUsageRegistry {
+    /// The rollups keyed by session id.
+    inner: std::sync::Arc<std::sync::Mutex<HashMap<String, SessionUsageRollup>>>,
+}
+
+impl SessionUsageRegistry {
+    /// Create a new empty registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record an event against a session.
+    pub fn record(&self, session_id: &str, event: &UsageEvent) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let rollup = inner.entry(session_id.to_string()).or_insert_with(|| {
+            SessionUsageRollup::new(session_id)
+        });
+        rollup.record(event);
+    }
+
+    /// Get the rollup for a session.
+    pub fn get(&self, session_id: &str) -> Option<SessionUsageRollup> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(session_id)
+            .cloned()
+    }
+
+    /// List all tracked session ids.
+    pub fn session_ids(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /// Aggregate all sessions into a single rollup.
+    pub fn aggregate(&self) -> SessionUsageRollup {
+        let mut total = SessionUsageRollup::new("all");
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        for rollup in inner.values() {
+            total.input_tokens += rollup.input_tokens;
+            total.output_tokens += rollup.output_tokens;
+            total.total_tokens += rollup.total_tokens;
+            total.cost_usd += rollup.cost_usd;
+            total.turn_count += rollup.turn_count;
+            for (model, usage) in &rollup.per_model {
+                let entry = total.per_model.entry(model.clone()).or_default();
+                entry.input_tokens += usage.input_tokens;
+                entry.output_tokens += usage.output_tokens;
+                entry.calls += usage.calls;
+            }
+        }
+        total
+    }
+
+    /// Remove a session rollup.
+    pub fn remove(&self, session_id: &str) -> Option<SessionUsageRollup> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(session_id)
+    }
+
+    /// The number of tracked sessions.
+    pub fn len(&self) -> usize {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// True when no sessions are tracked.
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+    }
+}
+
+/// A usage scope that ties a task-local sink to an optional session id.
+///
+/// When a session id is bound, events recorded in the scope also fan into
+/// that session's rollup in the registry.
+#[derive(Debug, Clone)]
+pub struct UsageScope {
+    /// The underlying sink.
+    sink: Arc<dyn UsageEventSink>,
+    /// The session id, if any.
+    session_id: Option<String>,
+}
+
+impl UsageScope {
+    /// Create a new usage scope.
+    pub fn new(sink: Arc<dyn UsageEventSink>, session_id: Option<String>) -> Self {
+        Self { sink, session_id }
+    }
+
+    /// The underlying sink.
+    pub fn sink(&self) -> &Arc<dyn UsageEventSink> {
+        &self.sink
+    }
+
+    /// The session id, if bound.
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    /// Record an event through this scope.
+    pub fn record(&self, event: &UsageEvent) {
+        self.sink.record(event);
+    }
+}
+
+/// A usage scope that also fans events into a session registry.
+#[derive(Debug, Clone)]
+pub struct SessionScopedSink {
+    /// The downstream sink.
+    inner: Arc<dyn UsageEventSink>,
+    /// The session registry.
+    registry: SessionUsageRegistry,
+    /// The session id.
+    session_id: String,
+}
+
+impl SessionScopedSink {
+    /// Create a new session-scoped sink.
+    pub fn new(
+        inner: Arc<dyn UsageEventSink>,
+        registry: SessionUsageRegistry,
+        session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            inner,
+            registry,
+            session_id: session_id.into(),
+        }
+    }
+
+    /// The session id.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+}
+
+impl UsageEventSink for SessionScopedSink {
+    fn record(&self, event: &UsageEvent) {
+        self.inner.record(event);
+        self.registry.record(&self.session_id, event);
+    }
+
+    fn total_input_tokens(&self) -> u64 {
+        self.inner.total_input_tokens()
+    }
+
+    fn total_output_tokens(&self) -> u64 {
+        self.inner.total_output_tokens()
+    }
+
+    fn total_tokens(&self) -> u64 {
+        self.inner.total_tokens()
+    }
+}
+
+/// A cost-aggregating sink that computes USD cost using the pricing cache.
+#[derive(Debug, Clone)]
+pub struct CostAggregatingSink {
+    /// The downstream sink.
+    inner: Arc<dyn UsageEventSink>,
+    /// The pricing cache used for cost calculation.
+    pricing: Arc<crate::pricing::PricingCache>,
+    /// The accumulated cost in micro-USD (atomic).
+    cost_micro_usd: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl CostAggregatingSink {
+    /// Create a new cost-aggregating sink.
+    pub fn new(inner: Arc<dyn UsageEventSink>, pricing: Arc<crate::pricing::PricingCache>) -> Self {
+        Self {
+            inner,
+            pricing,
+            cost_micro_usd: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        }
+    }
+
+    /// The accumulated cost in USD.
+    pub fn total_cost_usd(&self) -> f64 {
+        self.cost_micro_usd
+            .load(std::sync::atomic::Ordering::SeqCst) as f64
+            / 1_000_000.0
+    }
+}
+
+impl UsageEventSink for CostAggregatingSink {
+    fn record(&self, event: &UsageEvent) {
+        let cost = self.pricing.cost_for(
+            &event.model,
+            event.input_tokens,
+            event.output_tokens,
+        );
+        self.cost_micro_usd.fetch_add(
+            (cost * 1_000_000.0) as u64,
+            std::sync::atomic::Ordering::SeqCst,
+        );
+        self.inner.record(event);
+    }
+
+    fn total_input_tokens(&self) -> u64 {
+        self.inner.total_input_tokens()
+    }
+
+    fn total_output_tokens(&self) -> u64 {
+        self.inner.total_output_tokens()
+    }
+
+    fn total_tokens(&self) -> u64 {
+        self.inner.total_tokens()
+    }
+}
+
+/// Record a usage event into the currently bound scope with model/provider
+/// tagging, mirroring `usage_accounting.record_event`.
+pub fn record_event_in_scope(event: &UsageEvent) {
+    let _ = CURRENT_USAGE_SINK.try_with(|sink| sink.record(event));
+}
+
+/// Record a provider call (input/output tokens) into the current scope with
+/// model and provider tags.
+pub fn record_provider_call(model: &str, provider: &str, input_tokens: u64, output_tokens: u64) {
+    let event = UsageEvent::new(model, provider, input_tokens, output_tokens);
+    record_event_in_scope(&event);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

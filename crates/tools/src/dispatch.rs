@@ -254,6 +254,7 @@ pub struct DispatchEngine {
     policy_chain: Arc<dyn PolicyChain>,
     injection_guard: InjectionGuard,
     sandbox: Option<Arc<dyn SandboxHandle>>,
+    rate_limiter: Option<DispatchRateLimiter>,
 }
 
 impl DispatchEngine {
@@ -264,6 +265,7 @@ impl DispatchEngine {
             policy_chain: policy_chain.into(),
             injection_guard: InjectionGuard::default(),
             sandbox: None,
+            rate_limiter: None,
         }
     }
 
@@ -277,6 +279,7 @@ impl DispatchEngine {
             policy_chain: Arc::new(chain),
             injection_guard: InjectionGuard::default(),
             sandbox: None,
+            rate_limiter: None,
         }
     }
 
@@ -289,6 +292,12 @@ impl DispatchEngine {
     /// Set the sandbox handle.
     pub fn with_sandbox(mut self, sandbox: Arc<dyn SandboxHandle>) -> Self {
         self.sandbox = Some(sandbox);
+        self
+    }
+
+    /// Set a rate limiter for per-tool call limiting.
+    pub fn with_rate_limiter(mut self, limiter: DispatchRateLimiter) -> Self {
+        self.rate_limiter = Some(limiter);
         self
     }
 
@@ -335,11 +344,30 @@ impl DispatchEngine {
             return Err(DispatchError::InjectionDetected(tool_name.clone(), e));
         }
 
+        // 3.5. Rate limit check (per-tool).
+        if let Some(ref limiter) = self.rate_limiter {
+            if let Err(retry_after_secs) = limiter.check_and_record(&tool_name) {
+                tracing::warn!(
+                    tool = %tool_name,
+                    retry_after_secs = retry_after_secs,
+                    "Tool rate limit exceeded"
+                );
+                return Err(DispatchError::Deferred {
+                    reason: format!(
+                        "Tool '{}' exceeded its rate limit; retry after {}s",
+                        tool_name, retry_after_secs
+                    ),
+                    retry_after_secs,
+                });
+            }
+        }
+
         // 4. Evaluate the policy chain.
         let policy_ctx = PolicyContext::new(&tool_name, call.clone(), &ctx.session_id)
             .with_user_id(ctx.user_id.clone().unwrap_or_default())
             .with_budget(ctx.budget_used, ctx.budget_limit)
-            .with_sandbox(ctx.sandbox_active);
+            .with_sandbox(ctx.sandbox_active)
+            .with_risk_level(tool.definition().risk_level);
 
         match self.policy_chain.evaluate(&policy_ctx).await {
             PolicyDecision::Allow => {}
@@ -398,7 +426,8 @@ impl DispatchEngine {
         match result {
             Ok(Ok(output)) => {
                 tracing::info!(tool = %tool_name, duration_ms = duration_ms, "Tool execution succeeded");
-                Ok(output)
+                // Apply result post-processing (truncation + redaction + metadata).
+                Ok(self.post_process(output, &tool_name, duration_ms))
             }
             Ok(Err(e)) => {
                 tracing::error!(tool = %tool_name, error = %e, duration_ms = duration_ms, "Tool execution failed");
@@ -417,6 +446,164 @@ impl DispatchEngine {
     /// Get the tool definitions for LLM consumption.
     pub fn tool_definitions(&self) -> Vec<serde_json::Value> {
         self.registry.definitions()
+    }
+
+    /// Post-process a tool output before returning it to the caller.
+    ///
+    /// Applies the configured post-processing pipeline:
+    /// 1. Truncate content beyond the maximum length.
+    /// 2. Detect and redact sensitive patterns (API keys, tokens) in the output.
+    /// 3. Enrich the output's structured data with dispatch metadata.
+    ///
+    /// This is the fix for the audit finding that outputs were returned raw
+    /// without any truncation or redaction safeguards.
+    pub fn post_process(
+        &self,
+        mut output: ToolOutput,
+        tool_name: &str,
+        duration_ms: u64,
+    ) -> ToolOutput {
+        // 1. Truncate long content.
+        const MAX_CONTENT_LENGTH: usize = 200_000;
+        if output.content.len() > MAX_CONTENT_LENGTH {
+            output.content.truncate(MAX_CONTENT_LENGTH);
+            output.content.push_str("\n\n...[truncated]");
+        }
+
+        // 2. Redact sensitive patterns.
+        let redacted = redact_sensitive(&output.content);
+        output.content = redacted;
+
+        // 3. Enrich structured data.
+        let mut data = output.data.clone().unwrap_or_else(|| serde_json::json!({}));
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("tool".to_string(), serde_json::json!(tool_name));
+            obj.insert("duration_ms".to_string(), serde_json::json!(duration_ms));
+        }
+        output.data = Some(data);
+
+        output
+    }
+}
+
+/// Redact sensitive-looking strings from tool output.
+///
+/// Patterns redacted:
+/// - `sk-...` (OpenAI-style API keys)
+/// - `Bearer <token>`
+/// - Long hex/base64 strings that look like secrets
+/// - `ghp_`, `gho_`, `github_pat_` (GitHub tokens)
+/// - AWS access key IDs (`AKIA...`)
+///
+/// Returns the redacted text.
+pub fn redact_sensitive(text: &str) -> String {
+    let mut redacted = text.to_string();
+
+    // OpenAI-style keys: sk- followed by 20+ alphanumeric chars.
+    let sk_re = regex::Regex::new(r"(?i)\bsk-[A-Za-z0-9_-]{20,}").unwrap();
+    redacted = sk_re.replace_all(&redacted, "sk-***REDACTED***").to_string();
+
+    // Bearer tokens.
+    let bearer_re = regex::Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*").unwrap();
+    redacted = bearer_re.replace_all(&redacted, "Bearer ***REDACTED***").to_string();
+
+    // GitHub tokens.
+    let gh_re = regex::Regex::new(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}").unwrap();
+    redacted = gh_re.replace_all(&redacted, "***REDACTED***").to_string();
+
+    // AWS access keys.
+    let aws_re = regex::Regex::new(r"\bAKIA[0-9A-Z]{16}").unwrap();
+    redacted = aws_re.replace_all(&redacted, "***REDACTED***").to_string();
+
+    // Generic long tokens: 32+ hex chars.
+    let hex_re = regex::Regex::new(r"\b[0-9a-f]{32,}\b").unwrap();
+    redacted = hex_re.replace_all(&redacted, "***REDACTED***").to_string();
+
+    // Private key blocks.
+    let key_re = regex::Regex::new(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----")
+        .unwrap();
+    redacted = key_re.replace_all(&redacted, "***PRIVATE KEY REDACTED***").to_string();
+
+    redacted
+}
+
+/// A per-tool rate limiter integrated into the dispatch engine.
+///
+/// Tracks the number of invocations of each tool within a rolling window and
+/// can defer or deny calls that exceed the limit.
+pub struct DispatchRateLimiter {
+    /// Map of tool name -> Vec of invocation timestamps (milliseconds).
+    invocations: Arc<std::sync::Mutex<HashMap<String, Vec<u128>>>>,
+    /// Maximum invocations per window.
+    max_per_window: usize,
+    /// Window size in seconds.
+    window_secs: u64,
+}
+
+impl Default for DispatchRateLimiter {
+    fn default() -> Self {
+        Self::new(60, 60)
+    }
+}
+
+impl DispatchRateLimiter {
+    /// Create a new rate limiter.
+    pub fn new(max_per_window: usize, window_secs: u64) -> Self {
+        Self {
+            invocations: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            max_per_window,
+            window_secs,
+        }
+    }
+
+    /// Record an invocation and check whether the tool is within limits.
+    ///
+    /// Returns `Ok(())` if the call is allowed, or `Err(retry_after_secs)`
+    /// if the limit is exceeded.
+    pub fn check_and_record(&self, tool_name: &str) -> Result<(), u64> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let window_start = now.saturating_sub(self.window_secs as u128 * 1000);
+
+        let mut invocations = match self.invocations.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err(self.window_secs),
+        };
+
+        let times = invocations.entry(tool_name.to_string()).or_default();
+        // Drop timestamps outside the window.
+        times.retain(|&t| t >= window_start);
+
+        if times.len() >= self.max_per_window {
+            // Compute retry-after: when the oldest window timestamp expires.
+            let oldest = times.first().copied().unwrap_or(now);
+            let retry_after = (oldest + self.window_secs as u128 * 1000)
+                .saturating_sub(now)
+                .div_ceil(1000) as u64;
+            return Err(retry_after.max(1));
+        }
+
+        times.push(now);
+        Ok(())
+    }
+
+    /// Get the current count for a tool.
+    pub fn count(&self, tool_name: &str) -> usize {
+        self.invocations
+            .lock()
+            .ok()
+            .and_then(|m| m.get(tool_name).cloned())
+            .map(|t| t.len())
+            .unwrap_or(0)
+    }
+
+    /// Reset the rate limiter.
+    pub fn reset(&self) {
+        if let Ok(mut invocations) = self.invocations.lock() {
+            invocations.clear();
+        }
     }
 }
 
@@ -606,5 +793,117 @@ mod tests {
         let result = engine.dispatch(call, &ctx).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().content, "hello");
+    }
+
+    #[test]
+    fn test_redact_sensitive_keys() {
+        let text = "My key is sk-abcdefghijklmnopqrstuvwxyz123456 and token ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+        let redacted = redact_sensitive(text);
+        assert!(!redacted.contains("sk-abcdefghijklmnopqrstuvwxyz"));
+        assert!(!redacted.contains("ghp_abcdefghijklmnopqrstuvwxyz"));
+        assert!(redacted.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_redact_bearer_token() {
+        let text = "Authorization: Bearer abc.def.ghi.jkl.mno";
+        let redacted = redact_sensitive(text);
+        assert!(redacted.contains("REDACTED"));
+        assert!(!redacted.contains("abc.def.ghi"));
+    }
+
+    #[test]
+    fn test_redact_aws_key() {
+        let text = "AWS key AKIAIOSFODNN7EXAMPLE";
+        let redacted = redact_sensitive(text);
+        assert!(!redacted.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(redacted.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_redact_private_key_block() {
+        let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----";
+        let redacted = redact_sensitive(text);
+        assert!(redacted.contains("PRIVATE KEY REDACTED"));
+        assert!(!redacted.contains("MIIEowIBAAKCAQEA"));
+    }
+
+    #[test]
+    fn test_redact_leaves_normal_text() {
+        let text = "The quick brown fox jumps over the lazy dog. 12345";
+        let redacted = redact_sensitive(text);
+        assert_eq!(redacted, text);
+    }
+
+    #[test]
+    fn test_rate_limiter_allows_within_limit() {
+        let limiter = DispatchRateLimiter::new(3, 60);
+        assert!(limiter.check_and_record("tool_a").is_ok());
+        assert!(limiter.check_and_record("tool_a").is_ok());
+        assert!(limiter.check_and_record("tool_a").is_ok());
+        assert_eq!(limiter.count("tool_a"), 3);
+    }
+
+    #[test]
+    fn test_rate_limiter_denies_over_limit() {
+        let limiter = DispatchRateLimiter::new(2, 60);
+        assert!(limiter.check_and_record("tool_b").is_ok());
+        assert!(limiter.check_and_record("tool_b").is_ok());
+        let result = limiter.check_and_record("tool_b");
+        assert!(result.is_err());
+        assert!(result.unwrap_err() >= 1);
+    }
+
+    #[test]
+    fn test_rate_limiter_reset() {
+        let limiter = DispatchRateLimiter::new(1, 60);
+        limiter.check_and_record("tool_c").unwrap();
+        limiter.reset();
+        assert!(limiter.check_and_record("tool_c").is_ok());
+    }
+
+    #[test]
+    fn test_post_process_truncates() {
+        let engine = DispatchEngine::new_with_defaults(Arc::new(ToolRegistry::new()));
+        let long_content = "x".repeat(300_000);
+        let output = ToolOutput::success(long_content);
+        let processed = engine.post_process(output, "test", 10);
+        assert!(processed.content.len() < 300_000 + 50);
+        assert!(processed.content.ends_with("truncated]"));
+    }
+
+    #[test]
+    fn test_post_process_redacts() {
+        let engine = DispatchEngine::new_with_defaults(Arc::new(ToolRegistry::new()));
+        let output = ToolOutput::success("key sk-abcdefghijklmnopqrstuvwxyz123456 here");
+        let processed = engine.post_process(output, "test", 10);
+        assert!(!processed.content.contains("sk-abcdefghijklmnopqrstuvwxyz123456"));
+        assert!(processed.content.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_post_process_enriches_data() {
+        let engine = DispatchEngine::new_with_defaults(Arc::new(ToolRegistry::new()));
+        let output = ToolOutput::success("hello");
+        let processed = engine.post_process(output, "echo", 42);
+        let data = processed.data.unwrap();
+        assert_eq!(data["tool"], "echo");
+        assert_eq!(data["duration_ms"], 42);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_rate_limited() {
+        let mut registry = ToolRegistry::new();
+        registry.register(EchoTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry))
+            .with_rate_limiter(DispatchRateLimiter::new(1, 60));
+        let ctx = DispatchContext::new("session-1");
+
+        let call1 = ToolCall::new("1", "echo", json!({"text": "hello"}));
+        assert!(engine.dispatch(call1, &ctx).await.is_ok());
+
+        let call2 = ToolCall::new("2", "echo", json!({"text": "world"}));
+        let result = engine.dispatch(call2, &ctx).await;
+        assert!(matches!(result, Err(DispatchError::Deferred { .. })));
     }
 }

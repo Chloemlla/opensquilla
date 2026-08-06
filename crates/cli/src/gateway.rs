@@ -28,6 +28,11 @@ fn pid_path() -> PathBuf {
 /// Acquires a PID file, then runs the axum server until the process receives a
 /// shutdown signal. A stale PID file from a crashed run is cleared first.
 pub async fn start_gateway() -> Result<()> {
+    start_gateway_opts(false).await
+}
+
+/// Start the gateway, optionally in the background (detached).
+pub async fn start_gateway_opts(detach: bool) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let host = config.gateway.host.clone();
     let port = config.gateway.port;
@@ -35,6 +40,23 @@ pub async fn start_gateway() -> Result<()> {
 
     if port_open(&host, port).await {
         anyhow::bail!("Gateway is already running on {addr}");
+    }
+
+    if detach {
+        // Relaunch the current executable with a detach marker.
+        let exe = std::env::current_exe().context("Failed to locate current executable")?;
+        let status = std::process::Command::new(&exe)
+            .arg("gateway")
+            .arg("start")
+            .arg("--detach=false")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .context("Failed to spawn detached gateway")?;
+        println!("Gateway launching in background (pid {})...", status.id());
+        println!("  Logs are written to the data directory.");
+        return Ok(());
     }
 
     // Clear any stale PID file left by a crashed process.
@@ -65,6 +87,97 @@ pub async fn start_gateway() -> Result<()> {
 
     let _ = std::fs::remove_file(&path);
     result
+}
+
+/// Show recent gateway logs.
+pub async fn show_logs(lines: usize, follow: bool) -> Result<()> {
+    let log_path = util::data_dir().join("gateway.log");
+    if !log_path.exists() {
+        println!("No gateway log file found at {}", log_path.display());
+        return Ok(());
+    }
+
+    let contents = std::fs::read_to_string(&log_path)
+        .with_context(|| format!("Failed to read {}", log_path.display()))?;
+    let all_lines: Vec<&str> = contents.lines().collect();
+    let start = all_lines.len().saturating_sub(lines);
+    for line in &all_lines[start..] {
+        println!("{line}");
+    }
+
+    if follow {
+        println!();
+        println!("Following log (Ctrl+C to stop)...");
+        // Simple follow: re-read every second for new content.
+        let mut last_line_count = all_lines.len();
+        loop {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            if let Ok(contents) = std::fs::read_to_string(&log_path) {
+                let new_lines: Vec<&str> = contents.lines().collect();
+                if new_lines.len() > last_line_count {
+                    for line in &new_lines[last_line_count..] {
+                        println!("{line}");
+                    }
+                }
+                last_line_count = new_lines.len();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Show gateway metrics.
+pub async fn show_metrics() -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let host = config.gateway.host.clone();
+    let port = config.gateway.port;
+    let addr = format!("{host}:{port}");
+
+    if !port_open(&host, port).await {
+        anyhow::bail!("Gateway is not running on {addr}");
+    }
+
+    // Query the metrics endpoint.
+    let client = crate::rpc::RpcClient::from_config(&config);
+    match client.gateway_metrics().await {
+        Ok(metrics) => {
+            println!("Gateway Metrics");
+            println!("{:-<60}", "");
+            if let Some(obj) = metrics.as_object() {
+                for (k, v) in obj {
+                    println!("  {:<24} {}", k, v);
+                }
+            } else {
+                println!("  {metrics}");
+            }
+        }
+        Err(_) => {
+            // Fall back to local info.
+            println!("Gateway is running on {addr}");
+            if let Some(pid) = read_pid(&pid_path()) {
+                println!("PID: {pid}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Show gateway configuration info.
+pub async fn show_info() -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let g = &config.gateway;
+
+    println!("Gateway Configuration");
+    println!("{:-<60}", "");
+    crate::table::KeyValue::new()
+        .entry("Host", g.host.clone())
+        .entry("Port", g.port.to_string())
+        .entry("Max connections", g.max_connections.to_string())
+        .entry("Request timeout (secs)", g.request_timeout_secs.to_string())
+        .entry("CORS origins", g.cors_origins.join(", "))
+        .print();
+    println!("{:-<60}", "");
+    Ok(())
 }
 
 /// Stop a running gateway by terminating the recorded process.

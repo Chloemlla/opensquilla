@@ -22,6 +22,7 @@ pub mod compaction;
 pub mod finalizer;
 pub mod harness;
 pub mod input;
+pub mod metrics;
 pub mod provider;
 pub mod stream_consumer;
 
@@ -250,9 +251,16 @@ pub use attachment::{
 };
 pub use compaction::CompactionOutcome;
 pub use finalizer::{CostRollup, FinalizeReport, FinalizerStage};
-pub use harness::{HarnessConfig, HarnessStage, StageMetrics};
+pub use harness::{
+    HarnessConfig, HarnessStage, StageMetrics, TurnErrorAggregator, TurnErrorBoundary,
+    TurnErrorKind,
+};
 pub use input::{InputConfig, InputMode, InputReport, InputStage};
-pub use provider::{ProviderCallReport, ProviderRetryPolicy, ProviderStage, RateLimiter};
+pub use metrics::{StageMetric, StageMetricsCollector, StageRollup, StageTimer};
+pub use provider::{
+    FailoverOrder, ProviderCallReport, ProviderFailoverPolicy, ProviderOutcomeTracker,
+    ProviderRetryPolicy, ProviderStage, RateLimiter,
+};
 pub use stream_consumer::{
     BufferedToolCall, StreamConfig, StreamConsumerStage, StreamConsumerState,
 };

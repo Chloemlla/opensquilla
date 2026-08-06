@@ -77,6 +77,8 @@ pub struct PolicyContext {
     pub budget_limit: u64,
     /// Whether the sandbox is active.
     pub sandbox_active: bool,
+    /// The tool's declared risk level (0-3, matching `ToolDefinition::risk_level`).
+    pub risk_level: u8,
 }
 
 impl PolicyContext {
@@ -94,6 +96,7 @@ impl PolicyContext {
             budget_used: 0,
             budget_limit: u64::MAX,
             sandbox_active: false,
+            risk_level: 2,
         }
     }
 
@@ -113,6 +116,12 @@ impl PolicyContext {
     /// Set sandbox state.
     pub fn with_sandbox(mut self, active: bool) -> Self {
         self.sandbox_active = active;
+        self
+    }
+
+    /// Set the tool's risk level.
+    pub fn with_risk_level(mut self, level: u8) -> Self {
+        self.risk_level = level;
         self
     }
 }
@@ -492,6 +501,418 @@ impl PolicyChain for PolicyChainSet {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Risk classification
+// ---------------------------------------------------------------------------
+
+/// The risk classification of a tool.
+///
+/// This determines whether a tool call needs user confirmation, an admin
+/// override, or can run automatically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum RiskLevel {
+    /// Safe tools that can always run without confirmation.
+    Safe,
+    /// Tools that modify state and should be confirmed before running.
+    Confirm,
+    /// Tools that require an admin override (cannot be confirmed by an
+    /// ordinary user).
+    AdminOnly,
+}
+
+impl RiskLevel {
+    /// Convert a numeric risk level (0-3, matching `ToolDefinition::risk_level`)
+    /// to a `RiskLevel` classification.
+    pub fn from_risk_level(level: u8) -> Self {
+        match level {
+            0 | 1 => RiskLevel::Safe,
+            2 => RiskLevel::Confirm,
+            _ => RiskLevel::AdminOnly,
+        }
+    }
+
+    /// Whether this level requires user confirmation.
+    pub fn requires_confirmation(&self) -> bool {
+        matches!(self, RiskLevel::Confirm)
+    }
+
+    /// Whether this level requires admin privileges.
+    pub fn requires_admin(&self) -> bool {
+        matches!(self, RiskLevel::AdminOnly)
+    }
+}
+
+impl std::fmt::Display for RiskLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RiskLevel::Safe => write!(f, "SAFE"),
+            RiskLevel::Confirm => write!(f, "CONFIRM"),
+            RiskLevel::AdminOnly => write!(f, "ADMIN_ONLY"),
+        }
+    }
+}
+
+/// A policy that classifies tools by risk and requires confirmation for
+/// risky operations.
+///
+/// The risk classification comes from the tool definition's `risk_level`
+/// (0-3), unless a per-tool override is registered. A tool classified as
+/// `Confirm` requires user confirmation before execution, unless the caller
+/// is an admin or the tool is on the session allowlist. A tool classified as
+/// `AdminOnly` always requires an admin override.
+pub struct RiskPolicy {
+    name: String,
+    /// Per-tool risk overrides: tool_name -> RiskLevel.
+    overrides: HashMap<String, RiskLevel>,
+    /// Whether the current user is an admin (per-session).
+    admin_sessions: std::sync::Mutex<HashMap<String, bool>>,
+    /// Whether to auto-confirm tools whose definition marks them as
+    /// `requires_confirmation`.
+    honor_definition_confirmation: bool,
+}
+
+impl RiskPolicy {
+    /// Create a new risk policy.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            overrides: HashMap::new(),
+            admin_sessions: std::sync::Mutex::new(HashMap::new()),
+            honor_definition_confirmation: true,
+        }
+    }
+
+    /// Override the risk classification of a tool.
+    pub fn with_override(mut self, tool_name: impl Into<String>, level: RiskLevel) -> Self {
+        self.overrides.insert(tool_name.into(), level);
+        self
+    }
+
+    /// Mark a session as an admin session (allows Confirm tools without
+    /// confirmation, and AdminOnly tools).
+    pub fn with_admin_session(mut self, session_id: impl Into<String>) -> Self {
+        if let Ok(mut sessions) = self.admin_sessions.lock() {
+            sessions.insert(session_id.into(), true);
+        }
+        self
+    }
+
+    /// Disable honoring the tool definition's `requires_confirmation` flag.
+    pub fn without_definition_confirmation(mut self) -> Self {
+        self.honor_definition_confirmation = false;
+        self
+    }
+
+    /// Classify a tool by name.
+    fn classify(&self, ctx: &PolicyContext) -> RiskLevel {
+        if let Some(level) = self.overrides.get(&ctx.tool_name) {
+            return *level;
+        }
+        // Fall back to the tool definition's risk level, propagated through
+        // the policy context.
+        RiskLevel::from_risk_level(ctx.risk_level)
+    }
+
+    /// Check if the session is an admin session.
+    fn is_admin(&self, session_id: &str) -> bool {
+        self.admin_sessions
+            .lock()
+            .ok()
+            .and_then(|s| s.get(session_id).copied())
+            .unwrap_or(false)
+    }
+}
+
+#[async_trait]
+impl PolicyChain for RiskPolicy {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
+        let risk = self.classify(ctx);
+        let is_admin = self.is_admin(&ctx.session_id);
+
+        match risk {
+            RiskLevel::Safe => PolicyDecision::Allow,
+            RiskLevel::Confirm => {
+                // An admin session can run Confirm tools directly.
+                if is_admin {
+                    PolicyDecision::Allow
+                } else {
+                    PolicyDecision::RequireConfirmation {
+                        reason: format!(
+                            "Tool '{}' is classified as {} and requires user confirmation",
+                            ctx.tool_name, risk
+                        ),
+                    }
+                }
+            }
+            RiskLevel::AdminOnly => {
+                if is_admin {
+                    PolicyDecision::Allow
+                } else {
+                    PolicyDecision::Deny {
+                        reason: format!(
+                            "Tool '{}' is classified as {} and requires an admin override",
+                            ctx.tool_name, risk
+                        ),
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A policy that enforces per-tool rules such as argument constraints and
+/// call quotas.
+///
+/// Each tool can have:
+/// - A maximum call count per session.
+/// - Required argument values (e.g., `working_dir` must be within a base).
+/// - Argument value denylists.
+pub struct ToolPolicy {
+    name: String,
+    /// Per-tool rules.
+    rules: HashMap<String, ToolRule>,
+    /// Per-session call counts.
+    call_counts: std::sync::Mutex<HashMap<(String, String), usize>>,
+}
+
+/// Rules for a single tool.
+#[derive(Debug, Clone)]
+pub struct ToolRule {
+    /// Maximum calls per session for this tool.
+    pub max_calls_per_session: Option<usize>,
+    /// Argument names whose values are denied (substring match).
+    pub denied_arg_values: Vec<String>,
+    /// Required argument names that must be present.
+    pub required_args: Vec<String>,
+}
+
+impl Default for ToolRule {
+    fn default() -> Self {
+        Self {
+            max_calls_per_session: None,
+            denied_arg_values: Vec::new(),
+            required_args: Vec::new(),
+        }
+    }
+}
+
+impl ToolRule {
+    /// Create a new empty tool rule.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Limit the number of calls per session.
+    pub fn with_max_calls(mut self, max: usize) -> Self {
+        self.max_calls_per_session = Some(max);
+        self
+    }
+
+    /// Add a denied argument value pattern.
+    pub fn deny_arg_value(mut self, pattern: impl Into<String>) -> Self {
+        self.denied_arg_values.push(pattern.into());
+        self
+    }
+
+    /// Require an argument.
+    pub fn require_arg(mut self, name: impl Into<String>) -> Self {
+        self.required_args.push(name.into());
+        self
+    }
+}
+
+impl ToolPolicy {
+    /// Create a new tool policy.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            rules: HashMap::new(),
+            call_counts: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Register a rule for a tool.
+    pub fn with_rule(mut self, tool_name: impl Into<String>, rule: ToolRule) -> Self {
+        self.rules.insert(tool_name.into(), rule);
+        self
+    }
+
+    /// Check the argument constraints for a tool.
+    fn check_args(&self, ctx: &PolicyContext) -> Result<(), String> {
+        let rule = match self.rules.get(&ctx.tool_name) {
+            Some(rule) => rule,
+            None => return Ok(()),
+        };
+
+        // Required arguments.
+        for arg in &rule.required_args {
+            if !ctx.call.input.get(arg).is_some_and(|v| !v.is_null()) {
+                return Err(format!(
+                    "Tool '{}' requires argument '{}'",
+                    ctx.tool_name, arg
+                ));
+            }
+        }
+
+        // Denied argument values.
+        if let Some(obj) = ctx.call.input.as_object() {
+            for (key, value) in obj {
+                let value_str = match value {
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => value.to_string(),
+                };
+                for pattern in &rule.denied_arg_values {
+                    if value_str.contains(pattern) {
+                        return Err(format!(
+                            "Tool '{}' argument '{}' contains denied value pattern '{}'",
+                            ctx.tool_name, key, pattern
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl PolicyChain for ToolPolicy {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
+        // Check call counts.
+        if let Some(rule) = self.rules.get(&ctx.tool_name) {
+            if let Some(max_calls) = rule.max_calls_per_session {
+                let key = (ctx.tool_name.clone(), ctx.session_id.clone());
+                let mut counts = match self.call_counts.lock() {
+                    Ok(c) => c,
+                    Err(_) => {
+                        return PolicyDecision::Deny {
+                            reason: "Tool policy lock poisoned".to_string(),
+                        }
+                    }
+                };
+                let count = counts.entry(key).or_insert(0);
+                if *count >= max_calls {
+                    return PolicyDecision::Deny {
+                        reason: format!(
+                            "Tool '{}' exceeded its per-session call limit of {}",
+                            ctx.tool_name, max_calls
+                        ),
+                    };
+                }
+                *count += 1;
+            }
+        }
+
+        // Check argument constraints.
+        if let Err(reason) = self.check_args(ctx) {
+            return PolicyDecision::Deny { reason };
+        }
+
+        PolicyDecision::Allow
+    }
+}
+
+/// A policy that implements the confirmation flow for the dispatch engine.
+///
+/// When a tool requires confirmation, this policy tracks whether the user has
+/// already confirmed the specific tool call. Confirmed calls are allowed;
+/// unconfirmed calls return `RequireConfirmation`.
+pub struct ConfirmationPolicy {
+    name: String,
+    /// Set of confirmed call signatures: (session_id, tool_name, args_hash).
+    confirmed: std::sync::Mutex<HashMap<String, Vec<String>>>,
+    /// Tools that never require confirmation.
+    auto_allow: Vec<String>,
+}
+
+impl ConfirmationPolicy {
+    /// Create a new confirmation policy.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            confirmed: std::sync::Mutex::new(HashMap::new()),
+            auto_allow: Vec::new(),
+        }
+    }
+
+    /// Add a tool that never requires confirmation.
+    pub fn auto_allow(mut self, tool_name: impl Into<String>) -> Self {
+        self.auto_allow.push(tool_name.into());
+        self
+    }
+
+    /// Mark a specific tool call as confirmed.
+    ///
+    /// The signature is `(session_id, tool_name, args_hash)`.
+    pub fn confirm(&self, session_id: &str, tool_name: &str, args_hash: &str) {
+        if let Ok(mut confirmed) = self.confirmed.lock() {
+            confirmed
+                .entry(session_id.to_string())
+                .or_default()
+                .push(format!("{}:{}", tool_name, args_hash));
+        }
+    }
+
+    /// Check whether a specific tool call has been confirmed.
+    pub fn is_confirmed(&self, session_id: &str, tool_name: &str, args_hash: &str) -> bool {
+        self.confirmed
+            .lock()
+            .ok()
+            .and_then(|c| c.get(session_id).cloned())
+            .map(|list| {
+                list.iter()
+                    .any(|sig| sig == &format!("{}:{}", tool_name, args_hash))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Compute a simple hash of the arguments for confirmation matching.
+    pub fn hash_args(args: &serde_json::Value) -> String {
+        use sha2::{Digest, Sha256};
+        let serialized = serde_json::to_string(args).unwrap_or_default();
+        let mut hasher = Sha256::new();
+        hasher.update(serialized.as_bytes());
+        let digest = hasher.finalize();
+        digest.iter().take(8).map(|b| format!("{:02x}", b)).collect()
+    }
+}
+
+#[async_trait]
+impl PolicyChain for ConfirmationPolicy {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
+        // Auto-allowed tools never need confirmation.
+        if self.auto_allow.iter().any(|t| t == &ctx.tool_name) {
+            return PolicyDecision::Allow;
+        }
+
+        let args_hash = Self::hash_args(&ctx.call.input);
+        if self.is_confirmed(&ctx.session_id, &ctx.tool_name, &args_hash) {
+            return PolicyDecision::Allow;
+        }
+
+        PolicyDecision::RequireConfirmation {
+            reason: format!(
+                "Tool '{}' requires confirmation before execution",
+                ctx.tool_name
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,5 +1032,137 @@ mod tests {
         let call = ToolCall::new("2", "small", json!({}));
         let ctx = PolicyContext::new("small", call, session);
         assert_eq!(policy.evaluate(&ctx).await, PolicyDecision::Allow);
+    }
+
+    #[test]
+    fn test_risk_level_classification() {
+        assert_eq!(RiskLevel::from_risk_level(0), RiskLevel::Safe);
+        assert_eq!(RiskLevel::from_risk_level(1), RiskLevel::Safe);
+        assert_eq!(RiskLevel::from_risk_level(2), RiskLevel::Confirm);
+        assert_eq!(RiskLevel::from_risk_level(3), RiskLevel::AdminOnly);
+    }
+
+    #[test]
+    fn test_risk_level_properties() {
+        assert!(!RiskLevel::Safe.requires_confirmation());
+        assert!(RiskLevel::Confirm.requires_confirmation());
+        assert!(!RiskLevel::AdminOnly.requires_confirmation());
+        assert!(RiskLevel::AdminOnly.requires_admin());
+        assert_eq!(RiskLevel::Confirm.to_string(), "CONFIRM");
+        assert_eq!(RiskLevel::AdminOnly.to_string(), "ADMIN_ONLY");
+        assert_eq!(RiskLevel::Safe.to_string(), "SAFE");
+    }
+
+    #[tokio::test]
+    async fn test_risk_policy_confirm_requires_confirmation() {
+        let policy = RiskPolicy::new("risk").with_override("git_push", RiskLevel::Confirm);
+        let call = ToolCall::new("1", "git_push", json!({}));
+        let ctx = PolicyContext::new("git_push", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert!(matches!(decision, PolicyDecision::RequireConfirmation { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_risk_policy_admin_session_allows_confirm() {
+        let policy = RiskPolicy::new("risk")
+            .with_override("git_push", RiskLevel::Confirm)
+            .with_admin_session("admin-session");
+        let call = ToolCall::new("1", "git_push", json!({}));
+        let ctx = PolicyContext::new("git_push", call, "admin-session");
+        let decision = policy.evaluate(&ctx).await;
+        assert_eq!(decision, PolicyDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_risk_policy_admin_only_denied_for_user() {
+        let policy = RiskPolicy::new("risk").with_override("shell_exec", RiskLevel::AdminOnly);
+        let call = ToolCall::new("1", "shell_exec", json!({}));
+        let ctx = PolicyContext::new("shell_exec", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert!(matches!(decision, PolicyDecision::Deny { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_risk_policy_admin_only_allowed_for_admin() {
+        let policy = RiskPolicy::new("risk")
+            .with_override("shell_exec", RiskLevel::AdminOnly)
+            .with_admin_session("admin-session");
+        let call = ToolCall::new("1", "shell_exec", json!({}));
+        let ctx = PolicyContext::new("shell_exec", call, "admin-session");
+        let decision = policy.evaluate(&ctx).await;
+        assert_eq!(decision, PolicyDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_tool_policy_max_calls() {
+        let policy = ToolPolicy::new("toolpolicy")
+            .with_rule("limited", ToolRule::new().with_max_calls(2));
+        let call = ToolCall::new("1", "limited", json!({}));
+        let ctx = PolicyContext::new("limited", call, "session-1");
+
+        assert_eq!(policy.evaluate(&ctx).await, PolicyDecision::Allow);
+        assert_eq!(policy.evaluate(&ctx).await, PolicyDecision::Allow);
+        let decision = policy.evaluate(&ctx).await;
+        assert!(matches!(decision, PolicyDecision::Deny { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_tool_policy_required_args() {
+        let policy = ToolPolicy::new("toolpolicy")
+            .with_rule("needs_args", ToolRule::new().require_arg("path"));
+        let call = ToolCall::new("1", "needs_args", json!({}));
+        let ctx = PolicyContext::new("needs_args", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert!(matches!(decision, PolicyDecision::Deny { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_tool_policy_denied_arg_values() {
+        let policy = ToolPolicy::new("toolpolicy")
+            .with_rule("danger", ToolRule::new().deny_arg_value("/etc/passwd"));
+        let call = ToolCall::new("1", "danger", json!({"path": "/etc/passwd"}));
+        let ctx = PolicyContext::new("danger", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert!(matches!(decision, PolicyDecision::Deny { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_confirmation_policy_requires_confirmation() {
+        let policy = ConfirmationPolicy::new("confirm");
+        let call = ToolCall::new("1", "some_tool", json!({"a": 1}));
+        let ctx = PolicyContext::new("some_tool", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert!(matches!(decision, PolicyDecision::RequireConfirmation { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_confirmation_policy_confirmed_call_allowed() {
+        let policy = ConfirmationPolicy::new("confirm");
+        let args = json!({"a": 1});
+        let hash = ConfirmationPolicy::hash_args(&args);
+        policy.confirm("session-1", "some_tool", &hash);
+
+        let call = ToolCall::new("1", "some_tool", args);
+        let ctx = PolicyContext::new("some_tool", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert_eq!(decision, PolicyDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_confirmation_policy_auto_allow() {
+        let policy = ConfirmationPolicy::new("confirm").auto_allow("safe_tool");
+        let call = ToolCall::new("1", "safe_tool", json!({}));
+        let ctx = PolicyContext::new("safe_tool", call, "session-1");
+        let decision = policy.evaluate(&ctx).await;
+        assert_eq!(decision, PolicyDecision::Allow);
+    }
+
+    #[test]
+    fn test_confirmation_hash_is_stable() {
+        let h1 = ConfirmationPolicy::hash_args(&json!({"a": 1, "b": "x"}));
+        let h2 = ConfirmationPolicy::hash_args(&json!({"a": 1, "b": "x"}));
+        let h3 = ConfirmationPolicy::hash_args(&json!({"a": 1, "b": "y"}));
+        assert_eq!(h1, h2);
+        assert_ne!(h1, h3);
     }
 }

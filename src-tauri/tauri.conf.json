@@ -33,7 +33,6 @@
       "devCsp": null,
       "freezePrototype": false,
       "dangerousDisableAssetCspModification": false,
-      "dangerousUseHttpScheme": true,
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -78,11 +77,7 @@
       "minimumSystemVersion": "10.15",
       "exceptionDomain": "",
       "signingIdentity": null,
-      "entitlements": null,
-      "signingProperties": {
-        "hardenedRuntime": true,
-        "gatekeeperAssess": false
-      }
+      "entitlements": null
     },
     "windows": {
       "webviewInstallMode": {

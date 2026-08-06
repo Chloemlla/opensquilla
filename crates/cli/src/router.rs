@@ -18,11 +18,11 @@ use serde::Serialize;
 use std::time::Instant;
 use tracing::info;
 
-use crate::table::{self, Alignment, Color, Column, KeyValue, Style, Table};
+use crate::table::{self, Alignment, Color, Column, KeyValue, Style, Stylize, Table};
 use crate::util;
 
 /// Router subcommands.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, clap::Subcommand)]
 pub enum RouterAction {
     /// Run calibration to score model tiers.
     Calibrate {
@@ -39,6 +39,17 @@ pub enum RouterAction {
     Policy,
     /// Reset calibration to defaults.
     Reset,
+    /// Simulate a routing decision for a task description.
+    Test {
+        /// A description of the task to route.
+        task: String,
+        /// Force a specific tier.
+        tier: Option<String>,
+    },
+    /// Show which model would be selected for a task.
+    Select {
+        task: String,
+    },
 }
 
 /// A model tier definition for routing.
@@ -73,7 +84,192 @@ pub async fn run_router(action: RouterAction) -> Result<()> {
         RouterAction::Tiers => list_tiers().await,
         RouterAction::Policy => show_policy().await,
         RouterAction::Reset => reset_calibration().await,
+        RouterAction::Test { task, tier } => simulate_decision(&task, tier).await,
+        RouterAction::Select { task } => select_model(&task).await,
     }
+}
+
+/// Simulate a routing decision for a task description.
+pub async fn simulate_decision(task: &str, tier: Option<String>) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let registry = util::build_provider_registry(&config)?;
+    let tiers = build_tiers(&config, &registry);
+
+    println!("Routing Simulation");
+    println!();
+    KeyValue::new()
+        .entry("Task", task.to_string())
+        .entry(
+            "Routing enabled",
+            if is_routing_enabled(&config) { "yes" } else { "no (static selection)" }.to_string(),
+        )
+        .entry(
+            "Forced tier",
+            tier.clone().unwrap_or_else(|| "(auto)".to_string()),
+        )
+        .print();
+    println!();
+
+    // Score the task.
+    let (complexity, task_type) = classify_task(task);
+    let calibration = load_calibration(&config)?;
+
+    println!("Task classification:");
+    KeyValue::new()
+        .entry("Complexity", format!("{complexity:.2}/1.00"))
+        .entry("Type", task_type.to_string())
+        .print();
+    println!();
+
+    // Pick the tier.
+    let selected_tier = match &tier {
+        Some(name) => tiers.iter().find(|t| &t.name == name).cloned(),
+        None => choose_tier(&tiers, complexity),
+    };
+
+    match selected_tier {
+        Some(t) => {
+            println!("{} Selected tier: {}", "→".green().bold(), t.name);
+            println!("  Models: {}", t.models.join(", "));
+            println!();
+
+            // Show per-model decision within the tier.
+            println!("Model selection within tier:");
+            let mut table = Table::from_headers(&["Model", "Latency", "Cost/1M", "Calibrated"])
+                .border(table::TableBorder::Header);
+            for model in &t.models {
+                let cal = calibration.iter().find(|c| &c.model == model);
+                let latency = cal.map(|c| format!("{}ms", c.latency_ms)).unwrap_or_else(|| "—".into());
+                let cost = cal.map(|c| format!("${:.4}", c.cost_usd)).unwrap_or_else(|| "—".into());
+                let calibrated = if cal.is_some() { "yes" } else { "no" };
+                table = table.row_owned(vec![
+                    model.clone(),
+                    latency,
+                    cost,
+                    calibrated.to_string(),
+                ]);
+            }
+            table.print();
+
+            // Recommendation.
+            let recommended = t.models.first().cloned().unwrap_or_default();
+            println!();
+            println!("{} Recommended: {recommended}", table::ok());
+            Ok(())
+        }
+        None => {
+            println!("{} No routing tier available for this task.", table::warn());
+            println!("Run 'osq router calibrate' to build tier data.");
+            Ok(())
+        }
+    }
+}
+
+/// Show which model would be selected for a task.
+pub async fn select_model(task: &str) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let registry = util::build_provider_registry(&config)?;
+    let tiers = build_tiers(&config, &registry);
+    let (complexity, task_type) = classify_task(task);
+
+    let selected = choose_tier(&tiers, complexity);
+    match selected {
+        Some(t) => {
+            let model = t
+                .models
+                .first()
+                .cloned()
+                .unwrap_or_else(|| util::default_model(&config));
+            println!("Task:        {task}");
+            println!("Type:        {task_type}");
+            println!("Complexity:  {complexity:.2}/1.00");
+            println!("Tier:        {}", t.name);
+            println!("Model:       {model}");
+            Ok(())
+        }
+        None => {
+            println!("Task:        {task}");
+            println!("Model:       {}", util::default_model(&config));
+            println!("(routing disabled — using default model)");
+            Ok(())
+        }
+    }
+}
+
+/// Classify a task by complexity and type on a 0..1 scale.
+fn classify_task(task: &str) -> (f64, &'static str) {
+    let lower = task.to_lowercase();
+    let mut score = 0.0f64;
+
+    let complexity_keywords = [
+        "complex",
+        "difficult",
+        "analy",
+        "research",
+        "multi",
+        "architect",
+        "design",
+        "debug",
+        "optimiz",
+        "comprehensive",
+        "thorough",
+        "deep",
+        "reasoning",
+        "math",
+        "algorithm",
+    ];
+    for kw in &complexity_keywords {
+        if lower.contains(kw) {
+            score += 0.15;
+        }
+    }
+
+    let simple_keywords = [
+        "hello",
+        "hi",
+        "thanks",
+        "yes",
+        "no",
+        "simple",
+        "quick",
+        "short",
+        "summarize in one",
+        "what is 2",
+    ];
+    for kw in &simple_keywords {
+        if lower.contains(kw) {
+            score -= 0.2;
+        }
+    }
+
+    let task_type = if lower.contains("code") || lower.contains("program") || lower.contains("debug") {
+        "code"
+    } else if lower.contains("write") || lower.contains("draft") || lower.contains("email") {
+        "writing"
+    } else if lower.contains("summar") || lower.contains("extract") {
+        "summarization"
+    } else if lower.contains("math") || lower.contains("equation") {
+        "math"
+    } else {
+        "general"
+    };
+
+    (score.clamp(0.0, 1.0), task_type)
+}
+
+/// Choose the best tier for a complexity score.
+fn choose_tier(tiers: &[Tier], complexity: f64) -> Option<Tier> {
+    if tiers.is_empty() {
+        return None;
+    }
+    if complexity >= 0.6 {
+        tiers.iter().find(|t| t.name == "powerful").cloned()
+    } else if complexity >= 0.3 {
+        tiers.iter().find(|t| t.name == "balanced").cloned()
+    } else {
+        tiers.iter().find(|t| t.name == "fast").cloned()
+    }
+    .or_else(|| tiers.first().cloned())
 }
 
 /// Run calibration probes against configured models.
@@ -587,18 +783,12 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).style_str(*self))
+        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
     }
 }
 
 impl BoldStr for String {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).style_str(self))
-    }
-}
-
-impl Style {
-    fn style_str(self, s: &str) -> table::StyledString {
-        table::StyledString::new(s, self)
+        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(self))
     }
 }

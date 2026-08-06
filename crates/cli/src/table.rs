@@ -141,6 +141,11 @@ impl Style {
         self
     }
 
+    /// Wrap a string in this style, producing a `StyledString`.
+    pub fn styled(self, text: impl Into<String>) -> StyledString {
+        StyledString::new(text, self)
+    }
+
     /// Render the ANSI escape sequence that opens this style.
     fn open(&self) -> String {
         if !use_color() {
