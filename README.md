@@ -73,7 +73,7 @@ osq-tui
 | Requirement | Version |
 |-------------|---------|
 | Rust | 1.85+ (see `rust-toolchain.toml`) |
-| Node.js | 22.12+ (for WebUI build) |
+| Node.js 22.12+ | (for WebUI build) |
 | npm | 10+ |
 
 **Linux** also requires system libraries for Tauri's WebView:
@@ -81,6 +81,13 @@ osq-tui
 ```sh
 sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
   libayatana-appindicator3-dev librsvg2-dev patchelf
+```
+
+Node.js 22.12+ via NodeSource (Debian/Ubuntu):
+
+```sh
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
 ```
 
 ### Build
