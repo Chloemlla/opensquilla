@@ -19,6 +19,7 @@
       :copy-message="copyMessage"
       :download-attachment="downloadAttachment"
       :show-turn-outcome="isTurnTip(index)"
+      :is-streaming="isStreaming"
       @edit="$emit('editMessage', $event)"
       @toggle-share="$emit('toggleShareMessage', $event)"
     />
@@ -59,7 +60,7 @@
       @toggle-tool-group="$emit('toggleToolGroup', $event)"
       @toggle-tool-item="$emit('toggleToolItem', $event)"
       @show-tool-result="(content, title, context) => $emit('showToolResult', content, title, context)"
-      @resolve-interrupt="(id, decision, note) => $emit('resolveInterrupt', id, decision, note)"
+      @resolve-interrupt="(id, decision) => $emit('resolveInterrupt', id, decision)"
       @extend-interrupt="id => $emit('extendInterrupt', id)"
       @clarify-submit="(fields, request) => $emit('clarifySubmit', fields, request)"
       @clarify-dismiss="$emit('clarifyDismiss')"
@@ -118,6 +119,7 @@ const props = defineProps<{
   forkBusy?: boolean
   planActionPending?: PlanCardAction | null
   planActionsDisabled?: boolean
+  isStreaming?: boolean
 }>()
 
 defineEmits<{
@@ -130,7 +132,7 @@ defineEmits<{
   toggleToolItem: [renderKey: string]
   showToolResult: [content: string, title: string, context?: ToolResultContext]
   forkConversation: []
-  resolveInterrupt: [id: string, decision: 'allow-once' | 'allow-always' | 'deny', note?: string]
+  resolveInterrupt: [id: string, decision: 'allow-once' | 'allow-always' | 'deny']
   extendInterrupt: [id: string]
   clarifySubmit: [fields: Record<string, string>, request?: NonNullable<Extract<import('@/types/parts').ChatPart, { type: 'interrupt' }>['clarify']>]
   clarifyDismiss: []
