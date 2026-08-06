@@ -83,7 +83,10 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       },
-      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign-windows.ps1 \"%1\"",
+      "signCommand": {
+        "cmd": "powershell",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "../scripts/sign-windows.ps1", "%1"]
+      },
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "installMode": "perMachine",

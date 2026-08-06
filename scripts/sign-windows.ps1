@@ -37,8 +37,15 @@ if (-not $BinaryPath) {
   Write-Host 'sign-windows: no binary path supplied; nothing to sign.'
   exit 0
 }
-if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
-  Write-Host "sign-windows: binary not found at '$BinaryPath'; skipping."
+try {
+  if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
+    Write-Host "sign-windows: binary not found at '$BinaryPath'; skipping."
+    exit 0
+  }
+} catch {
+  # The path contains characters that are illegal in a path (e.g. an
+  # unexpanded `%1` placeholder carrying literal quotes). Nothing to sign.
+  Write-Host "sign-windows: invalid path '$BinaryPath'; skipping."
   exit 0
 }
 
