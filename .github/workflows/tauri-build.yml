@@ -10,7 +10,7 @@ name: Tauri Build & Upload
 #   - Builds: Windows (MSI + NSIS), macOS (universal .app + .dmg), Linux (deb + AppImage)
 #   - Uploads: per-platform bundle folders as workflow artifacts (14-day retention)
 #
-# Frontend: tauri-action runs the `beforeBuildCommand`
+# Frontend: the tauri CLI runs the `beforeBuildCommand`
 # (scripts/build-frontend.mjs -> npm ci + npm run build) automatically, so the
 # Vue 3 WebUI bundle lands where `frontendDist` points.
 
@@ -94,13 +94,12 @@ jobs:
             patchelf \
             libfuse2t64
 
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@v2
+
       - name: Build Tauri client
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: src-tauri
-          args: ${{ matrix.args }}
+        working-directory: src-tauri
+        run: tauri build ${{ matrix.args }}
 
       - name: List bundles
         run: |

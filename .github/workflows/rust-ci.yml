@@ -147,7 +147,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Check outdated
-        run: cargo outdated --exit-code 1 || echo "WARNING: outdated dependencies found (non-blocking)"
+        run: 'cargo outdated --exit-code 1 || echo "WARNING: outdated dependencies found (non-blocking)"'
 
   # Job 9: Build all crates to verify compilation (with Tauri deps)
   build:

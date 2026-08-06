@@ -148,12 +148,15 @@ jobs:
       # keychain. Required for a real codesign + notarization. Skip when the
       # secret is not configured (ad-hoc signed, not notarizable).
       - name: Import macOS signing certificate
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          if [ -z "$MACOS_CERTIFICATE" ]; then
+            echo "MACOS_CERTIFICATE not configured; skipping certificate import (ad-hoc signing only)."
+            exit 0
+          fi
           echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
@@ -274,14 +277,13 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ env.RELEASE_TAG }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download draft release assets
         run: |
-          gh release download "$TAG" --dir dist
+          gh release download "$RELEASE_TAG" --dir dist
           ls -la dist/
 
       - name: Regenerate SHA256SUMS
@@ -318,16 +320,16 @@ jobs:
           PY
 
       - name: Upload SHA256SUMS to release
-        run: gh release upload "$TAG" dist/SHA256SUMS --clobber
+        run: gh release upload "$RELEASE_TAG" dist/SHA256SUMS --clobber
 
       - name: Verify release assets
         run: |
-          gh release view "$TAG" --json isDraft,isPrerelease,name --jq '{name, isDraft, isPrerelease}'
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,name --jq '{name, isDraft, isPrerelease}'
           echo "--- assets ---"
-          gh release view "$TAG" --json assets --jq '.assets[].name' | sort
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort
 
       - name: Summary
         shell: bash
         run: |
-          echo "::notice::OpenSquilla release ${TAG} is a draft. Review assets then publish with:"
-          echo "::notice::  gh release edit ${TAG} --draft=false"
+          echo "::notice::OpenSquilla release ${RELEASE_TAG} is a draft. Review assets then publish with:"
+          echo "::notice::  gh release edit ${RELEASE_TAG} --draft=false"
