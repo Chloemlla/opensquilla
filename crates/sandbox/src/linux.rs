@@ -19,7 +19,7 @@
 //! sandbox usable on hosts without bubblewrap.
 
 use crate::policy::{AuditEntry, SandboxPolicy, SandboxResult};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Execution options shared by both Linux strategies.
 ///
@@ -43,6 +43,7 @@ mod backend {
     use nix::sys::wait::WaitStatus;
     use nix::unistd::ForkResult;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+    use std::os::unix::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
     use std::process::Stdio;
     use tokio::process::Command;
@@ -398,7 +399,7 @@ mod backend {
                         .map_err(|e| format!("waitpid: {e}"))?;
                     let exit_code = match status {
                         WaitStatus::Exited(_, code) => code,
-                        WaitStatus::Signaled(_, sig, _) => 128 + sig.as_i32(),
+                        WaitStatus::Signaled(_, sig, _) => 128 + sig as i32,
                         _ => -1,
                     };
 
@@ -569,9 +570,14 @@ mod backend {
     /// Compile a seccomp-BPF allowlist filter with `seccompiler`. Deny-by-
     /// default: any syscall not allowlisted returns `EPERM`.
     fn compile_seccomp(_policy: &SandboxPolicy) -> Result<seccompiler::BpfProgram, String> {
-        use seccompiler::{SeccompAction, SeccompFilter, SeccompRule};
+        use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, SeccompRule, TargetArch};
 
-        let mut rules: HashMap<u64, Vec<SeccompRule>> = HashMap::new();
+        #[cfg(target_arch = "x86_64")]
+        let target_arch = TargetArch::x86_64;
+        #[cfg(target_arch = "aarch64")]
+        let target_arch = TargetArch::aarch64;
+
+        let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
         let syscalls: &[libc::c_long] = &[
             libc::SYS_execve,
             libc::SYS_execveat,
@@ -679,20 +685,23 @@ mod backend {
         ];
         for s in syscalls {
             if let Ok(rule) = SeccompRule::new(vec![]) {
-                rules.insert(*s as u64, vec![rule]);
+                rules.insert(*s as i64, vec![rule]);
             }
         }
 
         #[cfg(target_arch = "x86_64")]
         if let Ok(rule) = SeccompRule::new(vec![]) {
-            rules.insert(libc::SYS_arch_prctl as u64, vec![rule]);
+            rules.insert(libc::SYS_arch_prctl as i64, vec![rule]);
         }
 
-        let filter = SeccompFilter::new(rules, SeccompAction::Errno(1))
-            .map_err(|e| format!("seccomp filter build: {e}"))?;
-        filter
-            .into_bpf()
-            .map_err(|e| format!("seccomp bpf compile: {e}"))
+        let filter = SeccompFilter::new(
+            rules,
+            SeccompAction::Errno(1),
+            SeccompAction::Allow,
+            target_arch,
+        )
+        .map_err(|e| format!("seccomp filter build: {e}"))?;
+        BpfProgram::try_from(filter).map_err(|e| format!("seccomp bpf compile: {e}"))
     }
 
     /// Size in bytes of the `struct sock_fprog` header for the host
@@ -747,7 +756,7 @@ mod backend {
             let n = write(&fd, &serialized[written..]).map_err(|e| format!("memfd write: {e}"))?;
             written += n;
         }
-        lseek(&fd, 0, Whence::SeekSet).map_err(|e| format!("memfd seek: {e}"))?;
+        lseek(fd.as_raw_fd(), 0, Whence::SeekSet).map_err(|e| format!("memfd seek: {e}"))?;
         Ok(fd)
     }
 

@@ -199,10 +199,15 @@ fn compile_policy(policy: &SeccompPolicy) -> Result<BpfProgram, String> {
 
 #[cfg(target_os = "linux")]
 fn compile_with_seccompiler(policy: &SeccompPolicy) -> Result<BpfProgram, String> {
-    use seccompiler::{SeccompAction as SCAction, SeccompFilter, SeccompRule};
+    use seccompiler::{SeccompAction as SCAction, SeccompFilter, SeccompRule, TargetArch};
 
-    let mut rules: std::collections::HashMap<u64, Vec<SeccompRule>> =
-        std::collections::HashMap::new();
+    #[cfg(target_arch = "x86_64")]
+    let target_arch = TargetArch::x86_64;
+    #[cfg(target_arch = "aarch64")]
+    let target_arch = TargetArch::aarch64;
+
+    let mut rules: std::collections::BTreeMap<i64, Vec<SeccompRule>> =
+        std::collections::BTreeMap::new();
 
     for allow in &policy.allowlist {
         let nr = syscall_name_to_number(&allow.syscall)
@@ -210,20 +215,19 @@ fn compile_with_seccompiler(policy: &SeccompPolicy) -> Result<BpfProgram, String
         // seccompiler 0.4: an empty rule list means "allow unconditionally".
         // We pass a single empty rule so the map entry exists.
         let rule = SeccompRule::new(vec![]).map_err(|e| format!("seccomp rule build: {e}"))?;
-        rules.insert(nr as u64, vec![rule]);
+        rules.insert(nr, vec![rule]);
     }
 
     let default = match policy.default_action {
         SeccompAction::Allow => SCAction::Allow,
-        SeccompAction::Errno(e) => SCAction::Errno(e),
+        SeccompAction::Errno(e) => SCAction::Errno(e.into()),
         SeccompAction::Kill | SeccompAction::KillProcess => SCAction::KillProcess,
         SeccompAction::Log => SCAction::Log,
     };
 
-    let filter = SeccompFilter::new(rules, default)
+    let filter = SeccompFilter::new(rules, default, SCAction::Allow, target_arch)
         .map_err(|e| format!("seccomp filter build: {e}"))?;
-    let bpf = filter
-        .into_bpf()
+    let bpf = BpfProgram::try_from(filter)
         .map_err(|e| format!("seccomp bpf compile: {e}"))?;
     // Convert seccompiler's sock_filter into our SeccompInstruction.
     Ok(bpf
