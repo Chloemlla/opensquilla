@@ -99,6 +99,12 @@ jobs:
 
       - name: Build Tauri client
         working-directory: src-tauri
+        env:
+          # Updater artifact signing (createUpdaterArtifacts is true in
+          # tauri.conf.json). Without these the bundler fails with "a public
+          # key has been found, but no private key".
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PRIVATE_KEY_PASSWORD }}
         run: tauri build ${{ matrix.args }}
 
       - name: List bundles
