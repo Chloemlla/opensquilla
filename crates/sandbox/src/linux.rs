@@ -43,7 +43,6 @@ mod backend {
     use nix::sys::wait::WaitStatus;
     use nix::unistd::ForkResult;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-    use std::os::unix::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
     use std::process::Stdio;
     use tokio::process::Command;
@@ -1076,7 +1075,7 @@ mod backend {
 
                 let mut add_rule = |path: &Path, access: u64| -> Result<(), String> {
                     let fd = libc::open(
-                        path.as_os_str().as_ptr() as *const libc::c_char,
+                        std::os::unix::ffi::OsStrExt::as_ptr(path.as_os_str()),
                         libc::O_PATH | libc::O_CLOEXEC,
                     );
                     if fd < 0 {

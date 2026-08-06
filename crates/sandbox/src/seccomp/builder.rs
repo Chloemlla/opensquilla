@@ -227,7 +227,7 @@ fn compile_with_seccompiler(policy: &SeccompPolicy) -> Result<BpfProgram, String
 
     let filter = SeccompFilter::new(rules, default, SCAction::Allow, target_arch)
         .map_err(|e| format!("seccomp filter build: {e}"))?;
-    let bpf = BpfProgram::try_from(filter)
+    let bpf = seccompiler::BpfProgram::try_from(filter)
         .map_err(|e| format!("seccomp bpf compile: {e}"))?;
     // Convert seccompiler's sock_filter into our SeccompInstruction.
     Ok(bpf

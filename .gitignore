@@ -67,6 +67,7 @@ GEMINI.md
 !/assets/*.png
 !/src/opensquilla/gateway/static/img/*.png
 !/opensquilla-webui/public/opensquilla-mark.png
+!/src-tauri/icons/*.png
 !/opensquilla-webui/.node-version
 !/src/opensquilla/dist/
 !/src/opensquilla/dist/**
