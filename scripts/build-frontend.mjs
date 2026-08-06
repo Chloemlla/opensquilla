@@ -124,10 +124,11 @@ run(npmBin, ['run', 'build'], webuiDir)
 
 // --- verify dist ------------------------------------------------------------
 
-// The Vite config (opensquilla-webui/vite.config.ts) emits to this outDir.
-// tauri.conf.json -> build.frontendDist points at the same path (resolved
-// relative to src-tauri/), so they must stay in sync.
-const distDir = resolve(webuiDir, 'dist')
+// The Vite config (opensquilla-webui/vite.config.ts) emits the WebUI bundle
+// into the gateway's static tree (verify-dist.mjs defaults to the same path),
+// and tauri.conf.json -> build.frontendDist points at it (resolved relative
+// to src-tauri/), so all three must stay in sync.
+const distDir = resolve(repoRoot, 'src/opensquilla/gateway/static/dist')
 const indexHtml = resolve(distDir, 'index.html')
 
 console.log('\n[3/3] Verifying build output')

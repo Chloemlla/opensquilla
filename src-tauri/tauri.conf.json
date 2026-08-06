@@ -4,7 +4,7 @@
   "version": "0.5.2",
   "identifier": "com.opensquilla.desktop",
   "build": {
-    "frontendDist": "../opensquilla-webui/dist",
+    "frontendDist": "../src/opensquilla/gateway/static/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "node scripts/build-frontend.mjs --dev && npm --prefix opensquilla-webui run dev",
     "beforeBuildCommand": "node scripts/build-frontend.mjs --build"
