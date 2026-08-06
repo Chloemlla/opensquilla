@@ -1074,12 +1074,16 @@ mod backend {
                     | LANDLOCK_ACCESS_FS_TRUNCATE;
 
                 let mut add_rule = |path: &Path, access: u64| -> Result<(), String> {
-                    let fd = libc::open(
-                        <&std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::as_ptr(
-                            path.as_os_str(),
-                        ),
-                        libc::O_PATH | libc::O_CLOEXEC,
-                    );
+                    // OsStrExt::as_ptr was removed from std; build a NUL-terminated
+                    // C string from the platform-encoded bytes instead.
+                    let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+                        .map_err(|e| {
+                            format!(
+                                "landlock add_rule({}): path has interior NUL: {e}",
+                                path.display()
+                            )
+                        })?;
+                    let fd = libc::open(c_path.as_ptr(), libc::O_PATH | libc::O_CLOEXEC);
                     if fd < 0 {
                         return Ok(()); // missing path: skip
                     }
