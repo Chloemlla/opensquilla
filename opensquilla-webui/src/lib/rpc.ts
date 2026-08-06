@@ -1071,7 +1071,6 @@ export class TauriRpcClient implements RpcClientLike {
   private _state: ConnectionState = 'disconnected';
   private _policy: Record<string, unknown> = {};
   private _streamsStarted = false;
-  private _streamUnlisteners: UnlistenFn[] = [];
   private _directUnlisteners = new Map<string, UnlistenFn>();
   /**
    * Reference count per direct Tauri listener. A single top-level channel (e.g.
@@ -1170,7 +1169,7 @@ export class TauriRpcClient implements RpcClientLike {
   waitForConnection(
     timeoutMs: number = 30000,
     signal?: AbortSignal,
-    actions: RpcConnectionWaitOptions = {},
+    _actions: RpcConnectionWaitOptions = {},
   ): Promise<void> {
     if (signal?.aborted) {
       return Promise.reject(new RpcAbortError('waitForConnection'));
@@ -1219,11 +1218,9 @@ export class TauriRpcClient implements RpcClientLike {
   private _ensureStreams(): void {
     if (this._streamsStarted) return;
     this._streamsStarted = true;
-    this._streamUnlisteners = [
-      listen<TurnEventPayload>('turn-event', (payload) => this._dispatchStreamPayload(payload)),
-      listen<StreamEventPayload>('stream-event', (payload) => this._dispatchStreamPayload(payload)),
-      listen<ToolEventPayload>('tool-event', (payload) => this._dispatchStreamPayload(payload)),
-    ];
+    listen<TurnEventPayload>('turn-event', (payload) => this._dispatchStreamPayload(payload));
+    listen<StreamEventPayload>('stream-event', (payload) => this._dispatchStreamPayload(payload));
+    listen<ToolEventPayload>('tool-event', (payload) => this._dispatchStreamPayload(payload));
   }
 
   /**

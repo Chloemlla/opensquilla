@@ -207,7 +207,7 @@ export function installTauriMock(options: TauriMockOptions = {}): TauriPluginShi
       },
     },
     event: {
-      listen: async <T>(event: string, _handler: (event: TauriEvent<T>) => void) => {
+      listen: async <T>(_event: string, _handler: (event: TauriEvent<T>) => void) => {
         // No events are emitted in the mock; return an inert unsubscribe.
         return () => undefined
       },
