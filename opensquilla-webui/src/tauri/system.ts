@@ -1,8 +1,8 @@
 /**
  * System adapter — Tauri-backed replacement for system/desktop RPCs.
  *
- * The existing frontend reaches desktop-native concerns through the
- * `window.opensquillaDesktop` Electron bridge (see `src/platform/desktop.ts`)
+ * The existing frontend reaches desktop-native concerns through the Electron
+ * preload bridge exposed on `window` (see `src/platform/desktop.ts`)
  * and through gateway RPCs for health/locale. Under Tauri these collapse into
  * `invoke('check_health')`, `invoke('get_locale')`, etc., plus the Tauri
  * shell plugin for `open_external` / window zoom.
