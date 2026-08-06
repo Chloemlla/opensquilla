@@ -115,7 +115,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "PLACEHOLDER_REPLACE_WITH_OPENSQUILLA_UPDATER_PUBKEY_DO_NOT_SHIP",
+      "pubkey": "RWSdsQFT3Bt2MWenV/T9bHdy+vS1gg32SXY51ufHSciYkW+2kUxuoJZU",
       "endpoints": [
         "https://github.com/opensquilla/opensquilla/releases/latest/download/latest.json"
       ],

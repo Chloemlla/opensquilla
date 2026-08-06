@@ -128,3 +128,7 @@ opensquilla-webui/public/music/**/*.flac
 opensquilla-webui/public/music/**/*.wav
 opensquilla-webui/public/music/playlist.local.json
 Install-CodexClaudeTrellis.ps1
+# updater signing keys (private key must never be committed)
+opensquilla-updater.key
+opensquilla-updater.key.pub
+scripts/gen-minisign-key.py
