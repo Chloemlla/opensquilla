@@ -1,0 +1,121 @@
+name: Tauri Build & Upload
+
+# Builds the OpenSquilla Tauri v2 desktop client on all three platforms and
+# uploads the bundles as workflow artifacts. Unlike rust-release.yml, this
+# workflow needs NO signing secrets and does NOT create a GitHub Release — it
+# is the fast path for verifying a branch packages cleanly and grabbing a
+# client binary to test.
+#
+#   - Trigger: manual (workflow_dispatch) or push to main / rust-migration-skeleton
+#   - Builds: Windows (MSI + NSIS), macOS (universal .app + .dmg), Linux (deb + AppImage)
+#   - Uploads: per-platform bundle folders as workflow artifacts (14-day retention)
+#
+# Frontend: tauri-action runs the `beforeBuildCommand`
+# (scripts/build-frontend.mjs -> npm ci + npm run build) automatically, so the
+# Vue 3 WebUI bundle lands where `frontendDist` points.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - rust-migration-skeleton
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tauri-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION_FILE: opensquilla-webui/.node-version
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            targets: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc --bundles msi nsis
+            artifact: opensquilla-windows
+            bundle_path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+          - os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles app dmg
+            artifact: opensquilla-macos
+            bundle_path: src-tauri/target/universal-apple-darwin/release/bundle
+          - os: ubuntu-latest
+            targets: ""
+            args: --bundles deb appimage
+            artifact: opensquilla-linux
+            bundle_path: src-tauri/target/release/bundle
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+          cache-dependency-path: opensquilla-webui/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Rust targets
+        if: matrix.targets != ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl wget file \
+            libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libfuse2t64
+
+      - name: Build Tauri client
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          args: ${{ matrix.args }}
+
+      - name: List bundles
+        run: |
+          if [ -d "${{ matrix.bundle_path }}" ]; then
+            find "${{ matrix.bundle_path }}" -maxdepth 3 -type f -print
+          else
+            echo "bundle directory not found: ${{ matrix.bundle_path }}"
+            exit 1
+          fi
+
+      - name: Upload bundles (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundle_path }}/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
