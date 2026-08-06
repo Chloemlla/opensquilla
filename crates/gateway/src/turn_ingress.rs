@@ -252,7 +252,7 @@ impl TurnIngress {
     /// most one worker, and the worker processes turns sequentially.
     pub async fn spawn_worker<F, Fut>(&self, session_id: &str, handler: F) -> Result<(), AppError>
     where
-        F: FnOnce(InboundTurn, Arc<SessionServices>) -> Fut + Send + 'static,
+        F: FnMut(InboundTurn, Arc<SessionServices>) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<(), AppError>> + Send + 'static,
     {
         if self.is_session_active(session_id) {
@@ -269,6 +269,7 @@ impl TurnIngress {
         let session_id = session_id.to_string();
         tokio::spawn(async move {
             let mut rx = rx;
+            let mut handler = handler;
             while let Some(mut turn) = rx.recv().await {
                 turn.status = TurnStatus::Running;
                 let result = handler(turn.clone(), services.clone()).await;

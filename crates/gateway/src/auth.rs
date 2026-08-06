@@ -532,11 +532,11 @@ impl IpPattern {
         }
         if let Some((addr, prefix)) = s.split_once('/') {
             if let Ok(v4) = addr.parse::<Ipv4Addr>() {
-                let p = prefix.parse().ok()?;
+                let p: u8 = prefix.parse::<u8>().ok()?;
                 return Some(IpPattern::CidrV4(v4, p.min(32)));
             }
             if let Ok(v6) = addr.parse::<Ipv6Addr>() {
-                let p = prefix.parse().ok()?;
+                let p: u8 = prefix.parse::<u8>().ok()?;
                 return Some(IpPattern::CidrV6(v6, p.min(128)));
             }
             return None;
@@ -873,7 +873,7 @@ mod tests {
     fn test_ip_access_control_cidr_allow() {
         let mut acl = IpAccessControl::new();
         acl.allow("10.0.0.0/8").unwrap();
-        acl.default_deny();
+        acl = acl.default_deny();
         assert!(acl.allows("10.1.2.3"));
         assert!(!acl.allows("11.0.0.1"));
         assert!(!acl.allows("not-an-ip"));
@@ -884,7 +884,7 @@ mod tests {
         let mut acl = IpAccessControl::new();
         acl.allow("10.0.0.0/8").unwrap();
         acl.deny("10.0.0.5").unwrap();
-        acl.default_deny();
+        acl = acl.default_deny();
         assert!(acl.allows("10.0.0.6"));
         assert!(!acl.allows("10.0.0.5"));
     }
@@ -893,7 +893,7 @@ mod tests {
     fn test_ip_pattern_wildcard() {
         let mut acl = IpAccessControl::new();
         acl.allow("*").unwrap();
-        acl.default_deny();
+        acl = acl.default_deny();
         assert!(acl.allows("203.0.113.7"));
         assert!(acl.allows("::1"));
     }

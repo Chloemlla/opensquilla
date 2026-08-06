@@ -22,7 +22,7 @@ use crate::rpc::{RpcRegistry, rpc_handler};
 #[derive(Clone)]
 pub struct ToolsService {
     tools: Arc<RwLock<ToolRegistry>>,
-    search: Arc<RwLock<Option<SearchRegistry>>>,
+    search: Arc<RwLock<Option<Arc<SearchRegistry>>>>,
 }
 
 impl ToolsService {
@@ -40,7 +40,7 @@ impl ToolsService {
         let search = SearchRegistry::new(config);
         Self {
             tools: Arc::new(RwLock::new(ToolRegistry::new())),
-            search: Arc::new(RwLock::new(Some(search))),
+            search: Arc::new(RwLock::new(Some(Arc::new(search)))),
         }
     }
 
@@ -170,10 +170,15 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                     .unwrap_or(10) as usize;
                 let provider = params.get("provider").and_then(|v| v.as_str());
 
-                let search_guard = service.search.read();
-                let search = search_guard
-                    .as_ref()
-                    .ok_or_else(|| AppError::bad_request("Search registry not configured"))?;
+                // Clone the Arc out so the parking_lot read guard is dropped
+                // before the `.await` below (the guard is `!Send`).
+                let search = {
+                    let search_guard = service.search.read();
+                    search_guard
+                        .as_ref()
+                        .cloned()
+                        .ok_or_else(|| AppError::bad_request("Search registry not configured"))?
+                };
 
                 let request = SearchRequest {
                     query: query.to_string(),

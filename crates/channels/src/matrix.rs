@@ -594,7 +594,7 @@ mod tests {
                                 "type": "m.room.message",
                                 "sender": "@alice:server",
                                 "event_id": "$evt1",
-                                "origin_server_ts": 1625241600000,
+                                "origin_server_ts": 1625241600000i64,
                                 "content": {"msgtype": "m.text", "body": "hello matrix"}
                             }]
                         }
@@ -624,7 +624,7 @@ mod tests {
                                 "type": "m.room.message",
                                 "sender": "@bob:server",
                                 "event_id": "$evt2",
-                                "origin_server_ts": 1625241600000,
+                                "origin_server_ts": 1625241600000i64,
                                 "content": {
                                     "msgtype": "m.image",
                                     "body": "photo.png",
@@ -686,7 +686,7 @@ mod tests {
                                 "type": "m.room.message",
                                 "sender": "@bot:server",
                                 "event_id": "$e",
-                                "origin_server_ts": 1625241600000,
+                                "origin_server_ts": 1625241600000i64,
                                 "content": {"msgtype": "m.notice", "body": "notice text"}
                             }]
                         }

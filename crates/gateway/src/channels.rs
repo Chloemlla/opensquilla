@@ -137,7 +137,7 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                 }
 
                 let record = ChannelRecord {
-                    channel_id: channel_id.clone(),
+                    channel_id: channel_id.to_string(),
                     name,
                     channel_type: type_str.to_string(),
                     enabled,
@@ -317,7 +317,7 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                 match service.manager().init_channel(cfg) {
                     Ok(_handle) => {
                         let record = ChannelRecord {
-                            channel_id: channel_id.clone(),
+                            channel_id: channel_id.to_string(),
                             name,
                             channel_type: type_str.to_string(),
                             enabled,

@@ -25,7 +25,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// The type of archive to create or extract.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArchiveFormat {
     Zip,
@@ -1115,8 +1115,10 @@ impl Tool for ArchiveTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "archive",
-                "Create, extract, and list zip and tar.gz archives. "
-                    + "Supports creating archives from directories and extracting to directories.",
+                concat!(
+                    "Create, extract, and list zip and tar.gz archives. ",
+                    "Supports creating archives from directories and extracting to directories.",
+),
                 HashMap::from([
                     (
                         "operation".to_string(),

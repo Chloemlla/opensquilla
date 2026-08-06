@@ -11,19 +11,30 @@
 //! `execute` methods for callers that select a backend explicitly.
 
 pub mod command_rules;
+pub mod config;
+pub mod default_allowlist;
+pub mod denial_attribution;
+pub mod destructive_intents;
+pub mod directory_listing;
+pub mod domain_validation;
 pub mod error;
 pub mod governance;
 pub mod linux;
 pub mod macos;
+pub mod managed_proxy_env;
 pub mod metrics;
 pub mod network;
 pub mod noop;
+pub mod package_bundles;
 pub mod path_rules;
 pub mod policy;
 pub mod profile;
+pub mod run_mode;
+pub mod run_mode_policy;
 pub mod sandbox_manager;
 pub mod seatbelt;
 pub mod seccomp;
+pub mod sensitive_paths;
 pub mod stale_output_cache;
 pub mod supervisor;
 pub mod whitelist;
@@ -33,6 +44,17 @@ pub use command_rules::{
     CommandAssessment, CommandRule, RiskTier, assess_command, assess_with_rules,
     command_basename, default_command_rules, profile_id_for_command,
 };
+pub use config::{
+    ApprovalsReviewer, Backend, EffectiveMode, NetworkDefault, SandboxSettings, SecurityLevel,
+};
+pub use default_allowlist::{
+    DefaultAllowlistGroup, default_allowlist, default_allowlist_domains,
+    default_allowlist_network_policy, default_allowlist_payload, default_allowlist_source,
+};
+pub use denial_attribution::{SandboxRunOutcome, is_likely_sandbox_denied};
+pub use destructive_intents::{extract_intent, extract_intents};
+pub use directory_listing::format_directory_entry;
+pub use domain_validation::{DomainDecision, DomainStatus, domain_matches, normalize_domain, validate_domain_pattern};
 pub use error::{SandboxError, SandboxErrorKind};
 pub use governance::{
     ApprovalQueue, ApprovalRequest, ApprovalStatus, ApproverChannel, EscalationPolicy,
@@ -41,6 +63,12 @@ pub use governance::{
 };
 pub use linux::LinuxSandbox;
 pub use macos::MacOsSandbox;
+pub use managed_proxy_env::{
+    ALLOW_LOCAL_BINDING_ENV_KEY, DEFAULT_NO_PROXY_VALUE, NO_PROXY_ENV_KEYS,
+    OPENSQUILLA_NETWORK_ENV_KEY, PROXY_ACTIVE_ENV_KEY, PROXY_CONTROL_ENV, PROXY_ENV_KEYS,
+    WINDOWS_GIT_SSL_ENV, extend_env_allowlist_with_proxy_vars, managed_proxy_env,
+    managed_proxy_env_allowlist, managed_proxy_env_for_backend, managed_proxy_env_names_upper,
+};
 pub use metrics::{
     AggregateMetrics, ExecutionMetrics, MetricsCollector, Rusage, SyscallClass, SyscallCounter,
 };
@@ -50,6 +78,9 @@ pub use network::{
     default_blocked_ranges,
 };
 pub use noop::NoopSandbox;
+pub use package_bundles::{
+    PACKAGE_BUNDLES, default_package_bundle_ids, expand_package_bundle, package_bundle_domains,
+};
 pub use path_rules::{
     PathAccessController, PathDecision, is_readable, is_writable, whitelist_from_filesystem,
 };
@@ -58,6 +89,17 @@ pub use policy::{
     ResourceLimits, SandboxLevel, SandboxPolicy, SandboxResult, classify_operation,
 };
 pub use profile::{ProfileNotes, ProfileRegistry, SandboxProfile};
+pub use run_mode::{
+    RunMode, RunModeConfigInput, RunModeConfigPatch, RunModeError, approval_behavior,
+    config_run_mode, display_name, execution_target, full_mode_is_explicit,
+    legacy_state_to_run_mode, normalize_run_mode, project_default_run_mode,
+    run_mode_config_patch, sandbox_runtime_capability_mode,
+};
+pub use run_mode_policy::{
+    Principal, allowed_run_modes_for_principal, coerce_run_mode_for_principal,
+    default_run_mode_for_principal, hello_auth_payload, principal_payload, run_mode_allowed_for_principal,
+    run_mode_policy_payload,
+};
 pub use sandbox_manager::{
     ManagedSandbox, RunRequest, SandboxBuilder, SandboxManager, SandboxOutcome,
 };
@@ -66,6 +108,10 @@ pub use seatbelt::SeatbeltProfile;
 pub use seccomp::{
     AllowRule, ArgComparator, BpfProgram, ComparisonOp, SeccompAction, SeccompInstruction,
     SeccompPolicy, SeccompFilterBuilder, syscall_name_to_number,
+};
+pub use sensitive_paths::{
+    build_block_envelope, is_sensitive_path, linux_runtime_sensitive_deny_roots,
+    sensitive_path_in_text, sensitive_path_marker, sensitive_target_in_command,
 };
 pub use stale_output_cache::{
     CacheEntry, NullStaleOutputCache, StaleOutputCache, TtlPolicy, VerifiedEntry,

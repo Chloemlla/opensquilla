@@ -452,6 +452,16 @@ impl Stage for StreamConsumerStage {
         };
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = state.clone();
 
+        // Attach the routed plan snapshot to the stream telemetry (mirrors the
+        // Python `stream_consumer_stage.route_plan_snapshot` emission).
+        if let Some(plan) = crate::route_plan::route_plan_snapshot(&ctx.metadata) {
+            debug!(
+                turn_id = %ctx.turn_id,
+                route_plan = %plan,
+                "stream_consumer routing plan snapshot"
+            );
+        }
+
         info!(
             turn_id = %ctx.turn_id,
             text_parts = state.text_parts.len(),
@@ -473,6 +483,7 @@ impl Stage for StreamConsumerStage {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn test_buffer_tool_calls_from_content_blocks() {
@@ -613,6 +624,7 @@ mod tests {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: 10,
+            metadata: HashMap::new(),
         };
         let state = stage.snapshot(&ctx);
         assert_eq!(state.final_text(), "answer");

@@ -228,9 +228,9 @@ pub fn register_wizard_handlers(registry: &mut RpcRegistry, store: WizardStore) 
                     .get("session_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'session_id' parameter"))?;
-                let view = store.with_session(session_id, |s| {
+                let view = store.with_session(session_id, |s| -> Result<WizardState, AppError> {
                     s.advance()?;
-                    s.to_view()
+                    Ok(s.to_view())
                 })??;
                 Ok(serde_json::json!({
                     "session_id": session_id,
@@ -250,9 +250,9 @@ pub fn register_wizard_handlers(registry: &mut RpcRegistry, store: WizardStore) 
                     .get("session_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'session_id' parameter"))?;
-                let view = store.with_session(session_id, |s| {
+                let view = store.with_session(session_id, |s| -> Result<WizardState, AppError> {
                     s.back()?;
-                    s.to_view()
+                    Ok(s.to_view())
                 })??;
                 Ok(serde_json::json!({
                     "session_id": session_id,
@@ -272,9 +272,9 @@ pub fn register_wizard_handlers(registry: &mut RpcRegistry, store: WizardStore) 
                     .get("session_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'session_id' parameter"))?;
-                let view = store.with_session(session_id, |s| {
+                let view = store.with_session(session_id, |s| -> Result<WizardState, AppError> {
                     s.skip()?;
-                    s.to_view()
+                    Ok(s.to_view())
                 })??;
                 Ok(serde_json::json!({
                     "session_id": session_id,
@@ -318,12 +318,12 @@ pub fn register_wizard_handlers(registry: &mut RpcRegistry, store: WizardStore) 
                     .get("session_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::bad_request("Missing 'session_id' parameter"))?;
-                let view = store.with_session(session_id, |s| {
+                let view = store.with_session(session_id, |s| -> Result<WizardState, AppError> {
                     // Advance to Complete if not already there.
                     while s.current_state != SetupState::Complete {
                         s.advance()?;
                     }
-                    s.to_view()
+                    Ok(s.to_view())
                 })??;
 
                 // Persist a default config to demonstrate the write path.

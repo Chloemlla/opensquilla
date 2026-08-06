@@ -26,6 +26,10 @@
 //! | `init`      | Project scaffolding                  | B    |
 //! | `tui`       | Terminal UI                          | B    |
 
+// Allows `tui.rs` (which doubles as the `osq-tui` binary root) to refer to
+// this library crate by name from both the lib and bin compilation units.
+extern crate self as opensquilla_cli;
+
 pub mod agent;
 pub mod channels;
 pub mod chat;

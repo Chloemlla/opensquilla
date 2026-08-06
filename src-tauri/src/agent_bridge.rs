@@ -42,12 +42,18 @@ use async_trait::async_trait;
 use opensquilla_core::error::Result as CoreResult;
 use opensquilla_core::events::TurnEvent;
 use opensquilla_core::types::{Message, MessageRole};
+use opensquilla_engine::turn_runner::agent_bootstrap::AgentBootstrapStage;
+use opensquilla_engine::turn_runner::compaction::CompactionStage;
+use opensquilla_engine::turn_runner::finalizer::FinalizerStage;
+use opensquilla_engine::turn_runner::harness::HarnessStage;
+use opensquilla_engine::turn_runner::input::InputStage;
+use opensquilla_engine::turn_runner::provider::ProviderStage;
+use opensquilla_engine::turn_runner::stream_consumer::StreamConsumerStage;
 use opensquilla_engine::{
-    AgentHandle, AgentRuntime, AgentState, BootstrapStage, CompactionStage, FinalizerStage,
-    HarnessStage, InputStage, ProviderStage, StreamStage, TurnGenerator, TurnOutcome,
-    TurnRunnerBuilder,
+    AgentHandle, AgentRuntime, AgentState, TurnGenerator, TurnOutcome, TurnRunnerBuilder,
 };
 use opensquilla_provider::{ChatConfig, Provider, ProviderResponse};
+use std::fmt;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
@@ -74,11 +80,19 @@ pub const SESSION_LIST_CHANGED_EVENT: &str = "sessions:list-changed";
 ///
 /// This is the critical adapter that connects the provider crate's `Provider`
 /// trait to the engine crate's `TurnGenerator` trait.
-#[derive(Debug)]
 pub struct ProviderTurnGenerator {
     provider: Arc<dyn Provider>,
     config: ChatConfig,
     streaming_tx: Option<mpsc::Sender<opensquilla_core::events::StreamEvent>>,
+}
+
+impl fmt::Debug for ProviderTurnGenerator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProviderTurnGenerator")
+            .field("config", &self.config)
+            .field("streaming_tx", &self.streaming_tx.is_some())
+            .finish()
+    }
 }
 
 impl ProviderTurnGenerator {
@@ -360,13 +374,19 @@ pub fn build_turn_runner(config: &TurnConfig) -> opensquilla_engine::TurnRunner 
         .max_tool_rounds(config.max_tool_rounds)
         .streaming(config.streaming)
         .add_stage(Box::new(HarnessStage::new()))
-        .add_stage(Box::new(BootstrapStage::new()))
+        .add_stage(Box::new(AgentBootstrapStage::new("")))
         .add_stage(Box::new(CompactionStage::new(
             config.max_messages_before_compaction,
         )))
-        .add_stage(Box::new(InputStage::new()))
-        .add_stage(Box::new(ProviderStage::new()))
-        .add_stage(Box::new(StreamStage::new()))
+        .add_stage(Box::new(InputStage::new(
+            config.max_messages_before_compaction,
+        )))
+        .add_stage(Box::new(ProviderStage::new(
+            "default".to_string(),
+            "default".to_string(),
+            config.streaming,
+        )))
+        .add_stage(Box::new(StreamConsumerStage::new()))
         .add_stage(Box::new(FinalizerStage::new()));
 
     builder.build()
@@ -599,12 +619,15 @@ pub async fn send_message(
     let user_message = Message::user(&request.message);
     state
         .chat_store
-        .add_message(&session_id, user_message.clone());
+        .add_message(&session_id_str, message_to_chat_response(&session_id_str, &user_message));
 
     // Build the message list from history + current message.
     let mut messages: Vec<Message> = if request.history.is_empty() {
         // Use stored chat history.
-        state.chat_store.get_history(&session_id)
+        state.chat_store.get_history(&session_id_str, 1000, 0)
+            .iter()
+            .map(chat_response_to_message)
+            .collect()
     } else {
         // Use provided history.
         request
@@ -615,7 +638,7 @@ pub async fn send_message(
     };
 
     // Ensure the latest user message is included.
-    if messages.last().map(|m| m.role) != Some(MessageRole::User) {
+    if messages.last().map(|m| &m.role) != Some(&MessageRole::User) {
         messages.push(user_message);
     }
 
@@ -685,10 +708,13 @@ pub async fn send_message_sync(
     let user_message = Message::user(&request.message);
     state
         .chat_store
-        .add_message(&session_id, user_message.clone());
+        .add_message(&session_id_str, message_to_chat_response(&session_id_str, &user_message));
 
     let mut messages: Vec<Message> = if request.history.is_empty() {
-        state.chat_store.get_history(&session_id)
+        state.chat_store.get_history(&session_id_str, 1000, 0)
+            .iter()
+            .map(chat_response_to_message)
+            .collect()
     } else {
         request
             .history
@@ -697,7 +723,7 @@ pub async fn send_message_sync(
             .collect::<Result<Vec<_>, _>>()?
     };
 
-    if messages.last().map(|m| m.role) != Some(MessageRole::User) {
+    if messages.last().map(|m| &m.role) != Some(&MessageRole::User) {
         messages.push(user_message);
     }
 
@@ -756,7 +782,7 @@ pub async fn send_message_sync(
     // Store assistant messages in the chat store.
     for msg in &response_messages {
         if msg.role == MessageRole::Assistant {
-            state.chat_store.add_message(&session_id, msg.clone());
+            state.chat_store.add_message(&session_id_str, message_to_chat_response(&session_id_str, msg));
         }
     }
 
@@ -785,9 +811,8 @@ pub async fn get_chat_history(
     state: State<'_, AppState>,
     session_id: String,
 ) -> TauriResult<Vec<MessageDto>> {
-    let sid = opensquilla_core::types::SessionId::from_string(&session_id)
-        .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id}")))?;
-    let messages = state.chat_store.get_history(&sid);
+    let messages = state.chat_store.get_history(&session_id, 1000, 0);
+    let messages: Vec<Message> = messages.iter().map(chat_response_to_message).collect();
     Ok(messages.iter().map(MessageDto::from).collect())
 }
 
@@ -797,9 +822,7 @@ pub async fn clear_chat_history(
     state: State<'_, AppState>,
     session_id: String,
 ) -> TauriResult<bool> {
-    let sid = opensquilla_core::types::SessionId::from_string(&session_id)
-        .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id}")))?;
-    state.chat_store.clear(&sid);
+    state.chat_store.clear(&session_id);
     Ok(true)
 }
 
@@ -904,11 +927,14 @@ pub async fn delete_session(
     let sid = opensquilla_core::types::SessionId::from_string(&session_id)
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id}")))?;
 
-    let deleted = state.session_store.delete(&sid);
-    if deleted {
-        let _ = app.emit(SESSION_LIST_CHANGED_EVENT, ());
+    match state.session_store.delete(&sid) {
+        Ok(_entry) => {
+            let _ = app.emit(SESSION_LIST_CHANGED_EVENT, ());
+            Ok(true)
+        }
+        Err(e) if e.status == 404 => Ok(false),
+        Err(e) => Err(TauriError::from(e)),
     }
-    Ok(deleted)
 }
 
 /// Archive a session.
@@ -922,8 +948,7 @@ pub async fn archive_session(
 
     let entry = state
         .session_store
-        .archive(&sid)
-        .ok_or_else(|| TauriError::not_found(format!("Session {session_id} not found")))?;
+        .archive(&sid)?;
 
     let info = SessionInfo {
         id: entry.id.to_string(),
@@ -1227,6 +1252,29 @@ fn dto_to_message(dto: &MessageDto) -> Result<Message, TauriError> {
         tool_calls: None,
         tool_result: None,
     })
+}
+
+/// Convert a `Message` to a `ChatMessageResponse` for the chat store.
+fn message_to_chat_response(session_id: &str, msg: &Message) -> opensquilla_gateway::chat::ChatMessageResponse {
+    opensquilla_gateway::chat::ChatMessageResponse {
+        id: Uuid::new_v4().to_string(),
+        session_id: session_id.to_string(),
+        role: format!("{:?}", msg.role).to_lowercase(),
+        content: msg.text_content(),
+        timestamp: chrono::Utc::now(),
+        model: None,
+    }
+}
+
+/// Convert a `ChatMessageResponse` to a `Message`.
+fn chat_response_to_message(resp: &opensquilla_gateway::chat::ChatMessageResponse) -> Message {
+    let role = match resp.role.as_str() {
+        "user" => MessageRole::User,
+        "assistant" => MessageRole::Assistant,
+        "system" => MessageRole::System,
+        _ => MessageRole::User,
+    };
+    Message { role, content: vec![opensquilla_core::types::ContentBlock::Text(resp.content.clone())], name: None, tool_call_id: None, tool_calls: None, tool_result: None }
 }
 
 /// Resolve a provider from the config.

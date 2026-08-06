@@ -48,7 +48,7 @@ impl std::fmt::Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppState")
             .field("runtime", &"AgentRuntime")
-            .field("gateway", &self.gateway.is_read_locked())
+            .field("gateway", &self.gateway.try_read().map(|g| g.is_some()))
             .field("config", &"Config")
             .field("session_storage", &"SessionStorage")
             .field("workbench", &"WorkbenchManager")

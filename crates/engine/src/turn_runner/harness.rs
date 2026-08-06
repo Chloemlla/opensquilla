@@ -552,6 +552,7 @@ mod tests {
     use super::*;
     use opensquilla_core::types::{ContentBlock, Message, ToolCall};
     use serde_json::json;
+    use std::collections::HashMap;
 
     fn context(messages: Vec<Message>) -> StageContext {
         StageContext {
@@ -563,6 +564,7 @@ mod tests {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: 10,
+            metadata: HashMap::new(),
         }
     }
 
@@ -612,7 +614,6 @@ mod tests {
     #[tokio::test]
     async fn test_locked_session_serializes() {
         let locks = Arc::new(SessionLockSet::new());
-        let stage = HarnessStage::new().with_locks(locks.clone());
         let key = HarnessStage::session_key_for("turn-serial");
 
         // Hold the lock on the same key, then the stage must wait (or, with a

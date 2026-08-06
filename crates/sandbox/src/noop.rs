@@ -327,3 +327,44 @@ impl crate::Sandbox for NoopSandbox {
         self.audit_log.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The managed-proxy env injection (from the manager) is only effective if
+    /// the backend's env filter keeps the proxy variables. This asserts the
+    /// allowlist extension used by
+    /// [`crate::managed_proxy_env::extend_env_allowlist_with_proxy_vars`]
+    /// actually passes the proxy vars through to the child environment.
+    #[test]
+    fn filter_env_keeps_allowlisted_proxy_vars() {
+        let mut allowlist = vec![
+            "PATH".to_string(),
+            "HOME".to_string(),
+            "TMPDIR".to_string(),
+        ];
+        crate::managed_proxy_env::extend_env_allowlist_with_proxy_vars(&mut allowlist, true);
+        let policy = SandboxPolicy {
+            env_allowlist: allowlist,
+            ..SandboxPolicy::default()
+        };
+        let mut supplied = HashMap::new();
+        supplied.insert("HTTP_PROXY".to_string(), "http://127.0.0.1:8765".to_string());
+        supplied.insert("HTTPS_PROXY".to_string(), "http://127.0.0.1:8765".to_string());
+        supplied.insert("GIT_CONFIG_COUNT".to_string(), "1".to_string());
+        supplied.insert("SECRET_TOKEN".to_string(), "leak".to_string());
+
+        let filtered = filter_env(Some(&supplied), &policy);
+        assert_eq!(
+            filtered.get("HTTP_PROXY"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
+        assert_eq!(
+            filtered.get("HTTPS_PROXY"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
+        assert_eq!(filtered.get("GIT_CONFIG_COUNT"), Some(&"1".to_string()));
+        assert!(!filtered.contains_key("SECRET_TOKEN"));
+    }
+}

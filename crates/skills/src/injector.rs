@@ -121,7 +121,8 @@ impl InjectionContext {
         for turn in &self.conversation {
             parts.push(turn);
         }
-        parts.push(&self.query_terms.join(" "));
+        let query = self.query_terms.join(" ");
+        parts.push(&query);
         parts.join("\n")
     }
 }

@@ -13,6 +13,28 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+/// Create a symlink at `link` pointing to `target`.
+///
+/// `tokio::fs::symlink` is unix-only; on Windows we dispatch on whether the
+/// target is a file or directory, best-effort.
+#[cfg(unix)]
+async fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    tokio::fs::symlink(target, link).await
+}
+
+#[cfg(windows)]
+async fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    let target = target.to_path_buf();
+    let link = link.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        std::os::windows::fs::symlink_file(&target, &link).or_else(|_| {
+            std::os::windows::fs::symlink_dir(&target, &link)
+        })
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
 /// Tool for filesystem operations (read, write, edit, list).
 pub struct FilesystemTool {
     /// Base directory that all paths must be under.
@@ -43,10 +65,11 @@ impl FilesystemTool {
             path
         };
 
-        // Canonicalize to resolve symlinks and '..' components.
-        let canonical = resolved.canonicalize().map_err(|e| {
+        // Canonicalize to resolve symlinks and '..' components. For paths that
+        // do not exist yet (new files on write), canonicalize the parent and
+        // re-attach the file name.
+        let canonical = resolved.canonicalize().or_else(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                // For new files (write), canonicalize the parent directory.
                 if let Some(parent) = resolved.parent() {
                     let parent_canonical = parent.canonicalize().map_err(|_| {
                         ToolError::new(
@@ -54,13 +77,19 @@ impl FilesystemTool {
                             format!("Cannot access parent directory of '{}'", path_str),
                         )
                     })?;
-                    return Ok(parent_canonical.join(resolved.file_name().unwrap_or_default()));
+                    Ok(parent_canonical.join(resolved.file_name().unwrap_or_default()))
+                } else {
+                    Err(ToolError::new(
+                        "PATH_INVALID",
+                        format!("Cannot access path '{}': {}", path_str, e),
+                    ))
                 }
+            } else {
+                Err(ToolError::new(
+                    "PATH_INVALID",
+                    format!("Cannot access path '{}': {}", path_str, e),
+                ))
             }
-            ToolError::new(
-                "PATH_INVALID",
-                format!("Cannot access path '{}': {}", path_str, e),
-            )
         })?;
 
         // Check traversal protection: must be within allowed_base.
@@ -374,7 +403,7 @@ impl FilesystemTool {
                         .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
                 } else if entry_path.is_symlink() {
                     if let Ok(target) = fs::read_link(&entry_path).await {
-                        fs::symlink(target, &dest_path)
+                        create_symlink(&target, &dest_path)
                             .await
                             .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
                     }
@@ -386,7 +415,7 @@ impl FilesystemTool {
             }
         } else if source.is_symlink() {
             if let Ok(target) = fs::read_link(source).await {
-                fs::symlink(target, dest)
+                create_symlink(&target, dest)
                     .await
                     .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
             }
@@ -643,6 +672,54 @@ impl FilesystemTool {
     }
 }
 
+/// Active platform string used by the foreign-host path policy.
+fn active_platform() -> &'static str {
+    if cfg!(windows) {
+        "nt"
+    } else {
+        "posix"
+    }
+}
+
+/// Reject absolute paths from another host OS against the scoped context.
+fn gate_foreign_host_path(original_path: &str) -> ToolResult<()> {
+    if let Some(ctx) = crate::context::current_tool_context() {
+        let workspace = ctx
+            .workspace_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
+        crate::path_policy::reject_foreign_host_path(
+            original_path,
+            active_platform(),
+            workspace.as_deref(),
+        )?;
+    }
+    Ok(())
+}
+
+/// Run workspace write-deny + scratch-artifact gates against the scoped
+/// context. No-op when no context is scoped (direct tool invocation).
+fn gate_workspace_writes(tool_name: &str, path: &Path, original_path: &str) -> ToolResult<()> {
+    crate::context::with_current_tool_context(|ctx| {
+        crate::write_policy::gate_workspace_write_deny(
+            tool_name,
+            path,
+            Some(original_path),
+            ctx.workspace_dir.as_deref(),
+            ctx,
+        )?;
+        crate::write_policy::gate_workspace_scratch_artifact(
+            tool_name,
+            path,
+            Some(original_path),
+            ctx.workspace_dir.as_deref(),
+            ctx,
+        )
+    })
+    .transpose()?;
+    Ok(())
+}
+
 #[async_trait]
 impl Tool for FilesystemTool {
     fn definition(&self) -> &ToolDefinition {
@@ -744,13 +821,33 @@ impl Tool for FilesystemTool {
 
         let path = self.resolve_path(path_str)?;
 
+        // Foreign-host path rejection (defense in depth; no-op without a
+        // scoped context).
+        gate_foreign_host_path(path_str)?;
+
         match operation {
-            "read" => self.read_file(&path).await,
+            "read" => {
+                let output = self.read_file(&path).await?;
+                crate::context::mutate_current_tool_context(|ctx| {
+                    crate::write_tracking::record_workspace_file_read(
+                        ctx, &path, "read", None, None, Some(true),
+                    )
+                });
+                Ok(output)
+            }
             "write" => {
                 let content = params["content"].as_str().ok_or_else(|| {
                     ToolError::invalid_args("Missing 'content' for write operation")
                 })?;
-                self.write_file(&path, content).await
+                gate_workspace_writes("write_file", &path, path_str)?;
+                let created = !path.exists();
+                let output = self.write_file(&path, content).await?;
+                crate::context::mutate_current_tool_context(|ctx| {
+                    crate::write_tracking::record_workspace_file_write(
+                        ctx, &path, "write", created,
+                    )
+                });
+                Ok(output)
             }
             "edit" => {
                 let old_string = params["old_string"].as_str().ok_or_else(|| {
@@ -759,7 +856,19 @@ impl Tool for FilesystemTool {
                 let new_string = params["new_string"].as_str().ok_or_else(|| {
                     ToolError::invalid_args("Missing 'new_string' for edit operation")
                 })?;
-                self.edit_file(&path, old_string, new_string).await
+                gate_workspace_writes("edit_file", &path, path_str)?;
+                if let Some(ctx) = crate::context::current_tool_context() {
+                    crate::write_tracking::require_fresh_workspace_file_read(
+                        &ctx, &path, "edit_file", path_str,
+                    )?;
+                }
+                let output = self.edit_file(&path, old_string, new_string).await?;
+                crate::context::mutate_current_tool_context(|ctx| {
+                    crate::write_tracking::record_workspace_file_write(
+                        ctx, &path, "edit", false,
+                    )
+                });
+                Ok(output)
             }
             "list" => {
                 if !path.is_dir() {
@@ -1178,5 +1287,117 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "TOOL_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn test_scoped_context_records_writes_and_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().canonicalize().expect("canonical workspace");
+        let tool = FilesystemTool::new(workspace.clone());
+
+        let ctx = crate::context::ToolContext {
+            workspace_dir: Some(workspace.clone()),
+            ..Default::default()
+        };
+
+        let (write_count, read_count) = crate::context::run_with_tool_context(
+            Some(ctx),
+            async {
+                tool.execute(serde_json::json!({
+                    "operation": "write",
+                    "path": "tracked.txt",
+                    "content": "hello",
+                }))
+                .await
+                .unwrap();
+                tool.execute(serde_json::json!({
+                    "operation": "read",
+                    "path": "tracked.txt",
+                }))
+                .await
+                .unwrap();
+                let writes = crate::context::with_current_tool_context(|c| c.workspace_file_writes.len());
+                let reads = crate::context::with_current_tool_context(|c| c.workspace_file_reads.len());
+                (writes, reads)
+            },
+        )
+        .await;
+        assert_eq!(write_count, Some(1));
+        assert_eq!(read_count, Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_scoped_context_gates_write_deny() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().canonicalize().expect("canonical workspace");
+        let tool = FilesystemTool::new(workspace.clone());
+
+        let ctx = crate::context::ToolContext {
+            workspace_dir: Some(workspace.clone()),
+            workspace_write_deny_globs: vec!["**/*.lock".to_string()],
+            ..Default::default()
+        };
+
+        let result = crate::context::run_with_tool_context(
+            Some(ctx),
+            tool.execute(serde_json::json!({
+                "operation": "write",
+                "path": "Cargo.lock",
+                "content": "locked",
+            })),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "WORKSPACE_WRITE_DENY");
+    }
+
+    #[tokio::test]
+    async fn test_scoped_context_requires_fresh_read_before_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().canonicalize().expect("canonical workspace");
+        let tool = FilesystemTool::new(workspace.clone());
+        std::fs::write(workspace.join("x.txt"), "original").unwrap();
+
+        let ctx = crate::context::ToolContext {
+            workspace_dir: Some(workspace.clone()),
+            file_edit_requires_fresh_read: true,
+            ..Default::default()
+        };
+
+        // Without a prior read the edit is refused.
+        let result = crate::context::run_with_tool_context(
+            Some(ctx.clone()),
+            tool.execute(serde_json::json!({
+                "operation": "edit",
+                "path": "x.txt",
+                "old_string": "original",
+                "new_string": "changed",
+            })),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "FRESH_READ_REQUIRED");
+
+        // After a full read the edit proceeds.
+        let result = crate::context::run_with_tool_context(
+            Some(ctx),
+            async {
+                tool.execute(serde_json::json!({
+                    "operation": "read",
+                    "path": "x.txt",
+                }))
+                .await
+                .unwrap();
+                tool.execute(serde_json::json!({
+                    "operation": "edit",
+                    "path": "x.txt",
+                    "old_string": "original",
+                    "new_string": "changed",
+                }))
+                .await
+            },
+        )
+        .await;
+        assert!(result.is_ok());
     }
 }

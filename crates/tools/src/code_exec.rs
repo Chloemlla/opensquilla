@@ -337,9 +337,11 @@ impl Tool for CodeExecTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "execute_code",
-                "Execute code in a specified programming language. "
-                    + "Supports Python, JavaScript/TypeScript, Ruby, Bash, Rust, Go, R, PHP, Perl, and SQLite. "
-                    + "Code is executed in a subprocess with a timeout.",
+                concat!(
+                    "Execute code in a specified programming language. ",
+                    "Supports Python, JavaScript/TypeScript, Ruby, Bash, Rust, Go, R, PHP, Perl, and SQLite. ",
+                    "Code is executed in a subprocess with a timeout.",
+),
                 HashMap::from([
                     (
                         "code".to_string(),

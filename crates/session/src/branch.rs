@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use opensquilla_core::error::CoreError;
 use opensquilla_core::result::CoreResult;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::manager::{ForkConfig, SessionManager};

@@ -3197,7 +3197,7 @@ pub fn seed_catalog(catalog: &ModelCatalog, provider: OpenAIProvider) -> usize {
     if caps.is_empty() {
         return 0;
     }
-    catalog.upsert_many(info.id, caps);
+    catalog.upsert_many(info.id, caps.clone());
     caps.len()
 }
 
@@ -3589,6 +3589,7 @@ mod tests {
             role: MessageRole::Tool,
             content: vec![ContentBlock::Text("72f".into())],
             tool_call_id: Some("call_1".into()),
+            tool_calls: None,
             tool_result: None,
             name: None,
         });

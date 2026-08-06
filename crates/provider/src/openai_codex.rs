@@ -333,7 +333,7 @@ impl OpenAICodexProvider {
     }
 
     /// The effective request model, preferring the config's model.
-    fn effective_model(&self, config: &ChatConfig) -> &str {
+    fn effective_model<'a>(&'a self, config: &'a ChatConfig) -> &'a str {
         if config.model.is_empty() {
             &self.default_model
         } else {

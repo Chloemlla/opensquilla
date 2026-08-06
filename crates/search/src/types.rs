@@ -115,10 +115,10 @@ impl std::error::Error for SearchError {}
 /// The search provider trait. All search backends must implement this.
 pub trait SearchProvider: Send + Sync {
     /// Search the web with the given query.
-    fn search(
-        &self,
-        request: &SearchRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<SearchResponse, SearchError>> + Send + '_>>;
+    fn search<'a>(
+        &'a self,
+        request: &'a SearchRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<SearchResponse, SearchError>> + Send + 'a>>;
 
     /// Return the name of this provider.
     fn name(&self) -> &str;

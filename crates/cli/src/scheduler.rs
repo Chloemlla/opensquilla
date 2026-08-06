@@ -80,7 +80,7 @@ pub async fn list_tasks() -> Result<()> {
 /// Show the details of a single scheduled job.
 pub async fn show_task(id: String) -> Result<()> {
     let engine = build_engine()?;
-    let job = load_job(&engine, &id)?;
+    let job = load_job(&engine, &id).await?;
 
     println!("Task: {}", job.id);
     println!("  Name:        {}", job.name);
@@ -203,7 +203,7 @@ pub async fn remove_task(id: String) -> Result<()> {
 /// Show execution history for a task.
 pub async fn show_history(id: String, limit: usize) -> Result<()> {
     let engine = build_engine()?;
-    let job = load_job(&engine, &id)?;
+    let job = load_job(&engine, &id).await?;
 
     println!("Execution history for task: {} ({})", job.name, job.id);
     println!("{:-<80}", "");
@@ -244,7 +244,7 @@ fn parse_id(id: &str) -> Result<Uuid> {
     Uuid::parse_str(id).map_err(|_| anyhow::anyhow!("Invalid task id: {id}"))
 }
 
-fn load_job(engine: &SchedulerEngine, id: &str) -> Result<CronJob> {
+async fn load_job(engine: &SchedulerEngine, id: &str) -> Result<CronJob> {
     let uid = parse_id(id)?;
     engine
         .ops()

@@ -20,6 +20,7 @@ use crate::registry::{
     ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
 };
 use async_trait::async_trait;
+use calamine::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -161,20 +162,29 @@ fn write_xlsx_cell(
     cell: &Value,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     match cell {
-        Value::String(s) => worksheet.write_string(row, col, s),
+        Value::String(s) => {
+            worksheet.write_string(row, col, s)?;
+        }
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                worksheet.write_number(row, col, i as f64)
+                worksheet.write_number(row, col, i as f64)?;
             } else if let Some(u) = n.as_u64() {
-                worksheet.write_number(row, col, u as f64)
+                worksheet.write_number(row, col, u as f64)?;
             } else {
-                worksheet.write_number(row, col, n.as_f64().unwrap_or(0.0))
+                worksheet.write_number(row, col, n.as_f64().unwrap_or(0.0))?;
             }
         }
-        Value::Bool(b) => worksheet.write_boolean(row, col, *b),
-        Value::Null => worksheet.write_blank(row, col),
-        other => worksheet.write_string(row, col, other.to_string()),
+        Value::Bool(b) => {
+            worksheet.write_boolean(row, col, *b)?;
+        }
+        Value::Null => {
+            worksheet.write_blank(row, col, &rust_xlsxwriter::Format::default())?;
+        }
+        other => {
+            worksheet.write_string(row, col, other.to_string())?;
+        }
     }
+    Ok(())
 }
 
 /// Small shared helper that resolves paths, enforces the size budget, and
@@ -259,96 +269,133 @@ fn build_pdf(
     body: Option<&str>,
     font_path: Option<&Path>,
 ) -> ToolResult<Vec<u8>> {
-    use printpdf::{BuiltinFont, Mm, PdfDocument};
+    use printpdf::{
+        BuiltinFont, FontId, Mm, Op, ParsedFont, PdfDocument, PdfPage, PdfSaveOptions, Point, Pt,
+        TextItem,
+    };
 
-    let (mut doc, page, layer) = PdfDocument::new(
-        title,
-        Mm(DEFAULT_PAGE_WIDTH_MM),
-        Mm(DEFAULT_PAGE_HEIGHT_MM),
-        "OpenSquilla",
-    );
+    enum FontRef {
+        Builtin(BuiltinFont),
+        External(FontId),
+    }
 
-    let base_font = if let Some(fp) = font_path {
+    fn push_text(
+        ops: &mut Vec<Op>,
+        font: &FontRef,
+        text: &str,
+        x_mm: f32,
+        y_mm: f32,
+        size_pt: f32,
+    ) {
+        ops.push(Op::SetTextCursor {
+            pos: Point::new(Mm(x_mm), Mm(y_mm)),
+        });
+        match font {
+            FontRef::Builtin(bf) => {
+                ops.push(Op::SetFontSizeBuiltinFont {
+                    size: Pt(size_pt),
+                    font: *bf,
+                });
+                ops.push(Op::WriteTextBuiltinFont {
+                    items: vec![TextItem::Text(text.to_string())],
+                    font: *bf,
+                });
+            }
+            FontRef::External(fid) => {
+                ops.push(Op::SetFontSize {
+                    size: Pt(size_pt),
+                    font: fid.clone(),
+                });
+                ops.push(Op::WriteText {
+                    items: vec![TextItem::Text(text.to_string())],
+                    font: fid.clone(),
+                });
+            }
+        }
+    }
+
+    let mut doc = PdfDocument::new(title);
+
+    let (base_font, bold_font) = if let Some(fp) = font_path {
         let font_data = std::fs::read(fp)
             .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to read font file: {e}")))?;
-        doc.add_external_font(&font_data)
-            .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to add external font: {e}")))?
+        let mut warnings = Vec::new();
+        if let Some(font) = ParsedFont::from_bytes(&font_data, 0, &mut warnings) {
+            let id = doc.add_font(&font);
+            (FontRef::External(id.clone()), FontRef::External(id))
+        } else {
+            (
+                FontRef::Builtin(BuiltinFont::Helvetica),
+                FontRef::Builtin(BuiltinFont::HelveticaBold),
+            )
+        }
     } else {
-        doc.add_builtin_font(BuiltinFont::Helvetica)
-            .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to add builtin font: {e}")))?
+        (
+            FontRef::Builtin(BuiltinFont::Helvetica),
+            FontRef::Builtin(BuiltinFont::HelveticaBold),
+        )
     };
-    let bold_font = doc
-        .add_builtin_font(BuiltinFont::HelveticaBold)
-        .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to add bold font: {e}")))?;
 
-    {
-        let current_layer = doc.get_page(page).get_layer(layer);
-        let mut y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
+    let width_mm = DEFAULT_PAGE_WIDTH_MM as f32;
+    let height_mm = DEFAULT_PAGE_HEIGHT_MM as f32;
+    let mut y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
+    let mut ops = Vec::new();
+    ops.push(Op::StartTextSection);
 
-        current_layer
-            .use_text(title, 20.0, Mm(20.0), Mm(y_mm), &bold_font)
-            .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to render title: {e}")))?;
-        y_mm -= 12.0;
+    push_text(&mut ops, &bold_font, title, 20.0, y_mm as f32, 20.0);
+    y_mm -= 12.0;
 
-        if let Some(section_array) = sections.as_array() {
-            for (idx, section) in section_array.iter().enumerate() {
-                let obj = section.as_object().ok_or_else(|| {
-                    ToolError::invalid_args(format!("sections[{idx}] must be an object"))
-                })?;
-                let heading = obj
-                    .get("heading")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&format!("Section {}", idx + 1));
-                let section_body = obj.get("body").and_then(|v| v.as_str()).unwrap_or("");
+    if let Some(section_array) = sections.as_array() {
+        for (idx, section) in section_array.iter().enumerate() {
+            let obj = section.as_object().ok_or_else(|| {
+                ToolError::invalid_args(format!("sections[{idx}] must be an object"))
+            })?;
+            let heading = obj
+                .get("heading")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .unwrap_or_else(|| format!("Section {}", idx + 1));
+            let section_body = obj.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
-                y_mm -= 10.0;
-                if y_mm < 20.0 {
-                    y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
-                }
-                current_layer
-                    .use_text(heading, 14.0, Mm(20.0), Mm(y_mm), &bold_font)
-                    .map_err(|e| {
-                        ToolError::new("PDF_ERROR", format!("Failed to render heading: {e}"))
-                    })?;
-                y_mm -= 8.0;
-
-                for line in section_body.lines() {
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    if y_mm < 20.0 {
-                        y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
-                    }
-                    current_layer
-                        .use_text(line, 10.0, Mm(22.0), Mm(y_mm), &base_font)
-                        .map_err(|e| {
-                            ToolError::new("PDF_ERROR", format!("Failed to render body: {e}"))
-                        })?;
-                    y_mm -= 5.0;
-                }
+            y_mm -= 10.0;
+            if y_mm < 20.0 {
+                y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
             }
-        } else if let Some(body_text) = body {
-            for line in body_text.lines() {
+            push_text(&mut ops, &bold_font, &heading, 20.0, y_mm as f32, 14.0);
+            y_mm -= 8.0;
+
+            for line in section_body.lines() {
                 if line.trim().is_empty() {
                     continue;
                 }
                 if y_mm < 20.0 {
                     y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
                 }
-                current_layer
-                    .use_text(line, 10.0, Mm(20.0), Mm(y_mm), &base_font)
-                    .map_err(|e| {
-                        ToolError::new("PDF_ERROR", format!("Failed to render body: {e}"))
-                    })?;
+                push_text(&mut ops, &base_font, line, 22.0, y_mm as f32, 10.0);
                 y_mm -= 5.0;
             }
         }
+    } else if let Some(body_text) = body {
+        for line in body_text.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if y_mm < 20.0 {
+                y_mm = DEFAULT_PAGE_HEIGHT_MM - 25.0;
+            }
+            push_text(&mut ops, &base_font, line, 20.0, y_mm as f32, 10.0);
+            y_mm -= 5.0;
+        }
     }
 
-    let mut buf = Vec::new();
-    doc.save(&mut std::io::Cursor::new(&mut buf))
-        .map_err(|e| ToolError::new("PDF_ERROR", format!("Failed to save PDF: {e}")))?;
-    Ok(buf)
+    ops.push(Op::EndTextSection);
+
+    let page = PdfPage::new(Mm(width_mm), Mm(height_mm), ops);
+    let mut warnings = Vec::new();
+    let bytes = doc
+        .with_pages(vec![page])
+        .save(&PdfSaveOptions::default(), &mut warnings);
+    Ok(bytes)
 }
 
 /// Build an XLSX workbook from an array of `{ "name", "rows" }` sheet objects.
@@ -395,8 +442,7 @@ fn build_xlsx(sheets: &Value) -> ToolResult<Vec<u8>> {
         }
     }
 
-    let mut buf = Vec::new();
-    workbook.save_to_buffer(&mut buf).map_err(|e: XlsxError| {
+    let buf = workbook.save_to_buffer().map_err(|e: XlsxError| {
         ToolError::new("XLSX_ERROR", format!("Failed to save workbook: {e}"))
     })?;
     Ok(buf)
@@ -431,9 +477,11 @@ impl Tool for GeneratePdfTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "generate_pdf",
-                "Create a simple PDF report from structured text sections and save it to the "
-                    + "workspace. Use this for channel PDF requests instead of returning PDF "
-                    + "source text.",
+                concat!(
+                    "Create a simple PDF report from structured text sections and save it to the ",
+                    "workspace. Use this for channel PDF requests instead of returning PDF ",
+                    "source text.",
+),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -555,8 +603,10 @@ impl Tool for GenerateXlsxTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "generate_xlsx",
-                "Create an XLSX workbook from structured sheets and save it to the workspace. "
-                    + "Use this for spreadsheet requests from channels.",
+                concat!(
+                    "Create an XLSX workbook from structured sheets and save it to the workspace. ",
+                    "Use this for spreadsheet requests from channels.",
+),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -644,8 +694,10 @@ impl Tool for GenerateCsvTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "generate_csv",
-                "Create a CSV file from structured rows and save it to the workspace. Use this "
-                    + "for channel file requests instead of writing raw files or pasting CSV text.",
+                concat!(
+                    "Create a CSV file from structured rows and save it to the workspace. Use this ",
+                    "for channel file requests instead of writing raw files or pasting CSV text.",
+),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -656,8 +708,10 @@ impl Tool for GenerateCsvTool {
                     (
                         "rows".to_string(),
                         ParameterDefinition::array(
-                            "Non-empty array of row arrays. Values may be strings, numbers, "
-                                + "booleans, null, arrays, or objects.",
+                            concat!(
+                                "Non-empty array of row arrays. Values may be strings, numbers, ",
+                                "booleans, null, arrays, or objects.",
+),
                             ParameterDefinition::array(
                                 "Cells",
                                 ParameterDefinition::string("Cell value"),
@@ -745,8 +799,10 @@ impl Tool for GenerateJsonTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "generate_json",
-                "Validate and write a JSON document to the workspace. The content is parsed "
-                    + "and re-serialized (pretty-printed) so invalid JSON fails fast.",
+                concat!(
+                    "Validate and write a JSON document to the workspace. The content is parsed ",
+                    "and re-serialized (pretty-printed) so invalid JSON fails fast.",
+),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -1016,8 +1072,10 @@ impl Tool for GenerateHtmlTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "generate_html",
-                "Generate an HTML document from structured content (title, body, paragraphs, "
-                    + "list, table) and save it to the workspace.",
+                concat!(
+                    "Generate an HTML document from structured content (title, body, paragraphs, ",
+                    "list, table) and save it to the workspace.",
+),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -1201,8 +1259,10 @@ impl Tool for ReadXlsxTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "read_xlsx",
-                "Read an Excel workbook (.xlsx or .xls) and return its contents as JSON. "
-                    + "Optionally filter to specific sheets. Useful for inspecting spreadsheets.",
+                concat!(
+                    "Read an Excel workbook (.xlsx or .xls) and return its contents as JSON. ",
+                    "Optionally filter to specific sheets. Useful for inspecting spreadsheets.",
+),
                 HashMap::from([
                     (
                         "path".to_string(),
@@ -1347,8 +1407,10 @@ impl Tool for ReadCsvTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "read_csv",
-                "Read and parse a CSV file. Returns the parsed rows as JSON, "
-                    + "optionally using the first row as headers.",
+                concat!(
+                    "Read and parse a CSV file. Returns the parsed rows as JSON, ",
+                    "optionally using the first row as headers.",
+),
                 HashMap::from([
                     (
                         "path".to_string(),
@@ -1393,6 +1455,7 @@ impl Tool for ReadCsvTool {
             .unwrap_or(',');
 
         let rows = parse_csv(&content, delimiter);
+        let column_count = rows.first().map(|r| r.len()).unwrap_or(0);
 
         let (headers, data_rows): (Option<Vec<String>>, Vec<Vec<String>>) = if has_headers
             && !rows.is_empty()
@@ -1432,7 +1495,7 @@ impl Tool for ReadCsvTool {
         let data = json!({
             "path": path.to_string_lossy(),
             "row_count": data_rows.len(),
-            "column_count": rows.first().map(|r| r.len()).unwrap_or(0),
+            "column_count": column_count,
             "has_headers": has_headers,
             "headers": headers,
             "records": records,
@@ -1554,7 +1617,8 @@ mod tests {
         assert!(result.is_ok());
 
         let path = dir.path().join("book.xlsx");
-        let mut workbook = calamine::open_workbook::<_, calamine::Xlsx<_>>(&path).unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let mut workbook = calamine::Xlsx::new(file).unwrap();
         let range = workbook
             .worksheet_range("People")
             .unwrap_or_else(|_| panic!("missing sheet"));

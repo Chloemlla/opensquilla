@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use opensquilla_core::error::Result;
 use opensquilla_core::events::StreamEvent;
 use opensquilla_core::types::{Message, Usage};
+use std::collections::HashMap;
 use std::fmt;
 use tokio::sync::mpsc;
 use tracing::{debug, info, instrument};
@@ -26,6 +27,9 @@ pub struct StageContext {
     pub tool_round: u32,
     /// The maximum number of tool call rounds allowed.
     pub max_tool_rounds: u32,
+    /// Per-turn metadata (routing plan, execution legs, tracker telemetry).
+    /// Mirrors the Python `turn.metadata` dict carried through every stage.
+    pub metadata: HashMap<String, serde_json::Value>,
 }
 
 /// The output of a stage after execution.

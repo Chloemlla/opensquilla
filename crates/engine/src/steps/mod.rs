@@ -12,6 +12,8 @@
 //!   triggers in the user message and leave a soft hint for the skills filter.
 //! * [`model_select::ModelSelectStep`] — resolve the model (and provider) used
 //!   for the turn.
+//! * [`reasoning_hint_observer::ReasoningHintObserverStep`] — record nullable
+//!   reasoning-format hint telemetry from the resolved model.
 //! * [`skills_filter::SkillsFilterStep`] — gate and filter available skills,
 //!   then inject `<available_skills>` into the system prompt.
 //! * [`context_assembly::ContextAssemblyStep`] — assemble context fragments
@@ -23,6 +25,7 @@ pub mod attachment_loader;
 pub mod context_assembly;
 pub mod meta_resolution;
 pub mod model_select;
+pub mod reasoning_hint_observer;
 pub mod skills_filter;
 
 use async_trait::async_trait;
@@ -153,6 +156,7 @@ pub use attachment_loader::{AttachmentDescriptor, AttachmentLoaderStep};
 pub use context_assembly::ContextAssemblyStep;
 pub use meta_resolution::{MetaResolutionConfig, MetaResolutionStep};
 pub use model_select::{ModelSelectConfig, ModelSelectStep};
+pub use reasoning_hint_observer::ReasoningHintObserverStep;
 pub use skills_filter::{SkillSpec, SkillsFilterConfig, SkillsFilterStep};
 
 #[cfg(test)]
@@ -165,27 +169,36 @@ mod tests {
     type BoxedStepFuture<'a> =
         Pin<Box<dyn std::future::Future<Output = Result<StepAction>> + Send + 'a>>;
 
+    fn first_step(ctx: &mut PipelineContext) -> BoxedStepFuture<'_> {
+        Box::pin(async move {
+            ctx.set_metadata("order", "first");
+            Ok(StepAction::Continue)
+        })
+    }
+
+    fn second_step(ctx: &mut PipelineContext) -> BoxedStepFuture<'_> {
+        Box::pin(async move {
+            ctx.set_metadata("order", "second");
+            Ok(StepAction::Continue)
+        })
+    }
+
+    fn halt_step(_ctx: &mut PipelineContext) -> BoxedStepFuture<'_> {
+        Box::pin(async move { Ok(StepAction::Halt("stop".into())) })
+    }
+
+    fn never_step(ctx: &mut PipelineContext) -> BoxedStepFuture<'_> {
+        Box::pin(async move {
+            ctx.set_metadata("ran", "true");
+            Ok(StepAction::Continue)
+        })
+    }
+
     #[tokio::test]
     async fn test_chain_runs_in_order() {
         let mut chain = StepChain::new();
-        chain.push(ClosureStep::new(
-            "first",
-            |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-                Box::pin(async move {
-                    ctx.set_metadata("order", "first");
-                    Ok(StepAction::Continue)
-                })
-            },
-        ));
-        chain.push(ClosureStep::new(
-            "second",
-            |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-                Box::pin(async move {
-                    ctx.set_metadata("order", "second");
-                    Ok(StepAction::Continue)
-                })
-            },
-        ));
+        chain.push(ClosureStep::new("first", first_step));
+        chain.push(ClosureStep::new("second", second_step));
 
         let mut ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
         let action = chain.execute(&mut ctx).await.unwrap();
@@ -199,21 +212,8 @@ mod tests {
     #[tokio::test]
     async fn test_halt_short_circuits() {
         let mut chain = StepChain::new();
-        chain.push(ClosureStep::new(
-            "halt",
-            |_ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-                Box::pin(async move { Ok(StepAction::Halt("stop".into())) })
-            },
-        ));
-        chain.push(ClosureStep::new(
-            "never",
-            |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-                Box::pin(async move {
-                    ctx.set_metadata("ran", "true");
-                    Ok(StepAction::Continue)
-                })
-            },
-        ));
+        chain.push(ClosureStep::new("halt", halt_step));
+        chain.push(ClosureStep::new("never", never_step));
 
         let mut ctx = PipelineContext::new("t1".into(), Vec::new());
         let action = chain.execute(&mut ctx).await.unwrap();

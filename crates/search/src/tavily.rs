@@ -113,11 +113,11 @@ impl TavilySearch {
 }
 
 impl SearchProvider for TavilySearch {
-    fn search(
-        &self,
-        request: &SearchRequest,
+    fn search<'a>(
+        &'a self,
+        request: &'a SearchRequest,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + '_>,
+        Box<dyn std::future::Future<Output = Result<SearchResponse, SearchError>> + Send + 'a>,
     > {
         Box::pin(self.search_web(request))
     }

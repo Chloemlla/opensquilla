@@ -183,6 +183,7 @@ impl SandboxProfile {
                 memory_bytes: Some(256 * 1024 * 1024),
                 max_processes: Some(20),
                 file_size_bytes: Some(50 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec![
@@ -210,6 +211,7 @@ impl SandboxProfile {
                 memory_bytes: Some(256 * 1024 * 1024),
                 max_processes: Some(20),
                 file_size_bytes: Some(50 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec![
@@ -239,6 +241,7 @@ impl SandboxProfile {
                 memory_bytes: Some(128 * 1024 * 1024),
                 max_processes: Some(5),
                 file_size_bytes: Some(10 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec!["PATH".to_string(), "HOME".to_string(), "LANG".to_string()],
@@ -264,6 +267,7 @@ impl SandboxProfile {
                 memory_bytes: Some(128 * 1024 * 1024),
                 max_processes: Some(5),
                 file_size_bytes: Some(100 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec!["PATH".to_string(), "HOME".to_string(), "LANG".to_string()],
@@ -286,6 +290,7 @@ impl SandboxProfile {
                 memory_bytes: Some(128 * 1024 * 1024),
                 max_processes: Some(10),
                 file_size_bytes: Some(10 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec!["PATH".to_string(), "HOME".to_string(), "LANG".to_string()],
@@ -319,6 +324,7 @@ impl SandboxProfile {
                 memory_bytes: Some(256 * 1024 * 1024),
                 max_processes: Some(20),
                 file_size_bytes: Some(500 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec![
@@ -361,6 +367,8 @@ impl SandboxProfile {
                 memory_bytes: Some(512 * 1024 * 1024),
                 max_processes: Some(30),
                 file_size_bytes: Some(1024 * 1024 * 1024),
+                wall_time_secs: Some(300),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec![
@@ -389,6 +397,7 @@ impl SandboxProfile {
                 memory_bytes: Some(64 * 1024 * 1024),
                 max_processes: Some(5),
                 file_size_bytes: Some(10 * 1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec!["PATH".to_string()],
@@ -426,6 +435,7 @@ impl SandboxProfile {
                 memory_bytes: Some(32 * 1024 * 1024),
                 max_processes: Some(1),
                 file_size_bytes: Some(1024 * 1024),
+                ..Default::default()
             },
             audit_enabled: true,
             env_allowlist: vec![],

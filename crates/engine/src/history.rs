@@ -163,7 +163,7 @@ pub fn repair_tool_pairs(messages: &[Message]) -> RepairOutcome {
                     false
                 }
             }
-            other => {
+            _other => {
                 has_live_content = true;
                 true
             }

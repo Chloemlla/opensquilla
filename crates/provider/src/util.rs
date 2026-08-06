@@ -323,15 +323,15 @@ mod tests {
         assert!(check_status(reqwest::StatusCode::OK, "", "test").is_ok());
         assert!(matches!(
             check_status(reqwest::StatusCode::UNAUTHORIZED, "nope", "img"),
-            ProviderError::Auth(_)
+            Err(ProviderError::Auth(_))
         ));
         assert!(matches!(
             check_status(reqwest::StatusCode::TOO_MANY_REQUESTS, "slow down", "img"),
-            ProviderError::RateLimited(_)
+            Err(ProviderError::RateLimited(_))
         ));
         assert!(matches!(
             check_status(reqwest::StatusCode::BAD_GATEWAY, "oops", "img"),
-            ProviderError::Provider(_)
+            Err(ProviderError::Provider(_))
         ));
     }
 
@@ -364,12 +364,14 @@ mod tests {
             retry_on_429: true,
         };
         let mut calls = 0u32;
-        let result = with_retry(&cfg, |_| async {
+        let result = with_retry(&cfg, |attempt| {
             calls += 1;
-            if calls < 3 {
-                Err(ProviderError::Timeout("transient".into()))
-            } else {
-                Ok(42u32)
+            async move {
+                if attempt < 2 {
+                    Err(ProviderError::Timeout("transient".into()))
+                } else {
+                    Ok(42u32)
+                }
             }
         })
         .await;
@@ -386,9 +388,9 @@ mod tests {
             retry_on_429: true,
         };
         let mut calls = 0u32;
-        let result = with_retry(&cfg, |_| async {
+        let result: ProviderResult<u32> = with_retry(&cfg, |_attempt| {
             calls += 1;
-            Err(ProviderError::Timeout("always".into()))
+            async move { Err(ProviderError::Timeout("always".into())) }
         })
         .await;
         assert!(matches!(result, Err(ProviderError::Timeout(_))));

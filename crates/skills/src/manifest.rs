@@ -17,9 +17,9 @@
 //! step without a `tool` is an error, and so on.
 
 use crate::types::{
-    SkillArg, SkillAuthor, SkillContext, SkillDependency, SkillKind, SkillLayer, SkillLicense,
+    SkillAuthor, SkillDependency, SkillKind, SkillLayer, SkillLicense,
     SkillManifest, SkillMetadata, SkillRequires, SkillSpec, SkillStep, SkillVersion, SkillVisibility,
-    StepOutput, StepType,
+    StepType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -698,7 +698,7 @@ fn dfs_cycle<'a>(
         for neighbor in adj {
             let s = state.get(neighbor).copied().unwrap_or(0);
             if s == 1 {
-                let start = path.iter().position(|n| *n == *neighbor).copied();
+                let start = path.iter().position(|n| *n == *neighbor);
                 if let Some(start_idx) = start {
                     let cycle: Vec<&'a str> = path[start_idx..].to_vec();
                     return Some(cycle);
@@ -950,11 +950,16 @@ pub fn merge_manifests(base: &SkillManifest, override_: &SkillManifest) -> Skill
 }
 
 /// Compute the set of tags declared anywhere in a manifest: top-level tags,
-/// metadata.tags, and metadata.triggers.
+/// metadata.classification, and metadata.triggers.
 pub fn collect_tags(manifest: &SkillManifest) -> Vec<String> {
     let mut tags: Vec<String> = manifest.tags.clone();
     if let Some(meta) = &manifest.metadata {
-        for t in &meta.tags {
+        if let Some(classification) = &meta.classification {
+            if !tags.contains(classification) {
+                tags.push(classification.clone());
+            }
+        }
+        for t in &meta.triggers {
             if !tags.contains(t) {
                 tags.push(t.clone());
             }
@@ -1105,25 +1110,28 @@ pub fn manifest_to_spec_public(
     let description = manifest.description.clone().unwrap_or_default();
 
     let mut spec = SkillSpec::new(id, name, description, layer);
-    spec.kind = manifest.kind.unwrap_or(SkillKind::Skill);
-    spec.version = manifest.version;
+    // All reads via `&manifest` must finish before any field is moved out of
+    // the manifest below.
     spec.author = extract_author(&manifest).map(|a| a.name);
     spec.license = manifest.license.clone();
     spec.homepage = manifest.homepage.clone();
     spec.tags = collect_tags(&manifest);
+    spec.allowed_tools = collect_tool_names(&manifest);
+    spec.requires = extract_requires(&manifest);
+    spec.metadata = Some(extract_metadata(&manifest));
+    spec.visibility = extract_visibility(&manifest);
+
+    spec.kind = manifest.kind.unwrap_or(SkillKind::Skill);
+    spec.version = manifest.version;
     spec.steps = manifest.steps;
     spec.outputs = manifest.outputs;
     spec.raw_frontmatter = raw_frontmatter;
     spec.source_path = source_path;
     spec.body = body;
-    spec.allowed_tools = collect_tool_names(&manifest);
     spec.disable_model_invocation = manifest.disable_model_invocation;
     spec.contexts = manifest.contexts;
     spec.args = manifest.args;
     spec.dependencies = manifest.dependencies;
-    spec.requires = extract_requires(&manifest);
-    spec.metadata = Some(extract_metadata(&manifest));
-    spec.visibility = extract_visibility(&manifest);
     spec.scope = manifest
         .scope
         .as_deref()
@@ -1305,7 +1313,8 @@ mod tests {
         let mut m = basic_manifest();
         m.tags = vec!["rust".to_string(), "async".to_string()];
         m.metadata = Some(SkillMetadata {
-            tags: vec!["rust".to_string(), "memory".to_string()],
+            classification: Some("memory".to_string()),
+            triggers: vec!["rust".to_string()],
             ..Default::default()
         });
         let tags = collect_tags(&m);

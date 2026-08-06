@@ -629,8 +629,10 @@ impl Tool for DiffTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "diff_files",
-                "Diff two files or text strings and return the differences. "
-                    + "Supports unified, context, JSON, and summary output formats.",
+                concat!(
+                    "Diff two files or text strings and return the differences. ",
+                    "Supports unified, context, JSON, and summary output formats.",
+),
                 HashMap::from([
                     (
                         "old_path".to_string(),
@@ -786,8 +788,10 @@ impl Tool for DirDiffTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "diff_directories",
-                "Compare two directories and report added, removed, and modified files. "
-                    + "Supports size-based (fast) or content-hash-based (accurate) comparison.",
+                concat!(
+                    "Compare two directories and report added, removed, and modified files. ",
+                    "Supports size-based (fast) or content-hash-based (accurate) comparison.",
+),
                 HashMap::from([
                     (
                         "old_dir".to_string(),

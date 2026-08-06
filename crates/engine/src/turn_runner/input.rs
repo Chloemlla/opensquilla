@@ -463,6 +463,7 @@ pub struct InjectionFallback;
 mod tests {
     use super::*;
     use opensquilla_core::types::Usage;
+    use std::collections::HashMap;
 
     fn context(messages: Vec<Message>) -> StageContext {
         StageContext {
@@ -474,6 +475,7 @@ mod tests {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: 10,
+            metadata: HashMap::new(),
         }
     }
 

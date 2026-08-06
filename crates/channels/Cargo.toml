@@ -10,7 +10,7 @@ repository.workspace = true
 opensquilla-core = { path = "../core" }
 tokio.workspace = true
 tokio-tungstenite.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["multipart"] }
 axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -573,6 +573,11 @@ impl<'a> WriterGuard<'a> {
             self.admission.release_writer();
         }
     }
+
+    /// The number of currently active writers, including this guard.
+    pub fn active_count(&self) -> u64 {
+        self.admission.active
+    }
 }
 
 impl<'a> Drop for WriterGuard<'a> {
@@ -936,7 +941,7 @@ mod tests {
         assert_eq!(admission.active_count(), 0);
 
         let guard = admission.begin("test").unwrap();
-        assert_eq!(admission.active_count(), 1);
+        assert_eq!(guard.active_count(), 1);
         guard.finish();
         assert_eq!(admission.active_count(), 0);
     }

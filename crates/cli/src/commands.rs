@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 
-use crate::agent::AgentAction;
-use crate::cost::CostAction;
-use crate::init::InitAction;
-use crate::onboard::OnboardAction;
-use crate::router::RouterAction;
-use crate::search::SearchAction;
-use crate::status::StatusAction;
-use crate::tools::ToolAction;
+pub use crate::agent::AgentAction;
+pub use crate::cost::CostAction;
+pub use crate::init::InitAction;
+pub use crate::onboard::OnboardAction;
+pub use crate::router::RouterAction;
+pub use crate::search::SearchAction;
+pub use crate::status::StatusAction;
+pub use crate::tools::ToolAction;
 
 #[derive(Parser, Debug)]
 #[command(

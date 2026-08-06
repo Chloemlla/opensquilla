@@ -79,7 +79,7 @@ impl OpenAiResponsesProvider {
     }
 
     /// Parse a provider kind from its registry id.
-    pub const fn from_str(id: &str) -> Option<Self> {
+    pub fn from_str(id: &str) -> Option<Self> {
         match id {
             "openai_responses" => Some(Self::OpenAiResponses),
             "volcengine_coding_plan" => Some(Self::VolcengineCodingPlan),
@@ -1166,7 +1166,7 @@ impl OpenAIResponsesProvider {
     }
 
     /// The effective request model, preferring the config's model.
-    fn effective_model(&self, config: &ChatConfig) -> &str {
+    fn effective_model<'a>(&'a self, config: &'a ChatConfig) -> &'a str {
         if config.model.is_empty() {
             &self.default_model
         } else {
@@ -1401,7 +1401,7 @@ impl OpenAIResponsesProvider {
             .await
         {
             Ok(resp) if resp.status().is_success() => resp,
-            _ => return self.provider_kind.default_models().to_vec(),
+            _ => return self.provider_kind.default_models().iter().map(|s| s.to_string()).collect(),
         };
         match resp.json::<serde_json::Value>().await {
             Ok(data) => {
@@ -1414,12 +1414,12 @@ impl OpenAIResponsesProvider {
                     }
                 }
                 if models.is_empty() {
-                    self.provider_kind.default_models().to_vec()
+                    self.provider_kind.default_models().iter().map(|s| s.to_string()).collect()
                 } else {
                     models
                 }
             }
-            Err(_) => self.provider_kind.default_models().to_vec(),
+            Err(_) => self.provider_kind.default_models().iter().map(|s| s.to_string()).collect(),
         }
     }
 }

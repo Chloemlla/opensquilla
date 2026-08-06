@@ -367,7 +367,7 @@ pub async fn compact_session_cmd(id: String) -> Result<()> {
         report.entries_compacted,
         report.tokens_before,
         report.tokens_after,
-        report.strategy
+        report.strategy.label(),
     );
     let _ = entries;
     Ok(())

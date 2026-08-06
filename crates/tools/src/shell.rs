@@ -153,12 +153,22 @@ impl ExecCommandTool {
         let exit_code = output.status.code().unwrap_or(-1);
         let duration_ms = start.elapsed().as_millis() as u64;
 
+        // Request-scoped run-mode classification (mirrors run_mode.py wiring).
+        // No-op fields when no tool context is scoped.
+        let run_mode = crate::run_mode::current_run_mode()
+            .map(|m| format!("{m:?}").to_ascii_lowercase());
+        let full_host_access = crate::run_mode::full_host_access_active();
+        let trusted_sandbox = crate::run_mode::trusted_sandbox_active();
+
         let data = serde_json::json!({
             "exit_code": exit_code,
             "stdout_length": stdout.len(),
             "stderr_length": stderr.len(),
             "duration_ms": duration_ms,
             "command": command,
+            "run_mode": run_mode,
+            "full_host_access": full_host_access,
+            "trusted_sandbox": trusted_sandbox,
         });
 
         let content = if output.status.success() {
@@ -200,9 +210,11 @@ impl Tool for ExecCommandTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "exec_command",
-                "Execute a shell command and return its output. "
-                    + "The command runs synchronously with a configurable timeout. "
-                    + "Environment variables and working directory can be specified.",
+                concat!(
+                    "Execute a shell command and return its output. ",
+                    "The command runs synchronously with a configurable timeout. ",
+                    "Environment variables and working directory can be specified.",
+),
                 HashMap::from([
                     (
                         "command".to_string(),
@@ -352,17 +364,15 @@ impl BackgroundProcessTool {
             let out_task = tokio::spawn(async move {
                 let mut data = Vec::new();
                 if stdout.read_to_end(&mut data).await.is_ok() {
-                    if let Ok(mut guard) = stdout_buf_guard.lock().await {
-                        guard.push_str(&String::from_utf8_lossy(&data));
-                    }
+                    let mut guard = stdout_buf_guard.lock().await;
+                    guard.push_str(&String::from_utf8_lossy(&data));
                 }
             });
             let err_task = tokio::spawn(async move {
                 let mut data = Vec::new();
                 if stderr.read_to_end(&mut data).await.is_ok() {
-                    if let Ok(mut guard) = stderr_buf_guard.lock().await {
-                        guard.push_str(&String::from_utf8_lossy(&data));
-                    }
+                    let mut guard = stderr_buf_guard.lock().await;
+                    guard.push_str(&String::from_utf8_lossy(&data));
                 }
             });
             let _ = tokio::join!(out_task, err_task);
@@ -651,7 +661,7 @@ impl Tool for BackgroundProcessTool {
 // ---------------------------------------------------------------------------
 
 /// A signal that can be sent to a process.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Signal {
     /// Terminate (SIGTERM / taskkill without /F).
@@ -1372,11 +1382,13 @@ impl Tool for EnhancedExecTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "exec_command_enhanced",
-                "Execute a shell command with enhanced options: environment variable filtering, "
-                    + "output capture modes (separate, merged, stdout-only, stderr-only, discard), "
-                    + "timeout enforcement, and working directory management. "
-                    + "Sensitive environment variables (containing SECRET_, TOKEN_, PASSWORD_, etc.) "
-                    + "are automatically filtered out.",
+                concat!(
+                    "Execute a shell command with enhanced options: environment variable filtering, ",
+                    "output capture modes (separate, merged, stdout-only, stderr-only, discard), ",
+                    "timeout enforcement, and working directory management. ",
+                    "Sensitive environment variables (containing SECRET_, TOKEN_, PASSWORD_, etc.) ",
+                    "are automatically filtered out.",
+),
                 HashMap::from([
                     (
                         "command".to_string(),
@@ -1479,8 +1491,10 @@ impl Tool for StreamOutputTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "stream_output",
-                "Stream or tail the output of a background process. "
-                    + "Returns the most recent lines of stdout and stderr.",
+                concat!(
+                    "Stream or tail the output of a background process. ",
+                    "Returns the most recent lines of stdout and stderr.",
+),
                 HashMap::from([
                     (
                         "process_id".to_string(),
@@ -1577,8 +1591,10 @@ impl Tool for SignalProcessTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "signal_process",
-                "Send a signal to a background process (TERM, KILL, INTERRUPT, HANGUP, USER1, USER2). "
-                    + "On Windows, only TERM and KILL are supported.",
+                concat!(
+                    "Send a signal to a background process (TERM, KILL, INTERRUPT, HANGUP, USER1, USER2). ",
+                    "On Windows, only TERM and KILL are supported.",
+),
                 HashMap::from([
                     (
                         "process_id".to_string(),

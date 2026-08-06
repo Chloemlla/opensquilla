@@ -7,6 +7,7 @@
 
 use opensquilla_core::ToolCall;
 use opensquilla_core::error::AppError;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -216,14 +217,12 @@ impl PolicyChain for DenyPolicy {
 
     async fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
         // Check session-level overrides first (allowlist takes precedence).
-        if let Some(session_id) = ctx.session_id.as_str() {
-            if let Some(allowed) = self.session_overrides.get(session_id) {
-                if allowed
-                    .iter()
-                    .any(|a| Self::matches_pattern(a, &ctx.tool_name))
-                {
-                    return PolicyDecision::Allow;
-                }
+        if let Some(allowed) = self.session_overrides.get(ctx.session_id.as_str()) {
+            if allowed
+                .iter()
+                .any(|a| Self::matches_pattern(a, &ctx.tool_name))
+            {
+                return PolicyDecision::Allow;
             }
         }
 

@@ -649,7 +649,7 @@ mod backend {
                 JobObjectExtendedLimitInformation,
                 &mut info as *mut _ as *mut c_void,
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                &mut returned,
+                Some(&mut returned),
             )
             .is_ok();
             if query_ok {
@@ -788,7 +788,7 @@ mod backend {
                     JobObjectExtendedLimitInformation,
                     &mut info as *mut _ as *mut c_void,
                     std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                    &mut returned,
+                    Some(&mut returned),
                 );
                 info.ProcessMemoryLimit = mem as usize;
                 info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;

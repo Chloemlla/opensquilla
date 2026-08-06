@@ -439,9 +439,11 @@ impl Tool for ProcessMonitorTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "process_monitor",
-                "Monitor system processes: list all processes, get process details by PID, "
-                    + "find processes by name, kill processes, view system resources, "
-                    + "and get process trees. Cross-platform (ps on Unix, tasklist on Windows).",
+                concat!(
+                    "Monitor system processes: list all processes, get process details by PID, ",
+                    "find processes by name, kill processes, view system resources, ",
+                    "and get process trees. Cross-platform (ps on Unix, tasklist on Windows).",
+),
                 HashMap::from([
                     (
                         "operation".to_string(),

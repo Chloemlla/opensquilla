@@ -209,8 +209,11 @@ impl PlanStateMachine {
         if metadata.get("steps").is_none() {
             let steps = parse_plan(&plan);
             if !steps.is_empty() {
-                if let Some(obj) = metadata.as_object_mut() {
-                    obj.insert("steps".to_string(), steps_to_value(&steps));
+                let steps_val = steps_to_value(&steps);
+                if metadata.is_null() {
+                    metadata = serde_json::json!({ "steps": steps_val });
+                } else if let Some(obj) = metadata.as_object_mut() {
+                    obj.insert("steps".to_string(), steps_val);
                 }
             }
         }
@@ -849,7 +852,7 @@ impl PlanStateMachine {
         revision_id: &Uuid,
     ) -> CoreResult<Vec<Vec<String>>> {
         let snapshot = self.snapshot(revision_id)?;
-        let mut graph: std::collections::HashMap<String, Vec<String>> = snapshot
+        let graph: std::collections::HashMap<String, Vec<String>> = snapshot
             .steps
             .iter()
             .map(|s| (s.id.clone(), s.dependencies.clone()))
@@ -1023,9 +1026,33 @@ fn steps_from_value(value: &serde_json::Value) -> Vec<PlanStep> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{Session, SessionMode, SessionStatus};
 
     fn machine() -> PlanStateMachine {
         PlanStateMachine::new(SessionStorage::in_memory().unwrap())
+    }
+
+    fn seeded_session(m: &PlanStateMachine) -> Uuid {
+        let id = Uuid::new_v4();
+        let session = Session {
+            id,
+            agent_id: Uuid::new_v4(),
+            name: "plan test".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_active_at: Utc::now(),
+            status: SessionStatus::Active,
+            mode: SessionMode::Chat,
+            system_prompt: String::new(),
+            total_tokens: 0,
+            total_cost_usd: 0.0,
+            message_count: 0,
+            parent_session_id: None,
+            fork_event: None,
+            metadata: serde_json::Value::Null,
+        };
+        m.storage.create_session(&session).unwrap();
+        id
     }
 
     #[test]
@@ -1050,7 +1077,7 @@ mod tests {
     #[test]
     fn create_activate_complete_lifecycle() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one\n- step two")
             .unwrap();
@@ -1074,7 +1101,7 @@ mod tests {
     #[test]
     fn revise_plan_supersedes_and_bumps_version() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- initial approach")
             .unwrap();
@@ -1099,7 +1126,7 @@ mod tests {
     #[test]
     fn step_approve_reject_complete_flow() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one\n- step two")
             .unwrap();
@@ -1134,7 +1161,7 @@ mod tests {
     #[test]
     fn step_ops_require_active_plan() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         // Draft plan: approvals are not allowed.
         assert!(m.approve_step(&plan.id, "1", None).is_err());
@@ -1143,7 +1170,7 @@ mod tests {
     #[test]
     fn run_lifecycle_and_report() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one\n- step two")
             .unwrap();
@@ -1167,7 +1194,6 @@ mod tests {
         let report = m.run_report(&run.id).unwrap();
         assert_eq!(report.completed_steps, 1);
         assert_eq!(report.total_steps, 2);
-        assert!(report.duration_ms >= 0);
 
         // Finishing an already-finished run fails.
         assert!(m.complete_run(&run.id, serde_json::Value::Null).is_err());
@@ -1176,7 +1202,7 @@ mod tests {
     #[test]
     fn run_fail_and_cancel() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         m.activate_plan(&plan.id).unwrap();
 
@@ -1195,7 +1221,7 @@ mod tests {
     #[test]
     fn list_revisions_orders_newest_first() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         m.activate_plan(&plan.id).unwrap();
         m.revise_plan(&plan.id, "- revised".to_string(), None).unwrap();
@@ -1209,7 +1235,7 @@ mod tests {
     #[test]
     fn plan_progress_tracks_completion() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one\n- step two\n- step three")
             .unwrap();
@@ -1224,7 +1250,7 @@ mod tests {
     #[test]
     fn step_status_counts_groups() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one\n- step two")
             .unwrap();
@@ -1241,8 +1267,8 @@ mod tests {
     #[test]
     fn next_runnable_steps_requires_deps() {
         let m = machine();
-        let session_id = Uuid::new_v4();
-        let plan = m.create_plan(&session_id, "- first\n- second\n- third", serde_json::Value::Null).unwrap();
+        let session_id = seeded_session(&m);
+        let plan = m.create_plan(session_id, "- first\n- second\n- third".to_string(), serde_json::Value::Null).unwrap();
         m.activate_plan(&plan.id).unwrap();
 
         // Approve all steps.
@@ -1262,7 +1288,7 @@ mod tests {
     #[test]
     fn reorder_steps_requires_permutation() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- a\n- b\n- c")
             .unwrap();
@@ -1281,8 +1307,8 @@ mod tests {
     #[test]
     fn validate_step_dependencies_detects_cycle() {
         let m = machine();
-        let session_id = Uuid::new_v4();
-        let plan = m.create_plan(&session_id, "- a\n- b", serde_json::Value::Null).unwrap();
+        let session_id = seeded_session(&m);
+        let plan = m.create_plan(session_id, "- a\n- b".to_string(), serde_json::Value::Null).unwrap();
         m.activate_plan(&plan.id).unwrap();
 
         // Build a cycle via metadata manipulation.
@@ -1298,7 +1324,7 @@ mod tests {
     #[test]
     fn export_import_plan_roundtrip() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one\n- step two")
             .unwrap();
@@ -1307,18 +1333,18 @@ mod tests {
 
         let json = m.export_plan(&plan.id).unwrap();
 
-        let imported = m.import_plan(Uuid::new_v4(), &json).unwrap();
+        let imported = m.import_plan(seeded_session(&m), &json).unwrap();
         assert_eq!(imported.plan, plan.plan);
         assert_eq!(m.list_steps(&imported.id).unwrap().len(), 2);
 
-        let active = m.import_plan_active(Uuid::new_v4(), &json).unwrap();
+        let active = m.import_plan_active(seeded_session(&m), &json).unwrap();
         assert_eq!(active.status, PlanStatus::Active);
     }
 
     #[test]
     fn is_complete_all_steps_done() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- only step")
             .unwrap();
@@ -1332,7 +1358,7 @@ mod tests {
     #[test]
     fn status_line_is_readable() {
         let m = machine();
-        let session_id = Uuid::new_v4();
+        let session_id = seeded_session(&m);
         let plan = m
             .create_plan_from_goal(session_id, "- step one")
             .unwrap();

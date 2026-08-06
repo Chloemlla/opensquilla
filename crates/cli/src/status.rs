@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use opensquilla_core::config::Config;
 
 use crate::table::{self, Color, KeyValue, Style};
+use crate::util;
 
 /// Status subcommands.
 #[derive(Debug, Clone, clap::Subcommand)]

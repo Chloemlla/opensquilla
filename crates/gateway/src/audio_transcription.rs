@@ -151,9 +151,10 @@ impl TranscriptionService {
         // The API trait is synchronous; call it via spawn_blocking so a slow
         // HTTP call does not block the async worker.
         let api = self.api.clone();
-        let mime_type = mime_type.to_string();
-        let audio_bytes = audio_bytes.clone();
-        let text = tokio::task::spawn_blocking(move || api.transcribe(&mime_type, &audio_bytes))
+        let mime_type_owned = mime_type.to_string();
+        let audio_bytes_clone = audio_bytes.clone();
+        let audio_size = audio_bytes.len();
+        let text = tokio::task::spawn_blocking(move || api.transcribe(&mime_type_owned, &audio_bytes_clone))
             .await
             .map_err(|e| AppError::internal(format!("Transcription task failed: {e}")))?
             .map_err(|e| {
@@ -165,8 +166,8 @@ impl TranscriptionService {
         let record = TranscriptionRecord {
             id: Uuid::new_v4().to_string(),
             session_id: session_id.to_string(),
-            mime_type: mime_type.clone(),
-            audio_size_bytes: audio_bytes.len(),
+            mime_type: mime_type.to_string(),
+            audio_size_bytes: audio_size,
             text,
             provider: self.provider,
             duration_ms,

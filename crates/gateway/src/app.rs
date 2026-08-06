@@ -147,17 +147,19 @@ impl Gateway {
             .layer(Extension(auth_config))
             .layer(Extension(subscription_manager))
             .layer(Extension(connection_registry))
-            .layer(axum::middleware::from_fn(move |req, next| {
-                let token = expected_token.clone();
-                let mode = auth_mode.clone();
-                async move {
-                    // In open mode the token middleware lets everything through.
-                    if mode == AuthMode::Open {
-                        return Ok(next.run(req).await);
+            .layer(axum::middleware::from_fn(
+                move |req: axum::extract::Request, next: axum::middleware::Next| {
+                    let token = expected_token.clone();
+                    let mode = auth_mode.clone();
+                    async move {
+                        // In open mode the token middleware lets everything through.
+                        if mode == AuthMode::Open {
+                            return Ok(next.run(req).await);
+                        }
+                        token_auth_middleware(req, next, token).await
                     }
-                    token_auth_middleware(req, next, token).await
-                }
-            }))
+                },
+            ))
             .layer(axum::middleware::from_fn(move |req, next| {
                 let origins = origin_origins.clone();
                 async move { unsafe_origin_guard_middleware(req, next, origins).await }

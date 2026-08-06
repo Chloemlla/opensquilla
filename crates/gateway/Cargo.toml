@@ -19,10 +19,10 @@ opensquilla-recovery = { path = "../recovery" }
 opensquilla-tools = { path = "../tools" }
 opensquilla-search = { path = "../search" }
 opensquilla-onboarding = { path = "../onboarding" }
-axum = { workspace = true, features = ["ws"] }
+axum = { workspace = true, features = ["ws", "multipart"] }
 tokio = { workspace = true, features = ["full"] }
 tower = { workspace = true }
-tower-http = { workspace = true, features = ["cors", "catch-panic"] }
+tower-http = { workspace = true, features = ["cors", "catch-panic", "fs"] }
 futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

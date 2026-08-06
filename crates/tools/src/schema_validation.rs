@@ -208,7 +208,8 @@ mod tests {
         // A schema whose "type" is not a valid JSON Schema type is rejected.
         let result = SchemaValidator::new("bad", json!({"type": "not-a-real-type"}));
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, "SCHEMA_INVALID");
+        let err = result.err().expect("expected schema error");
+        assert_eq!(err.code, "SCHEMA_INVALID");
     }
 
     #[test]

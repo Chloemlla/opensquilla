@@ -241,11 +241,12 @@ impl MSTeamsChannel {
             .send()
             .await
             .map_err(|e| format!("Teams send activity: {}", e))?;
+        let status = resp.status();
         let body: Value = resp
             .json()
             .await
             .map_err(|e| format!("Teams parse: {}", e))?;
-        if resp.status().is_success() {
+        if status.is_success() {
             Ok(body)
         } else {
             Err(format!(

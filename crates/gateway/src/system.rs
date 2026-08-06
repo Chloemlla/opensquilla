@@ -103,7 +103,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
 
     // system.ping — liveness probe
     registry.register(rpc_handler("system.ping", {
-        move |params| {
+        move |params| async move {
             let timestamp = Utc::now().to_rfc3339();
             let echoed = params
                 .get("echo")
@@ -163,7 +163,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
 
     // system.version — version string only
     registry.register(rpc_handler("system.version", {
-        move |_params| {
+        move |_params| async move {
             Ok(serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
             }))
@@ -188,7 +188,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
 
     // system.echo — pure echo for diagnostics
     registry.register(rpc_handler("system.echo", {
-        move |params| {
+        move |params| async move {
             Ok(serde_json::json!({
                 "received": params,
             }))

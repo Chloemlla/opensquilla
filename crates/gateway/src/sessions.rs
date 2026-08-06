@@ -360,7 +360,7 @@ impl SessionStore {
             transcripts
                 .entry(session_id.to_string())
                 .or_default()
-                .push(msg);
+                .push(msg.clone());
         }
         {
             let mut sessions = self.sessions.lock();

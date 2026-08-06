@@ -220,7 +220,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
 
     // agents.check_workspace — verify expected files exist in an agent's workspace
     registry.register(rpc_handler("agents.check_workspace", {
-        move |params| {
+        move |params| async move {
             let workspace = params
                 .get("workspace")
                 .and_then(|v| v.as_str())

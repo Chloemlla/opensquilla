@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
 use opensquilla_core::error::AppError;
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -301,7 +300,7 @@ impl UploadFileHandle {
 
     /// Flush the file to disk.
     pub fn flush(&self) -> Result<(), AppError> {
-        let file = self.inner.lock();
+        let mut file = self.inner.lock();
         file.flush()
             .map_err(|e| AppError::internal(format!("Cannot flush upload file: {e}")))
     }
@@ -316,7 +315,7 @@ pub async fn handle_upload(
     mut multipart: axum::extract::Multipart,
 ) -> Result<serde_json::Value, AppError> {
     let mut result = Vec::new();
-    while let Some(field) = multipart
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::bad_request(format!("Multipart parse error: {e}")))?
@@ -329,10 +328,14 @@ pub async fn handle_upload(
 
         let (upload_id, staged) = manager.begin()?;
         let mut file_handle = UploadFileHandle::create(&staged)?;
-        let mut chunks = field.chunk();
-        while let Some(chunk_result) = chunks.next().await {
-            let chunk = chunk_result
-                .map_err(|e| AppError::bad_request(format!("Chunk read error: {e}")))?;
+        // axum 0.8 `Field::chunk()` is a Future returning
+        // `Result<Option<Bytes>, MultipartError>`: `Ok(None)` marks the end of
+        // the field. Await it directly for each chunk.
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|e| AppError::bad_request(format!("Chunk read error: {e}")))?
+        {
             file_handle.write_chunk(&chunk)?;
         }
         file_handle.flush()?;

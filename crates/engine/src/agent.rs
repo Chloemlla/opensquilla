@@ -2154,7 +2154,7 @@ pub fn classify_error(error: &AgentError) -> ErrorClassification {
                 }
             }
         }
-        AgentError::Timeout { seconds } => ErrorClassification {
+        AgentError::Timeout { seconds: _ } => ErrorClassification {
             category: Timeout,
             transient: true,
             provider_side: false,

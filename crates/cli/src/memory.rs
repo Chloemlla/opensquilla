@@ -4,7 +4,7 @@
 //! (SQLite with FTS5). Supports listing, showing, deleting, full-text search,
 //! a consistency check, and dream-consolidation.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use opensquilla_core::types::MemoryId;
 use opensquilla_memory::DreamEngine;
 use opensquilla_memory::store::MemoryEntry;

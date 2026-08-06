@@ -31,7 +31,7 @@ pub struct ConfigStorage {
 
 impl ConfigStorage {
     /// Create a new config storage from the application config.
-    pub fn new(config: &Config) -> Result<Self, ConfigStorageError> {
+    pub fn new(_config: &Config) -> Result<Self, ConfigStorageError> {
         let config_path = Config::discover_path().map_err(|e| {
             ConfigStorageError::InitError(format!("Cannot discover config path: {e}"))
         })?;

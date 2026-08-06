@@ -143,7 +143,7 @@ impl AttachmentLoaderStep {
     ///
     /// Returns `Ok(None)` when the attachment could not be materialized (a
     /// soft failure that becomes a placeholder).
-    fn load_bytes(&self, att: &AttachmentDescriptor) -> Result<Option<Vec<u8>>> {
+    async fn load_bytes(&self, att: &AttachmentDescriptor) -> Result<Option<Vec<u8>>> {
         if let Some(encoded) = &att.base64 {
             match base64_shim::decode(encoded) {
                 Ok(bytes) => return Ok(Some(bytes)),

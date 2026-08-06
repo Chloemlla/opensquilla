@@ -62,7 +62,7 @@ impl Drop for SessionLockHandle {
 impl SessionLockHandle {
     /// Acquire the lock this handle points to.
     pub async fn lock_owned(self) -> SessionLockGuard {
-        let inner = self.inner.expect("session lock handle already consumed");
+        let inner = self.inner.clone().expect("session lock handle already consumed");
         let guard = inner.lock_owned().await;
         debug!(session = %self.key, "Session lock acquired");
         SessionLockGuard {
@@ -74,7 +74,7 @@ impl SessionLockHandle {
 
     /// Try to acquire the lock without waiting.
     pub fn try_lock_owned(self) -> Option<SessionLockGuard> {
-        let inner = self.inner.expect("session lock handle already consumed");
+        let inner = self.inner.clone().expect("session lock handle already consumed");
         let guard = inner.clone().try_lock_owned().ok()?;
         debug!(session = %self.key, "Session lock acquired (try)");
         Some(SessionLockGuard {
@@ -105,6 +105,27 @@ struct LockSetInner {
     locks: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// The maximum number of distinct lock entries retained before pruning.
     max_entries: AtomicUsize,
+}
+
+impl LockSetInner {
+    /// Remove all tracked locks that have no outstanding references.
+    ///
+    /// Returns the number of entries removed.
+    fn cleanup(&self) -> usize {
+        let removed = {
+            let mut locks = self.locks.lock().unwrap_or_else(|e| e.into_inner());
+            // A lock entry is referenced by the map itself plus every live
+            // handle/guard. Only entries with strong-count == 1 (map only)
+            // are safe to drop.
+            let before = locks.len();
+            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+            before - locks.len()
+        };
+        if removed > 0 {
+            debug!(removed = removed, "Session locks cleaned up");
+        }
+        removed
+    }
 }
 
 impl Default for SessionLockSet {
@@ -193,19 +214,7 @@ impl SessionLockSet {
     ///
     /// Returns the number of entries removed.
     pub fn cleanup(&self) -> usize {
-        let removed = {
-            let mut locks = self.inner.locks.lock().unwrap_or_else(|e| e.into_inner());
-            // A lock entry is referenced by the map itself plus every live
-            // handle/guard. Only entries with strong-count == 1 (map only)
-            // are safe to drop.
-            let before = locks.len();
-            locks.retain(|_, lock| Arc::strong_count(lock) > 1);
-            before - locks.len()
-        };
-        if removed > 0 {
-            debug!(removed = removed, "Session locks cleaned up");
-        }
-        removed
+        self.inner.cleanup()
     }
 
     /// Prune entries when the tracked count exceeds the configured maximum.

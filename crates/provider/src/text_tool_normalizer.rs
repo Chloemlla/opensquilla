@@ -19,8 +19,6 @@
 
 use opensquilla_core::types::ToolCall;
 use regex::Regex;
-use serde::Deserialize;
-use serde_json::Deserializer;
 use std::sync::LazyLock;
 
 /// Text tool-call dialects recognized by the normalizer.
@@ -396,9 +394,10 @@ fn scan_json_objects(text: &str) -> Vec<serde_json::Value> {
     while start < bytes.len() {
         if bytes[start] == b'{' {
             let rest = &text[start..];
-            let mut de = Deserializer::from_str(rest);
-            if let Ok(value) = serde_json::Value::deserialize(&mut de) {
-                let consumed = de.byte_offset();
+            // Parse a single JSON value and calculate the byte offset by
+            // tracking brace depth (handling string escapes).
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(rest) {
+                let consumed = raw_json_len(rest).unwrap_or(0);
                 results.push(value);
                 if consumed == 0 {
                     break;
@@ -410,6 +409,47 @@ fn scan_json_objects(text: &str) -> Vec<serde_json::Value> {
         start += 1;
     }
     results
+}
+
+/// Calculate the byte length of the first top-level JSON object/array in `s`.
+fn raw_json_len(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    let open = bytes[0];
+    let close = match open {
+        b'{' => b'}',
+        b'[' => b']',
+        _ => return None,
+    };
+    let mut depth = 0u32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            _ if b == open => depth += 1,
+            _ if b == close => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

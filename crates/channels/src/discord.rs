@@ -104,7 +104,7 @@ impl BucketState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct RateLimiterState {
     global_last: Option<Instant>,
     buckets: HashMap<String, BucketState>,
@@ -255,7 +255,7 @@ impl DiscordChannel {
             .config
             .get("intents")
             .and_then(|v| v.as_u64())
-            .unwrap_or_else(default_intents);
+            .unwrap_or_else(Self::default_intents);
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()

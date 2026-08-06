@@ -279,18 +279,20 @@ impl ModelRouter {
     }
 
     /// Resolve the highest-priority matching rule, if any.
-    fn best_rule(&self, request: &RouteRequest) -> Option<(&RoutingRule, usize)> {
+    fn best_rule(&self, request: &RouteRequest) -> Option<(RoutingRule, usize)> {
         let config = self.config.read();
-        let mut best: Option<(&RoutingRule, usize)> = None;
+        let mut best: Option<(usize, &RoutingRule)> = None;
         for (idx, rule) in config.rules.iter().enumerate() {
             if rule.matches(&request.session_id, request.requested_model.as_deref()) {
                 match &best {
-                    Some((current, _)) if current.priority >= rule.priority => {}
-                    _ => best = Some((rule, idx)),
+                    Some((_, current)) if current.priority >= rule.priority => {}
+                    _ => best = Some((idx, rule)),
                 }
             }
         }
-        best
+        // Clone the winning rule so we do not return a reference into the
+        // (local) config read guard.
+        best.map(|(idx, rule)| (rule.clone(), idx))
     }
 
     /// Place a routing hold on a session (pins the model).

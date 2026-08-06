@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// The surface on which a command may be invoked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Surface {
     /// The command is shown in interactive (chat) UIs.
+    #[default]
     Visible,
     /// The command is hidden from the command list but still invokable.
     Hidden,
@@ -28,17 +29,18 @@ impl Surface {
 }
 
 /// How a command is executed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionKind {
     /// The command runs entirely in-process (no external process).
+    #[default]
     Local,
     /// The command dispatches to a remote service or external process.
     Remote,
 }
 
 /// The functional category of a slash command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandCategory {
     /// Conversation management (clear, reset, history).
@@ -62,6 +64,7 @@ pub enum CommandCategory {
     /// Plugin or extension operations.
     Plugin,
     /// Miscellaneous commands.
+    #[default]
     Misc,
 }
 

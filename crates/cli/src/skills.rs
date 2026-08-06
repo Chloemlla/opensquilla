@@ -21,11 +21,8 @@ use crate::util;
 /// List installed skills across all layers.
 pub async fn list_skills() -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
-    let loader = build_loader(&config)?;
-    let skills = loader
-        .get_skills(None)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to scan skills: {e}"))?;
+    let loader = build_loader(&config).await?;
+    let skills = loader.get_skills(None).await;
 
     if skills.is_empty() {
         println!("No skills installed.");
@@ -53,7 +50,7 @@ pub async fn list_skills() -> Result<()> {
 /// Show the details of a single skill.
 pub async fn show_skill(name: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
-    let loader = build_loader(&config)?;
+    let loader = build_loader(&config).await?;
     let skill = loader
         .get_skill(&name)
         .await
@@ -117,7 +114,7 @@ pub async fn search_skills_limited(query: String, limit: Option<u64>) -> Result<
 /// Enable a skill (mark it as active in the managed layer).
 pub async fn enable_skill(name: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
-    let loader = build_loader(&config)?;
+    let loader = build_loader(&config).await?;
     let _skill = loader
         .get_skill(&name)
         .await
@@ -131,7 +128,7 @@ pub async fn enable_skill(name: String) -> Result<()> {
 /// Disable a skill.
 pub async fn disable_skill(name: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
-    let loader = build_loader(&config)?;
+    let loader = build_loader(&config).await?;
     let _skill = loader
         .get_skill(&name)
         .await
@@ -169,7 +166,7 @@ pub async fn update_skill(name: String) -> Result<()> {
 /// Show detailed skill info including trust level and metadata.
 pub async fn info_skill(name: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
-    let loader = build_loader(&config)?;
+    let loader = build_loader(&config).await?;
     let skill = loader
         .get_skill(&name)
         .await
@@ -276,7 +273,7 @@ fn print_skill_meta(meta: &SkillMeta) {
 }
 
 /// Build a `SkillLoader` covering bundled, configured, and managed skills.
-fn build_loader(config: &Config) -> Result<SkillLoader> {
+async fn build_loader(config: &Config) -> Result<SkillLoader> {
     let loader = SkillLoader::new();
 
     if let Some(skills_cfg) = config.skills.as_ref() {

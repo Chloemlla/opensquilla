@@ -45,7 +45,7 @@ pub struct DeepLinkPayload {
 }
 
 /// Errors produced while parsing a deep link.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum DeepLinkError {
     #[error("empty or non-string deep link")]
     NotAString,

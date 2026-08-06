@@ -225,9 +225,11 @@ impl Tool for ArtifactTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "publish_artifact",
-                "Generate and save a file artifact in various formats. "
-                    + "Supports TXT, Markdown, HTML, JSON, CSV, YAML, and XML. "
-                    + "The file is written to the allowed working directory.",
+                concat!(
+                    "Generate and save a file artifact in various formats. ",
+                    "Supports TXT, Markdown, HTML, JSON, CSV, YAML, and XML. ",
+                    "The file is written to the allowed working directory.",
+),
                 HashMap::from([
                     (
                         "format".to_string(),

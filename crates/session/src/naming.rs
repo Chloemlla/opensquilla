@@ -376,10 +376,11 @@ mod tests {
     }
 
     fn seed_session(namer: &SessionNamer, name: &str, messages: &[&str]) -> Uuid {
-        let session = namer
+        let id = Uuid::new_v4();
+        namer
             .storage
             .create_session(&Session {
-                id: Uuid::new_v4(),
+                id,
                 agent_id: Uuid::new_v4(),
                 name: name.to_string(),
                 created_at: Utc::now(),
@@ -399,7 +400,7 @@ mod tests {
         for (i, msg) in messages.iter().enumerate() {
             let entry = TranscriptEntry {
                 id: Uuid::new_v4(),
-                session_id: session.id,
+                session_id: id,
                 role: if i == 0 { "user" } else { "assistant" }.into(),
                 content: msg.to_string(),
                 created_at: Utc::now() + chrono::Duration::seconds(i as i64),
@@ -409,7 +410,7 @@ mod tests {
             };
             namer.storage.insert_transcript_entry(&entry).unwrap();
         }
-        session.id
+        id
     }
 
     #[test]

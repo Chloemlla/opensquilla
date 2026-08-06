@@ -1112,7 +1112,7 @@ mod tests {
                 {
                     "name": "llama3.1:latest",
                     "modified_at": "2024-07-22T18:17:54.123Z",
-                    "size": 3825936993,
+                    "size": 3825936993u32,
                     "digest": "abc123",
                     "details": {
                         "parent_model": "",

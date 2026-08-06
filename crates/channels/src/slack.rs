@@ -682,7 +682,7 @@ impl SlackClient {
             body["url"]
                 .as_str()
                 .map(String::from)
-                .ok_or("No URL in apps.connections.open response")
+                .ok_or_else(|| "No URL in apps.connections.open response".to_string())
         } else {
             Err(format!(
                 "apps.connections.open error: {}",

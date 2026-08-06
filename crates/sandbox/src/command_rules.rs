@@ -366,6 +366,22 @@ pub fn assess_with_rules(
         reason = "shell invocation".to_string();
     }
 
+    // Sensitive-path hard-block escalation: a destructive command (rm, or a
+    // Python delete via os.remove / shutil.rmtree / Path.unlink) that targets a
+    // sensitive host path is treated as at least High risk regardless of the
+    // rule table. This is the policy-side guard feeding
+    // `crate::sensitive_paths::sensitive_target_in_command`.
+    let full_command = format!("{} {}", command, args.join(" "));
+    if let Some(marker) =
+        crate::sensitive_paths::sensitive_target_in_command(&full_command, None, None)
+    {
+        tier = tier.max(RiskTier::High);
+        reason = format!("destructive command targets sensitive path {marker}");
+        if !touched_paths.contains(&marker) {
+            touched_paths.push(marker);
+        }
+    }
+
     let approval_required = tier.requires_approval();
     CommandAssessment {
         command: name,
@@ -446,5 +462,27 @@ mod tests {
         // Plain git status stays Low.
         let b = assess_command("git", &["status"]);
         assert_eq!(b.tier, RiskTier::Low);
+    }
+
+    #[test]
+    fn destructive_targets_are_escalated() {
+        // `rm` targeting a sensitive leaf is at least High, even though the
+        // rule table only grades `rm` as Low.
+        let a = assess_command("rm", &["/home/u/.ssh/id_rsa"]);
+        assert!(a.tier >= RiskTier::High);
+        assert!(a.touched_paths.iter().any(|p| p == "/id_rsa"));
+        // A plain `rm` inside /tmp stays Low.
+        let b = assess_command("rm", &["/tmp/scratch.txt"]);
+        assert_eq!(b.tier, RiskTier::Low);
+    }
+
+    #[test]
+    fn python_delete_sensitive_target_escalated() {
+        let a = assess_command(
+            "python",
+            &["-c", "import shutil; shutil.rmtree('/etc/shadow')"],
+        );
+        assert!(a.tier >= RiskTier::High);
+        assert!(a.touched_paths.iter().any(|p| p == "/etc/shadow"));
     }
 }

@@ -19,7 +19,7 @@ use crate::rpc::{rpc_handler, RpcRegistry};
 #[derive(Clone, Default)]
 pub struct SandboxContextStore {
     policies: Arc<Mutex<std::collections::HashMap<String, SandboxPolicy>>>,
-    results: Arc<Mutex<std::collections::HashMap<String, SandboxResult>>>>,
+    results: Arc<Mutex<std::collections::HashMap<String, SandboxResult>>>,
 }
 
 impl SandboxContextStore {
@@ -93,7 +93,7 @@ pub fn register_sandbox_handlers(registry: &mut RpcRegistry, store: SandboxConte
 
     // sandbox.select_level — recommend a level for a given operation
     registry.register(rpc_handler("sandbox.select_level", {
-        move |params| {
+        move |params| async move {
             let operation = params
                 .get("operation")
                 .and_then(|v| v.as_str())
@@ -205,7 +205,7 @@ pub fn register_sandbox_handlers(registry: &mut RpcRegistry, store: SandboxConte
 
     // sandbox.preview — describe the effective policy for an operation without storing it
     registry.register(rpc_handler("sandbox.preview", {
-        move |params| {
+        move |params| async move {
             let operation = params
                 .get("operation")
                 .and_then(|v| v.as_str())

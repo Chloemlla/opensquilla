@@ -21,7 +21,9 @@ fn main() {
 
     // Honor --no-color by setting NO_COLOR.
     if cli.no_color {
-        std::env::set_var("NO_COLOR", "1");
+        unsafe {
+            std::env::set_var("NO_COLOR", "1");
+        }
     }
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");

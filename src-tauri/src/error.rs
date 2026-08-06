@@ -165,6 +165,13 @@ impl From<anyhow::Error> for TauriError {
     }
 }
 
+/// Map `opensquilla_core::error::AppError` to a `TauriError`.
+impl From<opensquilla_core::error::AppError> for TauriError {
+    fn from(err: opensquilla_core::error::AppError) -> Self {
+        TauriError::new(err.code, err.message, err.status)
+    }
+}
+
 /// A type alias for results returned from Tauri command handlers.
 pub type TauriResult<T> = Result<T, TauriError>;
 

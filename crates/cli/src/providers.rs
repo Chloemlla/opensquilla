@@ -190,7 +190,7 @@ pub async fn add_provider(
         api_key,
         base_url,
         models,
-        default_model,
+        default_model: default_model.clone(),
         max_retries: 3,
         timeout_secs: 60,
     };

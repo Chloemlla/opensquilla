@@ -303,7 +303,7 @@ impl CompactionStage {
         // The turn id encodes the session id as its first UUID component when
         // the runtime routes through the session manager; fall back to hashing
         // the turn id into a stable UUID so the storage path is always usable.
-        let session_id = parse_session_id(turn_id).unwrap_or_else(|| {
+        let session_id = session_uuid_of(turn_id).unwrap_or_else(|| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hasher::write(&mut hasher, turn_id.as_bytes());
             uuid::Uuid::from_u64_pair(hasher.finish(), 0)
@@ -407,10 +407,56 @@ impl Stage for CompactionStage {
         let _ = self.run_session_compaction(&ctx.turn_id).await;
 
         let turn_id = ctx.turn_id.clone();
-        let (compacted, outcome) = self
-            .compact_messages(&turn_id, ctx.messages.clone(), strategy)
-            .await;
+        // Publish the compaction lifecycle events (idempotent, additive) and
+        // reset the cache-break baseline on completion. Mirrors the Python
+        // `cache_break_monitor.notify_compaction` calls around compaction.
+        let compaction_id = format!("cmp_{}", uuid::Uuid::new_v4().simple());
+        let mut started_payload = serde_json::Map::new();
+        if let serde_json::Value::Object(lifecycle) =
+            crate::cache_break_monitor::compaction_lifecycle_payload(&compaction_id)
+        {
+            started_payload.extend(lifecycle);
+        }
+        crate::cache_break_monitor::notify_compaction(
+            &ctx.turn_id,
+            &compaction_id,
+            "started",
+            "automatic",
+            "compaction",
+            started_payload,
+            0.0,
+            false,
+            true,
+        );
+        let (compacted, outcome) = crate::cache_break_monitor::run_compaction_owner(
+            &ctx.turn_id,
+            &compaction_id,
+            self.compact_messages(&turn_id, ctx.messages.clone(), strategy),
+        )
+        .await;
         ctx.messages = compacted;
+        let mut completed_payload = serde_json::Map::new();
+        if let serde_json::Value::Object(effect) =
+            crate::cache_break_monitor::compaction_effect_payload("completed", None, "automatic")
+        {
+            completed_payload.extend(effect);
+        }
+        if let serde_json::Value::Object(lifecycle) =
+            crate::cache_break_monitor::compaction_lifecycle_payload(&compaction_id)
+        {
+            completed_payload.extend(lifecycle);
+        }
+        crate::cache_break_monitor::notify_compaction(
+            &ctx.turn_id,
+            &compaction_id,
+            "completed",
+            "automatic",
+            "compaction",
+            completed_payload,
+            0.0,
+            false,
+            true,
+        );
 
         info!(
             turn_id = %ctx.turn_id,
@@ -445,11 +491,6 @@ impl Stage for CompactionStage {
 /// caller passes a session id directly.
 pub fn session_uuid_of(turn_id: &str) -> Option<uuid::Uuid> {
     uuid::Uuid::parse_str(turn_id).ok()
-}
-
-/// Parse a session UUID from a turn id (alias for [`session_uuid_of`]).
-fn parse_session_id(turn_id: &str) -> Option<uuid::Uuid> {
-    session_uuid_of(turn_id)
 }
 
 #[cfg(test)]

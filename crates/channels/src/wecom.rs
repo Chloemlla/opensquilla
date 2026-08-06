@@ -17,7 +17,8 @@
 //!    implements both encryption and decryption without an SDK.
 
 use crate::types::{Channel, ChannelConfig, ChannelType, MessageAttachment, OutgoingMessage};
-use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
+use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::Aes256;
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use reqwest::multipart::{Form, Part};
@@ -27,8 +28,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-
-type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
 
 /// Default WeCom API base.
 pub const DEFAULT_API_BASE: &str = "https://qyapi.weixin.qq.com/cgi-bin";
@@ -294,7 +293,7 @@ impl WeComChannel {
         let resp = self
             .client
             .post(format!("{}/media/upload", self.api_base))
-            .query(&[("access_token", &token), ("type", media_type.to_string())])
+            .query(&[("access_token", token.as_str()), ("type", media_type)])
             .multipart(form)
             .send()
             .await
@@ -323,7 +322,7 @@ impl WeComChannel {
         let resp = self
             .client
             .get(format!("{}/media/get", self.api_base))
-            .query(&[("access_token", &token), ("media_id", media_id.to_string())])
+            .query(&[("access_token", token.as_str()), ("media_id", media_id)])
             .send()
             .await
             .map_err(|e| format!("WeCom media/get request: {e}"))?;
@@ -454,10 +453,8 @@ pub fn encrypt_wecom_payload(
         return Err("EncodingAESKey must decode to 32 bytes".to_string());
     }
     let iv = &key_bytes[0..16];
-    let cipher = Aes256CbcEnc::new(
-        aes::cipher::Key::<aes::Aes256>::from_slice(&key_bytes),
-        aes::cipher::Iv::<aes::Aes256>::from_slice(iv),
-    );
+    let key = aes::cipher::generic_array::GenericArray::from_slice(&key_bytes);
+    let cipher = Aes256::new(key);
 
     // random(16) || msg_len(4, BE) || msg || receive_id
     let mut buf = Vec::with_capacity(plaintext.len() + receive_id.len() + 52);
@@ -465,10 +462,26 @@ pub fn encrypt_wecom_payload(
     buf.extend_from_slice(&(plaintext.len() as u32).to_be_bytes());
     buf.extend_from_slice(plaintext.as_bytes());
     buf.extend_from_slice(receive_id.as_bytes());
-    let encrypted = cipher
-        .encrypt_padded_mut::<Pkcs7>(&mut buf)
-        .map_err(|_| "AES encryption failed".to_string())?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(encrypted))
+
+    // PKCS7 padding: pad to 16-byte boundary
+    let block_size = 16;
+    let pad_len = block_size - (buf.len() % block_size);
+    buf.resize(buf.len() + pad_len, pad_len as u8);
+
+    // CBC mode encryption
+    let mut prev = aes::cipher::generic_array::GenericArray::clone_from_slice(iv);
+    for chunk in buf.chunks_mut(block_size) {
+        let mut block = aes::cipher::generic_array::GenericArray::clone_from_slice(chunk);
+        // XOR with previous ciphertext (or IV for first block)
+        for (b, p) in block.iter_mut().zip(prev.iter()) {
+            *b ^= *p;
+        }
+        cipher.encrypt_block(&mut block);
+        chunk.copy_from_slice(&block);
+        prev = block;
+    }
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
 }
 
 /// Decrypt a WeCom callback payload (thin wrapper over
@@ -497,55 +510,67 @@ impl MessageBuilder {
         json!({ "agentid": agent_id })
     }
 
+    /// Merge all keys from `b` into `a` (shallow).
+    fn merge(a: &mut Value, b: &Value) {
+        if let (Value::Object(a_map), Value::Object(b_map)) = (a, b) {
+            a_map.extend(b_map.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+    }
+
     /// A `text` message body.
     pub fn text_message(touser: &str, agent_id: &str, content: &str) -> Value {
-        json!({
+        let mut msg = json!({
             "touser": touser,
             "msgtype": "text",
             "text": { "content": content },
             "safe": 0,
-            ...Self::agent(agent_id),
-        })
+        });
+        Self::merge(&mut msg, &Self::agent(agent_id));
+        msg
     }
 
     /// A `markdown` message body.
     pub fn markdown_message(touser: &str, agent_id: &str, content: &str) -> Value {
-        json!({
+        let mut msg = json!({
             "touser": touser,
             "msgtype": "markdown",
             "markdown": { "content": content },
-            ...Self::agent(agent_id),
-        })
+        });
+        Self::merge(&mut msg, &Self::agent(agent_id));
+        msg
     }
 
     /// An `image` message body.
     pub fn image_message(touser: &str, agent_id: &str, media_id: &str) -> Value {
-        json!({
+        let mut msg = json!({
             "touser": touser,
             "msgtype": "image",
             "image": { "media_id": media_id },
-            ...Self::agent(agent_id),
-        })
+        });
+        Self::merge(&mut msg, &Self::agent(agent_id));
+        msg
     }
 
     /// A `news` message body from a list of article objects.
     pub fn news_message(touser: &str, agent_id: &str, articles: Vec<Value>) -> Value {
-        json!({
+        let mut msg = json!({
             "touser": touser,
             "msgtype": "news",
             "news": { "articles": articles },
-            ...Self::agent(agent_id),
-        })
+        });
+        Self::merge(&mut msg, &Self::agent(agent_id));
+        msg
     }
 
     /// A `file` message body.
     pub fn file_message(touser: &str, agent_id: &str, media_id: &str) -> Value {
-        json!({
+        let mut msg = json!({
             "touser": touser,
             "msgtype": "file",
             "file": { "media_id": media_id },
-            ...Self::agent(agent_id),
-        })
+        });
+        Self::merge(&mut msg, &Self::agent(agent_id));
+        msg
     }
 
     /// A `textcard` message body.
@@ -556,7 +581,7 @@ impl MessageBuilder {
         description: &str,
         url: &str,
     ) -> Value {
-        json!({
+        let mut msg = json!({
             "touser": touser,
             "msgtype": "textcard",
             "textcard": {
@@ -564,8 +589,9 @@ impl MessageBuilder {
                 "description": description,
                 "url": url,
             },
-            ...Self::agent(agent_id),
-        })
+        });
+        Self::merge(&mut msg, &Self::agent(agent_id));
+        msg
     }
 
     /// A single news article.

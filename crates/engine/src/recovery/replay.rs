@@ -8,8 +8,7 @@
 
 use crate::agent::AgentState;
 use crate::history::repair_tool_pairs;
-use opensquilla_core::error::Result;
-use opensquilla_core::types::{ContentBlock, Message, MessageRole, ToolCall};
+use opensquilla_core::types::{ContentBlock, Message, MessageRole};
 use tracing::{debug, info, warn};
 
 /// A checkpoint of a turn at a replayable boundary.

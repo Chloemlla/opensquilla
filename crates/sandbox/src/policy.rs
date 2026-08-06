@@ -283,6 +283,27 @@ impl NetworkPolicy {
             _ => None,
         }
     }
+
+    /// The allowlist entries that would be rejected by
+    /// [`crate::domain_validation::validate_domain_pattern`].
+    ///
+    /// Audit-style (never fails the policy): the proxy still honours these
+    /// entries as configured, but callers can surface the list as warnings so
+    /// an operator notices IP literals, non-FQDNs or broad wildcards that
+    /// slipped into the allowlist.
+    pub fn invalid_allowlist_entries(&self) -> Vec<String> {
+        match self {
+            NetworkPolicy::ProxyAllowlist(domains) => domains
+                .iter()
+                .filter(|d| {
+                    crate::domain_validation::validate_domain_pattern(d).status
+                        != crate::domain_validation::DomainStatus::Allowed
+                })
+                .cloned()
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Resource limits for the sandboxed process.
@@ -1213,6 +1234,23 @@ mod tests {
         assert!(rule.matches("api.example.com", 443));
         assert!(!rule.matches("api.example.com", 80));
         assert!(!rule.matches("example.org", 443));
+    }
+
+    #[test]
+    fn invalid_allowlist_entries_audit() {
+        let policy = NetworkPolicy::ProxyAllowlist(vec![
+            "github.com".to_string(),
+            "127.0.0.1".to_string(),
+            "localhost".to_string(),
+            "*.com".to_string(),
+        ]);
+        let invalid = policy.invalid_allowlist_entries();
+        assert!(!invalid.contains(&"github.com".to_string()));
+        assert!(invalid.contains(&"127.0.0.1".to_string()));
+        assert!(invalid.contains(&"localhost".to_string()));
+        assert!(invalid.contains(&"*.com".to_string()));
+        assert!(NetworkPolicy::None.invalid_allowlist_entries().is_empty());
+        assert!(NetworkPolicy::Host.invalid_allowlist_entries().is_empty());
     }
 
     #[test]

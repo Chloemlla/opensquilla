@@ -93,11 +93,12 @@ pub async fn run_wizard() -> Result<()> {
     println!("{}", "Step 3: Choose a model".bold());
     let spec = ProviderSpecTable::get(&provider_type);
     let default_model = spec
+        .as_ref()
         .map(|s| s.default_model.to_string())
         .unwrap_or_else(|| "gpt-4".to_string());
     if let Some(spec) = spec {
         println!("Available models for {provider_type}:");
-        for m in &spec.models {
+        for m in spec.models {
             let marker = if *m == default_model { " (default)" } else { "" };
             println!("  - {m}{marker}");
         }
@@ -408,9 +409,16 @@ fn apply_provider_config(
 
 /// Apply sandbox configuration.
 fn apply_sandbox_config(config: &mut Config, level: &str) {
-    let mut sandbox = config.sandbox.clone().unwrap_or_default();
+    let mut sandbox = config.sandbox.clone().unwrap_or_else(|| {
+        opensquilla_core::config::SandboxConfig {
+            enabled: false,
+            sandbox_type: "process".to_string(),
+            timeout_secs: 120,
+            resource_limits: opensquilla_core::config::ResourceLimits::default(),
+        }
+    });
     sandbox.enabled = true;
-    sandbox.level = level.to_string();
+    sandbox.sandbox_type = level.to_string();
     config.sandbox = Some(sandbox);
 }
 

@@ -15,7 +15,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Datelike, Duration, Utc};
 use opensquilla_core::config::Config;
 use opensquilla_provider::model_catalog::{seed_static, ModelCatalog};
 use opensquilla_session::SessionManager;
@@ -695,7 +695,7 @@ pub async fn cost_rates() -> Result<()> {
             .unwrap_or("openai"),
     ) {
         seed_static(&catalog, spec.id);
-        for model in &spec.models {
+        for model in spec.models {
             if let Some(caps) = catalog.get(spec.id, model) {
                 let input = caps
                     .input_price_per_million
@@ -705,7 +705,7 @@ pub async fn cost_rates() -> Result<()> {
                     .output_price_per_million
                     .map(|p| format!("${p:.2}"))
                     .unwrap_or_else(|| "—".to_string());
-                table = table.row_owned(vec![spec.id.to_string(), model.clone(), input, output]);
+                table = table.row_owned(vec![spec.id.to_string(), model.to_string(), input, output]);
             }
         }
     }

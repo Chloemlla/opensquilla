@@ -167,7 +167,6 @@ impl StageMetricsCollector {
             .map(|(stage, (total_ms, count))| StageRollup {
                 stage: stage.clone(),
                 runs: count,
-                runs: count,
                 average_duration_ms: if count > 0 {
                     total_ms / count as u64
                 } else {

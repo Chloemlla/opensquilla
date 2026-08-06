@@ -71,6 +71,7 @@ pub const CUSTOM_B5_MAX_TOTAL_CALLS: usize = 8;
 /// containing timeouts can be round-tripped through serde.
 mod duration_ms_serde {
     use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
 
     pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -97,10 +98,11 @@ mod duration_ms_serde {
 /// These are the released values (`primary`, `contrast`, `fast_check`,
 /// `critic`) plus `aggregator` reserved for the fusion stage. Unknown values
 /// coerce to [`ProposerRole::Unassigned`] instead of failing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposerRole {
     /// The primary / anchor proposer (usually the routed model).
+    #[default]
     Primary,
     /// A contrasting "second opinion" model.
     Contrast,
@@ -267,10 +269,11 @@ impl Default for PromptStrategy {
 // ---------------------------------------------------------------------------
 
 /// The response parser used by a proposer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ParserKind {
     /// Extract the plain assistant text.
+    #[default]
     PlainText,
     /// Extract text and attempt to parse it as JSON.
     Json,
@@ -726,10 +729,11 @@ impl MergeMethod {
 
 /// The overall scoring strategy, selecting which [`EnsembleAggregator`]
 /// implementation the orchestrator uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ScoringStrategy {
     /// Score each draft and pick the best one.
+    #[default]
     BestOfN,
     /// Fuse drafts with a synthesis pass (mixture of agents).
     MixtureOfAgents,
@@ -1185,20 +1189,22 @@ pub fn default_aggregator(scoring: ScoringStrategy) -> Box<dyn EnsembleAggregato
 // ---------------------------------------------------------------------------
 
 /// How proposers are executed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
     /// Run all proposers concurrently (via [`JoinSet`]).
+    #[default]
     Parallel,
     /// Run proposers in order; each sees the previous results.
     Sequential,
 }
 
 /// What to do when the proposer quorum is not reached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AllFailedPolicy {
     /// Return an error.
+    #[default]
     Error,
     /// Run a single fallback model.
     FallbackSingle,
@@ -1440,7 +1446,7 @@ impl EnsembleProposer for StandardProposer {
     }
 
     fn response_parser(&self) -> Box<dyn ResponseParser + '_> {
-        Box::new(parser_for(self.spec.parser))
+        parser_for(self.spec.parser)
     }
 
     async fn run(&self, request: &EnsembleRequest, ctx: &ProposerContext) -> Proposal {
@@ -2718,7 +2724,7 @@ fn merge_concise(proposals: &[Proposal]) -> String {
 
 /// Build the aggregation prompt for a mixture-of-agents synthesis pass.
 fn build_moa_prompt(
-    proposals: &[Proposal],
+    proposals: &[&Proposal],
     spec: &AggregationSpec,
     request: &EnsembleRequest,
 ) -> Vec<ChatMessage> {
@@ -2748,7 +2754,7 @@ fn build_moa_prompt(
 
 /// Build the aggregation prompt for a debate-style judge pass.
 fn build_debate_prompt(
-    proposals: &[Proposal],
+    proposals: &[&Proposal],
     spec: &AggregationSpec,
     request: &EnsembleRequest,
 ) -> Vec<ChatMessage> {
@@ -2777,7 +2783,7 @@ fn build_debate_prompt(
 }
 
 /// Map a provider error to a machine-readable code.
-fn error_code_from(e: &ProviderError) -> String {
+fn error_code_from(e: &ProviderError) -> &'static str {
     match e {
         ProviderError::Auth(_) => "auth_error",
         ProviderError::RateLimited(_) => "rate_limited",
@@ -2789,7 +2795,6 @@ fn error_code_from(e: &ProviderError) -> String {
         ProviderError::UnsupportedModel(_) => "unsupported_model",
         ProviderError::Internal(_) => "internal_error",
     }
-    .to_string()
 }
 
 /// Convert a completed response into a stream of events (for streaming mode).

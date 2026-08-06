@@ -10,7 +10,6 @@ use crate::agent::AgentState;
 use crate::history::{deduplicate, reconstruct_from_row, repair_tool_pairs, TranscriptRow};
 use opensquilla_core::error::Result;
 use opensquilla_core::types::{Message, MessageRole, Usage};
-use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 /// The reconstructed agent state.
@@ -272,7 +271,6 @@ pub fn estimate_usage(messages: &[Message]) -> Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opensquilla_core::types::ContentBlock;
 
     fn row(role: &str, text: &str) -> TranscriptRow {
         TranscriptRow {
@@ -364,8 +362,6 @@ mod tests {
 
     #[test]
     fn test_reconstruct_with_tool_repair() {
-        use opensquilla_core::types::{ContentBlock, ToolCall, ToolResult};
-        use serde_json::json;
         let reconstructor = StateReconstructor::new("s1", "a1");
         // A tool result without a matching tool_use.
         let rows = vec![

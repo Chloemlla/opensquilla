@@ -8,6 +8,7 @@
 //! 5. Actual tool execution with timeout and error handling
 //! 6. Result formatting and logging
 
+use crate::context::ToolContext;
 use crate::policy::{PolicyChain, PolicyContext, PolicyDecision};
 use crate::registry::{Tool, ToolError, ToolOutput, ToolRegistry, ToolResult};
 use opensquilla_core::ToolCall;
@@ -35,6 +36,19 @@ pub struct DispatchContext {
     pub timeout_secs: u64,
     /// Additional metadata for the dispatch.
     pub metadata: HashMap<String, String>,
+    /// Request-scoped tool context. When present, the dispatch pipeline runs
+    /// the policy-chain gates (owner-only / deny list / private-memory /
+    /// allow list / profile / permission matrix), argument-alias
+    /// normalization, projected-argument refusal, foreign-host path
+    /// rejection, and workspace write-policy gates. When `None` (the
+    /// default), dispatch behaves exactly as before — all gates are skipped
+    /// and the tool executes in its pure form.
+    pub tool_context: Option<ToolContext>,
+    /// When true (or when `tool_context` is present), tool execution failures
+    /// are returned as `Ok(ToolOutput::error(...))` whose content is the
+    /// canonical failure envelope (status/error_class/user_message/
+    /// retry_allowed) instead of `Err(DispatchError::ExecutionFailed)`.
+    pub failure_envelopes: bool,
 }
 
 impl DispatchContext {
@@ -48,6 +62,8 @@ impl DispatchContext {
             sandbox_active: false,
             timeout_secs: 300,
             metadata: HashMap::new(),
+            tool_context: None,
+            failure_envelopes: false,
         }
     }
 
@@ -73,6 +89,18 @@ impl DispatchContext {
     /// Set the timeout.
     pub fn with_timeout(mut self, secs: u64) -> Self {
         self.timeout_secs = secs;
+        self
+    }
+
+    /// Attach a request-scoped tool context, enabling the policy gates.
+    pub fn with_tool_context(mut self, ctx: ToolContext) -> Self {
+        self.tool_context = Some(ctx);
+        self
+    }
+
+    /// Enable failure-envelope wrapping for tool execution errors.
+    pub fn with_failure_envelopes(mut self, enabled: bool) -> Self {
+        self.failure_envelopes = enabled;
         self
     }
 }
@@ -319,10 +347,232 @@ impl DispatchEngine {
         self.policy_chain.as_ref()
     }
 
+    /// Build the visibility spec for a registered tool definition.
+    ///
+    /// Rust `ToolDefinition`s do not carry the Python spec fields, so the
+    /// spec is derived conservatively: every registered tool is exposed by
+    /// default, mutating tools (risk level >= 2) are plan-denied, and no tool
+    /// is owner-only (ownership is expressed through the allow/deny lists).
+    fn visibility_spec(tool_name: &str, def: &crate::registry::ToolDefinition) -> crate::visibility::ToolVisibilitySpec {
+        use crate::context::PlanAccess;
+        let plan_access = if def.risk_level >= 2 {
+            PlanAccess::Deny
+        } else {
+            PlanAccess::ReadOnly
+        };
+        crate::visibility::ToolVisibilitySpec {
+            name: tool_name.to_string(),
+            exposed_by_default: true,
+            owner_only: false,
+            plan_access,
+        }
+    }
+
+    /// Run the context-gated preflight checks (argument normalization,
+    /// projected-argument refusal, policy chain, path policy, write policy).
+    ///
+    /// `call` is mutated in place when argument aliases are successfully
+    /// canonicalized. Returns `Some(ToolOutput)` carrying a denial envelope
+    /// when a gate refuses the call. The caller should return that output
+    /// immediately.
+    fn run_context_gates(
+        &self,
+        call: &mut ToolCall,
+        tool_name: &str,
+        def: &crate::registry::ToolDefinition,
+        tool_ctx: &ToolContext,
+    ) -> Option<ToolOutput> {
+        // Argument-alias normalization (mirrors Python dispatch step: map
+        // file_path/filePath -> path, old_string -> old_text, ...).
+        if let Some(args) = call.input.as_object() {
+            let result =
+                crate::argument_normalization::canonicalize_tool_arguments(tool_name, args);
+            if result.has_conflicts() {
+                let messages = crate::argument_normalization::format_alias_conflicts(&result.conflicts);
+                let capped: Vec<String> = messages.into_iter().take(5).collect();
+                return Some(Self::envelope_denial_output(
+                    tool_name,
+                    "InvalidToolArgumentsError",
+                    &format!(
+                        "The {tool_name} tool call arguments contained conflicting aliases: {}. Reissue the tool call with only canonical JSON arguments.",
+                        capped.join("; ")
+                    ),
+                    true,
+                ));
+            }
+            if result.changed() {
+                call.input = serde_json::Value::Object(result.arguments);
+            }
+        }
+
+        // Refuse provider-compacted placeholder arguments (projected_arguments).
+        if let Some(matched) =
+            crate::projected_arguments::find_projected_tool_argument(&call.input, "")
+        {
+            return Some(Self::envelope_denial_output(
+                tool_name,
+                "ProjectedToolArgumentsError",
+                &format!(
+                    "The {tool_name} tool call carries a provider-context projection placeholder at '{}'. Reissue the call with real content.",
+                    matched.path
+                ),
+                false,
+            ));
+        }
+
+        // Policy chain: first denial wins (owner-only, deny list,
+        // private-memory scope, allow list, profile, permission matrix).
+        let spec = Self::visibility_spec(tool_name, def);
+        let input = crate::policy_checks::DispatchPolicyInput {
+            tool_name,
+            ctx: Some(tool_ctx),
+            spec,
+            channel_kind: tool_ctx.channel_kind.as_deref(),
+            source_kind: tool_ctx.source_kind.as_deref(),
+        };
+        if let Some(decision) = crate::policy_checks::run_policy_chain(&input) {
+            let user_message = decision
+                .user_message
+                .unwrap_or_else(|| format!("Tool '{tool_name}' not available in this context."));
+            return Some(Self::envelope_denial_output(
+                tool_name,
+                decision.error_class,
+                &user_message,
+                false,
+            ));
+        }
+
+        // Plan-mode boundary is enforced by the visibility spec: mutating
+        // tools are plan-denied above; read-only tools remain available.
+
+        // Foreign-host path rejection + workspace write-policy gates.
+        if let Some(gate) = Self::path_and_write_gates(call, tool_name, tool_ctx) {
+            return Some(gate);
+        }
+
+        None
+    }
+
+    /// Reject foreign-host paths and workspace write-deny / scratch-artifact
+    /// targets for path-bearing tool arguments.
+    fn path_and_write_gates(
+        call: &ToolCall,
+        tool_name: &str,
+        tool_ctx: &ToolContext,
+    ) -> Option<ToolOutput> {
+        let workspace = tool_ctx.workspace_dir.as_deref();
+        let workspace_str = workspace.map(|p| p.to_string_lossy().to_string());
+        let platform = if cfg!(windows) { "nt" } else { "posix" };
+        let args = call.input.as_object()?;
+
+        // Path-like argument keys inspected for foreign-host and write-policy
+        // gating.
+        const PATH_KEYS: &[&str] = &[
+            "path", "file_path", "destination", "target", "source", "working_dir", "base",
+        ];
+        const WRITE_TOOLS: &[&str] = &[
+            "write_file", "edit_file", "apply_patch", "exec_command", "background_process",
+            "execute_code", "git_commit", "filesystem",
+        ];
+
+        for key in PATH_KEYS {
+            let Some(value) = args.get(*key).and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if let Err(e) = crate::path_policy::reject_foreign_host_path(
+                value,
+                platform,
+                workspace_str.as_deref(),
+            ) {
+                return Some(Self::envelope_denial_output(
+                    tool_name,
+                    "ForeignHostPath",
+                    &e.message,
+                    false,
+                ));
+            }
+        }
+
+        if !WRITE_TOOLS.contains(&tool_name) {
+            return None;
+        }
+
+        // Workspace write-deny + scratch-artifact gates on the primary path.
+        let path_arg = args.get("path").and_then(|v| v.as_str());
+        if let Some(path_str) = path_arg {
+            let path = std::path::Path::new(path_str);
+            if let Some(matched) = crate::write_policy::match_workspace_write_deny(
+                path,
+                Some(path_str),
+                workspace,
+                tool_ctx,
+                false,
+            ) {
+                let payload = crate::write_policy::workspace_write_deny_block(
+                    tool_name,
+                    &matched,
+                    None,
+                    tool_ctx,
+                );
+                let message = payload["message"]
+                    .as_str()
+                    .unwrap_or("blocked by workspace write deny policy")
+                    .to_string();
+                return Some(Self::envelope_denial_output(tool_name, "PolicyDenied", &message, false));
+            }
+            if let Some(matched) = crate::write_policy::match_workspace_scratch_artifact(
+                path,
+                Some(path_str),
+                workspace,
+                tool_ctx,
+            ) {
+                let payload = crate::write_policy::workspace_scratch_artifact_block(
+                    tool_name,
+                    &matched,
+                    None,
+                );
+                let message = payload["message"]
+                    .as_str()
+                    .unwrap_or("blocked scratch artifact")
+                    .to_string();
+                return Some(Self::envelope_denial_output(tool_name, "PolicyDenied", &message, true));
+            }
+        }
+
+        None
+    }
+
+    /// Build a canonical failure-envelope `ToolOutput` for a gate denial.
+    fn envelope_denial_output(
+        tool_name: &str,
+        error_class: &str,
+        user_message: &str,
+        retry_allowed: bool,
+    ) -> ToolOutput {
+        let envelope = crate::envelope::build_tool_failure_envelope(
+            tool_name,
+            error_class,
+            &[error_class],
+            &crate::envelope::EnvelopeOptions {
+                policy_denial: !retry_allowed,
+                error_class_override: Some(error_class.to_string()),
+                user_message_override: Some(user_message.to_string()),
+                ..Default::default()
+            },
+        );
+        ToolOutput::error(envelope.to_string())
+    }
+
+    /// Whether tool execution failures should be wrapped into failure
+    /// envelopes for this dispatch context.
+    fn failures_to_envelopes(&self, ctx: &DispatchContext) -> bool {
+        ctx.failure_envelopes || ctx.tool_context.is_some()
+    }
+
     /// Execute a single tool call through the full dispatch lifecycle.
     pub async fn dispatch(
         &self,
-        call: ToolCall,
+        mut call: ToolCall,
         ctx: &DispatchContext,
     ) -> Result<ToolOutput, DispatchError> {
         let start = Instant::now();
@@ -334,15 +584,36 @@ impl DispatchEngine {
             .get(&tool_name)
             .ok_or_else(|| DispatchError::ToolNotFound(tool_name.clone()))?;
 
-        // 2. Validate arguments.
-        tool.validate_args(&call.input)
-            .map_err(|e| DispatchError::ValidationFailed(tool_name.clone(), e))?;
-
-        // 3. Run the injection guard.
+        // 2. Run the injection guard.
         if let Err(e) = self.injection_guard.check_json(&call.input) {
             tracing::warn!(tool = %tool_name, error = %e, "Injection guard triggered");
             return Err(DispatchError::InjectionDetected(tool_name.clone(), e));
         }
+
+        // 2.5. Context-gated preflight checks. Only active when a
+        // request-scoped tool context is attached: argument-alias
+        // normalization (runs before schema validation so canonicalized
+        // arguments satisfy required-parameter checks), projected-argument
+        // refusal, the policy chain (owner-only / deny list / private-memory /
+        // allow list / profile / permission matrix), foreign-host path
+        // rejection, and workspace write-policy gates. Denials are returned
+        // as failure-envelope `ToolOutput`s so callers see the canonical
+        // envelope shape.
+        if let Some(tool_ctx) = &ctx.tool_context {
+            if let Some(denial) =
+                self.run_context_gates(&mut call, &tool_name, tool.definition(), tool_ctx)
+            {
+                tracing::warn!(
+                    tool = %tool_name,
+                    "Dispatch context gate refused tool call"
+                );
+                return Ok(denial);
+            }
+        }
+
+        // 3. Validate arguments (post-normalization).
+        tool.validate_args(&call.input)
+            .map_err(|e| DispatchError::ValidationFailed(tool_name.clone(), e))?;
 
         // 3.5. Rate limit check (per-tool).
         if let Some(ref limiter) = self.rate_limiter {
@@ -414,10 +685,14 @@ impl DispatchEngine {
             );
         }
 
-        // 6. Execute the tool with timeout.
+        // 6. Execute the tool with timeout. The request-scoped tool context
+        // is scoped into a task-local slot for the duration of execution so
+        // tool implementations can consult write-tracking / run-mode /
+        // write-policy state without changing the `Tool` trait.
+        let scoped_ctx = ctx.tool_context.clone();
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(ctx.timeout_secs),
-            tool.execute(call.input.clone()),
+            crate::context::run_with_tool_context(scoped_ctx, tool.execute(call.input.clone())),
         )
         .await;
 
@@ -431,10 +706,29 @@ impl DispatchEngine {
             }
             Ok(Err(e)) => {
                 tracing::error!(tool = %tool_name, error = %e, duration_ms = duration_ms, "Tool execution failed");
+                if self.failures_to_envelopes(ctx) {
+                    let envelope = crate::envelope::build_tool_failure_envelope(
+                        &tool_name,
+                        &e.code,
+                        &[e.code.as_str()],
+                        &crate::envelope::EnvelopeOptions::default(),
+                    );
+                    return Ok(ToolOutput::error(envelope.to_string())
+                        .with_data(serde_json::json!({ "tool_error": e.to_string() })));
+                }
                 Err(DispatchError::ExecutionFailed(tool_name, e, duration_ms))
             }
             Err(_) => {
                 tracing::error!(tool = %tool_name, timeout = ctx.timeout_secs, "Tool execution timed out");
+                if self.failures_to_envelopes(ctx) {
+                    let envelope = crate::envelope::build_tool_failure_envelope(
+                        &tool_name,
+                        "TimeoutError",
+                        &["TimeoutError"],
+                        &crate::envelope::EnvelopeOptions::default(),
+                    );
+                    return Ok(ToolOutput::error(envelope.to_string()));
+                }
                 Err(DispatchError::Timeout {
                     tool_name,
                     timeout_secs: ctx.timeout_secs,
@@ -905,5 +1199,234 @@ mod tests {
         let call2 = ToolCall::new("2", "echo", json!({"text": "world"}));
         let result = engine.dispatch(call2, &ctx).await;
         assert!(matches!(result, Err(DispatchError::Deferred { .. })));
+    }
+
+    // -- Context-gated dispatch (the connected pipeline) ---------------------
+
+    struct FailTool;
+
+    #[async_trait::async_trait]
+    impl Tool for FailTool {
+        fn definition(&self) -> &ToolDefinition {
+            static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
+                ToolDefinition::new(
+                    "fail_tool",
+                    "Always fails",
+                    HashMap::from([(
+                        "text".to_string(),
+                        ParameterDefinition::required_string("Text"),
+                    )]),
+                )
+            });
+            &DEF
+        }
+
+        async fn execute(&self, _args: serde_json::Value) -> ToolResult {
+            Err(ToolError::execution_failed("boom"))
+        }
+    }
+
+    struct WriteFileTool;
+
+    #[async_trait::async_trait]
+    impl Tool for WriteFileTool {
+        fn definition(&self) -> &ToolDefinition {
+            static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
+                ToolDefinition::new(
+                    "write_file",
+                    "Write a file",
+                    HashMap::from([
+                        (
+                            "path".to_string(),
+                            ParameterDefinition::required_string("Target path"),
+                        ),
+                        (
+                            "content".to_string(),
+                            ParameterDefinition::required_string("Content"),
+                        ),
+                    ]),
+                )
+                .risk_level(3)
+            });
+            &DEF
+        }
+
+        async fn execute(&self, args: serde_json::Value) -> ToolResult {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            Ok(ToolOutput::success(format!("wrote {path}: {content}")))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_context_gate_denies_denylisted_tool() {
+        let mut registry = ToolRegistry::new();
+        registry.register(EchoTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        let mut ctx = crate::context::ToolContext::owner();
+        ctx.denied_tools = ["echo".to_string()].into_iter().collect();
+        let call = ToolCall::new("1", "echo", json!({"text": "hello"}));
+        let dctx = DispatchContext::new("session-1").with_tool_context(ctx);
+
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(result.is_error);
+        let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(payload["error_class"], "PolicyDenied");
+        assert_eq!(payload["retry_allowed"], false);
+    }
+
+    #[tokio::test]
+    async fn test_without_context_keeps_legacy_behavior() {
+        // No tool context attached -> denylist gate is skipped and the tool
+        // executes normally.
+        let mut registry = ToolRegistry::new();
+        registry.register(EchoTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+        let call = ToolCall::new("1", "echo", json!({"text": "hello"}));
+        let dctx = DispatchContext::new("session-1");
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(!result.is_error);
+        assert_eq!(result.content, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_context_gate_normalizes_aliases() {
+        let mut registry = ToolRegistry::new();
+        registry.register(WriteFileTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        // `file_path` alias is remapped to `path` before execution.
+        let call = ToolCall::new(
+            "1",
+            "write_file",
+            json!({"file_path": "notes.txt", "content": "hi"}),
+        );
+        let dctx = DispatchContext::new("session-1").with_tool_context(crate::context::ToolContext::owner());
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(!result.is_error);
+        assert!(result.content.contains("wrote notes.txt: hi"));
+    }
+
+    #[tokio::test]
+    async fn test_context_gate_refuses_alias_conflict() {
+        let mut registry = ToolRegistry::new();
+        registry.register(WriteFileTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        let call = ToolCall::new(
+            "1",
+            "write_file",
+            json!({"path": "a.txt", "file_path": "b.txt", "content": "hi"}),
+        );
+        let dctx = DispatchContext::new("session-1").with_tool_context(crate::context::ToolContext::owner());
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(result.is_error);
+        let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(payload["error_class"], "InvalidToolArgumentsError");
+    }
+
+    #[tokio::test]
+    async fn test_context_gate_blocks_projected_argument() {
+        let mut registry = ToolRegistry::new();
+        registry.register(WriteFileTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        let call = ToolCall::new(
+            "1",
+            "write_file",
+            json!({"path": "[tool_use_argument_projection]\nthe file", "content": "hi"}),
+        );
+        let dctx = DispatchContext::new("session-1").with_tool_context(crate::context::ToolContext::owner());
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(result.is_error);
+        let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(payload["error_class"], "ProjectedToolArgumentsError");
+    }
+
+    #[tokio::test]
+    async fn test_context_gate_write_deny_blocks_path() {
+        let mut registry = ToolRegistry::new();
+        registry.register(WriteFileTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        let mut ctx = crate::context::ToolContext::owner();
+        ctx.workspace_write_deny_globs = vec!["**/*.lock".to_string()];
+        let call = ToolCall::new(
+            "1",
+            "write_file",
+            json!({"path": "Cargo.lock", "content": "locked"}),
+        );
+        let dctx = DispatchContext::new("session-1").with_tool_context(ctx);
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(result.is_error);
+        let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(payload["error_class"], "PolicyDenied");
+        assert!(payload["user_message"].as_str().unwrap().contains("write deny"));
+    }
+
+    #[tokio::test]
+    async fn test_failure_envelopes_wrap_tool_errors() {
+        let mut registry = ToolRegistry::new();
+        registry.register(FailTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        let call = ToolCall::new("1", "fail_tool", json!({"text": "x"}));
+        let dctx = DispatchContext::new("session-1").with_failure_envelopes(true);
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(result.is_error);
+        let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(payload["status"], "error");
+        assert_eq!(payload["tool"], "fail_tool");
+        assert!(payload["error_class"].as_str().unwrap().len() > 0);
+
+        // Without the flag the legacy Err path is preserved.
+        let call = ToolCall::new("2", "fail_tool", json!({"text": "x"}));
+        let dctx = DispatchContext::new("session-1");
+        let result = engine.dispatch(call, &dctx).await;
+        assert!(matches!(result, Err(DispatchError::ExecutionFailed(_, _, _))));
+    }
+
+    #[tokio::test]
+    async fn test_scoped_context_visible_during_execution() {
+        use crate::context::{is_tool_context_active, current_tool_context};
+
+        struct ContextAwareTool;
+        #[async_trait::async_trait]
+        impl Tool for ContextAwareTool {
+            fn definition(&self) -> &ToolDefinition {
+                static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
+                    ToolDefinition::new(
+                        "context_aware",
+                        "Reports the scoped context",
+                        HashMap::new(),
+                    )
+                });
+                &DEF
+            }
+            async fn execute(&self, _args: serde_json::Value) -> ToolResult {
+                let active = is_tool_context_active();
+                let agent_id = current_tool_context().map(|c| c.agent_id).unwrap_or_default();
+                Ok(ToolOutput::success(format!(
+                    "active={active};agent={agent_id}"
+                )))
+            }
+        }
+
+        let mut registry = ToolRegistry::new();
+        registry.register(ContextAwareTool).unwrap();
+        let engine = DispatchEngine::new_with_defaults(Arc::new(registry));
+
+        let mut ctx = crate::context::ToolContext::owner();
+        ctx.agent_id = "scoped-agent".to_string();
+        let call = ToolCall::new("1", "context_aware", json!({}));
+        let dctx = DispatchContext::new("session-1").with_tool_context(ctx);
+        let result = engine.dispatch(call, &dctx).await.unwrap();
+        assert!(!result.is_error);
+        assert!(result.content.contains("active=true"));
+        assert!(result.content.contains("agent=scoped-agent"));
+
+        // After dispatch the slot is cleared.
+        assert!(!is_tool_context_active());
     }
 }

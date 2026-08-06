@@ -1228,7 +1228,7 @@ pub fn apply_budget_gate(
     decision: &RoutingDecision,
     result: &BudgetGateResult,
     tiers: &HashMap<String, TierConfig>,
-    extra: Option<&mut HashMap<String, Value>>,
+    mut extra: Option<&mut HashMap<String, Value>>,
     metadata_updates: &mut HashMap<String, Value>,
 ) -> RoutingDecision {
     if result.outcome != "warn" && result.outcome != "cap" {

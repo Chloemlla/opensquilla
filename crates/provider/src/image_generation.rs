@@ -1857,18 +1857,7 @@ pub async fn download_generated_image(
             }
         }
 
-        let mut bytes = Vec::new();
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(ProviderError::Network)?;
-            bytes.extend_from_slice(&chunk);
-            if bytes.len() > GENERATED_IMAGE_DOWNLOAD_LIMIT {
-                return Err(ProviderError::Provider(
-                    "generated image exceeds download limit".into(),
-                ));
-            }
-        }
-
+        // Read content type before consuming resp
         let content_type = resp
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
@@ -1884,6 +1873,19 @@ pub async fn download_generated_image(
         } else {
             "image/png".into()
         };
+
+        let mut bytes = Vec::new();
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(ProviderError::Network)?;
+            bytes.extend_from_slice(&chunk);
+            if bytes.len() > GENERATED_IMAGE_DOWNLOAD_LIMIT {
+                return Err(ProviderError::Provider(
+                    "generated image exceeds download limit".into(),
+                ));
+            }
+        }
+
         return Ok((mime, bytes));
     }
     Err(ProviderError::Provider(
@@ -2242,7 +2244,10 @@ mod tests {
     use serde_json::json;
 
     fn form_has_field(form: &Form, name: &str) -> bool {
-        form.fields().iter().any(|(n, _)| n.as_ref() == name)
+        // reqwest 0.12 does not expose the form fields directly; the `Debug`
+        // impl renders each part as `("name", Part { ... })`, so a field is
+        // present iff its quoted name appears in that output.
+        format!("{form:?}").contains(&format!("\"{name}\""))
     }
 
     // --- Provider / config defaults --------------------------------------

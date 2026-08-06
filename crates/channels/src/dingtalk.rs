@@ -805,7 +805,7 @@ mod tests {
                 "senderId": "uid456",
                 "senderNick": "Alice",
                 "text": {"content": "hello dingtalk"},
-                "createAt": 1625241600000,
+                "createAt": 1625241600000i64,
             }
         });
         let parsed = serde_json::from_value::<DingTalkStreamEnvelope>(envelope).unwrap();

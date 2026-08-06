@@ -11,6 +11,11 @@
 //! - `PROXY_ALLOWLIST` — only allowlisted domains, enforced by this proxy.
 //! - `HOST` — direct host networking (the proxy is not used).
 
+use crate::default_allowlist::default_allowlist_source;
+use crate::domain_validation::{
+    DomainStatus, domain_matches, validate_domain_pattern,
+};
+use crate::package_bundles::expand_package_bundle;
 use crate::policy::NetworkPolicy;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -172,6 +177,8 @@ struct ConnCtx {
     config: NetworkConfig,
     audit: Arc<DashMap<String, Vec<ProxyAuditEntry>>>,
     active: Arc<AtomicUsize>,
+    use_default_allowlist: Arc<AtomicUsize>,
+    enabled_bundles: Arc<RwLock<Vec<String>>>,
 }
 
 /// Network proxy for sandboxed processes with domain allowlist enforcement.
@@ -184,6 +191,9 @@ pub struct NetworkProxy {
     resolver: TokioAsyncResolver,
     audit: Arc<DashMap<String, Vec<ProxyAuditEntry>>>,
     active: Arc<AtomicUsize>,
+    use_default_allowlist: Arc<AtomicUsize>,
+    enabled_bundles: Arc<RwLock<Vec<String>>>,
+    bound_addr: Arc<RwLock<Option<SocketAddr>>>,
 }
 
 impl NetworkProxy {
@@ -199,7 +209,16 @@ impl NetworkProxy {
             resolver,
             audit: Arc::new(DashMap::new()),
             active: Arc::new(AtomicUsize::new(0)),
+            use_default_allowlist: Arc::new(AtomicUsize::new(0)),
+            enabled_bundles: Arc::new(RwLock::new(Vec::new())),
+            bound_addr: Arc::new(RwLock::new(None)),
         })
+    }
+
+    /// The address the proxy is actually bound to, after [`NetworkProxy::start`]
+    /// has run. `None` before the proxy is started.
+    pub async fn bound_addr(&self) -> Option<SocketAddr> {
+        *self.bound_addr.read().await
     }
 
     /// Set the allowed domains from a network policy.
@@ -210,6 +229,22 @@ impl NetworkProxy {
                 self.allowed_domains.insert(domain.trim().to_lowercase());
             }
         }
+    }
+
+    /// Whether the built-in developer allowlist (github / search / docs) is
+    /// also honoured during allowlist checks. Off by default so callers opt
+    /// into the default posture explicitly.
+    pub fn set_default_allowlist_enabled(&self, enabled: bool) {
+        self.use_default_allowlist
+            .store(usize::from(enabled), Ordering::SeqCst);
+    }
+
+    /// The package-manager bundle ids whose domains are also honoured during
+    /// allowlist checks (see [`crate::package_bundles`]). Empty by default.
+    pub async fn set_enabled_bundles(&self, bundle_ids: &[String]) {
+        let mut bundles = self.enabled_bundles.write().await;
+        bundles.clear();
+        bundles.extend(bundle_ids.iter().cloned());
     }
 
     /// Configure the proxy from a policy and a set of blocked CIDR ranges.
@@ -224,8 +259,32 @@ impl NetworkProxy {
         match *self.mode.read().await {
             NetworkMode::Host => true,
             NetworkMode::None => false,
-            NetworkMode::ProxyAllowlist => matches_allowlist(&self.allowed_domains, domain),
+            NetworkMode::ProxyAllowlist => {
+                self.allowlist_hits(domain).await
+            }
         }
+    }
+
+    /// The default-allowlist + package-bundle + explicit allowlist check used
+    /// by the proxy and by external callers.
+    async fn allowlist_hits(&self, domain: &str) -> bool {
+        if self.use_default_allowlist.load(Ordering::SeqCst) != 0
+            && default_allowlist_source(domain).is_some()
+        {
+            return true;
+        }
+        let bundles = self.enabled_bundles.read().await;
+        if !bundles.is_empty() {
+            let d = domain.to_lowercase();
+            for id in bundles.iter() {
+                for bundled in expand_package_bundle(id) {
+                    if domain_matches(&bundled, &d) {
+                        return true;
+                    }
+                }
+            }
+        }
+        matches_allowlist(&self.allowed_domains, domain)
     }
 
     /// Check whether an IP falls inside a configured blocked range.
@@ -242,6 +301,7 @@ impl NetworkProxy {
         let bound = listener
             .local_addr()
             .map_err(|e| format!("local addr: {e}"))?;
+        *self.bound_addr.write().await = Some(bound);
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let ctx = Arc::new(ConnCtx {
@@ -252,6 +312,8 @@ impl NetworkProxy {
             config: self.config.clone(),
             audit: self.audit.clone(),
             active: self.active.clone(),
+            use_default_allowlist: self.use_default_allowlist.clone(),
+            enabled_bundles: self.enabled_bundles.clone(),
         });
 
         info!("network proxy listening on {bound}");
@@ -562,7 +624,13 @@ fn matches_allowlist(domains: &dashmap::DashSet<String>, domain: &str) -> bool {
     if domains.is_empty() {
         return false;
     }
-    let d = domain.to_lowercase();
+    // Domain validation closes the SSRF-style gap: IP literals, non-FQDNs and
+    // broad wildcards are never matched even if a policy listed them verbatim.
+    let decision = validate_domain_pattern(domain);
+    if decision.status != DomainStatus::Allowed {
+        return false;
+    }
+    let d = decision.normalized;
     if domains.contains(&d) {
         return true;
     }
@@ -625,7 +693,25 @@ impl ConnCtx {
         match *self.mode.read().await {
             NetworkMode::Host => true,
             NetworkMode::None => false,
-            NetworkMode::ProxyAllowlist => matches_allowlist(&self.allowed_domains, host),
+            NetworkMode::ProxyAllowlist => {
+                if self.use_default_allowlist.load(Ordering::SeqCst) != 0
+                    && default_allowlist_source(host).is_some()
+                {
+                    return true;
+                }
+                let bundles = self.enabled_bundles.read().await;
+                if !bundles.is_empty() {
+                    let d = host.to_lowercase();
+                    for id in bundles.iter() {
+                        for bundled in expand_package_bundle(id) {
+                            if domain_matches(&bundled, &d) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                matches_allowlist(&self.allowed_domains, host)
+            }
         }
     }
 
@@ -914,6 +1000,18 @@ impl DomainAllowlist {
                 }
             }
         }
+        // Fallback to the domain-validation matching rules, which normalize
+        // trailing dots and reject malformed patterns (blocked patterns never
+        // match, so this is strictly additive to the fast path above).
+        for allowed in self.domains.iter() {
+            if domain_matches(&allowed, domain) {
+                return DomainCheck {
+                    allowed: true,
+                    domain: domain.to_string(),
+                    detail: format!("validated match for '{}'", &*allowed),
+                };
+            }
+        }
         DomainCheck {
             allowed: false,
             domain: domain.to_string(),
@@ -1164,5 +1262,62 @@ mod tests {
         let logs = buf.snapshot().await;
         assert_eq!(logs[0].id, "r1");
         assert_eq!(logs[1].id, "r2");
+    }
+
+    #[test]
+    fn matches_allowlist_rejects_invalid_hosts() {
+        let set = dashmap::DashSet::new();
+        set.insert("example.com".to_string());
+        // Valid host matches.
+        assert!(matches_allowlist(&set, "example.com"));
+        // IP literals and non-FQDNs are blocked even when listed verbatim.
+        set.insert("127.0.0.1".to_string());
+        assert!(!matches_allowlist(&set, "127.0.0.1"));
+        set.insert("localhost".to_string());
+        assert!(!matches_allowlist(&set, "localhost"));
+        // Wildcard patterns still match their suffix at query time (broad
+        // wildcard rejection happens at allowlist ingestion, not matching).
+        let wide = dashmap::DashSet::new();
+        wide.insert("*.com".to_string());
+        assert!(matches_allowlist(&wide, "anything.com"));
+        assert!(!matches_allowlist(&wide, "anything.org"));
+    }
+
+    #[tokio::test]
+    async fn default_allowlist_opt_in() {
+        let proxy = NetworkProxy::new(NetworkConfig::default()).await.unwrap();
+        proxy.apply_policy(&NetworkPolicy::ProxyAllowlist(vec![]), &[]).await;
+        // Off by default: an empty allowlist denies github.com.
+        assert!(!proxy.is_domain_allowed("github.com").await);
+        // Opt in: the built-in developer allowlist is honoured.
+        proxy.set_default_allowlist_enabled(true);
+        assert!(proxy.is_domain_allowed("github.com").await);
+        assert!(proxy.is_domain_allowed("docs.python.org").await);
+        // Unrelated hosts are still denied.
+        assert!(!proxy.is_domain_allowed("evil.example.com").await);
+    }
+
+    #[tokio::test]
+    async fn package_bundles_opt_in() {
+        let proxy = NetworkProxy::new(NetworkConfig::default()).await.unwrap();
+        proxy.apply_policy(&NetworkPolicy::ProxyAllowlist(vec![]), &[]).await;
+        assert!(!proxy.is_domain_allowed("pypi.org").await);
+        proxy
+            .set_enabled_bundles(&["python-package-install".to_string()])
+            .await;
+        assert!(proxy.is_domain_allowed("pypi.org").await);
+        assert!(proxy.is_domain_allowed("files.pythonhosted.org").await);
+        assert!(!proxy.is_domain_allowed("registry.npmjs.org").await);
+    }
+
+    #[tokio::test]
+    async fn host_mode_ignores_allowlist_flags() {
+        let proxy = NetworkProxy::new(NetworkConfig::default()).await.unwrap();
+        proxy.apply_policy(&NetworkPolicy::Host, &[]).await;
+        proxy.set_default_allowlist_enabled(true);
+        proxy
+            .set_enabled_bundles(&["python-package-install".to_string()])
+            .await;
+        assert!(proxy.is_domain_allowed("anything.example.com").await);
     }
 }

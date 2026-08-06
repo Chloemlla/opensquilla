@@ -389,12 +389,16 @@ mod tests {
     #[tokio::test]
     async fn test_dispatch_with_ctx_reaches_ctx_handler() {
         let mut registry = RpcRegistry::new();
-        registry.register(rpc_handler_with_ctx("echo", |params, ctx| async move {
-            Ok(serde_json::json!({
-                "conn_id": ctx.conn_id,
-                "method": ctx.method,
-                "params": params,
-            }))
+        registry.register(rpc_handler_with_ctx("echo", |params, ctx| {
+            let conn_id = ctx.conn_id.clone();
+            let method = ctx.method.clone();
+            async move {
+                Ok(serde_json::json!({
+                    "conn_id": conn_id,
+                    "method": method,
+                    "params": params,
+                }))
+            }
         }));
 
         let ctx = RpcContext::new(

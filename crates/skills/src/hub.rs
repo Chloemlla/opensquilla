@@ -666,6 +666,16 @@ impl LockFile {
         let their_names: std::collections::HashSet<String> =
             theirs.iter().map(|e| e.name.clone()).collect();
 
+        let changed_versions = mine
+            .iter()
+            .filter_map(|e| {
+                other
+                    .get(&e.name)
+                    .filter(|o| o.version != e.version)
+                    .map(|o| (e.clone(), o.clone()))
+            })
+            .collect();
+
         LockDiff {
             only_in_this: mine
                 .into_iter()
@@ -675,15 +685,7 @@ impl LockFile {
                 .into_iter()
                 .filter(|e| !my_names.contains(&e.name))
                 .collect(),
-            changed_versions: mine
-                .iter()
-                .filter_map(|e| {
-                    other
-                        .get(&e.name)
-                        .filter(|o| o.version != e.version)
-                        .map(|o| (e.clone(), o.clone()))
-                })
-                .collect(),
+            changed_versions,
         }
     }
 }
@@ -820,7 +822,7 @@ impl SkillPackager {
             } else {
                 format!("{}/{}", bundle.name, key)
             };
-            let opts = zip::write::FileOptions::default()
+            let opts = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
                 .unix_permissions(0o644);
             zip.start_file(entry_path.as_str(), opts)
@@ -847,7 +849,7 @@ impl SkillPackager {
             } else {
                 format!("{}/manifest.json", bundle.name)
             };
-            let opts = zip::write::FileOptions::default()
+            let opts = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
                 .unix_permissions(0o644);
             zip.start_file(entry_path.as_str(), opts)
@@ -926,6 +928,11 @@ impl SkillPackager {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec()))
             .map_err(|e| format!("invalid zip archive: {}", e))?;
         let mut mismatches = Vec::new();
+
+        // First pass: read the embedded manifest (if any) into an owned map of
+        // expected hashes. This lets us drop the ZipFile borrow before
+        // re-reading entries below.
+        let mut expectations: Vec<(String, String)> = Vec::new();
         for i in 0..archive.len() {
             let mut file = archive
                 .by_index(i)
@@ -934,7 +941,6 @@ impl SkillPackager {
                 continue;
             }
             let name = file.name().to_string();
-            // Only verify against the manifest's recorded hashes.
             if name.ends_with("manifest.json") {
                 let mut manifest_buf = Vec::new();
                 {
@@ -948,33 +954,38 @@ impl SkillPackager {
                             let expected = meta
                                 .get("sha256")
                                 .and_then(|v| v.as_str())
-                                .unwrap_or_default();
-                            // Re-read the matching entry.
-                            for j in 0..archive.len() {
-                                let mut inner = archive
-                                    .by_index(j)
-                                    .map_err(|e| format!("zip entry error: {}", e))?;
-                                if inner.is_dir() {
-                                    continue;
-                                }
-                                let inner_name = inner.name().to_string();
-                                if let Some(inner_rel) = normalize_zip_path(&inner_name) {
-                                    if inner_rel == *rel {
-                                        let mut content = Vec::new();
-                                        {
-                                            use std::io::Read;
-                                            Read::read_to_end(&mut inner, &mut content)
-                                                .map_err(|e| format!("zip read error: {}", e))?;
-                                        }
-                                        let actual = hex::encode(sha2::Sha256::digest(&content));
-                                        if actual != expected {
-                                            mismatches.push(rel.clone());
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
+                                .unwrap_or_default()
+                                .to_string();
+                            expectations.push((rel.clone(), expected));
                         }
+                    }
+                }
+            }
+        }
+
+        // Second pass: re-read each expected entry and compare hashes.
+        for (rel, expected) in expectations {
+            for j in 0..archive.len() {
+                let mut inner = archive
+                    .by_index(j)
+                    .map_err(|e| format!("zip entry error: {}", e))?;
+                if inner.is_dir() {
+                    continue;
+                }
+                let inner_name = inner.name().to_string();
+                if let Some(inner_rel) = normalize_zip_path(&inner_name) {
+                    if inner_rel == rel {
+                        let mut content = Vec::new();
+                        {
+                            use std::io::Read;
+                            Read::read_to_end(&mut inner, &mut content)
+                                .map_err(|e| format!("zip read error: {}", e))?;
+                        }
+                        let actual = hex::encode(sha2::Sha256::digest(&content));
+                        if actual != expected {
+                            mismatches.push(rel.clone());
+                        }
+                        break;
                     }
                 }
             }
@@ -3018,6 +3029,11 @@ impl SkillHub {
     pub async fn uninstall(&self, skill_id: &str) -> Result<(), String> {
         self.installer.uninstall(skill_id).await?;
         Ok(())
+    }
+
+    /// Re-install skills from the lockfile. If `name` is `None`, update all.
+    pub async fn update(&self, name: Option<&str>) -> Vec<Result<InstallResult, String>> {
+        self.installer.update(name).await
     }
 
     /// List installed skills from the lock file.

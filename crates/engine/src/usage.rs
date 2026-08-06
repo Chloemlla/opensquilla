@@ -246,11 +246,11 @@ impl UsageEventSink for FanOutUsageSink {
     }
 }
 
-/// Per-task usage sink binding.
-///
-/// Mirrors the Python `usage.py` `ContextVar` scope binding with
-/// `tokio::task_local!`: a sink bound inside a task scope is visible to every
-/// descendant task/await point until the scope exits.
+// Per-task usage sink binding.
+//
+// Mirrors the Python `usage.py` `ContextVar` scope binding with
+// `tokio::task_local!`: a sink bound inside a task scope is visible to every
+// descendant task/await point until the scope exits.
 tokio::task_local! {
     static CURRENT_USAGE_SINK: Arc<dyn UsageEventSink>;
 }

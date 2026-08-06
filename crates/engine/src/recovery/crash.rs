@@ -6,12 +6,10 @@
 //! surface the interruption cleanly.
 
 use crate::agent::AgentState;
-use crate::history::{reconstruct_from_row, TranscriptRow};
 use opensquilla_core::error::Result;
-use opensquilla_core::types::{Message, MessageRole, Usage};
-use std::collections::HashMap;
+use opensquilla_core::types::{Message, Usage};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 use tracing::{debug, info, warn};
 
 /// Configuration for crash recovery.

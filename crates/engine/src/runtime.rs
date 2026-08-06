@@ -204,6 +204,7 @@ impl TurnRunnerBuilder {
             streaming_enabled: self.streaming_enabled,
             tool_executor: self.tool_executor,
             event_tx: self.event_tx,
+            guards_config: TurnLoopGuardsConfig::default(),
         }
     }
 }
@@ -230,6 +231,64 @@ pub struct TurnRunner {
     tool_executor: Option<Arc<dyn ToolExecutor>>,
     /// Optional channel for emitting turn lifecycle events.
     event_tx: Option<mpsc::Sender<TurnEvent>>,
+    /// Feature-gated turn-loop guard configuration (progress watchdog,
+    /// post-write convergence, submit review, final-diff contract).
+    guards_config: TurnLoopGuardsConfig,
+}
+
+/// Feature-gated turn-loop guard configuration.
+///
+/// Mirrors the Python agent-loop feature flags. Disabled guards are inert and
+/// change no observable behavior.
+#[derive(Debug, Clone, Default)]
+pub struct TurnLoopGuardsConfig {
+    /// `off` | `log` | `warn_model` | `block` (Python `progress_watchdog_mode`).
+    pub progress_watchdog_mode: String,
+    /// Python `post_write_convergence_enabled`.
+    pub post_write_convergence_enabled: bool,
+    /// Python `submit_review_enabled`.
+    pub submit_review_enabled: bool,
+    /// `off` | `log` | `warn_model` (Python `final_diff_contract_mode`).
+    pub final_diff_contract_mode: String,
+}
+
+impl TurnLoopGuardsConfig {
+    /// Build a guard config from a shared [`TurnRunnerConfig`].
+    pub fn from_turn_config(config: &TurnRunnerConfig) -> Self {
+        Self {
+            progress_watchdog_mode: config.progress_watchdog_mode.clone(),
+            post_write_convergence_enabled: config.post_write_convergence_enabled,
+            submit_review_enabled: config.submit_review_enabled,
+            final_diff_contract_mode: config.final_diff_contract_mode.clone(),
+        }
+    }
+
+    fn build(&self) -> TurnLoopGuards {
+        TurnLoopGuards {
+            submit_review: crate::submit_review::SubmitReviewState::default(),
+            post_write_convergence: if self.post_write_convergence_enabled {
+                Some(crate::post_write_convergence::PostWriteConvergenceTracker::default())
+            } else {
+                None
+            },
+            progress_watchdog: if self.progress_watchdog_mode != "off" {
+                Some(crate::progress_watchdog::ProgressWatchdog::default())
+            } else {
+                None
+            },
+        }
+    }
+}
+
+/// Per-turn mutable state for the additive turn-loop guards.
+#[derive(Debug, Default)]
+pub(crate) struct TurnLoopGuards {
+    /// Review-on-submit checkpoint state.
+    pub submit_review: crate::submit_review::SubmitReviewState,
+    /// Post-write convergence tracker (None when disabled).
+    pub post_write_convergence: Option<crate::post_write_convergence::PostWriteConvergenceTracker>,
+    /// No-progress watchdog (None when off).
+    pub progress_watchdog: Option<crate::progress_watchdog::ProgressWatchdog>,
 }
 
 impl TurnRunner {
@@ -299,6 +358,7 @@ impl TurnRunner {
         }
 
         // Use the messages from the pipeline context for the stages.
+        let stage_metadata = stage_metadata_from_pipeline(&ctx);
         messages = ctx.messages;
 
         // Build the stage context.
@@ -311,17 +371,29 @@ impl TurnRunner {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: self.max_tool_rounds,
+            metadata: stage_metadata,
         };
 
         // Locate the provider stage to drive the agent loop. If no stage is
         // named "provider", fall back to a linear pass through all stages.
         let provider_idx = self.stages.iter().position(|s| s.name() == "provider");
 
+        // Build the feature-gated turn-loop guards (watchdog, convergence,
+        // submit review, final-diff contract). Disabled guards are inert.
+        let mut guards = self.guards_config.build();
+
         let outcome = if let Some(pidx) = provider_idx {
-            self.run_agent_loop(&mut stage_ctx, generator, pidx).await
+            self.run_agent_loop(&mut stage_ctx, generator, pidx, &mut guards)
+                .await
         } else {
             self.run_stages_linearly(&mut stage_ctx, generator).await
         };
+
+        // Final-diff contract check at turn end (mirrors the Python finalize
+        // path). The Rust runtime does not track workspace diffs, so the
+        // observation is computed from the (empty) diff/records available and
+        // surfaces as a clean observation unless the mode demands a log.
+        self.final_diff_contract_check(&turn_id);
 
         self.usage_tracker.record(&stage_ctx.usage);
 
@@ -359,7 +431,19 @@ impl TurnRunner {
                 }
             }
             Ok(TurnOutcome::Error { message, .. }) => {
-                error!(turn_id = %turn_id, error = %message, "Turn failed");
+                // Normalize the terminal error into the Python-compatible
+                // `turn_outcome` details envelope (`outcome.outcome_from_error`
+                // + `outcome.turn_outcome_details`, mirrored by
+                // `runtime._persist_turn_error`). Additive: the log line gains a
+                // normalized payload; no existing behavior changes.
+                let outcome_details =
+                    crate::outcome::turn_outcome_details(&normalized_error_outcome(&message));
+                error!(
+                    turn_id = %turn_id,
+                    error = %message,
+                    turn_outcome = %outcome_details,
+                    "Turn failed"
+                );
                 self.emit_event(
                     &turn_id,
                     TurnEvent::TurnError {
@@ -394,6 +478,7 @@ impl TurnRunner {
         stage_ctx: &mut StageContext,
         generator: &dyn TurnGenerator,
         provider_idx: usize,
+        guards: &mut TurnLoopGuards,
     ) -> Result<TurnOutcome> {
         // Run stages before the provider.
         for stage in &self.stages[..provider_idx] {
@@ -487,7 +572,9 @@ impl TurnRunner {
                 }
             };
 
-            // Execute each tool call and append its result.
+            // Execute each tool call and append its result. Track the round's
+            // outcome so the feature-gated guards can observe real signals.
+            let mut round = RoundToolOutcome::default();
             for call in calls {
                 info!(
                     turn_id = %stage_ctx.turn_id,
@@ -495,8 +582,15 @@ impl TurnRunner {
                     call_id = %call.id,
                     "Executing tool call"
                 );
+                let is_submit = call.name == "submit";
                 let result = match executor.execute(&call).await {
-                    Ok(result) => result,
+                    Ok(result) => {
+                        if !is_submit {
+                            crate::submit_review::observe_tool_activity(&mut guards.submit_review);
+                        }
+                        round.record_result(&result);
+                        result
+                    }
                     Err(e) => {
                         error!(
                             turn_id = %stage_ctx.turn_id,
@@ -504,11 +598,33 @@ impl TurnRunner {
                             error = %e,
                             "Tool execution failed"
                         );
-                        ToolResult::error(&call.id, e.to_string())
+                        let result = ToolResult::error(&call.id, e.to_string());
+                        round.record_result(&result);
+                        result
                     }
                 };
+                if is_submit {
+                    // No workspace diff is tracked by the Rust runtime, so an
+                    // explicit submit is treated as empty-diff: the checkpoint
+                    // stays non-consuming until a real diff source exists.
+                    let action = crate::submit_review::evaluate_explicit_submit(
+                        &mut guards.submit_review,
+                        true,
+                        false,
+                    );
+                    debug!(
+                        turn_id = %stage_ctx.turn_id,
+                        action = action.as_str(),
+                        "submit-review checkpoint evaluated"
+                    );
+                }
                 stage_ctx.messages.push(tool_result_message(call, result));
             }
+
+            // Feed the feature-gated guards (additive; disabled guards are
+            // inert). Mirrors the Python agent loop's watchdog + convergence
+            // observation at each iteration.
+            self.observe_turn_loop(stage_ctx, guards, &round);
 
             stage_ctx.tool_round += 1;
         }
@@ -617,6 +733,7 @@ impl TurnRunner {
         }
         let mut runner = builder.build();
         runner.pipeline = crate::turn_runner::default_pipeline(config);
+        runner.guards_config = TurnLoopGuardsConfig::from_turn_config(config);
         runner
     }
 
@@ -755,12 +872,73 @@ impl TurnRunner {
         if !decision.model.is_empty() {
             ctx.set_metadata("resolved_model", &decision.model);
         }
+        // Pin the immutable route plan once per turn. Mirrors the Python
+        // `route_plan.pin_route_plan` call in `agent_bootstrap_stage.py`; the
+        // plan is stored back into pipeline metadata (JSON-encoded) so
+        // `route_plan_snapshot` and `record_execution_leg` can observe it.
+        self.pin_route_plan(ctx, &decision);
         debug!(
             tier = %decision.tier,
             model = %decision.model,
             source = %decision.source,
             "Routing decision applied to pipeline"
         );
+    }
+
+    /// Create the turn's [`crate::route_plan::RoutePlan`] once and store it in
+    /// pipeline metadata under the `route_plan` key.
+    fn pin_route_plan(&self, ctx: &mut PipelineContext, decision: &crate::routing::RoutingDecision) {
+        let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
+        for key in [
+            "routed_tier",
+            "routed_provider",
+            "routed_model",
+            "routing_source",
+            "routing_applied",
+            "prompt_policy",
+            "thinking_mode",
+            "thinking_level",
+            "router_fallback_chain",
+            "selector_execution_chain",
+        ] {
+            if let Some(value) = ctx.get_metadata(key) {
+                let parsed = serde_json::from_str::<serde_json::Value>(value)
+                    .unwrap_or_else(|_| serde_json::Value::String(value.clone()));
+                metadata.insert(key.to_string(), parsed);
+            }
+        }
+        // Ensure the routed tier / provider / model are present so the plan
+        // always reflects the decision that was just applied.
+        metadata
+            .entry("routed_tier".to_string())
+            .or_insert_with(|| serde_json::Value::String(decision.tier.clone()));
+        metadata
+            .entry("routed_model".to_string())
+            .or_insert_with(|| serde_json::Value::String(decision.model.clone()));
+        let provider = ctx
+            .get_metadata("provider_name")
+            .cloned()
+            .or_else(|| ctx.get_metadata("routed_provider").cloned())
+            .unwrap_or_default();
+        metadata
+            .entry("routed_provider".to_string())
+            .or_insert_with(|| serde_json::Value::String(provider.clone()));
+        metadata
+            .entry("routing_source".to_string())
+            .or_insert_with(|| serde_json::Value::String(decision.source.clone()));
+
+        if let Some(plan) = crate::route_plan::pin_route_plan(
+            &mut metadata,
+            &ctx.turn_id,
+            &provider,
+            &decision.model,
+            None,
+            "",
+            None,
+        ) {
+            let dict = plan.as_dict();
+            ctx.set_metadata("route_plan", dict.to_string());
+        }
     }
 
     /// The shared turn execution core.
@@ -831,6 +1009,7 @@ impl TurnRunner {
             .filter(|p| !p.is_empty())
             .unwrap_or_default();
 
+        let stage_metadata = stage_metadata_from_pipeline(&ctx);
         let mut stage_ctx = StageContext {
             turn_id: turn_id.clone(),
             messages: ctx.messages,
@@ -840,16 +1019,22 @@ impl TurnRunner {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: self.max_tool_rounds,
+            metadata: stage_metadata,
         };
 
         let provider_idx = self.stages.iter().position(|s| s.name() == "provider");
+        let mut guards = self.guards_config.build();
         let outcome = if let Some(pidx) = provider_idx {
-            self.run_agent_loop(&mut stage_ctx, generator, pidx).await
+            self.run_agent_loop(&mut stage_ctx, generator, pidx, &mut guards)
+                .await
         } else {
             self.run_stages_linearly(&mut stage_ctx, generator).await
         };
 
         self.usage_tracker.record(&stage_ctx.usage);
+
+        // Final-diff contract check at turn end (feature-gated, additive).
+        self.final_diff_contract_check(&turn_id);
 
         let duration_ms = start.elapsed().as_millis() as u64;
         let outcome = match outcome {
@@ -884,7 +1069,19 @@ impl TurnRunner {
                 }
             }
             Ok(TurnOutcome::Error { message, .. }) => {
-                error!(turn_id = %turn_id, error = %message, "Turn failed");
+                // Normalize the terminal error into the Python-compatible
+                // `turn_outcome` details envelope (`outcome.outcome_from_error`
+                // + `outcome.turn_outcome_details`, mirrored by
+                // `runtime._persist_turn_error`). Additive: the log line gains a
+                // normalized payload; no existing behavior changes.
+                let outcome_details =
+                    crate::outcome::turn_outcome_details(&normalized_error_outcome(&message));
+                error!(
+                    turn_id = %turn_id,
+                    error = %message,
+                    turn_outcome = %outcome_details,
+                    "Turn failed"
+                );
                 self.emit_event(
                     &turn_id,
                     TurnEvent::TurnError {
@@ -971,6 +1168,190 @@ fn tool_result_message(call: ToolCall, result: ToolResult) -> Message {
         tool_call_id: Some(result.tool_use_id.clone()),
         tool_calls: None,
         tool_result: Some(result),
+    }
+}
+
+/// Normalize a terminal error message into the turn-outcome taxonomy.
+///
+/// Mirrors the Python runtime's `outcome_from_error(code=..., message=...)`
+/// call in `_persist_turn_error`. The provider error text usually embeds the
+/// normalized error code (e.g. `provider_output_truncated`, `timeout`), so the
+/// helper scans the normalized message for a known vocabulary token and uses it
+/// as the classification code; anything unmatched classifies as `failed`.
+pub fn normalized_error_outcome(message: &str) -> crate::outcome::TurnOutcome {
+    let normalized = crate::outcome::normalize_code(Some(message))
+        .replace(' ', "_")
+        .replace('-', "_");
+    // Prefer the longest matching vocabulary token so a message embedding
+    // `provider_output_truncated` classifies as that code rather than the
+    // shorter `output_truncated` substring.
+    let code = crate::outcome::BUDGET_CODES
+        .iter()
+        .chain(crate::outcome::PARTIAL_CODES.iter())
+        .chain(crate::outcome::INTERRUPTED_CODES.iter())
+        .chain(crate::outcome::BLOCKED_CODES.iter())
+        .filter(|code| normalized.contains(**code))
+        .max_by_key(|code| code.len())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| normalized);
+    crate::outcome::outcome_from_error(Some(&code), Some(message), None)
+}
+
+/// Copy routing-plan metadata from the pipeline context into the stage context.
+///
+/// The pipeline context stores JSON values as strings (e.g. the `route_plan`
+/// plan snapshot); the returned map carries them as parsed values so the
+/// provider stage and stream consumer can record execution legs and telemetry.
+fn stage_metadata_from_pipeline(ctx: &PipelineContext) -> HashMap<String, serde_json::Value> {
+    let mut metadata = HashMap::new();
+    for key in ["route_plan", "routed_tier", "routing_source"] {
+        if let Some(value) = ctx.get_metadata(key) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(value) {
+                metadata.insert(key.to_string(), parsed);
+            }
+        }
+    }
+    metadata
+}
+
+/// Aggregated tool-round outcome fed to the feature-gated loop guards.
+#[derive(Debug, Default)]
+struct RoundToolOutcome {
+    /// Whether any tool result in the round succeeded.
+    successful_tool_result: bool,
+    /// Signature of the first failing tool result, if any.
+    first_error_signature: Option<String>,
+}
+
+impl RoundToolOutcome {
+    fn record_result(&mut self, result: &ToolResult) {
+        if result.is_error {
+            if self.first_error_signature.is_none() {
+                self.first_error_signature =
+                    Some(format!("{}:{}", result.tool_use_id, result.content));
+            }
+        } else {
+            self.successful_tool_result = true;
+        }
+    }
+}
+
+impl TurnRunner {
+    /// Feed one agent-loop iteration into the feature-gated guards.
+    ///
+    /// Additive: the guards mirror the Python agent loop's progress-watchdog
+    /// and post-write-convergence observations at each iteration. The Rust
+    /// runtime does not track workspace diffs / verification runs, so the
+    /// convergence tracker observes ineligible samples (silent) and the
+    /// watchdog only fires on genuinely repeated tool-error signatures.
+    /// Decisions surface through logs and turn metadata, never by mutating
+    /// the message stream.
+    fn observe_turn_loop(
+        &self,
+        stage_ctx: &mut StageContext,
+        guards: &mut TurnLoopGuards,
+        round: &RoundToolOutcome,
+    ) {
+        // Post-write convergence tracker (feature-gated).
+        if let Some(tracker) = &mut guards.post_write_convergence {
+            let observation =
+                crate::post_write_convergence::PostWriteConvergenceObservation {
+                    iteration: stage_ctx.tool_round as i64,
+                    provider_call_count: stage_ctx.tool_round as i64,
+                    workspace_write_count: 0,
+                    changed_receipt_count: 0,
+                    diff_fingerprint: None,
+                    diff_paths: Vec::new(),
+                    focused_verification_success_observed: false,
+                    continued_activity_after_verification: false,
+                };
+            let decision = tracker.observe(&observation);
+            if decision.action
+                != crate::post_write_convergence::PostWriteConvergenceAction::Observe
+            {
+                stage_ctx
+                    .metadata
+                    .insert("post_write_convergence".into(), decision.to_dict());
+                debug!(
+                    turn_id = %stage_ctx.turn_id,
+                    action = decision.action.as_str(),
+                    reason = %decision.reason,
+                    "post-write convergence decision"
+                );
+            }
+        }
+
+        // No-progress watchdog (feature-gated).
+        if let Some(watchdog) = &mut guards.progress_watchdog {
+            let observation = crate::progress_watchdog::ProgressObservation {
+                iteration: stage_ctx.tool_round as i64,
+                provider_call_count: stage_ctx.tool_round as i64,
+                successful_tool_result: round.successful_tool_result,
+                successful_source_context_tool_result: false,
+                successful_execution_tool_result: round.successful_tool_result,
+                source_context_signature: None,
+                user_visible_output: false,
+                artifact_completed: false,
+                workspace_change_likely_required: false,
+                workspace_write_count: 0,
+                changed_receipt_count: 0,
+                noop_receipt_count: 0,
+                partial_receipt_count: 0,
+                scratch_write_count: 0,
+                post_write_focused_verification_observed: false,
+                tool_error_signature: round.first_error_signature.clone(),
+                provider_failure_signature: None,
+                failure_anchor_signature: None,
+                failure_anchor_summary: None,
+            };
+            let decision = watchdog.observe(&observation);
+            if decision.action != crate::progress_watchdog::ProgressAction::Observe {
+                stage_ctx
+                    .metadata
+                    .insert("progress_watchdog".into(), decision.to_dict());
+                warn!(
+                    turn_id = %stage_ctx.turn_id,
+                    action = decision.action.as_str(),
+                    reason = %decision.reason,
+                    details = %decision.details,
+                    "progress watchdog decision"
+                );
+            }
+        }
+    }
+
+    /// Run the final-diff contract check at turn end (feature-gated).
+    ///
+    /// Mirrors the Python finalize path. The Rust runtime does not track
+    /// workspace diffs, so the observation is built from empty records and
+    /// surfaces as clean unless the configured mode demands otherwise.
+    fn final_diff_contract_check(&self, turn_id: &str) {
+        if self.guards_config.final_diff_contract_mode == "off" {
+            return;
+        }
+        let observation = crate::final_diff_contract::build_final_diff_contract_observation(
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let details = observation.to_event_details();
+        if observation.suspicious() {
+            warn!(
+                turn_id = %turn_id,
+                final_diff_contract = %details,
+                "final-diff contract check flagged a suspicious final state"
+            );
+        } else {
+            debug!(
+                turn_id = %turn_id,
+                final_diff_contract = %details,
+                "final-diff contract check passed"
+            );
+        }
     }
 }
 
@@ -1144,6 +1525,7 @@ impl Default for TurnRunner {
             streaming_enabled: true,
             tool_executor: None,
             event_tx: None,
+            guards_config: TurnLoopGuardsConfig::default(),
         }
     }
 }
@@ -1154,10 +1536,22 @@ mod tests {
     use crate::routing::TierConfig;
     use crate::steps::ClosureStep;
     use opensquilla_core::types::Message;
+    use serde_json::json;
     use std::pin::Pin;
 
     type BoxedStepFuture<'a> =
         Pin<Box<dyn std::future::Future<Output = Result<StepAction>> + Send + 'a>>;
+
+    fn inject_step(ctx: &mut PipelineContext) -> BoxedStepFuture<'_> {
+        Box::pin(async move {
+            ctx.add_message(Message::system("pipeline ran"));
+            Ok(StepAction::Continue)
+        })
+    }
+
+    fn halt_step(_ctx: &mut PipelineContext) -> BoxedStepFuture<'_> {
+        Box::pin(async move { Ok(StepAction::Halt("stop".to_string())) })
+    }
 
     #[derive(Debug)]
     struct MockGenerator {
@@ -1209,7 +1603,7 @@ mod tests {
         config.pipeline.enabled = true;
         let runner = TurnRunner::from_config(&config);
         assert_eq!(runner.stages.len(), crate::turn_runner::DEFAULT_STAGE_COUNT);
-        assert_eq!(runner.pipeline.len(), 5);
+        assert_eq!(runner.pipeline.len(), 6);
         assert_eq!(runner.stages[0].name(), "harness");
         assert_eq!(runner.stages[7].name(), "finalizer");
     }
@@ -1217,15 +1611,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_with_pipeline_executes_step_chain() {
         let runner = TurnRunnerBuilder::new()
-            .add_chain_step(ClosureStep::new(
-                "inject",
-                |ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-                    Box::pin(async move {
-                        ctx.add_message(Message::system("pipeline ran"));
-                        Ok(StepAction::Continue)
-                    })
-                },
-            ))
+            .add_chain_step(ClosureStep::new("inject", inject_step))
             .build();
         let generator = MockGenerator {
             model: "test-model".into(),
@@ -1247,12 +1633,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_pipeline_halt_short_circuits() {
         let runner = TurnRunnerBuilder::new()
-            .add_chain_step(ClosureStep::new(
-                "halt",
-                |_ctx: &mut PipelineContext| -> BoxedStepFuture<'_> {
-                    Box::pin(async move { Ok(StepAction::Halt("stop".to_string())) })
-                },
-            ))
+            .add_chain_step(ClosureStep::new("halt", halt_step))
             .build();
         let generator = MockGenerator {
             model: "m".into(),
@@ -1294,5 +1675,215 @@ mod tests {
         let ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
         assert!(runner.run_routing_decision(&ctx).is_none());
         assert!(!runner.routing_enabled());
+    }
+
+    #[test]
+    fn test_apply_routing_pins_route_plan() {
+        let mut config = config_with_system();
+        config.routing.enabled = true;
+        config.routing.tiers.insert(
+            "c1".to_string(),
+            TierConfig {
+                model: "deepseek-chat".to_string(),
+                ..Default::default()
+            },
+        );
+        let runner = TurnRunner::from_config(&config);
+        let mut ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
+        ctx.set_metadata("routing_tier", "c1");
+        ctx.set_metadata("provider_name", "openrouter");
+        runner.apply_routing(&mut ctx);
+        // The route plan is pinned once and stored as JSON in the pipeline
+        // metadata (mirrors Python `pin_route_plan`).
+        let raw = ctx.get_metadata("route_plan").cloned().expect("route_plan metadata");
+        let plan = crate::route_plan::RoutePlan::from_dict(
+            &serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(plan.tier, "c1");
+        assert_eq!(plan.model, "deepseek-chat");
+        assert_eq!(plan.plan_id, "t1");
+        assert_eq!(plan.routing_applied, true);
+    }
+
+    #[test]
+    fn test_route_plan_flows_to_stage_metadata() {
+        let mut config = config_with_system();
+        config.routing.enabled = true;
+        config.routing.tiers.insert(
+            "c1".to_string(),
+            TierConfig {
+                model: "deepseek-chat".to_string(),
+                ..Default::default()
+            },
+        );
+        let runner = TurnRunner::from_config(&config);
+        let mut ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
+        ctx.set_metadata("routing_tier", "c1");
+        ctx.set_metadata("provider_name", "openrouter");
+        runner.apply_routing(&mut ctx);
+        let stage_metadata = stage_metadata_from_pipeline(&ctx);
+        assert!(stage_metadata.contains_key("route_plan"));
+        // Plain strings do not round-trip through JSON parsing; only the
+        // route-plan snapshot (a JSON object) is carried over.
+        let raw_plan = ctx.get_metadata("route_plan").cloned().unwrap();
+        assert!(stage_metadata["route_plan"]
+            .as_object()
+            .map(|obj| obj.get("tier").and_then(|t| t.as_str()) == Some("c1"))
+            .unwrap_or(false));
+        let _ = raw_plan;
+    }
+
+    #[test]
+    fn test_normalized_error_outcome_classifies_known_code() {
+        let outcome = normalized_error_outcome("provider_output_truncated: stop reason length");
+        assert_eq!(outcome.kind, crate::outcome::TurnOutcomeKind::Partial);
+        assert!(outcome.retryable);
+
+        let timeout = normalized_error_outcome("timeout: request took too long");
+        assert_eq!(timeout.kind, crate::outcome::TurnOutcomeKind::Interrupted);
+        assert!(timeout.retryable);
+    }
+
+    #[test]
+    fn test_normalized_error_outcome_falls_back_to_failed() {
+        let outcome = normalized_error_outcome("unknown internal failure");
+        assert_eq!(outcome.kind, crate::outcome::TurnOutcomeKind::Failed);
+        assert!(!outcome.retryable);
+    }
+
+    #[test]
+    fn test_normalized_error_outcome_details_envelope() {
+        let details =
+            crate::outcome::turn_outcome_details(&normalized_error_outcome("boom: generic"));
+        assert_eq!(details["turn_outcome"]["kind"], "failed");
+        assert_eq!(details["turn_outcome"]["retryable"], false);
+    }
+
+    // -- Turn-loop guard wiring tests ----------------------------------------
+
+    #[test]
+    fn test_turn_loop_guards_config_build() {
+        let mut config = TurnRunnerConfig::default();
+        config.progress_watchdog_mode = "log".to_string();
+        config.post_write_convergence_enabled = true;
+        let guards = TurnLoopGuardsConfig::from_turn_config(&config).build();
+        assert!(guards.progress_watchdog.is_some());
+        assert!(guards.post_write_convergence.is_some());
+
+        let config = TurnRunnerConfig::default();
+        let guards = TurnLoopGuardsConfig::from_turn_config(&config).build();
+        assert!(guards.progress_watchdog.is_none());
+        assert!(guards.post_write_convergence.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_agent_loop_runs_with_watchdog_and_failing_tools() {
+        let mut config = config_with_system();
+        config.progress_watchdog_mode = "log".to_string();
+        config.max_tool_rounds = 1;
+        let mut runner = TurnRunner::from_config(&config);
+        runner.set_tool_executor(Arc::new(FailingExecutor));
+
+        let generator = ToolCallGenerator::new("shell", json!({"cmd": "ls"}));
+        let outcome = runner
+            .run_standalone(vec![Message::user("hello")], &generator)
+            .await
+            .unwrap();
+        // The failing tool executor + watchdog observation path must not break
+        // the turn; the loop breaks after max_tool_rounds = 1.
+        assert!(matches!(outcome, TurnOutcome::Complete { .. }));
+        let messages = outcome.messages();
+        assert!(messages.len() >= 2, "tool call + result appended");
+    }
+
+    #[tokio::test]
+    async fn test_submit_review_state_machine_wired() {
+        let mut config = config_with_system();
+        config.submit_review_enabled = true;
+        config.max_tool_rounds = 1;
+        let mut runner = TurnRunner::from_config(&config);
+        runner.set_tool_executor(Arc::new(OkExecutor));
+
+        let generator = ToolCallGenerator::new("submit", json!({}));
+        let outcome = runner
+            .run_standalone(vec![Message::user("hello")], &generator)
+            .await
+            .unwrap();
+        assert!(matches!(outcome, TurnOutcome::Complete { .. }));
+    }
+
+    #[derive(Debug)]
+    struct FailingExecutor;
+    #[async_trait]
+    impl ToolExecutor for FailingExecutor {
+        async fn execute(&self, call: &ToolCall) -> Result<ToolResult> {
+            Ok(ToolResult::error(&call.id, "boom"))
+        }
+        fn name(&self) -> &str {
+            "failing-executor"
+        }
+    }
+
+    #[derive(Debug)]
+    struct OkExecutor;
+    #[async_trait]
+    impl ToolExecutor for OkExecutor {
+        async fn execute(&self, call: &ToolCall) -> Result<ToolResult> {
+            Ok(ToolResult::success(&call.id, "ok"))
+        }
+        fn name(&self) -> &str {
+            "ok-executor"
+        }
+    }
+
+    /// A generator that returns one assistant message carrying a tool call on
+    /// the first invocation and a plain assistant message afterwards.
+    #[derive(Debug)]
+    struct ToolCallGenerator {
+        tool_name: String,
+        args: serde_json::Value,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl ToolCallGenerator {
+        fn new(tool_name: &str, args: serde_json::Value) -> Self {
+            Self {
+                tool_name: tool_name.to_string(),
+                args,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl TurnGenerator for ToolCallGenerator {
+        async fn generate(&self, _messages: &[Message]) -> Result<Vec<Message>> {
+            let first = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+            if first {
+                Ok(vec![Message {
+                    role: MessageRole::Assistant,
+                    content: vec![ContentBlock::ToolUse(ToolCall::new(
+                        "call-1",
+                        &self.tool_name,
+                        self.args.clone(),
+                    ))],
+                    name: None,
+                    tool_call_id: None,
+                    tool_calls: None,
+                    tool_result: None,
+                }])
+            } else {
+                Ok(vec![Message::assistant("done")])
+            }
+        }
+
+        fn model_name(&self) -> &str {
+            "mock"
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock"
+        }
     }
 }

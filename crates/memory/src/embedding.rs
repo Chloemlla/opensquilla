@@ -337,7 +337,7 @@ impl EmbeddingProvider for OllamaEmbeddingProvider {
 #[cfg(feature = "onnx")]
 pub struct OnnxEmbeddingProvider {
     config: EmbeddingConfig,
-    session: Option<Arc<ort::session::Session>>,
+    session: Option<Arc<std::sync::Mutex<ort::session::Session>>>,
     tokenizer: Option<Arc<tokenizers::Tokenizer>>,
     detected_dimension: usize,
 }
@@ -359,13 +359,24 @@ impl OnnxEmbeddingProvider {
         }
     }
 
-    fn load_session(config: &EmbeddingConfig) -> Option<Arc<ort::session::Session>> {
+    fn load_session(config: &EmbeddingConfig) -> Option<Arc<std::sync::Mutex<ort::session::Session>>> {
         let path = config.model_path.as_ref()?;
-        match ort::session::Session::builder()
-            .and_then(|b| b.with_intra_threads(1))
-            .and_then(|b| b.commit_from_file(path))
-        {
-            Ok(s) => Some(Arc::new(s)),
+        let builder = match ort::session::Session::builder() {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("failed to create ONNX session builder: {}", e);
+                return None;
+            }
+        };
+        let mut builder = match builder.with_intra_threads(1) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("failed to configure ONNX intra threads: {}", e);
+                return None;
+            }
+        };
+        match builder.commit_from_file(path) {
+            Ok(s) => Some(Arc::new(std::sync::Mutex::new(s))),
             Err(e) => {
                 warn!("failed to load ONNX model from {}: {}", path, e);
                 None
@@ -414,63 +425,54 @@ impl EmbeddingProvider for OnnxEmbeddingProvider {
             .session
             .as_ref()
             .ok_or_else(|| CoreError::Provider("ONNX model not loaded".to_string()))?;
+        let mut session = session
+            .lock()
+            .map_err(|e| CoreError::Provider(format!("lock ONNX session: {}", e)))?;
 
         let (input_ids, attention_mask) = self.tokenize(text)?;
         let seq_len = input_ids.len();
 
-        // Build input tensors. `ort` expects shape [batch, seq_len].
-        let ids_array = ndarray::Array2::<i64>::from_shape_vec((1, seq_len), input_ids)
-            .map_err(|e| CoreError::Provider(format!("ids tensor shape: {}", e)))?;
-        let mask_array = ndarray::Array2::<i64>::from_shape_vec((1, seq_len), attention_mask)
-            .map_err(|e| CoreError::Provider(format!("mask tensor shape: {}", e)))?;
-
-        let inputs = ort::value::Value::from_array(ids_array)
+        // Build input tensors with shape [1, seq_len]. The `(shape, data)`
+        // tuple form is used so we don't depend on a specific ndarray version
+        // (the `ort` crate vendors its own ndarray).
+        let inputs = ort::value::Tensor::from_array(([1usize, seq_len], input_ids))
             .map_err(|e| CoreError::Provider(format!("ids value: {}", e)))?;
-        let mask_value = ort::value::Value::from_array(mask_array)
+        let mask_value = ort::value::Tensor::from_array(([1usize, seq_len], attention_mask))
             .map_err(|e| CoreError::Provider(format!("mask value: {}", e)))?;
 
         let outputs = session
-            .run(
-                ort::inputs!["input_ids" => inputs, "attention_mask" => mask_value]
-                    .map_err(|e| CoreError::Provider(format!("ort inputs: {}", e)))?,
-            )
+            .run(ort::inputs!["input_ids" => inputs, "attention_mask" => mask_value])
             .map_err(|e| CoreError::Provider(format!("ONNX inference failed: {}", e)))?;
 
         // The first output is the token embeddings / last_hidden_state with
         // shape [1, seq_len, hidden]. Mean-pool across the seq_len axis to get
         // a single sentence embedding.
-        let embeddings_value = outputs
-            .get(0)
-            .ok_or_else(|| CoreError::Provider("No output from ONNX model".to_string()))?;
-
-        let (view, _) = embeddings_value
-            .try_extract_array::<f32>()
+        let (shape, data) = outputs[0]
+            .try_extract_tensor::<f32>()
             .map_err(|e| CoreError::Provider(format!("extract array: {}", e)))?;
-        let view = view.view();
 
         // Expect shape [1, seq_len, hidden] or [1, hidden].
-        let pooled: Vec<f32> = match view.shape() {
-            [1, seq, hidden] if *seq == seq_len => {
-                let mut acc = vec![0.0_f32; *hidden];
-                let mut count = 0usize;
-                for s in 0..*seq {
-                    count += 1;
-                    for h in 0..*hidden {
-                        acc[h] += view[[0, s, h]];
+        let dims: &[i64] = shape;
+        let pooled: Vec<f32> = match dims {
+            [1, seq, hidden] if *seq == seq_len as i64 => {
+                let seq = *seq as usize;
+                let hidden = *hidden as usize;
+                let mut acc = vec![0.0_f32; hidden];
+                for s in 0..seq {
+                    for h in 0..hidden {
+                        acc[h] += data[s * hidden + h];
                     }
                 }
-                if count > 0 {
-                    for v in acc.iter_mut() {
-                        *v /= count as f32;
-                    }
+                for v in acc.iter_mut() {
+                    *v /= seq as f32;
                 }
                 acc
             }
-            [1, hidden] => view.iter().copied().collect(),
-            shape => {
+            [1, _] => data.to_vec(),
+            other => {
                 return Err(CoreError::Provider(format!(
                     "Unexpected ONNX output shape: {:?}",
-                    shape
+                    other
                 )));
             }
         };

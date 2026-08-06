@@ -948,7 +948,7 @@ impl CompactionExecutor {
     /// the oldest boundary group until the retained window fits, or nothing
     /// more can be compacted.
     pub fn compact_to_budget(&self, session_id: &Uuid, budget: u64) -> CoreResult<CompactionReport> {
-        let session = self.require_session(session_id)?;
+        let _session = self.require_session(session_id)?;
         let entries = self.storage.list_by_session(session_id)?;
         let un_compacted: Vec<TranscriptEntry> =
             entries.iter().filter(|e| !e.compacted).cloned().collect();

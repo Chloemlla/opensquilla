@@ -1589,7 +1589,7 @@ mod tests {
     fn test_reindex_importance_updates() {
         let store = MemoryStore::in_memory().unwrap();
         let agent = Uuid::new_v4();
-        let mut entry = MemoryEntry::new(
+        let entry = MemoryEntry::new(
             MemoryId(Uuid::new_v4()),
             agent,
             "content".to_string(),

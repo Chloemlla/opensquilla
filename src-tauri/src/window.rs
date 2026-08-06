@@ -224,7 +224,7 @@ fn zoom_cache() -> &'static dashmap::DashMap<String, f64> {
 }
 
 fn current_zoom_factor(label: &str) -> f64 {
-    *zoom_cache().get(label).unwrap_or(&1.0)
+    zoom_cache().get(label).map(|r| *r).unwrap_or(1.0)
 }
 
 fn set_zoom_factor(label: &str, factor: f64) {

@@ -18,7 +18,7 @@ use crate::agent::TurnGenerator;
 use crate::context::ContextBuilder;
 use crate::stages::{Stage, StageContext, StageError, StageOutput};
 use async_trait::async_trait;
-use opensquilla_core::error::{Error, Result};
+use opensquilla_core::error::Result;
 use opensquilla_core::types::{Message, MessageRole};
 use std::path::PathBuf;
 use tracing::{debug, info, instrument, warn};
@@ -218,9 +218,6 @@ impl AgentBootstrapStage {
                     builder = b;
                     loaded_files.push(label);
                 }
-                Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-                    debug!(file = %file, "workspace instruction file not found, skipping");
-                }
                 Err(e) => return Err(e),
             }
         }
@@ -327,6 +324,7 @@ impl Stage for AgentBootstrapStage {
 mod tests {
     use super::*;
     use opensquilla_core::types::Usage;
+    use std::collections::HashMap;
 
     #[test]
     fn test_token_budget_thresholds() {
@@ -390,6 +388,7 @@ mod tests {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: 10,
+            metadata: HashMap::new(),
         };
         let generator = MockGenerator;
         let out = stage.execute(&mut ctx, &generator).await.unwrap();
@@ -410,6 +409,7 @@ mod tests {
             streaming_tx: None,
             tool_round: 0,
             max_tool_rounds: 10,
+            metadata: HashMap::new(),
         };
         let generator = MockGenerator;
         let out = stage.execute(&mut ctx, &generator).await.unwrap();

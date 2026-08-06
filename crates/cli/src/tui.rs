@@ -297,7 +297,7 @@ impl TuiApp {
         Ok(())
     }
 
-    fn render(&self, frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>) {
+    fn render(&self, frame: &mut Frame<'_>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -372,7 +372,7 @@ impl TuiApp {
 
     fn render_tabs(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         let titles: Vec<Line> = View::ALL
@@ -404,7 +404,7 @@ impl TuiApp {
 
     fn render_view_footer(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
         hint: &str,
     ) {
@@ -419,7 +419,7 @@ impl TuiApp {
 
     fn render_input(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         let input_text = if self.input.is_empty() {
@@ -448,7 +448,7 @@ impl TuiApp {
 
     fn render_messages(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         let mut lines: Vec<Line> = Vec::new();
@@ -490,7 +490,7 @@ impl TuiApp {
 
     fn render_help(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         let help_text = Text::from(vec![
@@ -520,7 +520,7 @@ impl TuiApp {
 
     fn render_sessions(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         if self.sessions.is_empty() {
@@ -607,7 +607,7 @@ impl TuiApp {
 
     fn render_providers(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         if self.providers.is_empty() {
@@ -673,7 +673,7 @@ impl TuiApp {
 
     fn render_channels(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         if self.channels.is_empty() {
@@ -740,7 +740,7 @@ impl TuiApp {
 
     fn render_cost(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         let chunks = Layout::default()
@@ -815,7 +815,7 @@ impl TuiApp {
 
     fn render_logs(
         &self,
-        frame: &mut Frame<CrosstermBackend<&mut io::Stdout>>,
+        frame: &mut Frame<'_>,
         area: ratatui::layout::Rect,
     ) {
         let lines: Vec<Line> = if self.log_lines.is_empty() {
@@ -1206,7 +1206,7 @@ impl TuiApp {
                     let _ = tx.send(TuiEvent::Done).await;
                 }
                 Err(e) => {
-                    let _ = tx.send(TuiEvent::Error(e)).await;
+                    let _ = tx.send(TuiEvent::Error(e.to_string())).await;
                 }
             }
         });

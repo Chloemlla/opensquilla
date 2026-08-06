@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use opensquilla_core::config::Config;
 use opensquilla_core::types::Message;
 use opensquilla_provider::{ChatConfig, Provider, ProviderSpecTable};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::info;
 
@@ -65,7 +65,7 @@ struct Tier {
 }
 
 /// Calibration result for a single model.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CalibrationResult {
     model: String,
     tier: String,

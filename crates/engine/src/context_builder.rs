@@ -544,8 +544,8 @@ impl SystemPromptAssembler {
         let mut sorted: Vec<&SystemPromptSection> = self.sections.values().collect();
         sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
 
-        let mut required: Vec<&SystemPromptSection> = sorted.iter().copied().filter(|s| s.required).collect();
-        let mut optional: Vec<&SystemPromptSection> = sorted.iter().copied().filter(|s| !s.required).collect();
+        let required: Vec<&SystemPromptSection> = sorted.iter().copied().filter(|s| s.required).collect();
+        let optional: Vec<&SystemPromptSection> = sorted.iter().copied().filter(|s| !s.required).collect();
 
         let required_tokens: u64 = required.iter().map(|s| self.estimator.estimate_text(s.effective_body())).sum();
         let mut remaining_budget = self.max_tokens.saturating_sub(required_tokens);
@@ -568,7 +568,6 @@ impl SystemPromptAssembler {
                         let mut truncated_section = (*section).clone();
                         truncated_section.body = format!("{truncated_body}\n[...truncated]");
                         truncated.push(truncated_section);
-                        remaining_budget = 0;
                     }
                 }
                 break;

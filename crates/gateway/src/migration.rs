@@ -96,7 +96,7 @@ fn file_size(path: &PathBuf) -> u64 {
 pub fn register_migration_handlers(registry: &mut RpcRegistry) {
     // migration.discover — discover config file candidates
     registry.register(rpc_handler("migration.discover", {
-        move |_params| {
+        move |_params| async move {
             let candidates = discover_candidates();
             Ok(serde_json::json!({
                 "candidates": candidates,
@@ -107,7 +107,7 @@ pub fn register_migration_handlers(registry: &mut RpcRegistry) {
 
     // migration.preview — parse and preview a config file without applying it
     registry.register(rpc_handler("migration.preview", {
-        move |params| {
+        move |params| async move {
             let path_str = params
                 .get("path")
                 .and_then(|v| v.as_str())
@@ -152,22 +152,24 @@ pub fn register_migration_handlers(registry: &mut RpcRegistry) {
 
     // migration.discover_path — resolve the active config path per discovery rules
     registry.register(rpc_handler("migration.discover_path", {
-        move |_params| match Config::discover_path() {
-            Ok(path) => Ok(serde_json::json!({
-                "path": path.display().to_string(),
-                "found": true,
-            })),
-            Err(e) => Ok(serde_json::json!({
-                "path": null,
-                "found": false,
-                "error": e.to_string(),
-            })),
+        move |_params| async move {
+            match Config::discover_path() {
+                Ok(path) => Ok(serde_json::json!({
+                    "path": path.display().to_string(),
+                    "found": true,
+                })),
+                Err(e) => Ok(serde_json::json!({
+                    "path": null,
+                    "found": false,
+                    "error": e.to_string(),
+                })),
+            }
         }
     }));
 
     // migration.validate — validate a config file's structure
     registry.register(rpc_handler("migration.validate", {
-        move |params| {
+        move |params| async move {
             let path_str = params
                 .get("path")
                 .and_then(|v| v.as_str())

@@ -1021,9 +1021,10 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].memory_type, "session_document");
         assert_eq!(all[0].source, "session_source");
+        let session_id_str = session.to_string();
         assert_eq!(
             all[0].metadata["session_id"].as_str(),
-            Some(&session.to_string())
+            Some(session_id_str.as_str())
         );
     }
 

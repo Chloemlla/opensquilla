@@ -698,6 +698,7 @@ impl DeliveryStore {
                 detail
             ],
         )
+        .map(|_| ())
         .map_err(|e| format!("Ledger: {e}"))
     }
 }
@@ -728,7 +729,7 @@ pub fn retry_delay(attempts: u32, base_secs: u64, max_secs: u64) -> Duration {
         .unwrap_or_default()
         .subsec_nanos();
     let jitter_ms = nanos % 250;
-    Duration::from_secs(secs) + Duration::from_millis(jitter_ms)
+    Duration::from_secs(secs) + Duration::from_millis(jitter_ms.into())
 }
 
 // ---------------------------------------------------------------------------

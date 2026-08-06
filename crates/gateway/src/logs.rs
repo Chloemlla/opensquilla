@@ -70,8 +70,8 @@ fn tail_lines(path: &PathBuf, max_lines: usize) -> Result<(u64, Vec<String>), Ap
 pub fn register_logs_handlers(registry: &mut RpcRegistry) {
     // logs.tail — tail the last N lines of a log file
     registry.register(rpc_handler("logs.tail", {
-        move |params| {
-            let path = resolve_log_path(params)?;
+        move |params| async move {
+            let path = resolve_log_path(&params)?;
             let max_lines = params.get("lines").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
             let level_filter = params
                 .get("level")
@@ -119,8 +119,8 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
 
     // logs.head — read the first N lines of a log file
     registry.register(rpc_handler("logs.head", {
-        move |params| {
-            let path = resolve_log_path(params)?;
+        move |params| async move {
+            let path = resolve_log_path(&params)?;
             let max_lines = params.get("lines").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
             if !path.exists() {
@@ -167,8 +167,8 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
 
     // logs.search — search for lines containing a substring
     registry.register(rpc_handler("logs.search", {
-        move |params| {
-            let path = resolve_log_path(params)?;
+        move |params| async move {
+            let path = resolve_log_path(&params)?;
             let pattern = params
                 .get("pattern")
                 .and_then(|v| v.as_str())
@@ -211,7 +211,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
 
     // logs.list — list available log files in a directory
     registry.register(rpc_handler("logs.list", {
-        move |params| {
+        move |params| async move {
             let dir_str = params
                 .get("dir")
                 .and_then(|v| v.as_str())

@@ -504,7 +504,6 @@ impl TurnGenerator for ProviderSubAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Agent;
 
     #[derive(Debug)]
     struct MockGenerator;

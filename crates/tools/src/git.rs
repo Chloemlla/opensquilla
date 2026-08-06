@@ -107,10 +107,12 @@ impl Tool for GitTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "git",
-                "Execute Git operations including clone, status, diff, add, commit, push, log, "
-                    + "branch, checkout, init, merge, rebase, stash, tag, blame, remote, fetch, "
-                    + "reset, revert, cherry-pick, show, and config. "
-                    + "All operations are scoped to the allowed working directory.",
+                concat!(
+                    "Execute Git operations including clone, status, diff, add, commit, push, log, ",
+                    "branch, checkout, init, merge, rebase, stash, tag, blame, remote, fetch, ",
+                    "reset, revert, cherry-pick, show, and config. ",
+                    "All operations are scoped to the allowed working directory.",
+),
                 HashMap::from([
                     (
                         "operation".to_string(),

@@ -280,7 +280,7 @@ impl TemplateRegistry {
         template: &str,
         context: &serde_json::Value,
     ) -> Result<String, TemplateError> {
-        let tera = self.tera.read().map_err(|e| {
+        let mut tera = self.tera.write().map_err(|e| {
             TemplateError::Render(format!("tera lock poisoned: {e}"))
         })?;
         let ctx = tera::Context::from_serialize(context)
@@ -304,7 +304,7 @@ impl TemplateRegistry {
     pub fn register_filter(
         &self,
         name: &str,
-        filter: impl tera::Filter<Value> + Send + Sync + 'static,
+        filter: impl tera::Filter + Send + Sync + 'static,
     ) -> Result<(), TemplateError> {
         let mut tera = self.tera.write().map_err(|e| {
             TemplateError::Parse(format!("tera lock poisoned: {e}"))
@@ -426,7 +426,14 @@ fn filter_trim(value: &Value, _args: &HashMap<String, Value>) -> Result<Value, t
 
 fn filter_default(value: &Value, args: &HashMap<String, Value>) -> Result<Value, tera::Error> {
     match value {
-        Value::Null | Value::String(s) if s.is_empty() => {
+        Value::Null => {
+            let default = args
+                .get("default")
+                .cloned()
+                .unwrap_or(Value::String(String::new()));
+            Ok(default)
+        }
+        Value::String(s) if s.is_empty() => {
             let default = args
                 .get("default")
                 .cloned()
@@ -714,7 +721,8 @@ mod tests {
 
     #[test]
     fn env_function_reads_env() {
-        std::env::set_var("OSQ_TEMPLATE_TEST", "hello-env");
+        // SAFETY: test-only, single-threaded environment variable manipulation.
+        unsafe { std::env::set_var("OSQ_TEMPLATE_TEST", "hello-env") };
         let reg = TemplateRegistry::new();
         let out = reg
             .render_str(
@@ -723,7 +731,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(out, "hello-env");
-        std::env::remove_var("OSQ_TEMPLATE_TEST");
+        // SAFETY: test-only, single-threaded environment variable cleanup.
+        unsafe { std::env::remove_var("OSQ_TEMPLATE_TEST") };
     }
 
     #[test]

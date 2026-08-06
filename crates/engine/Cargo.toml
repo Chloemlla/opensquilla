@@ -26,6 +26,9 @@ dashmap.workspace = true
 async-trait.workspace = true
 reqwest.workspace = true
 parking_lot.workspace = true
+regex.workspace = true
+sha2.workspace = true
+hex.workspace = true
 
 [features]
 default = []

@@ -155,6 +155,18 @@ pub struct TurnRunnerConfig {
     pub pipeline: PipelineConfig,
     /// Routing policy configuration.
     pub routing: RoutingConfig,
+    /// No-progress watchdog mode: `off` | `log` | `warn_model` | `block`.
+    /// Mirrors the Python `progress_watchdog_mode` config; defaults to `off`.
+    pub progress_watchdog_mode: String,
+    /// Post-write convergence tracking enablement. Mirrors the Python
+    /// `post_write_convergence_enabled` config; defaults to `false`.
+    pub post_write_convergence_enabled: bool,
+    /// Review-on-submit checkpoint enablement. Mirrors the Python
+    /// `submit_review_enabled` config; defaults to `false`.
+    pub submit_review_enabled: bool,
+    /// Final-diff contract mode: `off` | `log` | `warn_model`. Mirrors the
+    /// Python `final_diff_contract_mode` config; defaults to `log`.
+    pub final_diff_contract_mode: String,
 }
 
 impl Default for TurnRunnerConfig {
@@ -173,6 +185,10 @@ impl Default for TurnRunnerConfig {
             default_provider: String::new(),
             pipeline: PipelineConfig::default(),
             routing: RoutingConfig::default(),
+            progress_watchdog_mode: "off".to_string(),
+            post_write_convergence_enabled: false,
+            submit_review_enabled: false,
+            final_diff_contract_mode: "log".to_string(),
         }
     }
 }
@@ -215,9 +231,9 @@ pub const DEFAULT_STAGE_COUNT: usize = 8;
 /// Build the default ordered pre-turn step chain from a shared config.
 ///
 /// Mirrors the Python `engine/steps/` pipeline order:
-/// `meta_resolution` → `model_select` → `skills_filter` → `context_assembly`
-/// → `attachment_loader`. Each step reads the fields it owns from
-/// `config.pipeline`.
+/// `meta_resolution` → `model_select` → `reasoning_hint_observer` →
+/// `skills_filter` → `context_assembly` → `attachment_loader`. Each step reads
+/// the fields it owns from `config.pipeline`.
 pub fn default_pipeline(config: &TurnRunnerConfig) -> StepChain {
     let mut chain = StepChain::new();
     chain.push(crate::steps::MetaResolutionStep::new());
@@ -225,6 +241,7 @@ pub fn default_pipeline(config: &TurnRunnerConfig) -> StepChain {
         config.pipeline.default_model.clone(),
         config.pipeline.default_provider.clone(),
     ));
+    chain.push(crate::steps::ReasoningHintObserverStep::new());
     chain.push(
         crate::steps::SkillsFilterStep::new()
             .with_catalog(config.pipeline.skill_catalog.clone())
@@ -281,10 +298,10 @@ mod tests {
     }
 
     #[test]
-    fn test_default_pipeline_orders_five_steps() {
+    fn test_default_pipeline_orders_six_steps() {
         let config = TurnRunnerConfig::default();
         let chain = default_pipeline(&config);
-        assert_eq!(chain.len(), 5);
+        assert_eq!(chain.len(), 6);
         // Names are checked via the closure-backed step names exposed through
         // the pipeline metadata after execution.
     }

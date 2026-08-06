@@ -57,6 +57,23 @@ impl SupervisedRun {
         m.network_blocked = self.network_blocked;
         m
     }
+
+    /// Whether this failed run was likely denied by the sandbox, for a given
+    /// backend name.
+    ///
+    /// Convenience bridge to
+    /// [`crate::denial_attribution::is_likely_sandbox_denied`]; the noop/host
+    /// backends are never attributed.
+    pub fn likely_sandbox_denied(&self, backend: &str) -> bool {
+        crate::denial_attribution::is_likely_sandbox_denied(
+            &crate::denial_attribution::SandboxRunOutcome::new(
+                self.exit_code,
+                &self.stdout,
+                &self.stderr,
+                backend,
+            ),
+        )
+    }
 }
 
 /// Options for a supervised spawn.
@@ -452,9 +469,36 @@ mod tests {
         assert_eq!(t.count(), 2);
     }
 
+    #[test]
+    fn supervised_run_denial_attribution() {
+        let run = SupervisedRun {
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: "sandbox: permission denied".to_string(),
+            duration: Duration::from_secs(1),
+            timed_out: false,
+            rusage: None,
+            policy_denials: 0,
+            network_requests: 0,
+            network_blocked: 0,
+        };
+        assert!(run.likely_sandbox_denied("linux"));
+        assert!(!run.likely_sandbox_denied("noop"));
+        let ok = SupervisedRun {
+            exit_code: 0,
+            ..run
+        };
+        assert!(!ok.likely_sandbox_denied("linux"));
+    }
+
     #[tokio::test]
     async fn run_with_timeout_works() {
-        let (code, out, _) = run_with_timeout("echo", &["hi"], Duration::from_secs(5))
+        // `echo` is not an executable on Windows, so use the platform shell.
+        #[cfg(windows)]
+        let (cmd, args) = ("cmd.exe", vec!["/C", "echo", "hi"]);
+        #[cfg(not(windows))]
+        let (cmd, args) = ("sh", vec!["-c", "echo hi"]);
+        let (code, out, _) = run_with_timeout(cmd, &args, Duration::from_secs(5))
             .await
             .unwrap();
         assert_eq!(code, 0);

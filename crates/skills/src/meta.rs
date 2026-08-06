@@ -118,19 +118,13 @@ pub trait StepExecutor: Send + Sync {
 /// the skill system.
 fn build_tera() -> tera::Tera {
     let mut tera = tera::Tera::default();
-    tera.register_function(
-        "uuid",
-        |_: &tera::Value, _: &HashMap<String, tera::Value>| {
-            Ok(tera::Value::String(uuid::Uuid::new_v4().to_string()))
-        },
-    );
-    tera.register_function(
-        "now_iso",
-        |_: &tera::Value, _: &HashMap<String, tera::Value>| {
-            Ok(tera::Value::String(chrono::Utc::now().to_rfc3339()))
-        },
-    );
-    tera.register_function("ts", |_: &tera::Value, _: &HashMap<String, tera::Value>| {
+    tera.register_function("uuid", |_: &HashMap<String, tera::Value>| {
+        Ok(tera::Value::String(uuid::Uuid::new_v4().to_string()))
+    });
+    tera.register_function("now_iso", |_: &HashMap<String, tera::Value>| {
+        Ok(tera::Value::String(chrono::Utc::now().to_rfc3339()))
+    });
+    tera.register_function("ts", |_: &HashMap<String, tera::Value>| {
         Ok(tera::Value::Number(chrono::Utc::now().timestamp().into()))
     });
     tera
@@ -831,7 +825,7 @@ impl Dag {
                 .max()
                 .unwrap_or(0);
             depth.insert(step_id.clone(), best + 1);
-            if let Some(best_dep) = deps.iter().max_by_key(|d| depth.get(d).copied().unwrap_or(0)) {
+            if let Some(best_dep) = deps.iter().max_by_key(|d| depth.get(*d).copied().unwrap_or(0)) {
                 parent.insert(step_id.clone(), best_dep.clone());
             }
         }
@@ -1190,13 +1184,13 @@ impl MetaOrchestrator {
     }
 
     /// Set the shared workspace root for cross-skill artifacts.
-    pub fn set_workspace_dir(&self, dir: PathBuf) -> &Self {
+    pub fn set_workspace_dir(&mut self, dir: PathBuf) -> &mut Self {
         self.workspace_dir = Some(dir);
         self
     }
 
     /// Set the concurrency cap. `None` = unbounded.
-    pub fn set_max_parallelism(&self, max: Option<usize>) -> &Self {
+    pub fn set_max_parallelism(&mut self, max: Option<usize>) -> &mut Self {
         self.max_parallelism = max;
         self
     }
@@ -1238,10 +1232,14 @@ impl MetaOrchestrator {
         let orchestrator = Arc::new(self.clone_handle());
         let skill_id = skill.id.clone();
         let steps_total = skill.steps.len();
+        // The spawned task moves its own clones; the originals are returned in
+        // the run handle below.
+        let task_run_id = run_id.clone();
+        let task_cancel_flag = cancel_flag.clone();
         tokio::spawn(async move {
             let started_at = chrono::Utc::now();
             let result = orchestrator
-                .execute_with_cancel(&skill, initial_context, cancel_flag.clone())
+                .execute_with_cancel(&skill, initial_context, task_cancel_flag.clone())
                 .await;
             let completed_at = chrono::Utc::now();
             let duration_ms = (completed_at - started_at).num_milliseconds().max(0) as u64;
@@ -1250,7 +1248,7 @@ impl MetaOrchestrator {
                 Err(e) => (false, Some(e), 0),
             };
             orchestrator.record_run(MetaRunRecord {
-                run_id: run_id.clone(),
+                run_id: task_run_id.clone(),
                 skill_id: skill_id.clone(),
                 success,
                 started_at,
@@ -1260,7 +1258,7 @@ impl MetaOrchestrator {
                 steps_completed,
                 error,
             });
-            orchestrator.finish_run(&run_id);
+            orchestrator.finish_run(&task_run_id);
         });
 
         Ok(MetaRun {

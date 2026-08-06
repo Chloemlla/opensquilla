@@ -76,6 +76,30 @@ pub mod budget;
 /// Crash recovery, state reconstruction, and partial turn replay.
 pub mod recovery;
 
+/// Normalized turn outcome taxonomy (`engine/outcome.py`).
+pub mod outcome;
+
+/// Model-family reasoning format hints (`engine/reasoning_hint.py`).
+pub mod reasoning_hint;
+
+/// Review-on-submit finalize checkpoint state machine (`engine/submit_review.py`).
+pub mod submit_review;
+
+/// Post-write convergence tracking (`engine/post_write_convergence.py`).
+pub mod post_write_convergence;
+
+/// Final-diff contract diagnostics (`engine/final_diff_contract.py`).
+pub mod final_diff_contract;
+
+/// Observe-first no-progress watchdog (`engine/progress_watchdog.py`).
+pub mod progress_watchdog;
+
+/// Prompt-cache break detection (`engine/cache_break_monitor.py`).
+pub mod cache_break_monitor;
+
+/// Immutable logical routing plan and execution-leg telemetry (`engine/route_plan.py`).
+pub mod route_plan;
+
 pub use agent::{
     Agent, AgentBuilder, AgentConfig, AgentError, AgentRegistry, AgentSnapshot, AgentState,
     BackgroundProcess, BackgroundProcessManager, CommandResult, ErrorCategory,
@@ -89,7 +113,7 @@ pub use compaction_control::{
 };
 pub use pricing::{ModelPrice, ModelPricing, PricingCache, PricingResult};
 /// Re-export the most commonly used types at the crate root for convenience.
-pub use runtime::{AgentRuntime, TurnRunner, TurnRunnerBuilder};
+pub use runtime::{AgentHandle, AgentRuntime, TurnLoopGuardsConfig, TurnRunner, TurnRunnerBuilder};
 pub use runtime::{NoopToolExecutor, ToolExecutor};
 pub use session_lock::{SessionLockGuard, SessionLockSet, with_session_lock};
 
@@ -98,8 +122,8 @@ pub use session_lock::{SessionLockGuard, SessionLockSet, with_session_lock};
 // step chain are re-exported here.
 pub use steps::{
     AttachmentDescriptor, AttachmentLoaderStep, ContextAssemblyStep, MetaResolutionConfig,
-    MetaResolutionStep, ModelSelectConfig, ModelSelectStep, SkillSpec, SkillsFilterConfig,
-    SkillsFilterStep, StepChain,
+    MetaResolutionStep, ModelSelectConfig, ModelSelectStep, ReasoningHintObserverStep, SkillSpec,
+    SkillsFilterConfig, SkillsFilterStep, StepChain,
 };
 
 // Turn runner stages and shared configuration. The stage types whose names

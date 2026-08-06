@@ -7,11 +7,13 @@ use tracing::{debug, info, warn};
 use crate::channels::ChannelSetup;
 use crate::providers::ProviderSpec;
 use crate::storage::ConfigStorage;
+use crate::storage::ConfigStorageError;
 
 /// State of the setup wizard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SetupState {
     /// Welcome screen
+    #[default]
     Welcome,
     /// Provider configuration
     ProviderSelection,
@@ -324,4 +326,10 @@ pub enum OnboardingError {
 
     #[error("Storage error: {0}")]
     StorageError(String),
+}
+
+impl From<ConfigStorageError> for OnboardingError {
+    fn from(e: ConfigStorageError) -> Self {
+        OnboardingError::StorageError(e.to_string())
+    }
 }

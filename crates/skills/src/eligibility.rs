@@ -17,10 +17,10 @@
 //! per-requirement [`EligibilityReport`] for UI display.
 
 use crate::types::{SkillDependency, SkillRequires, SkillSpec, SkillVersion};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// The kind of a single eligibility requirement, for report display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,7 +357,7 @@ impl EligibilityChecker {
             }
         }
 
-        if let Some(min_memory) = requires.min_memory_mib {
+        if let Some(min_memory) = requires.min_memory_mb {
             report.checks.push(self.check_memory_check(min_memory));
         }
 
@@ -911,12 +911,16 @@ impl EligibilityChecker {
             "scoop" => ("scoop", "list"),
             _ => return false,
         };
-        let path = self.which(list_cmd)?;
+        let path = match self.which(list_cmd) {
+            Some(p) => p,
+            None => return false,
+        };
         let output = std::process::Command::new(&path)
             .arg(query_arg)
             .arg(package)
             .output()
-            .ok()?;
+            .ok();
+        let Some(output) = output else { return false };
         output.status.success()
     }
 

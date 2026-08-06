@@ -1905,7 +1905,10 @@ mod tests {
     use serde_json::json;
 
     fn form_has_field(form: &Form, name: &str) -> bool {
-        form.fields().iter().any(|(n, _)| n.as_ref() == name)
+        // reqwest 0.12 does not expose the form fields directly; the `Debug`
+        // impl renders each part as `("name", Part { ... })`, so a field is
+        // present iff its quoted name appears in that output.
+        format!("{form:?}").contains(&format!("\"{name}\""))
     }
 
     fn make_wav(data_len: u32, sample_rate: u32, channels: u16, bits: u16) -> Vec<u8> {
@@ -2175,7 +2178,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_elevenlabs_stt_json() {
+    fn parse_elevenlabs_stt_json_parses() {
         let text = json!({
             "text": "hi there",
             "language_code": "en",
@@ -2192,7 +2195,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_elevenlabs_voices_json() {
+    fn parse_elevenlabs_voices_json_parses() {
         let text = json!({
             "voices": [
                 { "voice_id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel", "category": "premade", "description": "calm" },
@@ -2212,7 +2215,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_elevenlabs_voice_settings_json() {
+    fn parse_elevenlabs_voice_settings_json_parses() {
         let text = json!({
             "stability": 0.5,
             "similarity_boost": 0.75,

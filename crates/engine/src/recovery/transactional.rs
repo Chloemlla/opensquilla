@@ -9,8 +9,7 @@
 use crate::agent::{AgentState, UsageStats};
 use opensquilla_core::error::Result;
 use opensquilla_core::types::Message;
-use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// The status of a transactional update.
 #[derive(Debug, Clone, PartialEq, Eq)]

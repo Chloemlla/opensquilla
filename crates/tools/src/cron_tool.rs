@@ -165,9 +165,11 @@ impl Tool for ScheduleTaskTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "schedule_task",
-                "Create a scheduled cron job. Supports POSIX cron expressions, "
-                    + "one-time execution at a datetime, or recurring execution every N seconds. "
-                    + "The handler must be one of the registered cron handlers.",
+                concat!(
+                    "Create a scheduled cron job. Supports POSIX cron expressions, ",
+                    "one-time execution at a datetime, or recurring execution every N seconds. ",
+                    "The handler must be one of the registered cron handlers.",
+),
                 HashMap::from([
                     (
                         "name".to_string(),

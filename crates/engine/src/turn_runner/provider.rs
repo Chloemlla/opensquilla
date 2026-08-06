@@ -747,6 +747,17 @@ impl Stage for ProviderStage {
             Ok(response) => response,
             Err(e) => {
                 let report = self.last_report();
+                // Record the failed physical execution leg on the turn's route
+                // plan telemetry (mirrors `route_plan.record_execution_leg`).
+                crate::route_plan::record_execution_leg(
+                    &mut ctx.metadata,
+                    &ctx.current_provider,
+                    &ctx.current_model,
+                    "chat",
+                    None,
+                    None,
+                    "provider_error",
+                );
                 info!(
                     turn_id = %ctx.turn_id,
                     attempts = report.as_ref().map(|r| r.attempts).unwrap_or(0),
@@ -762,6 +773,18 @@ impl Stage for ProviderStage {
             }
         };
         let duration_ms = started.elapsed().as_millis() as u64;
+
+        // Record the successful physical execution leg on the turn's route plan
+        // telemetry (mirrors `route_plan.record_execution_leg`).
+        crate::route_plan::record_execution_leg(
+            &mut ctx.metadata,
+            &ctx.current_provider,
+            &ctx.current_model,
+            "chat",
+            None,
+            None,
+            "",
+        );
 
         let input_tokens = Self::estimate_tokens(&ctx.messages);
         let output_tokens = Self::estimate_tokens(&response);

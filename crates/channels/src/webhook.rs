@@ -23,7 +23,8 @@
 //! ```
 
 use crate::types::{ChannelType, IncomingMessage, MessageAttachment};
-use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
+use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::Aes256;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
@@ -38,8 +39,6 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 /// AES-256-CBC decryptor used by the WeCom adapter.
-type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
-
 /// The HTTP method a webhook route accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WebhookMethod {
@@ -555,20 +554,21 @@ pub fn verify_webhook_signature(
 
 /// Compute an HMAC-SHA256 digest over `message` with `secret`, hex-encoded.
 pub fn hmac_sha256_hex(secret: &[u8], message: &[u8]) -> String {
-    use hmac::{Hmac, Mac};
-    let mut mac =
-        Hmac::<sha2::Sha256>::new_from_slice(secret).expect("HMAC accepts keys of any size");
+    use hmac::Mac;
+    let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(secret)
+        .expect("HMAC accepts keys of any size");
     mac.update(message);
     hex::encode(mac.finalize().into_bytes())
 }
 
 /// Constant-time HMAC-SHA256 verification of a hex-encoded signature.
 pub fn verify_hmac_sha256(secret: &str, message: &[u8], signature_hex: &str) -> bool {
-    use hmac::{Hmac, Mac};
+    use hmac::Mac;
     let Ok(decoded) = hex::decode(signature_hex) else {
         return false;
     };
-    let mut mac = match Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()) {
+    let mut mac = match <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(secret.as_bytes())
+    {
         Ok(m) => m,
         Err(_) => return false,
     };
@@ -646,19 +646,31 @@ pub fn decrypt_wecom_payload(
         ));
     }
 
-    let iv = &key_bytes[0..16];
-    let cipher = Aes256CbcDec::new(
-        aes::cipher::Key::<aes::Aes256>::from_slice(&key_bytes),
-        aes::cipher::Iv::<aes::Aes256>::from_slice(iv),
-    );
+    let iv: [u8; 16] = key_bytes[0..16].try_into().unwrap();
+    let key = aes::cipher::generic_array::GenericArray::from_slice(&key_bytes);
+    let cipher = Aes256::new(key);
 
     let encrypted = base64::engine::general_purpose::STANDARD
         .decode(ciphertext)
         .map_err(|_| WebhookError::InvalidPayload("invalid base64 ciphertext".into()))?;
     let mut buf = encrypted.clone();
-    let plaintext = cipher
-        .decrypt_padded_mut::<Pkcs7>(&mut buf)
-        .map_err(|_| WebhookError::InvalidPayload("AES decryption failed".into()))?;
+    let mut prev = iv;
+    for chunk in buf.chunks_mut(16) {
+        let mut block: [u8; 16] = chunk.try_into().unwrap();
+        let mut ga_block = aes::cipher::generic_array::GenericArray::from(block);
+        cipher.decrypt_block(&mut ga_block);
+        block = ga_block.into();
+        for (b, p) in block.iter_mut().zip(prev.iter()) {
+            *b ^= *p;
+        }
+        chunk.copy_from_slice(&block);
+        prev = block;
+    }
+    let pad_len = buf[buf.len() - 1] as usize;
+    if pad_len == 0 || pad_len > 16 {
+        return Err(WebhookError::InvalidPayload("invalid PKCS7 padding".into()));
+    }
+    let plaintext = &buf[..buf.len() - pad_len];
 
     if plaintext.len() < 20 {
         return Err(WebhookError::InvalidPayload(
@@ -1238,20 +1250,30 @@ mod tests {
     fn test_wecom_aes_roundtrip() {
         let plaintext = r#"{"MsgType":"text","ToUserName":"ww123","FromUserName":"user1","MsgId":"1","Content":"hi","CreateTime":12345}"#;
         let encrypted = {
-            use aes::cipher::{BlockEncryptMut, KeyIvInit};
-            type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
             let full_key = format!("{WECOM_KEY}=");
             let key_bytes = base64::engine::general_purpose::STANDARD
                 .decode(&full_key)
                 .unwrap();
             let iv = &key_bytes[0..16];
-            let cipher = Aes256CbcEnc::new(
-                aes::cipher::Key::<aes::Aes256>::from_slice(&key_bytes),
-                aes::cipher::Iv::<aes::Aes256>::from_slice(iv),
-            );
+            let key = aes::cipher::generic_array::GenericArray::from_slice(&key_bytes);
+            let cipher = aes::Aes256::new(key);
+
             let mut buf = plaintext.as_bytes().to_vec();
-            let padded = cipher.encrypt_padded_mut::<Pkcs7>(&mut buf).unwrap();
-            base64::engine::general_purpose::STANDARD.encode(padded)
+            let block_size = 16;
+            let pad_len = block_size - (buf.len() % block_size);
+            buf.resize(buf.len() + pad_len, pad_len as u8);
+
+            let mut prev = aes::cipher::generic_array::GenericArray::clone_from_slice(iv);
+            for chunk in buf.chunks_mut(block_size) {
+                let mut block = aes::cipher::generic_array::GenericArray::clone_from_slice(chunk);
+                for (b, p) in block.iter_mut().zip(prev.iter()) {
+                    *b ^= *p;
+                }
+                cipher.encrypt_block(&mut block);
+                chunk.copy_from_slice(&block);
+                prev = block;
+            }
+            base64::engine::general_purpose::STANDARD.encode(&buf)
         };
         let decrypted = decrypt_wecom_payload(WECOM_KEY, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);

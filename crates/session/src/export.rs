@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::manager::{CreateSessionConfig, SessionManager};
 use crate::models::{
-    Session, SessionAttachment, SessionMode, SessionSummary, TranscriptEntry,
+    Session, SessionAttachment, SessionSummary, TranscriptEntry,
 };
 
 // ---------------------------------------------------------------------------

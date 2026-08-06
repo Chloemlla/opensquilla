@@ -80,7 +80,7 @@ pub fn register_onboarding_handlers(registry: &mut RpcRegistry, session: Onboard
 
     // onboarding.providers — list discoverable provider specs
     registry.register(rpc_handler("onboarding.providers", {
-        move |_params| {
+        move |_params| async move {
             let providers: Vec<ProviderSpec> = discover_providers();
             Ok(serde_json::json!({
                 "providers": providers,

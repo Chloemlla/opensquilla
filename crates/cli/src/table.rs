@@ -35,6 +35,12 @@ pub enum Color {
     White,
 }
 
+impl Default for Color {
+    fn default() -> Self {
+        Color::Default
+    }
+}
+
 impl Color {
     /// Return the ANSI foreground escape code for this color.
     fn fg_code(self) -> Option<&'static str> {

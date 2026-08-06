@@ -603,7 +603,7 @@ pub struct ReadabilityResult {
 /// - Presence of punctuation
 /// - Lower link density is a good signal but we don't have that here
 /// - Words > 1 syllable (approximated by length)
-fn readability_score(text: &str) -> f64 {
+pub fn readability_score(text: &str) -> f64 {
     if text.trim().is_empty() {
         return 0.0;
     }
@@ -705,7 +705,11 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
     let mut best_score = 0.0f64;
     let mut best_selector = String::new();
 
-    let mut consider = |selector_str: &str, selector: &Selector| {
+    let mut consider = |selector_str: &str,
+                        selector: &Selector,
+                        best_score: &mut f64,
+                        best_content: &mut String,
+                        best_selector: &mut String| {
         for element in document.select(selector) {
             let text: String = element.text().collect::<Vec<_>>().join(" ");
             let text = text.trim().to_string();
@@ -720,17 +724,23 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
                 0.0
             };
             let adjusted = score + specificity_bonus;
-            if adjusted > best_score {
-                best_score = adjusted;
-                best_content = text;
-                best_selector = selector_str.to_string();
+            if adjusted > *best_score {
+                *best_score = adjusted;
+                *best_content = text;
+                *best_selector = selector_str.to_string();
             }
         }
     };
 
     for selector_str in &preferred {
         if let Ok(selector) = Selector::parse(selector_str) {
-            consider(selector_str, &selector);
+            consider(
+                selector_str,
+                &selector,
+                &mut best_score,
+                &mut best_content,
+                &mut best_selector,
+            );
         }
     }
 
@@ -739,7 +749,13 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
     if best_score < 0.3 {
         for selector_str in &fallback {
             if let Ok(selector) = Selector::parse(selector_str) {
-                consider(selector_str, &selector);
+                consider(
+                    selector_str,
+                    &selector,
+                    &mut best_score,
+                    &mut best_content,
+                    &mut best_selector,
+                );
             }
         }
     }
@@ -815,22 +831,26 @@ impl DomainRateLimiter {
                 .map(|d| d.as_millis())
                 .unwrap_or(0);
 
-            let mut last_requests = match self.last_requests.lock() {
-                Ok(guard) => guard,
-                Err(_) => return 0,
+            // Scope the lock so the guard is dropped before the await below;
+            // `std::sync::MutexGuard` is not `Send`, so it must not live across
+            // the sleep if the async future is to stay `Send`.
+            let wait_for = {
+                let mut last_requests = match self.last_requests.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return 0,
+                };
+
+                let last = last_requests.get(&domain).copied().unwrap_or(0);
+                let elapsed = now.saturating_sub(last);
+
+                if elapsed >= self.min_interval_ms {
+                    last_requests.insert(domain.clone(), now);
+                    return waited;
+                }
+
+                self.min_interval_ms - elapsed
             };
 
-            let last = last_requests.get(&domain).copied().unwrap_or(0);
-            let elapsed = now.saturating_sub(last);
-
-            if elapsed >= self.min_interval_ms {
-                last_requests.insert(domain.clone(), now);
-                drop(last_requests);
-                return waited;
-            }
-
-            let wait_for = self.min_interval_ms - elapsed;
-            drop(last_requests);
             tokio::time::sleep(std::time::Duration::from_millis(wait_for as u64)).await;
             waited += wait_for;
         }
@@ -1326,7 +1346,7 @@ impl WebExtractTool {
         }
 
         // Cache the response.
-        self.cache.put(url, status, &content_type, body.clone());
+        self.cache.put(url, status, &content_type, body.to_vec());
 
         let body_str = String::from_utf8_lossy(&body);
         let is_html = content_type.contains("text/html") || body_str.contains("<html");
@@ -1401,9 +1421,11 @@ impl Tool for WebExtractTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "web_extract",
-                "Fetch a web page and extract its main content with readability scoring. "
-                    + "Respects robots.txt, enforces per-domain rate limiting, caches responses, "
-                    + "maintains cookies, and follows redirects.",
+                concat!(
+                    "Fetch a web page and extract its main content with readability scoring. ",
+                    "Respects robots.txt, enforces per-domain rate limiting, caches responses, ",
+                    "maintains cookies, and follows redirects.",
+),
                 HashMap::from([
                     (
                         "url".to_string(),

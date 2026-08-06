@@ -26,6 +26,7 @@ use opensquilla_core::types::{Message, MessageRole};
 use opensquilla_engine::{TurnGenerator, TurnOutcome, TurnRunnerBuilder};
 use opensquilla_provider::{ChatConfig, Provider, StreamEvent};
 use opensquilla_session::{SessionMode, SessionStatus};
+use ratatui::prelude::Stylize;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -194,6 +195,16 @@ struct AgentTurnGenerator {
     provider: Arc<dyn Provider>,
     config: ChatConfig,
     stream: bool,
+}
+
+impl std::fmt::Debug for AgentTurnGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentTurnGenerator")
+            .field("provider", &self.provider.name())
+            .field("config", &self.config)
+            .field("stream", &self.stream)
+            .finish()
+    }
 }
 
 #[async_trait]
@@ -503,7 +514,7 @@ pub async fn agent_skill(skill: String, input: Option<String>) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
 
     // Load the skill to get its steps.
-    let loader = build_skill_loader(&config)?;
+    let loader = build_skill_loader(&config).await?;
     let skill_def = loader
         .get_skill(&skill)
         .await
@@ -534,7 +545,7 @@ pub async fn agent_skill(skill: String, input: Option<String>) -> Result<()> {
 }
 
 /// Build a skill loader (shared with the skills command module).
-fn build_skill_loader(
+async fn build_skill_loader(
     config: &Config,
 ) -> Result<opensquilla_skills::loader::SkillLoader> {
     use opensquilla_skills::bundled::load_bundled_skills;

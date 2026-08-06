@@ -334,9 +334,11 @@ impl Tool for ImageTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "image",
-                "Process images: get information, resize, crop, rotate, convert between formats, "
-                    + "and read metadata (including EXIF detection). "
-                    + "Supports PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, PNM, and QOI formats.",
+                concat!(
+                    "Process images: get information, resize, crop, rotate, convert between formats, ",
+                    "and read metadata (including EXIF detection). ",
+                    "Supports PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, PNM, and QOI formats.",
+),
                 HashMap::from([
                     (
                         "operation".to_string(),
@@ -571,9 +573,11 @@ impl Tool for PdfTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "pdf",
-                "Read and extract text content from PDF files, or get PDF metadata "
-                    + "such as page count. The 'info' operation returns document metadata; "
-                    + "the 'extract' operation returns text content page by page.",
+                concat!(
+                    "Read and extract text content from PDF files, or get PDF metadata ",
+                    "such as page count. The 'info' operation returns document metadata; ",
+                    "the 'extract' operation returns text content page by page.",
+),
                 HashMap::from([
                     (
                         "operation".to_string(),
@@ -728,8 +732,10 @@ impl Tool for TtsTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "tts",
-                "Convert text to speech using an ElevenLabs-compatible TTS API. "
-                    + "Returns the audio as a base64-encoded MP3 file.",
+                concat!(
+                    "Convert text to speech using an ElevenLabs-compatible TTS API. ",
+                    "Returns the audio as a base64-encoded MP3 file.",
+),
                 HashMap::from([
                     (
                         "text".to_string(),
@@ -887,8 +893,10 @@ impl Tool for TranscriptionTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "transcribe_audio",
-                "Transcribe an audio file to text using an OpenAI-Whisper-compatible API. "
-                    + "Supports mp3, mp4, mpeg, mpga, m4a, wav, and webm audio files.",
+                concat!(
+                    "Transcribe an audio file to text using an OpenAI-Whisper-compatible API. ",
+                    "Supports mp3, mp4, mpeg, mpga, m4a, wav, and webm audio files.",
+),
                 HashMap::from([
                     (
                         "path".to_string(),

@@ -7,6 +7,7 @@
 //! symlinks before deciding.
 
 use crate::policy::FilesystemPolicy;
+use crate::sensitive_paths::sensitive_path_marker;
 use crate::whitelist::{AccessIntent, AccessMode, AccessVerdict, PathRule, PathWhitelist};
 use std::path::PathBuf;
 
@@ -114,7 +115,14 @@ impl PathAccessController {
     }
 
     /// Check read access for a path (resolving symlinks first).
+    ///
+    /// Sensitive host paths are hard-blocked before the policy/whitelist is
+    /// consulted: a sensitive path is denied even when a broader rule would
+    /// permit it, mirroring the tool-boundary block in the Python port.
     pub fn check_read(&self, path: &str) -> PathDecision {
+        if let Some(marker) = sensitive_path_marker(path, None) {
+            return PathDecision::Deny(format!("sensitive_path:{marker}"));
+        }
         let verdict = self.check_on_disk(path, AccessIntent::Read);
         match verdict {
             AccessVerdict::Allow(mode) => PathDecision::Allow(mode),
@@ -124,7 +132,13 @@ impl PathAccessController {
     }
 
     /// Check write access for a path (resolving symlinks first).
+    ///
+    /// Sensitive host paths are hard-blocked before the policy/whitelist is
+    /// consulted.
     pub fn check_write(&self, path: &str) -> PathDecision {
+        if let Some(marker) = sensitive_path_marker(path, None) {
+            return PathDecision::Deny(format!("sensitive_path:{marker}"));
+        }
         let verdict = self.check_on_disk(path, AccessIntent::Write);
         match verdict {
             AccessVerdict::Allow(mode) => PathDecision::Allow(mode),
@@ -161,6 +175,45 @@ impl PathAccessController {
             self.policy.write_allowed.len(),
             self.policy.denied.len(),
         )
+    }
+
+    /// List a directory, returning the formatted entries visible under this
+    /// controller.
+    ///
+    /// Each entry is filtered through the same rules as a direct access check
+    /// (sensitive-path hard block, whitelist, policy fallback) and formatted
+    /// with [`crate::directory_listing::format_directory_entry`]. Entries that
+    /// fail an explicit allow are reported as `blocked`, mirroring the Python
+    /// filesystem worker. `follow_target` is forwarded to the formatter for
+    /// symlink metadata resolution.
+    pub fn list_directory(
+        &self,
+        path: &std::path::Path,
+        follow_target: bool,
+    ) -> std::io::Result<(Vec<String>, Vec<String>)> {
+        let mut dirs: Vec<String> = Vec::new();
+        let mut files: Vec<String> = Vec::new();
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+            let entry_text = entry_path.to_string_lossy().into_owned();
+            let readable = self.check_read(&entry_text).permitted();
+            if !readable {
+                files.push(format!("[blocked] {}", entry.file_name().to_string_lossy()));
+                continue;
+            }
+            let (is_dir, line) = crate::directory_listing::format_directory_entry(
+                &entry_path,
+                follow_target,
+                false,
+            );
+            if is_dir {
+                dirs.push(line);
+            } else {
+                files.push(line);
+            }
+        }
+        Ok((dirs, files))
     }
 }
 
@@ -224,5 +277,51 @@ mod tests {
             wl.check_write("/writable/a"),
             crate::whitelist::AccessVerdict::Allow(AccessMode::ReadWrite)
         );
+    }
+
+    #[test]
+    fn sensitive_paths_are_hard_blocked() {
+        // A broad allow-all policy still refuses a sensitive path.
+        let policy = FilesystemPolicy::default().with_read_allowed("/");
+        let controller = PathAccessController::new(policy);
+        let d = controller.check_read("/home/u/.ssh/id_rsa");
+        assert!(!d.permitted());
+        assert_eq!(
+            d,
+            PathDecision::Deny("sensitive_path:/id_rsa".to_string())
+        );
+        let d = controller.check_read("/etc/shadow");
+        assert!(!d.permitted());
+        assert!(matches!(d, PathDecision::Deny(reason) if reason.starts_with("sensitive_path:")));
+        // Ordinary workspace paths still resolve normally.
+        assert!(controller.check_read("/tmp/notes.txt").permitted());
+    }
+
+    #[test]
+    fn sensitive_write_blocked() {
+        let policy = FilesystemPolicy::default().with_write_allowed("/");
+        let controller = PathAccessController::new(policy);
+        let d = controller.check_write("/etc/shadow");
+        assert!(!d.permitted());
+    }
+
+    #[test]
+    fn list_directory_filters_and_formats() {
+        let dir = std::env::temp_dir().join("osq_path_rules_list_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.txt"), b"hello").unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join(".env"), b"SECRET=1").unwrap();
+
+        let policy = FilesystemPolicy::default()
+            .with_read_allowed(dir.to_string_lossy().as_ref());
+        let controller = PathAccessController::new(policy);
+        let (dirs, files) = controller.list_directory(&dir, true).unwrap();
+        assert!(dirs.iter().any(|l| l.contains("[dir]  sub/")));
+        assert!(files.iter().any(|l| l.contains("[file] a.txt")));
+        // `.env` is a sensitive leaf: it is blocked, not listed as a file.
+        assert!(files.iter().any(|l| l.starts_with("[blocked] .env")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

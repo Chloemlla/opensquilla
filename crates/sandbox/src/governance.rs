@@ -754,7 +754,7 @@ pub struct GovernanceAuditEntry {
 }
 
 /// The outcome recorded in an audit entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GovernanceDecision {
     Submitted,

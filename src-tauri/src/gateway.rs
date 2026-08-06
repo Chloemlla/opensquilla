@@ -281,7 +281,7 @@ pub async fn get_gateway_url(state: State<'_, AppState>) -> TauriResult<Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opensquilla_engine::TurnRunnerBuilder;
+    use opensquilla_engine::{AgentRuntime, TurnRunnerBuilder};
     use opensquilla_session::SessionStorage;
     use tokio::sync::mpsc;
 

@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::store::MemoryStore;
-use crate::types::MemoryEntry;
 
 /// A snapshot of the FTS index's health and composition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -232,6 +231,7 @@ fn estimate_tokens(text: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::MemoryEntry;
     use opensquilla_core::types::MemoryId;
 
     fn insert(store: &MemoryStore, agent: Uuid, content: &str, tags: &[&str]) {

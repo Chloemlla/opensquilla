@@ -36,10 +36,17 @@ fn estimate_tokens(text: &str) -> u64 {
 }
 
 /// A `TurnGenerator` that wraps an LLM provider.
-#[derive(Debug)]
 struct ProviderTurnGenerator {
     provider: Arc<dyn Provider>,
     config: ChatConfig,
+}
+
+impl std::fmt::Debug for ProviderTurnGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderTurnGenerator")
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 #[async_trait]
@@ -94,7 +101,7 @@ pub async fn run_chat_with_attachments(
     let provider_name = provider.unwrap_or_else(|| util::default_provider(&config));
     let model_name = model.unwrap_or_else(|| util::default_model(&config));
 
-    let mut active_session = util::resolve_or_create_session(&manager, session_id.as_deref()).await?;
+    let active_session = util::resolve_or_create_session(&manager, session_id.as_deref()).await?;
     info!(
         "Chat session {} provider={} model={} standalone={}",
         active_session.id, provider_name, model_name, standalone
@@ -163,7 +170,7 @@ async fn send_message(
     let transcript = manager
         .get_transcript(&session.id, 100, 0)
         .map_err(|e| anyhow::anyhow!("Failed to load transcript: {e}"))?;
-    let mut messages = transcript_to_messages(&transcript);
+    let messages = transcript_to_messages(&transcript);
 
     let response = if standalone {
         run_turn_blocking(config, provider_name, model_name, messages).await?
@@ -656,18 +663,9 @@ fn edit_message(
 
 /// Compact a session by summarizing the current transcript.
 fn compact_session(manager: &SessionManager, session_id: &uuid::Uuid) -> Result<()> {
-    let entries = manager
-        .get_transcript(session_id, 500, 0)
-        .map_err(|e| anyhow::anyhow!("Failed to load transcript: {e}"))?;
-    let summary = format!(
-        "Compacted session with {} messages, {} tokens.",
-        entries.len(),
-        entries.iter().map(|e| e.token_count).sum::<u64>()
-    );
-    let tokens = entries.iter().map(|e| e.token_count).sum::<u64>();
-    manager
-        .compact_session(session_id, &summary, tokens)
+    let report = manager
+        .compact(session_id)
         .map_err(|e| anyhow::anyhow!("Failed to compact session: {e}"))?;
-    println!("Session compacted ({})", summary);
+    println!("Session compacted: {} entries removed", report.entries_compacted);
     Ok(())
 }

@@ -65,8 +65,10 @@ impl Tool for MemorySaveTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "memory_save",
-                "Store a memory for an agent. Memories are persistent and searchable "
-                    + "via memory_search. Optional tags can be attached for classification.",
+                concat!(
+                    "Store a memory for an agent. Memories are persistent and searchable ",
+                    "via memory_search. Optional tags can be attached for classification.",
+),
                 HashMap::from([
                     (
                         "content".to_string(),
@@ -159,13 +161,14 @@ impl Tool for MemorySaveTool {
 
         let store = self.store.clone();
         let memory_id = entry.id;
+        let tags_for_insert = tags.clone();
 
         // SQLite I/O is synchronous; run it off the async executor.
         tokio::task::spawn_blocking(move || -> Result<(), ToolError> {
             store
                 .insert_memory(&entry)
                 .map_err(|e| map_store_error("save", e))?;
-            for tag in &tags {
+            for tag in &tags_for_insert {
                 store
                     .add_tag(&entry.id, tag)
                     .map_err(|e| map_store_error("tag", e))?;
@@ -213,8 +216,10 @@ impl Tool for MemorySearchTool {
         static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
             ToolDefinition::new(
                 "memory_search",
-                "Full-text search over stored memories using SQLite FTS5. "
-                    + "Returns matching memories ordered by relevance.",
+                concat!(
+                    "Full-text search over stored memories using SQLite FTS5. ",
+                    "Returns matching memories ordered by relevance.",
+),
                 HashMap::from([
                     (
                         "query".to_string(),
@@ -256,10 +261,11 @@ impl Tool for MemorySearchTool {
             .map_err(|e| ToolError::invalid_args(format!("Invalid 'agent_id' UUID: {}", e)))?;
 
         let store = self.store.clone();
+        let query_for_search = query.clone();
         let results =
             tokio::task::spawn_blocking(move || -> Result<Vec<MemoryEntry>, ToolError> {
                 store
-                    .search_fts(&query, limit, offset)
+                    .search_fts(&query_for_search, limit, offset)
                     .map_err(|e| map_store_error("search", e))
             })
             .await

@@ -18,8 +18,8 @@
 use crate::agent::RecoveryAction;
 use crate::turn_control;
 use async_trait::async_trait;
-use opensquilla_core::error::{Error, Result};
-use opensquilla_core::types::{ContentBlock, Message, MessageRole, ToolCall, ToolResult, Usage};
+use opensquilla_core::error::Result;
+use opensquilla_core::types::{ContentBlock, Message, MessageRole, ToolCall, ToolResult};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -159,11 +159,12 @@ impl ToolExecutionOutcome {
 
     /// Convert the outcome into a tool-role message.
     pub fn into_message(self) -> Message {
+        let name = self.call.name.clone();
         let result = self.into_result();
         Message {
             role: MessageRole::Tool,
             content: vec![ContentBlock::ToolResult(result.clone())],
-            name: Some(self.call.name.clone()),
+            name: Some(name),
             tool_call_id: Some(result.tool_use_id.clone()),
             tool_calls: None,
             tool_result: Some(result),
@@ -579,8 +580,8 @@ impl ToolExecutionEngine {
             1
         };
         let mut attempts = 0u32;
-        let mut last_error: Option<String> = None;
-        let mut last_kind: Option<ToolErrorKind> = None;
+        let mut last_error: Option<String>;
+        let mut last_kind: Option<ToolErrorKind>;
 
         loop {
             attempts += 1;

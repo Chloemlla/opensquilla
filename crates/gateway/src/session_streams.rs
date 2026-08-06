@@ -188,7 +188,18 @@ impl SessionReceiver {
 
     /// Convert this receiver into a [`Stream`] of filtered updates.
     pub fn into_stream(self) -> SessionStream {
-        SessionStream { inner: self }
+        // `broadcast::Receiver` has no public `poll_recv`, so build the stream
+        // over the async `recv()` method instead.
+        let stream = futures::stream::unfold(self, |mut receiver| async move {
+            match receiver.recv().await {
+                Ok(update) => Some((Ok(update), receiver)),
+                Err(StreamError::Lagged(n)) => Some((Err(StreamError::Lagged(n)), receiver)),
+                Err(StreamError::Closed) => None,
+            }
+        });
+        SessionStream {
+            inner: Box::pin(stream),
+        }
     }
 
     /// Return `true` if this update passes the configured filters.
@@ -232,33 +243,14 @@ impl std::fmt::Debug for SessionReceiver {
 
 /// A `futures::Stream` adapter over a [`SessionReceiver`].
 pub struct SessionStream {
-    inner: SessionReceiver,
+    inner: Pin<Box<dyn Stream<Item = Result<SessionStreamUpdate, StreamError>>>>,
 }
 
 impl Stream for SessionStream {
     type Item = Result<SessionStreamUpdate, StreamError>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-
-        // Poll the raw broadcast receiver. On `Ready(Ok(update))`, apply the
-        // filters; if they reject it, keep polling.
-        loop {
-            match this.inner.inner.poll_recv(cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Ok(update)) => {
-                    if this.inner.accepts(&update) {
-                        return Poll::Ready(Some(Ok(update)));
-                    }
-                }
-                Poll::Ready(Err(broadcast::error::RecvError::Lagged(n))) => {
-                    return Poll::Ready(Some(Err(StreamError::Lagged(n))));
-                }
-                Poll::Ready(Err(broadcast::error::RecvError::Closed)) => {
-                    return Poll::Ready(None);
-                }
-            }
-        }
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.as_mut().poll_next(cx)
     }
 }
 
