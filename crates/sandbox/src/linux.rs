@@ -1075,7 +1075,9 @@ mod backend {
 
                 let mut add_rule = |path: &Path, access: u64| -> Result<(), String> {
                     let fd = libc::open(
-                        std::os::unix::ffi::OsStrExt::as_ptr(path.as_os_str()),
+                        <&std::os::unix::ffi::OsStr as std::os::unix::ffi::OsStrExt>::as_ptr(
+                            path.as_os_str(),
+                        ),
                         libc::O_PATH | libc::O_CLOEXEC,
                     );
                     if fd < 0 {
