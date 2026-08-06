@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../opensquilla-webui/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "node ../scripts/build-frontend.mjs --dev && npm --prefix ../opensquilla-webui run dev",
-    "beforeBuildCommand": "node ../scripts/build-frontend.mjs --build"
+    "beforeDevCommand": "node scripts/build-frontend.mjs --dev && npm --prefix opensquilla-webui run dev",
+    "beforeBuildCommand": "node scripts/build-frontend.mjs --build"
   },
   "app": {
     "windows": [
