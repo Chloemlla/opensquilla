@@ -28,7 +28,6 @@ members = [
     "crates/chat",
     "crates/contrib",
     "crates/agents",
-    "crates/dist",
     "src-tauri",
 ]
 
