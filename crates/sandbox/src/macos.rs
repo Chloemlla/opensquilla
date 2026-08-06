@@ -24,6 +24,17 @@ mod backend {
     use tokio::process::Command;
     use tracing::{info, warn};
 
+    /// macOS sandbox framework FFI. `libc` 0.2 does not export these symbols.
+    #[link(name = "sandbox")]
+    unsafe extern "C" {
+        fn sandbox_init(
+            profile: *const libc::c_char,
+            flags: u64,
+            errorbuf: *mut *mut libc::c_char,
+        ) -> libc::c_int;
+        fn sandbox_free_error(errorbuf: *mut libc::c_char);
+    }
+
     pub struct MacOsBackend {
         sandbox_exec_path: String,
         codesign_path: Option<String>,
@@ -403,13 +414,13 @@ mod backend {
             // use flags = 0 (SANDBOX_BUILTIN is 2; plain inline profile uses
             // 0).
             let mut errorbuf: *mut libc::c_char = std::ptr::null_mut();
-            let result = libc::sandbox_init(profile_c.as_ptr(), 0, &mut errorbuf);
+            let result = sandbox_init(profile_c.as_ptr(), 0, &mut errorbuf);
             if result != 0 {
                 let err = if errorbuf.is_null() {
                     "sandbox_init failed".to_string()
                 } else {
                     let msg = std::ffi::CStr::from_ptr(errorbuf).to_string_lossy().to_string();
-                    libc::sandbox_free_error(errorbuf);
+                    sandbox_free_error(errorbuf);
                     msg
                 };
                 return Err(format!("sandbox_init: {err}"));

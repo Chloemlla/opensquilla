@@ -663,14 +663,14 @@ pub fn process_may_still_be_alive(pid: u32) -> bool {
 }
 
 #[cfg(unix)]
-extern "C" {
+unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
 #[cfg(unix)]
 #[allow(non_upper_case_globals)]
 unsafe fn libc_kill(pid: u32, sig: i32) -> i32 {
-    kill(pid as i32, sig)
+    unsafe { kill(pid as i32, sig) }
 }
 
 // ---------------------------------------------------------------------------

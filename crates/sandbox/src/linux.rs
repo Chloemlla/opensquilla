@@ -998,7 +998,7 @@ mod backend {
             }
 
             unsafe fn syscall3(nr: libc::c_long, a1: usize, a2: usize, a3: usize) -> libc::c_long {
-                libc::syscall(nr, a1, a2, a3)
+                unsafe { libc::syscall(nr, a1, a2, a3) }
             }
 
             unsafe fn syscall4(
@@ -1008,7 +1008,7 @@ mod backend {
                 a3: usize,
                 a4: usize,
             ) -> libc::c_long {
-                libc::syscall(nr, a1, a2, a3, a4)
+                unsafe { libc::syscall(nr, a1, a2, a3, a4) }
             }
 
             unsafe {
