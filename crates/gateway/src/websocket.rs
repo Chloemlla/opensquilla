@@ -59,6 +59,9 @@ impl WsError {
     }
 }
 
+/// Max inbound WebSocket message size (32 MiB). Mirrors the Python gateway client cap.
+const GATEWAY_MAX_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
+
 /// Handle a WebSocket upgrade request.
 ///
 /// This function is called by the axum router when a client requests a
@@ -82,15 +85,17 @@ pub async fn ws_handler(
         .map(|Extension(c)| c)
         .unwrap_or_else(|| Arc::new(ConnectionRegistry::default()));
 
-    ws.on_upgrade(move |socket| {
-        handle_socket(
-            socket,
-            rpc_registry,
-            auth_config,
-            subscription_manager,
-            connection_registry,
-        )
-    })
+    ws.max_message_size(GATEWAY_MAX_MESSAGE_BYTES)
+        .max_frame_size(GATEWAY_MAX_MESSAGE_BYTES)
+        .on_upgrade(move |socket| {
+            handle_socket(
+                socket,
+                rpc_registry,
+                auth_config,
+                subscription_manager,
+                connection_registry,
+            )
+        })
 }
 
 /// The main WebSocket connection handler: handshake, message loop, cleanup.
@@ -890,5 +895,10 @@ mod tests {
     fn test_error_type_display() {
         let err = WsError("boom".to_string());
         assert_eq!(err.to_string(), "WebSocket error: boom");
+    }
+
+    #[test]
+    fn test_gateway_max_message_bytes_value() {
+        assert_eq!(GATEWAY_MAX_MESSAGE_BYTES, 32 * 1024 * 1024);
     }
 }

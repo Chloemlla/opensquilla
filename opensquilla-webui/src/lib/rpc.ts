@@ -140,6 +140,11 @@ interface PendingRequest {
   abortHandler: (() => void) | null;
 }
 
+/** Max inbound WebSocket message size (32 MiB). Mirrors the Python gateway
+ *  client `GATEWAY_CLIENT_MAX_MESSAGE_BYTES`; enforced in `onmessage` since
+ *  the browser WS API has no configurable max_size. */
+const GATEWAY_CLIENT_MAX_MESSAGE_BYTES = 32 * 1024 * 1024;
+
 export class RpcClient implements RpcClientLike {
   private _ws: WebSocket | null = null;
   private _socketGeneration = 0;
@@ -386,6 +391,21 @@ export class RpcClient implements RpcClientLike {
 
     socket.onmessage = (ev: MessageEvent) => {
       if (!this._isCurrentSocket(socket, generation)) return;
+      // UTF-16 code-unit cap approximating the 32 MiB byte cap. Browser WS has
+      // no configurable max_size or asyncio-style receive queue (max_queue=1
+      // has no direct port — messages arrive one at a time on the event loop).
+      if (typeof ev.data === 'string' && ev.data.length > GATEWAY_CLIENT_MAX_MESSAGE_BYTES) {
+        console.warn(
+          `[rpc] inbound WebSocket frame exceeds ${GATEWAY_CLIENT_MAX_MESSAGE_BYTES} bytes; closing (1009)`
+        );
+        try {
+          socket.close(1009, 'message too big');
+        } catch {
+          /* socket already closing */
+        }
+        this._recycleConnection(generation, new Error('Inbound message exceeds size cap'));
+        return;
+      }
       let data: RpcFrame;
       try {
         data = JSON.parse(ev.data);

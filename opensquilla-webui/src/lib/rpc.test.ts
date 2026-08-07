@@ -440,4 +440,25 @@ describe('RpcClient', () => {
     expect(client.state).toBe('connected')
     client.disconnect()
   })
+
+  it('closes the socket with 1009 when an inbound frame exceeds the size cap', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const client = new RpcClient()
+    client.connect('ws://rpc.test')
+    const socket = MockWebSocket.instances[0]
+    establishConnection(socket)
+    expect(client.state).toBe('connected')
+
+    const oversized = 'x'.repeat(32 * 1024 * 1024 + 1)
+    socket.onmessage?.({ data: oversized } as MessageEvent)
+
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED)
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('inbound WebSocket frame exceeds')
+    )
+    expect(client.state).toBe('disconnected')
+
+    warnSpy.mockRestore()
+    client.disconnect()
+  })
 })
