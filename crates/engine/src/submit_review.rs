@@ -1,16 +1,16 @@
 //! Pure, I/O-free state machine for the review-on-submit finalize checkpoint.
 //!
 //! Mirrors the Python backend's `engine/submit_review.py`. The agent loop owns
-//! one [`SubmitReviewState`] per run, captures the workspace diff, and calls
+//! one `SubmitReviewState` per run, captures the workspace diff, and calls
 //! these helpers to decide whether to show the model a review of its own
 //! changes before its work is finalized.
 //!
 //! This module owns no I/O. Two entry points share one state:
 //!
-//! * **explicit** — the model calls the `submit` tool; [`evaluate_explicit_submit`]
+//! * **explicit** — the model calls the `submit` tool; `evaluate_explicit_submit`
 //!   returns the action to take and mutates the state.
 //! * **implicit** — the model stops emitting tool calls while holding a
-//!   non-empty workspace diff; [`should_fire_implicit`] decides whether the
+//!   non-empty workspace diff; `should_fire_implicit` decides whether the
 //!   review is injected as a user message before the existing finalize chain
 //!   lets the turn end.
 

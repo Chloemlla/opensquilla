@@ -1,7 +1,7 @@
 //! Cron / scheduler RPC handlers.
 //!
 //! Provides `rpc_cron` for scheduled-task management, backed by the
-//! scheduler crate's [`JobOps`] CRUD facade over a SQLite [`JobStore`].
+//! scheduler crate's `JobOps` CRUD facade over a SQLite `JobStore`.
 
 use opensquilla_core::error::AppError;
 use opensquilla_scheduler::engine::SchedulerEngine;

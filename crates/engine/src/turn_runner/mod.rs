@@ -7,14 +7,14 @@
 //! it and provides the concrete stage implementations plus the shared
 //! [`TurnRunnerConfig`]. The stage chain mirrors the Python order:
 //!
-//! 1. [`harness::HarnessStage`] — setup, session lock, error boundary.
-//! 2. [`agent_bootstrap::AgentBootstrapStage`] — system prompt, agent identity.
-//! 3. [`compaction::CompactionStage`] — trigger check, run compaction.
-//! 4. [`attachment::AttachmentStage`] — load attachments, validate.
-//! 5. [`input::InputStage`] — validate input, prepare messages.
-//! 6. [`provider::ProviderStage`] — call LLM, stream response.
-//! 7. [`stream_consumer::StreamConsumerStage`] — consume SSE, buffer tool calls.
-//! 8. [`finalizer::FinalizerStage`] — persist, emit events, cleanup.
+//! 1. `harness::HarnessStage` — setup, session lock, error boundary.
+//! 2. `agent_bootstrap::AgentBootstrapStage` — system prompt, agent identity.
+//! 3. `compaction::CompactionStage` — trigger check, run compaction.
+//! 4. `attachment::AttachmentStage` — load attachments, validate.
+//! 5. `input::InputStage` — validate input, prepare messages.
+//! 6. `provider::ProviderStage` — call LLM, stream response.
+//! 7. `stream_consumer::StreamConsumerStage` — consume SSE, buffer tool calls.
+//! 8. `finalizer::FinalizerStage` — persist, emit events, cleanup.
 
 pub mod agent_bootstrap;
 pub mod attachment;

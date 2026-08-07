@@ -143,7 +143,7 @@ impl AuditLog {
     }
 
     /// Record an access. Truncates the in-memory buffer at
-    /// [`AUDIT_MAX_IN_MEMORY`] entries; the on-disk file is append-only.
+    /// `AUDIT_MAX_IN_MEMORY` entries; the on-disk file is append-only.
     pub fn record(&self, op: &str, key: &str, ok: bool) {
         let entry = AuditEntry {
             ts: chrono::Utc::now().to_rfc3339(),

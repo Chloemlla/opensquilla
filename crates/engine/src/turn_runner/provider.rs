@@ -567,7 +567,7 @@ impl ProviderStage {
             .await;
     }
 
-    /// Build a provider [`ChatConfig`] from the turn context.
+    /// Build a provider `ChatConfig` from the turn context.
     ///
     /// Only available with the `provider` feature.
     #[cfg(feature = "provider")]

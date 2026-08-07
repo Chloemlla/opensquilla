@@ -1,7 +1,7 @@
 //! Provider management commands.
 //!
 //! Implements the `providers` subcommand against the provider crate's
-//! [`ProviderRegistry`] and [`ProviderSpecTable`]. Listing and status are pure
+//! `ProviderRegistry` and [`ProviderSpecTable`]. Listing and status are pure
 //! registry queries (Mode B); `providers test` performs a live round-trip to
 //! validate credentials and connectivity.
 

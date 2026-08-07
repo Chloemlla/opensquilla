@@ -7,7 +7,7 @@
 //! on click; toggling is the conventional desktop behavior and matches the
 //! `menuOnLeftClick: false` config in `tauri.conf.json`).
 //!
-//! The tray is built once in `main.rs` via [`TrayIconBuilder`]; this module
+//! The tray is built once in `main.rs` via `TrayIconBuilder`; this module
 //! owns the menu construction, the menu-item-id → event mapping, and the
 //! dynamic status label that reflects the runtime lifecycle.
 

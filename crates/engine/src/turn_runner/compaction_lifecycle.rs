@@ -297,12 +297,11 @@ impl FlushReceipt {
 // Lifecycle result
 // ---------------------------------------------------------------------------
 
-/// Configuration for the persistence gate on [`CompactionStage`].
+/// Configuration for the persistence gate on `CompactionStage`.
 ///
 /// When `enabled`, the stage consults [`decide_compaction_continuation`]
 /// before applying compaction and skips when the gate rejects.
 ///
-/// [`CompactionStage`]: super::compaction::CompactionStage
 #[derive(Debug, Clone, Default)]
 pub struct PersistenceGateConfig {
     /// Whether the persistence gate is enabled.

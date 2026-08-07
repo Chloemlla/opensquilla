@@ -1,7 +1,7 @@
 //! Unified RPC domain handler registration.
 //!
-//! The gateway's per-domain modules ([`sessions`], [`chat`], [`cron`],
-//! [`system`], [`config`]) each export their own `register_*_handlers`
+//! The gateway's per-domain modules (`sessions`, `chat`, `cron`,
+//! `system`, `config`) each export their own `register_*_handlers`
 //! function that wires individual `rpc_handler` closures onto an
 //! [`RpcRegistry`]. This module provides a single entry point —
 //! [`register_domain_handlers`] — that calls all of them in one shot,

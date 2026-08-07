@@ -1,34 +1,34 @@
 //! Pre-turn pipeline steps.
 //!
 //! Mirrors the Python backend's `engine/steps/` package. Each module owns one
-//! pipeline step that transforms the [`PipelineContext`] before the turn
+//! pipeline step that transforms the `PipelineContext` before the turn
 //! stages run. Steps are executed in order by a [`StepChain`] with fail-open
 //! semantics: a step that returns `Skip` or `Continue` lets the chain proceed,
 //! and a step that returns `Halt` stops the entire pipeline.
 //!
 //! The step implementations are:
 //!
-//! * [`meta_resolution::MetaResolutionStep`] — resolve meta-instruction
+//! * `meta_resolution::MetaResolutionStep` — resolve meta-instruction
 //!   triggers in the user message and leave a soft hint for the skills filter.
-//! * [`model_select::ModelSelectStep`] — resolve the model (and provider) used
+//! * `model_select::ModelSelectStep` — resolve the model (and provider) used
 //!   for the turn.
-//! * [`reasoning_hint_observer::ReasoningHintObserverStep`] — record nullable
+//! * `reasoning_hint_observer::ReasoningHintObserverStep` — record nullable
 //!   reasoning-format hint telemetry from the resolved model.
-//! * [`skills_filter::SkillsFilterStep`] — gate and filter available skills,
+//! * `skills_filter::SkillsFilterStep` — gate and filter available skills,
 //!   then inject `<available_skills>` into the system prompt.
-//! * [`context_assembly::ContextAssemblyStep`] — assemble context fragments
+//! * `context_assembly::ContextAssemblyStep` — assemble context fragments
 //!   from workspace instruction files (SOUL.md, AGENTS.md, ...).
-//! * [`attachment_loader::AttachmentLoaderStep`] — load and validate turn
+//! * `attachment_loader::AttachmentLoaderStep` — load and validate turn
 //!   attachments into the context.
-//! * [`coding_mode::CodingModeStep`] — enforce coding mode by injecting a
+//! * `coding_mode::CodingModeStep` — enforce coding mode by injecting a
 //!   code-task directive when the operator toggle is ON.
-//! * [`inject_platform_hint::InjectPlatformHintStep`] — inject channel-specific
+//! * `inject_platform_hint::InjectPlatformHintStep` — inject channel-specific
 //!   rendering hints into the system prompt suffix.
-//! * [`prompt_cache::PromptCacheStep`] — annotate the system prompt with
+//! * `prompt_cache::PromptCacheStep` — annotate the system prompt with
 //!   provider cache breakpoints and record cache metrics.
-//! * [`vision_followup_gate::VisionFollowupGateStep`] — semantic gate for
+//! * `vision_followup_gate::VisionFollowupGateStep` — semantic gate for
 //!   text-only follow-ups to historical images.
-//! * [`squilla_router::SquillaRouterStep`] — classify message complexity and
+//! * `squilla_router::SquillaRouterStep` — classify message complexity and
 //!   route to an appropriate model tier.
 
 pub mod attachment_loader;

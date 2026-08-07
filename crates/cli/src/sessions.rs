@@ -2,7 +2,7 @@
 //!
 //! Implements the `sessions` subcommand against the session crate's SQLite
 //! store. Listing, showing, archiving, deleting, and exporting sessions all go
-//! through a [`SessionManager`] built on a file-backed [`SessionStorage`].
+//! through a [`SessionManager`] built on a file-backed `SessionStorage`.
 
 use std::path::Path;
 

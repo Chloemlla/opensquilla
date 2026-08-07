@@ -5,21 +5,21 @@
 //! classification decision plus turn facts. The pipeline preserves the exact
 //! legacy ordering:
 //!
-//! 1. [`confidence_gate`] — low classifier confidence falls back to the
+//! 1. `confidence_gate` — low classifier confidence falls back to the
 //!    configured default tier (with a margin discount for above-default tiers).
-//! 2. [`complaint_upgrade`] — a short message containing a known complaint term
+//! 2. `complaint_upgrade` — a short message containing a known complaint term
 //!    upgrades the tier.
-//! 3. [`anti_downgrade`] — within the KV-cache window, never route below the
+//! 3. `anti_downgrade` — within the KV-cache window, never route below the
 //!    previous turn's final tier.
-//! 4. [`capability_gate`] — walk the working tier UP when the model catalog
+//! 4. `capability_gate` — walk the working tier UP when the model catalog
 //!    gives a definite signal that its model cannot serve the turn.
-//! 5. [`bind`] — record the finalized routing trail and rebind to the final
+//! 5. `bind` — record the finalized routing trail and rebind to the final
 //!    tier's configured model.
-//! 6. [`large_context_floor`] — turns carrying large material contexts are
+//! 6. `large_context_floor` — turns carrying large material contexts are
 //!    floored to c2/c3 regardless of the classified tier.
-//! 7. [`budget_gate`] — warn or cap when accumulated session spend crosses the
+//! 7. `budget_gate` — warn or cap when accumulated session spend crosses the
 //!    configured limit (additive, default-off).
-//! 8. [`provider_mismatch`] — flag-only by default; `veto` mode rebinds to the
+//! 8. `provider_mismatch` — flag-only by default; `veto` mode rebinds to the
 //!    nearest tier that executes on the active provider.
 //!
 //! [`RoutingPolicyEngine`] runs these stages in order over a [`PolicyInputs`]
@@ -1220,7 +1220,7 @@ pub fn record_budget_gate_trail(extra: &mut HashMap<String, Value>, result: &Bud
     );
 }
 
-/// Apply a [`budget_gate`] result to the decision + turn metadata.
+/// Apply a `budget_gate` result to the decision + turn metadata.
 ///
 /// `off`/`suspended`/`under_limit` are complete no-ops. Only `warn`/`cap`
 /// record observability metadata; only `cap` rebinds the model.

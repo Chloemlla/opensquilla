@@ -87,7 +87,7 @@ impl std::fmt::Debug for DesktopRuntime {
 }
 
 impl DesktopRuntime {
-    /// Create a new runtime in the [`Stopped`] state with default config.
+    /// Create a new runtime in the `Stopped` state with default config.
     pub fn new() -> Self {
         Self::with_config(GatewayConfig::default())
     }

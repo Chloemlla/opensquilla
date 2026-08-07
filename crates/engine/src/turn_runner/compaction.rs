@@ -16,7 +16,7 @@
 //!
 //! When the `session` feature is enabled and a [`opensquilla_session::SessionStorage`]
 //! is attached, the stage also drives the session crate's
-//! [`CompactionPlanner`]/[`CompactionExecutor`] so persisted transcripts are
+//! `CompactionPlanner`/`CompactionExecutor` so persisted transcripts are
 //! compacted in the same turn.
 
 use crate::agent::TurnGenerator;

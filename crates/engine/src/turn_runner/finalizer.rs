@@ -5,7 +5,7 @@
 //!
 //! * assembles the final [`StageOutcome`] from the turn context,
 //! * persists the turn transcript to the session database (when a
-//!   [`SessionManager`] is attached and the `session` feature is enabled),
+//!   `SessionManager` is attached and the `session` feature is enabled),
 //! * records token usage into the shared [`crate::usage::UsageTracker`],
 //! * broadcasts the completion event through a `tokio::sync::broadcast`
 //!   channel so long-polling session subscribers observe the turn,

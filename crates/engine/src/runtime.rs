@@ -771,7 +771,7 @@ impl TurnRunner {
     /// confidence, source) plus the configured tier map, runs the
     /// [`RoutingPolicyEngine`], and returns the final [`RoutingDecision`].
     ///
-    /// The decision is not applied here; callers use [`TurnRunner::apply_routing`]
+    /// The decision is not applied here; callers use `TurnRunner::apply_routing`
     /// or the higher-level [`TurnRunner::run_with_routing`] to bind it.
     pub fn run_routing_decision(&self, ctx: &PipelineContext) -> Option<RoutingDecision> {
         let routing = self.routing.as_ref()?;
