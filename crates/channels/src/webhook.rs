@@ -24,7 +24,7 @@
 
 use crate::types::{ChannelType, IncomingMessage, MessageAttachment};
 use aes::Aes256;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockDecrypt, KeyInit};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};

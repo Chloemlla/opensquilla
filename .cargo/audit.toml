@@ -13,13 +13,14 @@
 [advisories]
 # cargo-audit >= 0.21 accepts only plain RUSTSEC-IDs here; the old
 # `[[advisories.ignore]]` table form (id/reason) is rejected with
-# "invalid type: map, expected a string". Each ID below corresponds to a
-# DoS-class advisory (stack overflow / memory exhaustion / quadratic
-# runtime) reachable only when parsing untrusted PDF / XLSX / DNS input via
-# transitive deps of `opensquilla-tools`'s document-handling code. Upgrading
-# the direct pins crosses breaking-version boundaries and is tracked
-# separately.
-advisories.ignore = [
+# "invalid type: map, expected a string", and a dotted `advisories.ignore`
+# key inside `[advisories]` is rejected as an unknown field. Each ID below
+# corresponds to a DoS-class advisory (stack overflow / memory exhaustion /
+# quadratic runtime) reachable only when parsing untrusted PDF / XLSX / DNS
+# input via transitive deps of `opensquilla-tools`'s document-handling code.
+# Upgrading the direct pins crosses breaking-version boundaries and is
+# tracked separately.
+ignore = [
     # lopdf 0.34 / 0.35 — stack overflow via deeply nested PDF objects.
     # Reached via pdf-extract 0.8.2 and printpdf 0.8.2. Revisit after 2026-11-01.
     "RUSTSEC-2026-0187",

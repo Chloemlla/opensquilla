@@ -48,6 +48,7 @@ pub struct ConnectionInfo {
 struct ConnectionHandle {
     info: ConnectionInfo,
     sender: mpsc::Sender<Message>,
+    #[allow(dead_code)]
     ping_interval: Duration,
 }
 
@@ -178,7 +179,7 @@ impl WebSocketChannel {
             "user_id": user_id,
             "timestamp": Utc::now(),
         });
-        let mut conns = self.connections.lock().await;
+        let conns = self.connections.lock().await;
         if let Some(handle) = conns.get(&connection_id) {
             let _ = handle
                 .sender

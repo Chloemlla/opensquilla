@@ -253,8 +253,7 @@ impl MemoryStore {
             .conn
             .lock()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
-        let tags_json =
-            serde_json::to_string(&entry.tags).map_err(CoreError::Serialization)?;
+        let tags_json = serde_json::to_string(&entry.tags).map_err(CoreError::Serialization)?;
         conn.execute(
             "INSERT INTO memories (id, agent_id, content, tags, created_at, updated_at,
              accessed_at, source, memory_type, importance, importance_score, access_count,
@@ -309,8 +308,7 @@ impl MemoryStore {
             .conn
             .lock()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
-        let tags_json =
-            serde_json::to_string(&entry.tags).map_err(CoreError::Serialization)?;
+        let tags_json = serde_json::to_string(&entry.tags).map_err(CoreError::Serialization)?;
         conn.execute(
             "UPDATE memories SET content = ?1, tags = ?2, updated_at = ?3, accessed_at = ?4,
              importance = ?5, importance_score = ?6, access_count = ?7, metadata = ?8
@@ -468,11 +466,11 @@ impl MemoryStore {
 
         let mut all: Vec<MemoryEntry> = Vec::new();
         for entry in rows.flatten() {
-            if !filters.tags.is_empty() && !filters.tags.iter().any(|t| entry.tags.contains(t))
-            {
+            if !filters.tags.is_empty() && !filters.tags.iter().any(|t| entry.tags.contains(t)) {
                 continue;
             }
-            if !filters.memory_types.is_empty() && !filters.memory_types.contains(&entry.memory_type)
+            if !filters.memory_types.is_empty()
+                && !filters.memory_types.contains(&entry.memory_type)
             {
                 continue;
             }

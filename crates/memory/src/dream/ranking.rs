@@ -51,7 +51,11 @@ fn score(entry: &PromotionEvidenceEntry) -> f64 {
             signal_balance += 0.25;
         }
     }
-    let source_confidence = if entry.source_kind == "memory_file" { 0.75 } else { 0.5 };
+    let source_confidence = if entry.source_kind == "memory_file" {
+        0.75
+    } else {
+        0.5
+    };
     let consolidation = clamp_score(entry.source_days.len() as f64 / 3.0);
     clamp_score(
         0.35 * frequency

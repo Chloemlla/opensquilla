@@ -16,7 +16,7 @@
 //!    bodies are AES-256-CBC encrypted with the `EncodingAESKey`; this module
 //!    implements both encryption and decryption without an SDK.
 
-use crate::types::{Channel, ChannelConfig, ChannelType, MessageAttachment, OutgoingMessage};
+use crate::types::{Channel, ChannelConfig, ChannelType, OutgoingMessage};
 use aes::Aes256;
 use aes::cipher::{BlockEncrypt, KeyInit};
 use base64::Engine as _;
@@ -27,7 +27,7 @@ use sha1::Digest;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Default WeCom API base.
 pub const DEFAULT_API_BASE: &str = "https://qyapi.weixin.qq.com/cgi-bin";
@@ -161,7 +161,7 @@ impl WeComChannel {
     // -- outbound messages --------------------------------------------------
 
     /// Send an application message to a user or department.
-    async fn send_app_message(&self, touser: &str, body: Value) -> Result<(), String> {
+    async fn send_app_message(&self, _touser: &str, body: Value) -> Result<(), String> {
         let token = self.get_access_token().await?;
         let resp = self
             .client

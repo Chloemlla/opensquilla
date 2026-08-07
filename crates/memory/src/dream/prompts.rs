@@ -58,7 +58,7 @@ fn preview(text: &str) -> String {
 fn is_falsy(value: &Value) -> bool {
     match value {
         Value::Null => true,
-        Value::Bool(false) => true,
+        Value::Bool(value) => !value,
         Value::Number(number) => number.as_f64() == Some(0.0),
         Value::String(text) => text.is_empty(),
         Value::Array(values) => values.is_empty(),
@@ -217,13 +217,15 @@ mod tests {
     #[test]
     fn prompt_lists_current_memory_candidates_and_allowed_ops() {
         let prompt = promotion_patch_prompt("# Existing memory", &[candidate("cand_1")]);
-        assert!(prompt.starts_with(
-            "You are updating OpenSquilla MEMORY.md as curated long-term memory."
-        ));
+        assert!(
+            prompt
+                .starts_with("You are updating OpenSquilla MEMORY.md as curated long-term memory.")
+        );
         assert!(prompt.contains("Allowed operations:"));
-        assert!(prompt.contains(
-            r#"{"op":"upsert","candidate_ids":["..."],"section":"User Preferences""#
-        ));
+        assert!(
+            prompt
+                .contains(r#"{"op":"upsert","candidate_ids":["..."],"section":"User Preferences""#)
+        );
         assert!(prompt.contains("Current MEMORY.md:\n<<<\n# Existing memory\n>>>"));
         assert!(prompt.contains("- candidate_id: cand_1"));
         assert!(prompt.contains("  score: 0.800"));
@@ -312,8 +314,8 @@ mod tests {
 
     #[test]
     fn parse_errors_on_empty_operations_array() {
-        let err = parse_promotion_patch(r#"{"operations":[]}"#, &[candidate("cand_1")])
-            .unwrap_err();
+        let err =
+            parse_promotion_patch(r#"{"operations":[]}"#, &[candidate("cand_1")]).unwrap_err();
         assert!(err.contains("no valid operations"));
     }
 }

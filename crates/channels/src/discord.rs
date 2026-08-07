@@ -80,6 +80,7 @@ struct GatewayEnvelope {
 struct DiscordSession {
     session_id: String,
     last_seq: u64,
+    #[allow(dead_code)]
     resume_url: String,
 }
 
@@ -864,7 +865,7 @@ fn parse_dispatch_event(envelope: &GatewayEnvelope) -> Option<IncomingMessage> {
         "READY" => {
             let d = envelope.d.as_ref()?;
             let session_id = d.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
-            let resume_url = d
+            let _resume_url = d
                 .get("resume_gateway_url")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");

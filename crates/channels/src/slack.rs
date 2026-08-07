@@ -18,7 +18,7 @@
 //! flow and [`SlackTokenStore`] caches the resulting credentials.
 
 use crate::types::{
-    Channel, ChannelConfig, ChannelType, IncomingMessage, MessageAttachment, OutgoingMessage,
+    Channel, ChannelConfig, ChannelType, IncomingMessage, OutgoingMessage,
 };
 use crate::webhook::{WebhookError, WebhookMethod, WebhookRoute};
 use chrono::{DateTime, Utc};
@@ -706,6 +706,7 @@ struct SocketEnvelope {
     #[serde(default)]
     payload: Option<Value>,
     #[serde(default)]
+    #[allow(dead_code)] // kept for API/serialization compatibility
     error: Option<Value>,
 }
 

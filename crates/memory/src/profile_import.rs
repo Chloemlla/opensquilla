@@ -416,8 +416,7 @@ impl ProfileImporter {
             failed_files: Vec::new(),
         };
 
-        let entries =
-            std::fs::read_dir(dir).map_err(opensquilla_core::error::CoreError::Io)?;
+        let entries = std::fs::read_dir(dir).map_err(opensquilla_core::error::CoreError::Io)?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -536,8 +535,7 @@ impl ProfileImporter {
         let p = std::path::Path::new(path);
         let mut paths: Vec<String> = Vec::new();
         if p.is_dir() {
-            let entries =
-                std::fs::read_dir(p).map_err(opensquilla_core::error::CoreError::Io)?;
+            let entries = std::fs::read_dir(p).map_err(opensquilla_core::error::CoreError::Io)?;
             for entry in entries.flatten() {
                 let p2 = entry.path();
                 if p2.is_file() && is_supported(&p2.to_string_lossy()) {
@@ -864,11 +862,7 @@ fn collect_nested_strings(
 }
 
 /// Recursively collect scalar values from a parsed config into extracted memories.
-fn collect_scalars(
-    value: &serde_json::Value,
-    prefix: &str,
-    out: &mut Vec<ExtractedMemory>,
-) {
+fn collect_scalars(value: &serde_json::Value, prefix: &str, out: &mut Vec<ExtractedMemory>) {
     const KEY_MARKERS: &[&str] = &[
         "prefer",
         "favorite",

@@ -725,7 +725,7 @@ impl SkillLoader {
         .map_err(|e| format!("Failed to create watcher: {e}"))?;
 
         let dirs = self.all_layer_dirs();
-        for (layer, dir) in &dirs {
+        for (_layer, dir) in &dirs {
             if dir.exists() {
                 watcher
                     .watch(dir, RecursiveMode::Recursive)
@@ -737,7 +737,7 @@ impl SkillLoader {
         // Background task: debounce events and reload changed skills.
         tokio::spawn(async move {
             let mut pending: HashMap<PathBuf, ()> = HashMap::new();
-            let mut last_event = Instant::now();
+            let mut last_event;
             let mut first = true;
 
             while let Some(event) = rx.recv().await {
@@ -766,7 +766,6 @@ impl SkillLoader {
                         for path in &e.paths {
                             if path.file_name().is_some_and(|n| n == "SKILL.md") {
                                 pending.insert(path.clone(), ());
-                                last_event = Instant::now();
                             }
                         }
                     }
@@ -790,7 +789,7 @@ impl SkillLoader {
                         // path that exists was created or modified. This is
                         // robust regardless of the exact notify event kind.
                         let is_remove = !path.exists();
-                        let layer = determine_layer_from_path(&path, &layer_dirs)
+                        let _layer = determine_layer_from_path(&path, &layer_dirs)
                             .unwrap_or(SkillLayer::Extra);
                         if is_remove {
                             // Find and remove any skill whose source is this file.

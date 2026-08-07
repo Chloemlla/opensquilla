@@ -15,9 +15,9 @@
 //!    multipart uploads and `getFile` / file download.
 
 use crate::types::{
-    Channel, ChannelConfig, ChannelType, IncomingMessage, MessageAttachment, OutgoingMessage,
+    Channel, ChannelConfig, ChannelType, IncomingMessage, OutgoingMessage,
 };
-use crate::webhook::{WebhookError, WebhookMethod, WebhookRoute};
+use crate::webhook::{WebhookMethod, WebhookRoute};
 use reqwest::multipart::{Form, Part};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Default Telegram Bot API base.
 pub const DEFAULT_API_BASE: &str = "https://api.telegram.org";

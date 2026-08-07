@@ -1496,7 +1496,7 @@ impl SecurityScanner {
 
     /// Scan a single script file (`.py`, `.js`, `.sh`, `.ps1`, …) for
     /// download-and-execute, obfuscation, and destructive patterns.
-    pub fn scan_script(&self, content: &str, filename: &str) -> ScanResult {
+    pub fn scan_script(&self, content: &str, _filename: &str) -> ScanResult {
         let mut findings: Vec<ScanFinding> = Vec::new();
         let stripped = strip_code_blocks(content);
         let lines: Vec<&str> = stripped.lines().collect();

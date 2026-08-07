@@ -727,6 +727,7 @@ fn parse_qq_timestamp(s: &str) -> Option<DateTime<Utc>> {
 }
 
 /// Build an attachment from a QQ media id (used by image messages).
+#[allow(dead_code)]
 fn media_attachment(media_id: &str) -> MessageAttachment {
     MessageAttachment {
         attachment_type: "image".to_string(),

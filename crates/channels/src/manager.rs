@@ -417,7 +417,7 @@ impl ChannelManager {
     pub fn install_outbox(
         &self,
         store: Arc<DeliveryStore>,
-        poll_interval: Duration,
+        _poll_interval: Duration,
     ) -> Result<(), String> {
         let channels = self.channels.clone();
         let send =

@@ -363,7 +363,9 @@ impl AggregateMetrics {
 
     /// Average wall-clock duration in milliseconds.
     pub fn avg_duration_ms(&self) -> u64 {
-        self.total_duration_ms.checked_div(self.total_executions).unwrap_or(0)
+        self.total_duration_ms
+            .checked_div(self.total_executions)
+            .unwrap_or(0)
     }
 
     /// Success rate as a fraction in [0.0, 1.0].

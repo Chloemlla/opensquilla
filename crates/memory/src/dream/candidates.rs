@@ -152,5 +152,8 @@ pub fn scan_dream_candidates(
 
     candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     candidates.truncate(max_batch_size);
-    candidates.into_iter().map(|(_mtime, candidate)| candidate).collect()
+    candidates
+        .into_iter()
+        .map(|(_mtime, candidate)| candidate)
+        .collect()
 }

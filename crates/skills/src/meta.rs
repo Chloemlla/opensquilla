@@ -248,6 +248,7 @@ pub fn coerce_to_choice(raw: &str, choices: &[String]) -> Option<String> {
 /// Executor 1/6 — `agent`: runs a sub-agent turn.
 #[derive(Clone)]
 pub struct AgentExecutor {
+    #[allow(dead_code)] // kept for API/serialization compatibility
     deps: Arc<RwLock<MetaDependencies>>,
 }
 
@@ -300,6 +301,7 @@ impl StepExecutor for AgentExecutor {
 /// Executor 2/6 — `llm_classify`: single constrained LLM call.
 #[derive(Clone)]
 pub struct LlmClassifyExecutor {
+    #[allow(dead_code)] // kept for API/serialization compatibility
     deps: Arc<RwLock<MetaDependencies>>,
 }
 
@@ -361,6 +363,7 @@ impl StepExecutor for LlmClassifyExecutor {
 /// Executor 3/6 — `llm_chat`: single unconstrained LLM call.
 #[derive(Clone)]
 pub struct LlmChatExecutor {
+    #[allow(dead_code)] // kept for API/serialization compatibility
     deps: Arc<RwLock<MetaDependencies>>,
 }
 
@@ -423,6 +426,7 @@ impl StepExecutor for LlmChatExecutor {
 /// Executor 4/6 — `tool_call`: direct tool invocation.
 #[derive(Clone)]
 pub struct ToolCallExecutor {
+    #[allow(dead_code)] // kept for API/serialization compatibility
     deps: Arc<RwLock<MetaDependencies>>,
 }
 
@@ -477,6 +481,7 @@ impl StepExecutor for ToolCallExecutor {
 /// Executor 5/6 — `skill_exec`: nested skill execution.
 #[derive(Clone)]
 pub struct SkillExecExecutor {
+    #[allow(dead_code)] // kept for API/serialization compatibility
     deps: Arc<RwLock<MetaDependencies>>,
 }
 
@@ -552,6 +557,7 @@ impl StepExecutor for SkillExecExecutor {
 /// Executor 6/6 — `user_input`: gather user input.
 #[derive(Clone)]
 pub struct UserInputExecutor {
+    #[allow(dead_code)] // kept for API/serialization compatibility
     deps: Arc<RwLock<MetaDependencies>>,
 }
 

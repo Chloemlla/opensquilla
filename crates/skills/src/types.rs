@@ -138,7 +138,7 @@ impl FromStr for SkillLayer {
 
 /// The kind of a skill, determining its behavior.
 ///
-/// - [`SkillKind::Skill`] / [`SkillKind::Basic`] — a regular skill providing
+/// - [`SkillKind::Skill`] — a regular skill providing
 ///   instructions and tools.
 /// - [`SkillKind::Meta`] / [`SkillKind::MetaSop`] — a meta-skill defining a DAG
 ///   workflow of steps.
@@ -161,8 +161,6 @@ pub enum SkillKind {
     Tool,
     /// A composite of multiple skills
     Composite,
-    /// A basic instruction-only skill (alias for `skill` in some manifests)
-    Basic,
 }
 
 impl SkillKind {
@@ -198,7 +196,6 @@ impl fmt::Display for SkillKind {
             SkillKind::MetaSop => "meta_sop",
             SkillKind::Tool => "tool",
             SkillKind::Composite => "composite",
-            SkillKind::Basic => "basic",
         };
         f.write_str(s)
     }

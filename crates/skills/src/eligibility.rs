@@ -407,7 +407,7 @@ impl EligibilityChecker {
     fn check_binary_check(&self, name: &str) -> CheckStatus {
         let requirement = format!("binary:{name}");
         match self.which(name) {
-            Some(path) => CheckStatus::pass(requirement, RequirementKind::Binary),
+            Some(_path) => CheckStatus::pass(requirement, RequirementKind::Binary),
             None => CheckStatus::fail(
                 requirement,
                 RequirementKind::Binary,
@@ -550,7 +550,7 @@ impl EligibilityChecker {
 
     /// Whether a named binary exists on the PATH (cached).
     pub fn is_binary_available(&self, name: &str) -> bool {
-        if let Ok(mut cache) = self.binary_cache.lock() {
+        if let Ok(cache) = self.binary_cache.lock() {
             if let Some(&exists) = cache.get(name) {
                 return exists;
             }
@@ -636,7 +636,7 @@ impl EligibilityChecker {
 
     /// Whether an environment variable is set and non-empty (cached).
     pub fn env_var_is_set(&self, name: &str) -> bool {
-        if let Ok(mut cache) = self.env_cache.lock() {
+        if let Ok(cache) = self.env_cache.lock() {
             if let Some(&exists) = cache.get(name) {
                 return exists;
             }
@@ -650,7 +650,7 @@ impl EligibilityChecker {
 
     /// Whether a file or directory exists (cached).
     pub fn file_exists(&self, path: &str) -> bool {
-        if let Ok(mut cache) = self.file_cache.lock() {
+        if let Ok(cache) = self.file_cache.lock() {
             if let Some(&exists) = cache.get(path) {
                 return exists;
             }

@@ -410,7 +410,11 @@ impl DreamRunner {
     }
 
     fn artifact_id(&self) -> String {
-        format!("{}-{}", self.agent_id, chrono::Utc::now().timestamp_millis())
+        format!(
+            "{}-{}",
+            self.agent_id,
+            chrono::Utc::now().timestamp_millis()
+        )
     }
 
     fn workspace_relative(&self, path: &std::path::Path) -> String {
