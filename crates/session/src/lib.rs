@@ -36,5 +36,5 @@ pub use models::{
 };
 pub use naming::{NamingEngine, NamingOptions, NamingStrategy, SessionNamer, TitleGenerator};
 pub use plans::{PlanRunReport, PlanSnapshot, PlanStateMachine, PlanStep, PlanStepStatus};
-pub use storage::SessionStorage;
+pub use storage::{SessionStorage, TARGET_SCHEMA_VERSION, migrate_schema};
 pub use usage_ledger::UsageLedger;

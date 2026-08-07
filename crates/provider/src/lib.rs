@@ -12,6 +12,7 @@
 pub mod anthropic;
 pub mod audio;
 pub mod compat_policy;
+pub mod compaction;
 pub mod credentials;
 pub mod ensemble;
 pub mod failures;
@@ -39,7 +40,12 @@ pub use openai::{
     map_http_error, map_model, merge_live_models, parse_chat_response, parse_openai_sse_event,
     provider_from_id, resolve_chat_url, seed_catalog, should_retry, sse_deltas,
 };
-pub use registry::{AuthScheme, BackendType, ProviderRegistry, ProviderSpec, ProviderSpecTable};
+pub use registry::{
+    ANTHROPIC_CONTEXT_PROFILE, AuthScheme, BackendType, ContextProfile, NativeCompactionSupport,
+    OPENAI_RESPONSES_CONTEXT_PROFILE, OPENROUTER_CONTEXT_PROFILE, OpenAiCompatPolicy,
+    PromptCacheSupport, ProviderRegistry, ProviderSpec, ProviderSpecTable, SelectableModelCatalog,
+    TextToolModelRule,
+};
 pub use selector::ModelSelector;
 /// Re-export key types at the crate root.
 pub use types::{
@@ -59,6 +65,10 @@ pub use audio::{
     wav_duration_seconds,
 };
 pub use compat_policy::{CompatPolicy, CompatPolicyRegistry, policy_for};
+pub use compaction::{
+    AggregateToolResult, CompactionConfig, aggregate_tool_result_compacted, compact_tool_results,
+    is_provider_projection,
+};
 pub use credentials::CredentialPool;
 pub use ensemble::{
     AggregationSpec, AggregationStrategy, AllFailedPolicy, BestOfNStrategy, DebateStrategy,

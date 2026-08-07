@@ -24,6 +24,7 @@
 //!   an additional reasoning token budget.
 
 use crate::compat_policy::{CompatPolicy, policy_for};
+use crate::compaction::{CompactionConfig, compact_tool_results};
 use crate::types::ChatConfig;
 use opensquilla_core::types::{ChatMessage, ContentBlock, MessageRole, ToolDefinition};
 use std::sync::Arc;
@@ -342,6 +343,14 @@ impl RequestProof {
     /// an empty string to skip the policy lookup.
     ///
     /// Returns a [`BudgetReport`] describing whether the payload fits.
+    ///
+    /// TODO(parity): the Python reference applies request-only compaction inside
+    /// its budget-projection path (`_budget_projection` /
+    /// `_summarize_tool_call_arguments_for_provider` in
+    /// `src/opensquilla/provider/request_proof.py`) so the *budget* reflects
+    /// the post-compaction payload. The Rust side currently computes the budget
+    /// on the raw payload; compaction runs only in [`Self::project`]. Wiring
+    /// compaction into this estimate as well is a follow-up.
     pub fn calculate_budget(
         &self,
         provider: &str,
@@ -406,6 +415,10 @@ impl RequestProof {
     /// look up the per-provider compatibility policy's `max_tokens` cap. Pass an
     /// empty string to skip the policy lookup.
     ///
+    /// Compaction runs before trimming: oversized tool results are replaced
+    /// with compacted stubs (see [`crate::compaction`]) so fewer whole turns
+    /// need to be dropped to fit the window.
+    ///
     /// Returns the adapted messages and a new [`ChatConfig`] with clamped
     /// `max_tokens`, plus a [`BudgetReport`] describing what changed.
     pub fn project(
@@ -415,6 +428,12 @@ impl RequestProof {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> (Vec<ChatMessage>, ChatConfig, BudgetReport) {
+        // Admission pass: compact oversized tool results before estimating and
+        // trimming so the model-visible payload shrinks without dropping turns.
+        let mut messages = messages.to_vec();
+        let compaction = CompactionConfig::from_env();
+        let _compacted_blocks = compact_tool_results(&mut messages, &compaction);
+
         let window = lookup_model_window(&config.model);
         let policy = if provider.is_empty() {
             CompatPolicy::default()

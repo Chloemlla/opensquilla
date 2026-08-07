@@ -14,6 +14,12 @@ use crate::models::{
     SessionTag, TaskStatus, TranscriptEntry, UsageEvent, UsageEventItem, UsageLedgerState,
 };
 
+/// Target schema version for the incremental column migrations below.
+///
+/// Mirrors `SCHEMA_VERSION = 16` in the Python reference implementation
+/// (`src/opensquilla/session/storage.py:331`).
+pub const TARGET_SCHEMA_VERSION: u32 = 16;
+
 pub struct SessionStorage {
     conn: Mutex<Connection>,
 }
@@ -385,8 +391,27 @@ impl SessionStorage {
         )
         .map_err(|e| CoreError::Storage(e.to_string()))?;
 
-        info!("Session storage tables initialized (19 tables)");
+        // Incremental schema migration: bring older databases up to the current
+        // schema version by adding any columns that are missing (parity with
+        // the Python reference `_migrate_*_column` helpers). Runs on both fresh
+        // and legacy databases; `PRAGMA user_version` records the applied
+        // version and `PRAGMA table_info` makes each ADD COLUMN idempotent.
+        migrate_schema(&conn)?;
+
+        info!("Session storage tables initialized (19 tables, schema v{TARGET_SCHEMA_VERSION})");
         Ok(())
+    }
+
+    /// Idempotently migrate this storage's database to [`TARGET_SCHEMA_VERSION`].
+    ///
+    /// Exposed for tests and for callers that open an existing database through
+    /// a path that bypasses [`SessionStorage::new`] / [`SessionStorage::in_memory`].
+    pub fn migrate(&self) -> CoreResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        migrate_schema(&conn)
     }
 
     /// Acquire a `Transaction` over the underlying connection for multi-table
@@ -2926,7 +2951,123 @@ impl SessionStorage {
     }
 }
 
-// --- Free functions for row mapping ---
+// --- Schema migration ---
+
+/// Read the current `PRAGMA user_version`.
+///
+/// `user_version` is the SQLite-native schema version marker: it requires no
+/// auxiliary `_meta` table (the Python reference uses an equivalent
+/// `schema_version` row there) and survives `CREATE TABLE IF NOT EXISTS`.
+fn current_schema_version(conn: &Connection) -> CoreResult<u32> {
+    let value: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    Ok(value.max(0) as u32)
+}
+
+/// Return the set of column names currently present on a table.
+///
+/// Mirrors the Python reference's `PRAGMA table_info(...)` column-name sweep
+/// (`src/opensquilla/session/storage.py:1760`). Index 1 is the column name in
+/// `PRAGMA table_info` output.
+fn table_columns(conn: &Connection, table: &str) -> CoreResult<std::collections::HashSet<String>> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| CoreError::Storage(e.to_string()))?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    Ok(columns.into_iter().collect())
+}
+
+/// Idempotently migrate a database to [`TARGET_SCHEMA_VERSION`].
+///
+/// Uses `PRAGMA user_version` to record the applied schema version and
+/// `PRAGMA table_info(<table>)` to detect whether a column already exists
+/// before issuing `ALTER TABLE ... ADD COLUMN`. This mirrors the incremental
+/// `_migrate_*_column` helpers in the Python reference implementation
+/// (`src/opensquilla/session/storage.py:1752-1934`) so legacy databases
+/// upgraded in place retain the newly-added columns — session epoch, workspace
+/// binding and derived title, plus the structured compaction summary metadata —
+/// without dropping or recreating any tables.
+///
+/// Both freshly-created and legacy databases run through this path; the
+/// per-column existence check makes each step a no-op when the column is
+/// already present, and `user_version` is only bumped once all steps succeed.
+pub fn migrate_schema(conn: &Connection) -> CoreResult<()> {
+    let current = current_schema_version(conn)?;
+    if current >= TARGET_SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    // sessions: epoch / workspace_id / derived_title
+    // (parity: storage.py:1764, :1787, :1846).
+    let sessions = table_columns(conn, "sessions")?;
+    if !sessions.contains("epoch") {
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN epoch INTEGER NOT NULL DEFAULT 0",
+            params![],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    }
+    if !sessions.contains("workspace_id") {
+        conn.execute("ALTER TABLE sessions ADD COLUMN workspace_id TEXT", params![])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+    }
+    if !sessions.contains("derived_title") {
+        conn.execute("ALTER TABLE sessions ADD COLUMN derived_title TEXT", params![])
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+    }
+
+    // session_summaries: structured compaction metadata
+    // (parity: storage.py:1890-1924). The 9 columns retained here are the ones
+    // read by the Rust compaction/summary pipeline; the remaining Python-only
+    // columns (summary_format, summary_source, coverage_status, removed_count,
+    // flush_receipt_status) are left to a future parity pass.
+    let summaries = table_columns(conn, "session_summaries")?;
+    let summary_additions: &[(&str, &str)] = &[
+        ("compaction_id", "TEXT"),
+        ("trigger_reason", "TEXT"),
+        ("summary_payload", "TEXT"),
+        ("missing_obligations", "TEXT"),
+        ("critical_carry_forward", "TEXT"),
+        ("tokens_before", "INTEGER"),
+        ("tokens_after", "INTEGER"),
+        ("kept_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("chunk_count", "INTEGER NOT NULL DEFAULT 0"),
+    ];
+    for (column, column_type) in summary_additions {
+        if !summaries.contains(*column) {
+            conn.execute(
+                &format!("ALTER TABLE session_summaries ADD COLUMN {column} {column_type}"),
+                params![],
+            )
+            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        }
+    }
+
+    // Defensive normalization for rows left with NULLs by a partial/legacy
+    // migration (parity: storage.py:1768-1777 zeroes NULL epochs).
+    conn.execute("UPDATE sessions SET epoch = 0 WHERE epoch IS NULL", params![])
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    conn.execute(
+        "UPDATE session_summaries SET kept_count = 0 WHERE kept_count IS NULL",
+        params![],
+    )
+    .map_err(|e| CoreError::Storage(e.to_string()))?;
+    conn.execute(
+        "UPDATE session_summaries SET chunk_count = 0 WHERE chunk_count IS NULL",
+        params![],
+    )
+    .map_err(|e| CoreError::Storage(e.to_string()))?;
+
+    conn.pragma_update(None, "user_version", TARGET_SCHEMA_VERSION)
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    info!("Session schema migrated: user_version {current} -> {TARGET_SCHEMA_VERSION}");
+    Ok(())
+}
 
 fn parse_dt(s: String) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(&s)

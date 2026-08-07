@@ -12,6 +12,7 @@
 //! ([`ProviderSpecTable::instantiate`]) can turn specs into providers given
 //! credentials.
 
+use crate::anthropic::AuthHeaderStyle;
 use crate::types::Provider;
 use std::sync::Arc;
 use tracing::info;
@@ -65,6 +66,312 @@ pub enum AuthScheme {
 }
 
 // ---------------------------------------------------------------------------
+// Python-parity capability / metadata types
+// ---------------------------------------------------------------------------
+//
+// The types below mirror the Python `opensquilla.provider` registry metadata
+// (`registry.py`, `context_capabilities.py`, `compat_policy.py`). They are
+// carried as extra declarative fields on [`ProviderSpec`] so the static table
+// can express the same per-provider capabilities the Python registry does.
+
+/// Whether a provider's live model listing is a verified source of
+/// user-selectable model ids (Python `SelectableModelCatalog`).
+///
+/// ``none`` is deliberately the default: several compatibility adapters
+/// expose static or protocol-family model rows that do not describe what the
+/// configured service actually serves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectableModelCatalog {
+    /// No live listing is trusted; fall back to the static model rows.
+    #[default]
+    None,
+    /// The provider's live `/models` listing has been verified as a safe
+    /// source for user-selectable model ids.
+    VerifiedLive,
+}
+
+impl SelectableModelCatalog {
+    /// The string identifier used in serialized metadata.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SelectableModelCatalog::None => "none",
+            SelectableModelCatalog::VerifiedLive => "verified_live",
+        }
+    }
+}
+
+/// Prompt-cache support level (Python `PromptCacheSupport`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PromptCacheSupport {
+    /// No prompt caching.
+    #[default]
+    None,
+    /// Caching happens implicitly upstream (Gemini).
+    Implicit,
+    /// Caching is controlled with explicit `cache_control` breakpoints.
+    Explicit,
+    /// Caching is automatic and cannot be influenced from the client.
+    Automatic,
+}
+
+/// Native context-compaction support (Python `NativeCompactionSupport`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NativeCompactionSupport {
+    /// No native compaction.
+    #[default]
+    None,
+    /// The provider can compact the conversation window server-side.
+    Standalone,
+}
+
+/// Provider-keyed context / prompt-cache capability profile (Python
+/// `ProviderContextProfile`).
+///
+/// Only capabilities keyed purely on the provider identity live here; request
+/// host-guarded branches (Gemini's ``generativelanguage`` endpoint, OpenAI's
+/// ``api.openai.com`` guard) deliberately stay as code.
+#[derive(Debug, Clone)]
+pub struct ContextProfile {
+    /// Baseline prompt-cache support.
+    pub prompt_cache: PromptCacheSupport,
+    /// Native context-compaction support.
+    pub native_compaction: NativeCompactionSupport,
+    /// State-kind string when native compaction produces a resumable state.
+    pub native_compaction_state_kind: Option<&'static str>,
+    /// Whether explicit `cache_control` breakpoints are honored.
+    pub supports_cache_breakpoints: bool,
+    /// Whether the provider state can cross to another provider.
+    pub state_portable_across_providers: bool,
+    /// Minimum tokens before caching starts.
+    pub min_cache_tokens: Option<u32>,
+    /// Accepted TTL options for cached contexts.
+    pub cache_ttl_options: &'static [u32],
+    /// Per-model-id-prefix prompt-cache overrides, first match wins.
+    pub prompt_cache_model_prefix_table: &'static [(&'static str, PromptCacheSupport)],
+    /// Per-model-basename prompt-cache overrides, consulted after the prefix table.
+    pub prompt_cache_model_name_prefix_table: &'static [(&'static str, PromptCacheSupport)],
+}
+
+impl Default for ContextProfile {
+    fn default() -> Self {
+        Self {
+            prompt_cache: PromptCacheSupport::None,
+            native_compaction: NativeCompactionSupport::None,
+            native_compaction_state_kind: None,
+            supports_cache_breakpoints: false,
+            state_portable_across_providers: false,
+            min_cache_tokens: None,
+            cache_ttl_options: &[],
+            prompt_cache_model_prefix_table: &[],
+            prompt_cache_model_name_prefix_table: &[],
+        }
+    }
+}
+
+/// Anthropic's provider-keyed context profile (Python `ANTHROPIC_CONTEXT_PROFILE`).
+pub const ANTHROPIC_CONTEXT_PROFILE: ContextProfile = ContextProfile {
+    prompt_cache: PromptCacheSupport::Explicit,
+    native_compaction: NativeCompactionSupport::None,
+    native_compaction_state_kind: None,
+    supports_cache_breakpoints: true,
+    state_portable_across_providers: false,
+    min_cache_tokens: None,
+    cache_ttl_options: &[],
+    prompt_cache_model_prefix_table: &[],
+    prompt_cache_model_name_prefix_table: &[],
+};
+
+/// OpenAI Responses context profile (Python `OPENAI_RESPONSES_CONTEXT_PROFILE`).
+pub const OPENAI_RESPONSES_CONTEXT_PROFILE: ContextProfile = ContextProfile {
+    prompt_cache: PromptCacheSupport::Automatic,
+    native_compaction: NativeCompactionSupport::Standalone,
+    native_compaction_state_kind: Some("openai_responses_compacted_window"),
+    supports_cache_breakpoints: false,
+    state_portable_across_providers: false,
+    min_cache_tokens: None,
+    cache_ttl_options: &[],
+    prompt_cache_model_prefix_table: &[],
+    prompt_cache_model_name_prefix_table: &[],
+};
+
+/// OpenRouter context profile (Python `OPENROUTER_CONTEXT_PROFILE`).
+pub const OPENROUTER_CONTEXT_PROFILE: ContextProfile = ContextProfile {
+    prompt_cache: PromptCacheSupport::Implicit,
+    native_compaction: NativeCompactionSupport::None,
+    native_compaction_state_kind: None,
+    supports_cache_breakpoints: false,
+    state_portable_across_providers: false,
+    min_cache_tokens: None,
+    cache_ttl_options: &[],
+    prompt_cache_model_prefix_table: &[
+        ("anthropic/", PromptCacheSupport::Explicit),
+        ("google/", PromptCacheSupport::Explicit),
+        ("deepseek/", PromptCacheSupport::Explicit),
+        ("x-ai/", PromptCacheSupport::Explicit),
+        ("z-ai/", PromptCacheSupport::Implicit),
+    ],
+    prompt_cache_model_name_prefix_table: &[
+        ("qwen3.6-flash", PromptCacheSupport::Explicit),
+        ("qwen3.5-flash", PromptCacheSupport::Explicit),
+        ("qwen3-coder", PromptCacheSupport::Explicit),
+    ],
+};
+
+/// A single model rule authorizing text-tool dialects (Python `TextToolModelRule`).
+#[derive(Debug, Clone)]
+pub struct TextToolModelRule {
+    /// Model-id glob patterns this rule applies to (lowercase fnmatch).
+    pub model_patterns: &'static [&'static str],
+    /// Text-tool dialect identifiers granted to matching models.
+    pub dialects: &'static [&'static str],
+}
+
+/// Declarative per-kind dialect policy for OpenAI-compatible providers
+/// (Python `OpenAICompatPolicy`).
+///
+/// Ported from `compat_policy.py`. The `text_tool_profile` nested type is
+/// kept as raw dialect/rule lists (see [`TextToolModelRule`]); fnmatch-style
+/// resolution is left to the request builder.
+#[derive(Debug, Clone)]
+pub struct OpenAiCompatPolicy {
+    /// Human-readable name used in error messages.
+    pub display_name: &'static str,
+    /// Host marker gating quirks that only apply to the official endpoint.
+    pub official_host: &'static str,
+    /// Models taking `max_completion_tokens` instead of `max_tokens`.
+    pub max_completion_tokens_model_prefixes: &'static [&'static str],
+    /// Models whose sampling is fixed upstream.
+    pub fixed_sampling_model_prefixes: &'static [&'static str],
+    /// Models rejecting temperature while extended thinking is active.
+    pub omit_temperature_when_thinking_model_prefixes: &'static [&'static str],
+    /// JSON Schema keywords the upstream rejects in tool definitions.
+    pub tool_schema_unsupported_keywords: &'static [&'static str],
+    /// Whether the endpoint reliably supports native `response_format.type=json_schema`.
+    pub supports_native_json_schema_output: bool,
+    /// Whether the endpoint supports `response_format.type=json_object`.
+    pub supports_json_object_output: bool,
+    /// Whether `usage.cost` from this upstream is authoritative billing data.
+    pub trust_billed_cost: bool,
+    /// Whether the request should send OpenRouter-family `usage` extras.
+    pub sends_usage_include: bool,
+    /// Whether the request may pin a specific provider route.
+    pub supports_provider_routing_pin: bool,
+    /// Whether the endpoint supports explicit prompt-cache control.
+    pub supports_explicit_prompt_cache: bool,
+    /// Whether cache breakpoints sit at the top level (Anthropic-style).
+    pub anthropic_top_level_cache: bool,
+    /// Whether a stream-timeout fallback is applied.
+    pub stream_timeout_fallback: bool,
+    /// Whether an empty stream is retried/fallback.
+    pub empty_stream_fallback: bool,
+    /// Whether the payload logs the cache shape.
+    pub log_payload_cache_shape: bool,
+    /// Whether the endpoint may repeat an already-observed terminal choice.
+    pub allow_post_terminal_noop_choice: bool,
+    /// Narrower opt-in: an empty choice with `usage: null` before the trailer.
+    pub allow_post_terminal_null_usage_noop_choice: bool,
+    /// Provider-specific top-level metadata keys on the terminal epilogue.
+    pub post_terminal_metadata_keys: &'static [&'static str],
+    /// Whether the request disables gateway cross-model fallbacks.
+    pub sends_disable_fallbacks: bool,
+    /// Response headers reporting the deployment that served the request.
+    pub attribution_response_headers: &'static [&'static str],
+    /// Reasoning-continuity format to replay when capabilities declare it.
+    pub replay_reasoning_format: &'static str,
+    /// Reasoning format assumed when no capability profile is available.
+    pub default_reasoning_format: &'static str,
+    /// Exact ids needing an explicit thinking enable/disable payload.
+    pub thinking_toggle_model_ids: &'static [&'static str],
+    /// Exact ids requiring `reasoning_content` on every assistant message.
+    pub require_reasoning_content_model_ids: &'static [&'static str],
+    /// Exact ids that stream reasoning by default and need explicit disable.
+    pub disable_reasoning_by_default_models: &'static [&'static str],
+    /// Model-id prefixes rejecting `enable_thinking=False`.
+    pub thinking_required_model_prefixes: &'static [&'static str],
+    /// Exact forced-thinking ids for multi-family endpoints.
+    pub force_thinking_model_ids: &'static [&'static str],
+    /// Exact ids whose requests opt into reasoning continuity.
+    pub preserve_thinking_model_ids: &'static [&'static str],
+    /// Reasoning models requiring `reasoning_content` only while thinking.
+    pub require_reasoning_content_when_thinking_model_ids: &'static [&'static str],
+    /// Tool-call subset requiring `reasoning_content` while thinking.
+    pub require_tool_call_reasoning_content_when_thinking_model_ids: &'static [&'static str],
+    /// Thinking-mode tool choice accepts only auto/none.
+    pub thinking_tool_choice_auto_only: bool,
+    /// Exact ids that are reasoning-only upstream without a toggle.
+    pub implicit_thinking_tool_choice_model_ids: &'static [&'static str],
+    /// Preserve a pinned tool selector by disabling thinking instead.
+    pub prefer_pinned_tool_choice_over_thinking: bool,
+    /// Exact ids requiring `tool_stream=True` whenever tools are present.
+    pub tool_stream_model_ids: &'static [&'static str],
+    /// Thinking-only models imposing a minimum sampling temperature.
+    pub temperature_floor_model_ids: &'static [&'static str],
+    /// The minimum sampling temperature for those models.
+    pub temperature_floor: f64,
+    /// Model ids excluded from a mixed /models listing.
+    pub model_listing_excluded_ids: &'static [&'static str],
+    /// Omit a framework-default thinking budget.
+    pub omit_implicit_thinking_budget: bool,
+    /// Provider-wide text-tool dialect identifiers (additive).
+    pub text_tool_dialects: &'static [&'static str],
+    /// Model-scoped text-tool dialect rules (additive, first match wins).
+    pub text_tool_model_rules: &'static [TextToolModelRule],
+}
+
+impl OpenAiCompatPolicy {
+    /// The default policy used when no kind-specific entry is registered.
+    pub const DEFAULT: Self = Self {
+        display_name: "Provider",
+        official_host: "",
+        max_completion_tokens_model_prefixes: &[],
+        fixed_sampling_model_prefixes: &[],
+        omit_temperature_when_thinking_model_prefixes: &[],
+        tool_schema_unsupported_keywords: &[],
+        supports_native_json_schema_output: true,
+        supports_json_object_output: false,
+        trust_billed_cost: false,
+        sends_usage_include: false,
+        supports_provider_routing_pin: false,
+        supports_explicit_prompt_cache: false,
+        anthropic_top_level_cache: false,
+        stream_timeout_fallback: false,
+        empty_stream_fallback: false,
+        log_payload_cache_shape: false,
+        allow_post_terminal_noop_choice: false,
+        allow_post_terminal_null_usage_noop_choice: false,
+        post_terminal_metadata_keys: &[],
+        sends_disable_fallbacks: false,
+        attribution_response_headers: &[],
+        replay_reasoning_format: "",
+        default_reasoning_format: "",
+        thinking_toggle_model_ids: &[],
+        require_reasoning_content_model_ids: &[],
+        disable_reasoning_by_default_models: &[],
+        thinking_required_model_prefixes: &[],
+        force_thinking_model_ids: &[],
+        preserve_thinking_model_ids: &[],
+        require_reasoning_content_when_thinking_model_ids: &[],
+        require_tool_call_reasoning_content_when_thinking_model_ids: &[],
+        thinking_tool_choice_auto_only: false,
+        implicit_thinking_tool_choice_model_ids: &[],
+        prefer_pinned_tool_choice_over_thinking: false,
+        tool_stream_model_ids: &[],
+        temperature_floor_model_ids: &[],
+        temperature_floor: 0.0,
+        model_listing_excluded_ids: &[],
+        omit_implicit_thinking_budget: false,
+        text_tool_dialects: &[],
+        text_tool_model_rules: &[],
+    };
+}
+
+impl Default for OpenAiCompatPolicy {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ProviderSpec
 // ---------------------------------------------------------------------------
 
@@ -93,6 +400,54 @@ pub struct ProviderSpec {
     pub enabled: bool,
     /// Optional documentation URL.
     pub docs_url: Option<&'static str>,
+    // --- Python-parity metadata (Python `registry.py` ProviderSpec) --------
+    //
+    // The fields below mirror the Python provider registry metadata. They are
+    // optional / defaulted so the existing static specs keep constructing with
+    // the compact `spec()` helper; `#[serde(default)]` makes old serialized
+    // data load once the struct gains serde derives.
+    /// Provider-keyed context/prompt-cache capability profile
+    /// (Python `context_profile`).
+    #[serde(default)]
+    pub context_profile: Option<ContextProfile>,
+    /// models.dev provider ids feeding the vendored model catalog snapshot
+    /// (Python `catalog_source`).
+    #[serde(default)]
+    pub catalog_source: &'static [&'static str],
+    /// Capability flags, e.g. "chat", "coding_plan", "responses"
+    /// (Python `capabilities`).
+    #[serde(default)]
+    pub capabilities: &'static [&'static str],
+    /// Failure classification family, e.g. "openai_compat", "anthropic",
+    /// "ollama" (Python `failure_family`).
+    #[serde(default)]
+    pub failure_family: &'static str,
+    /// Auth header shape for the Anthropic backend (Python `auth_header_style`).
+    #[serde(default)]
+    pub auth_header_style: AuthHeaderStyle,
+    /// Reasoning wire-format shape, e.g. "none", "deepseek", "gemini", "zai"
+    /// (Python `reasoning_shape`).
+    #[serde(default)]
+    pub reasoning_shape: &'static str,
+    /// Per-kind OpenAI-compatible dialect policy (Python `compat`).
+    #[serde(default)]
+    pub compat: OpenAiCompatPolicy,
+    /// Keyless public model-listing endpoint for boot-time live catalog ingest
+    /// (Python `live_catalog_url`).
+    #[serde(default)]
+    pub live_catalog_url: &'static str,
+    /// Whether the provider's live listing is trusted for user selection
+    /// (Python `selectable_model_catalog`).
+    #[serde(default)]
+    pub selectable_model_catalog: SelectableModelCatalog,
+    /// Sibling provider id used to discover account entitlements
+    /// (Python `selectable_model_discovery_provider_id`).
+    #[serde(default)]
+    pub selectable_model_discovery_provider_id: &'static str,
+    /// Exact model list for transports without a trustworthy `/models`
+    /// endpoint (Python `static_model_ids`).
+    #[serde(default)]
+    pub static_model_ids: &'static [&'static str],
 }
 
 impl ProviderSpec {
@@ -108,6 +463,17 @@ impl ProviderSpec {
             models: &[],
             enabled: true,
             docs_url: None,
+            context_profile: None,
+            catalog_source: &[],
+            capabilities: &["chat"],
+            failure_family: "openai_compat",
+            auth_header_style: AuthHeaderStyle::Bearer,
+            reasoning_shape: "none",
+            compat: OpenAiCompatPolicy::DEFAULT,
+            live_catalog_url: "",
+            selectable_model_catalog: SelectableModelCatalog::None,
+            selectable_model_discovery_provider_id: "",
+            static_model_ids: &[],
         }
     }
 }
@@ -122,7 +488,7 @@ pub struct ProviderSpecTable;
 impl ProviderSpecTable {
     /// Return all registered provider specs.
     pub fn all() -> Vec<ProviderSpec> {
-        vec![
+        let mut specs = vec![
             // --- OpenAI compat backend (30+) -------------------------------
             spec(
                 "openai",
@@ -703,7 +1069,9 @@ impl ProviderSpecTable {
                     "deepseek-coder",
                 ],
             ),
-        ]
+        ];
+        apply_python_parity(&mut specs);
+        specs
     }
 
     /// Look up a spec by id.
@@ -783,6 +1151,125 @@ fn spec(
         models,
         enabled: true,
         docs_url: None,
+        context_profile: None,
+        catalog_source: &[],
+        capabilities: &["chat"],
+        failure_family: "openai_compat",
+        auth_header_style: AuthHeaderStyle::Bearer,
+        reasoning_shape: "none",
+        compat: OpenAiCompatPolicy::default(),
+        live_catalog_url: "",
+        selectable_model_catalog: SelectableModelCatalog::None,
+        selectable_model_discovery_provider_id: "",
+        static_model_ids: &[],
+    }
+}
+
+/// Apply Python-registry parity metadata (`registry.py` `_spec(...)` calls)
+/// that the compact positional `spec()` helper cannot express.
+///
+/// The static table above mirrors the Python spec table; the Python registry
+/// carries extra metadata (reasoning shape, failure family, auth header style,
+/// capabilities, catalog sources, context profiles, ...) that this function
+/// patches back onto the matching specs so the Rust table is Python-parity.
+fn apply_python_parity(specs: &mut [ProviderSpec]) {
+    for spec in specs.iter_mut() {
+        match spec.id {
+            "openrouter" => {
+                spec.context_profile = Some(OPENROUTER_CONTEXT_PROFILE);
+                spec.catalog_source = &["openrouter"];
+                spec.selectable_model_catalog = SelectableModelCatalog::VerifiedLive;
+            }
+            "openai" => {
+                spec.catalog_source = &["openai"];
+            }
+            "openai_responses" => {
+                spec.capabilities = &["chat", "responses"];
+                spec.context_profile = Some(OPENAI_RESPONSES_CONTEXT_PROFILE);
+                spec.catalog_source = &["openai"];
+            }
+            "azure" => {
+                spec.catalog_source = &["azure"];
+            }
+            "anthropic" => {
+                spec.failure_family = "anthropic";
+                spec.auth_header_style = AuthHeaderStyle::XApiKey;
+                spec.context_profile = Some(ANTHROPIC_CONTEXT_PROFILE);
+                spec.catalog_source = &["anthropic"];
+            }
+            "ollama" => {
+                spec.failure_family = "ollama";
+            }
+            "deepseek" => {
+                spec.reasoning_shape = "deepseek";
+                spec.catalog_source = &["deepseek"];
+            }
+            "gemini" => {
+                spec.reasoning_shape = "gemini";
+                spec.catalog_source = &["google"];
+            }
+            "dashscope" => {
+                spec.catalog_source = &["alibaba-cn", "alibaba"];
+            }
+            "moonshot" => {
+                spec.catalog_source = &["moonshotai"];
+            }
+            "minimax" => {
+                spec.failure_family = "anthropic";
+                spec.auth_header_style = AuthHeaderStyle::Bearer;
+                spec.catalog_source = &["minimax"];
+            }
+            "mistral" => {
+                spec.catalog_source = &["mistral"];
+            }
+            "groq" => {
+                spec.catalog_source = &["groq"];
+            }
+            "zhipu" => {
+                spec.reasoning_shape = "zai";
+                spec.catalog_source = &["zhipuai", "zai"];
+            }
+            "siliconflow" => {
+                spec.catalog_source = &["siliconflow"];
+            }
+            "volcengine" => {
+                spec.catalog_source = &["volcengine"];
+            }
+            "openai_codex" => {
+                spec.capabilities = &["chat", "coding_plan"];
+            }
+            "volcengine_coding_plan" => {
+                spec.capabilities = &["chat", "coding_plan", "responses"];
+            }
+            "byteplus_coding_plan" => {
+                spec.capabilities = &["chat", "coding_plan", "responses"];
+            }
+            "qwen_token_plan_anthropic" => {
+                spec.failure_family = "anthropic";
+                spec.auth_header_style = AuthHeaderStyle::Bearer;
+                spec.capabilities = &["chat", "coding_plan"];
+                spec.selectable_model_catalog = SelectableModelCatalog::VerifiedLive;
+                spec.selectable_model_discovery_provider_id = "qwen_token_plan";
+                spec.static_model_ids = &[
+                    "qwen3.8-max-preview",
+                    "qwen3.7-max",
+                    "qwen3.7-plus",
+                    "qwen3.6-plus",
+                    "qwen3.6-flash",
+                    "deepseek-v4-pro",
+                    "deepseek-v4-flash",
+                    "deepseek-v3.2",
+                    "kimi-k2.7-code",
+                    "kimi-k2.6",
+                    "kimi-k2.5",
+                    "glm-5.2",
+                    "glm-5.1",
+                    "glm-5",
+                    "MiniMax-M2.5",
+                ];
+            }
+            _ => {}
+        }
     }
 }
 
