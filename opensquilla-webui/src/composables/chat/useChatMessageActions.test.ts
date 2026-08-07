@@ -44,6 +44,7 @@ function makeOptions(
     notifyMessagePending: vi.fn(),
     canDeliver: () => true,
     notifyDeliveryBlocked: vi.fn(),
+    notifyEditBlocked: vi.fn(),
   }
   return { api: useChatMessageActions(options), options, pendingForkBeforeMessageId }
 }
@@ -187,6 +188,28 @@ describe('useChatMessageActions branching edits', () => {
 
     expect(options.sendCurrentInput).toHaveBeenCalledOnce()
     expect(options.notifyMessagePending).not.toHaveBeenCalled()
+  })
+
+  it('blocks edit while streaming with visible feedback', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', text: 'hello', ts: null, messageId: 'msg-A' },
+      { role: 'assistant', text: 'streaming reply', ts: null, messageId: 'msg-a1' },
+    ]
+    const { api, options } = makeOptions(messages)
+    options.isStreaming.value = true
+
+    api.editMessage(renderedMessage({
+      role: 'user',
+      displayRole: 'user',
+      sourceIndex: 0,
+      messageId: 'msg-A',
+      text: 'hello',
+    }))
+
+    expect(options.messages.value).toEqual(messages)
+    expect(options.inputText.value).toBe('')
+    expect(options.focusComposer).not.toHaveBeenCalled()
+    expect(options.notifyEditBlocked).toHaveBeenCalledOnce()
   })
 })
 

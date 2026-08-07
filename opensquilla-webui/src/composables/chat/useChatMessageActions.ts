@@ -27,6 +27,12 @@ export interface UseChatMessageActionsOptions {
    * only trace of the refusal would be a console warning.
    */
   notifyMessagePending?: () => void
+  /**
+   * User-visible feedback when edit is blocked because the assistant is
+   * currently streaming. Without it the edit button looks dead: the only
+   * trace of the refusal would be a console warning.
+   */
+  notifyEditBlocked?: () => void
 }
 
 export function useChatMessageActions(options: UseChatMessageActionsOptions) {
@@ -134,6 +140,7 @@ export function useChatMessageActions(options: UseChatMessageActionsOptions) {
   function editMessage(message: ChatRenderedMessage) {
     if (options.isStreaming.value) {
       console.warn('Wait for the current response to finish')
+      options.notifyEditBlocked?.()
       return
     }
     const msgIndex = sourceMessageIndex(message)

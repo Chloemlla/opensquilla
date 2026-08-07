@@ -150,6 +150,7 @@
           :fork-busy="forkInFlight"
           :plan-action-pending="planCardPendingAction"
           :plan-actions-disabled="planActionsDisabled"
+          :is-streaming="isStreaming"
           @fork-conversation="forkConversation"
           @edit-message="editMessage"
           @regenerate-message="regenerateMessage"
@@ -1496,6 +1497,7 @@ const chatMessageActions = useChatMessageActions({
     }
   },
   notifyMessagePending: () => pushToast(t('chat.toast.messageStillSaving'), { tone: 'info' }),
+  notifyEditBlocked: () => pushToast(t('chat.pending.editWhileStreaming'), { tone: 'info' }),
 })
 const {
   copyMessage,
