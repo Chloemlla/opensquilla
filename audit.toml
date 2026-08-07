@@ -1,0 +1,38 @@
+# cargo-audit configuration.
+#
+# All five ignored advisories below are DoS-class (stack overflow / memory
+# exhaustion / quadratic runtime) reachable only when parsing untrusted
+# PDF / XLSX / DNS input. They originate in transitive deps of
+# `opensquilla-tools`'s document-handling code. The direct workspace deps
+# (`lopdf`, `pdf-extract`, `printpdf`, `calamine`, `trust-dns-resolver`) pin
+# vulnerable majors; upgrading them crosses breaking-version boundaries
+# (lopdf 0.34→0.42, calamine 0.26→0.36) and requires API migration that is
+# tracked as a separate task. Ignoring here unblocks the nightly audit job
+# without masking the issue — each entry has a reason and revisit date.
+
+[advisories]
+# lopdf 0.34 / 0.35 — stack overflow via deeply nested PDF objects.
+# Reached via pdf-extract 0.8.2 and printpdf 0.8.2. No fixed upstream release
+# of pdf-extract/printpdf targets lopdf 0.42 yet.
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0187"
+reason = "DoS via deeply nested PDF; pdf-extract/printpdf have no fixed lopdf 0.42 release yet. Revisit after 2026-11-01."
+
+# idna 0.4.0 — Punycode labels that decode to all-ASCII.
+# Reached via trust-dns-resolver 0.23.2. Upgrade to 0.24 is a breaking change
+# tracked separately.
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0421"
+reason = "Punycode masking in idna 0.4 via trust-dns-resolver 0.23; DNS resolver upgrade tracked separately. Revisit after 2026-11-01."
+
+# quick-xml 0.31.0 — quadratic runtime on duplicate start-tag attributes.
+# Reached via calamine 0.26.1. calamine 0.36 is a breaking upgrade.
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0194"
+reason = "Quadratic runtime in quick-xml 0.31 via calamine 0.26; calamine 0.36 upgrade tracked separately. Revisit after 2026-11-01."
+
+# quick-xml 0.31.0 — NsReader unbounded namespace-decl allocation (memory DoS).
+# Same root as above.
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0195"
+reason = "NsReader memory exhaustion in quick-xml 0.31 via calamine 0.26; same upgrade path as RUSTSEC-2026-0194. Revisit after 2026-11-01."

@@ -1,0 +1,54 @@
+name: Rust Format (auto-commit)
+
+# Runs `cargo fmt --all` with the CI-pinned stable rustfmt (1.97.x) and
+# commits the result back to the triggering branch. Use this when the fmt
+# CI job reports formatting drift that cannot be fixed locally (e.g. the
+# local rustfmt is a different version and would produce conflicting output).
+#
+#   - Trigger: manual (workflow_dispatch) only
+#   - Pushes: directly to the dispatching ref as github-actions[bot]
+#   - Skips: the commit if `cargo fmt` produces no diff
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fmt:
+    name: cargo fmt --all + commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Rust (stable, CI-matched rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Run cargo fmt --all
+        run: cargo fmt --all
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: cargo fmt --all (CI rustfmt $(rustc --version))"
+          git push

@@ -402,7 +402,7 @@ impl CompactionStage {
         let session_id = session_uuid_of(turn_id).unwrap_or_else(|| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hasher::write(&mut hasher, turn_id.as_bytes());
-            uuid::Uuid::from_u64_pair(hasher.finish(), 0)
+            uuid::Uuid::from_u64_pair(std::hash::Hasher::finish(&hasher), 0)
         });
 
         let planner = opensquilla_session::CompactionPlanner::new()

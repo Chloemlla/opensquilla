@@ -36,6 +36,7 @@ edition = "2024"
 version = "0.1.0"
 authors = ["OpenSquilla Contributors"]
 license = "Apache-2.0"
+rust-version = "1.85"
 repository = "https://github.com/Chloemlla/opensquilla"
 
 [workspace.dependencies]

@@ -2747,9 +2747,17 @@ impl AgentSnapshot {
 ///
 /// Only available when the `tools` feature is enabled.
 #[cfg(feature = "tools")]
-#[derive(Debug)]
 pub struct ToolDispatchExecutor {
     engine: Arc<opensquilla_tools::DispatchEngine>,
+}
+
+#[cfg(feature = "tools")]
+impl std::fmt::Debug for ToolDispatchExecutor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolDispatchExecutor")
+            .field("engine", &"DispatchEngine")
+            .finish()
+    }
 }
 
 #[cfg(feature = "tools")]

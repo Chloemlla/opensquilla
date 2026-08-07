@@ -459,7 +459,7 @@ impl TurnGenerator for SharedGenerator {
 #[cfg(feature = "provider")]
 pub struct ProviderSubAgent {
     /// The shared provider instance.
-    provider: Arc<opensquilla_provider::Provider>,
+    provider: Arc<dyn opensquilla_provider::Provider>,
     /// The chat configuration to use for generation.
     config: opensquilla_provider::ChatConfig,
     /// The tools made available to the sub-agent.
@@ -484,7 +484,7 @@ impl std::fmt::Debug for ProviderSubAgent {
 impl ProviderSubAgent {
     /// Create a sub-agent wrapper around a shared provider.
     pub fn new(
-        provider: Arc<opensquilla_provider::Provider>,
+        provider: Arc<dyn opensquilla_provider::Provider>,
         config: opensquilla_provider::ChatConfig,
     ) -> Self {
         Self {
