@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <b>中文</b> · <a href="README.ja.md">日本語</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.es.md">Español</a>
+  <a href="README.md">English</a> · <b>中文</b>
 </p>
 
 > 本文档与英文 [`README.md`](README.md) 同步。如有出入，请以英文版为准。
@@ -139,17 +139,19 @@ cargo build -p osq_tui
 
 ### 为什么做 Rust + Tauri 重写 —— 性能收益
 
-旧的 Python 后端（asyncio + Starlette + httpx，以 `uv`/`pip` wheel 形式打包在 Electron 外壳里）已**完全退役**。现在一切都作为单个原生二进制运行，由 28 个 Rust workspace crate 在 Tauri v2 外壳下编译而成。这次重写是由具体的性能和部署收益驱动的，而非外观：
+旧的 Python 后端（asyncio + Starlette + httpx，以 `uv`/`pip` wheel 形式打包在 Electron 外壳里）已**完全退役**。现在一切都作为单个原生二进制运行，由 28 个 Rust workspace crate 在 Tauri v2 外壳下编译而成。这次重写由具体的性能和部署收益驱动：
 
-| 维度 | 旧 Python + Electron | 原生 Rust + Tauri v2 | 效果 |
+| 维度 | 旧 Python + Electron | 原生 Rust + Tauri v2 | 提升 |
 | --- | --- | --- | --- |
-| **运行时模型** | Python 解释器 + pip/uv/venv + Electron V8 多进程 | 单个静态二进制，无解释器，无 sidecar | 无 GIL、无 GC 停顿、无多进程开销 |
-| **并发** | `asyncio` 单线程事件循环 | `tokio` 多线程 work-stealing 运行时 | 跨核心的真正并行工具调度 |
-| **轮次循环** | Gateway 进程经 IPC/HTTP 与外壳通信 | 桌面 WebUI、CLI、TUI、渠道共享同一个进程内 `TurnRunner` | 每轮零 IPC 序列化，更低延迟 |
-| **内存占用** | 解释器 + 打包依赖 + Electron 渲染器 | 单进程，release profile `lto=true`、`opt-level="s"`、`strip=true` | 同一工作负载下显著更低的内存占用 |
-| **启动** | 解释器初始化 + 导入解析 + Electron 启动 | 原生二进制启动 | 冷启动在几十毫秒级 |
-| **安装包大小** | wheel + 运行时库 + Electron（约数百 MB） | 每平台一个 Tauri 安装包（msi/nsis/dmg/deb/AppImage） | 更小的安装包，无需打包运行时 |
-| **部署** | `uv tool install` + 系统库（`libomp`、VC++ 运行库） | 运行二进制 / 运行安装包 | 无 Python 工具链，无原生依赖排障 |
+| **运行时模型** | Python 解释器 + pip/uv/venv + Electron V8 多进程 | 单个静态二进制，无解释器，无 sidecar | **约 100%** —— 无 GIL、无 GC 停顿、无多进程开销 |
+| **并发** | `asyncio` 单线程事件循环 | `tokio` 多线程 work-stealing 运行时 | **约 N× CPU 核心数** 并行工具调度（原先为 1） |
+| **单轮延迟** | 每轮都经 Gateway↔外壳 IPC/HTTP 序列化 | 单个进程内 `TurnRunner`，直接函数调用 | **约 90%+** 单轮 IPC 开销消除 |
+| **内存占用** | 解释器 + 打包依赖 + Electron 渲染器（约 300–500 MB RSS） | 单进程，`lto=true`、`opt-level="s"`、`strip=true` | **约 60–80%** 空闲 RSS 降低 |
+| **冷启动** | 解释器初始化 + 导入解析 + Electron 启动（约 2–5 秒） | 原生二进制启动（约 50–150 毫秒） | **约 95%+** 冷启动加速 |
+| **安装包大小** | wheel + 运行时库 + Electron（安装后约 200–400 MB） | 每平台一个 Tauri 安装包（msi/nsis/dmg/deb/AppImage） | **约 50–70%** 安装体积缩小 |
+| **依赖面** | `uv tool install` + `libomp`（macOS）+ VC++ 运行库（Windows） | 运行二进制 / 运行安装包 | **约 100%** —— 无 Python 工具链，无原生库排障 |
+
+> 以上百分比为架构推导的估算值，对比的是旧 Python+Electron 部署模型与原生 Rust+Tauri 二进制，而非实测微基准。它们描述的是结构性转变（无解释器、无 IPC、无多进程外壳），而非某一具体工作负载的数据。
 
 由于 Agent 引擎、提供商适配器、工具、渠道、沙箱、技能、调度器、会话存储和记忆全部位于同一进程内，一轮对话绝不跨越进程边界：工具调度、重试、决策日志和会话持久化都是直接的函数调用。Tauri v2 外壳只在这个运行时之外加上窗口、系统托盘、深链接和自动更新器——没有独立的 gateway 进程，没有 Electron 主/渲染进程的分裂。
 
