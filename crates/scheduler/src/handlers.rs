@@ -1,5 +1,7 @@
 use crate::types::CronJob;
 use async_trait::async_trait;
+use opensquilla_memory::{DreamEngine, DreamSummary};
+use std::sync::Arc;
 
 /// Result of a handler execution.
 #[derive(Debug, Clone)]
@@ -80,14 +82,36 @@ impl CronJobHandler for AutoProposeHandler {
 }
 
 /// Handler that triggers dream consolidation.
+///
+/// When a [`DreamEngine`] is injected (via [`DreamHandler::new_with_engine`]
+/// or [`HandlerRegistry::with_dream_engine`]), `execute` asks the engine to
+/// run a dream cycle for the job's agent only if one is due. Without an
+/// injected engine the handler degrades to a no-op success so that default
+/// registries (which cannot construct a `MemoryStore`-backed engine) keep
+/// working.
 pub struct DreamHandler {
     name: String,
+    engine: Option<Arc<DreamEngine>>,
 }
 impl DreamHandler {
     pub fn new() -> Self {
         Self {
             name: "dream".to_string(),
+            engine: None,
         }
+    }
+
+    /// Create a handler wired to a concrete [`DreamEngine`].
+    pub fn new_with_engine(engine: Arc<DreamEngine>) -> Self {
+        Self {
+            name: "dream".to_string(),
+            engine: Some(engine),
+        }
+    }
+
+    /// The injected engine, if any.
+    pub fn engine(&self) -> Option<&Arc<DreamEngine>> {
+        self.engine.as_ref()
     }
 }
 
@@ -97,13 +121,55 @@ impl CronJobHandler for DreamHandler {
         &self.name
     }
     async fn execute(&self, job: &CronJob) -> HandlerResult {
-        tracing::info!(
-            "Dream consolidation triggered for agent_id={:?} by job '{}'",
-            job.agent_id,
-            job.name
-        );
-        HandlerResult::success("Dream consolidation triggered".to_string())
+        let Some(agent_id) = job.agent_id else {
+            return HandlerResult::success(format!(
+                "Dream skipped: job '{}' (id: {}) is not bound to an agent",
+                job.name, job.id
+            ));
+        };
+        let Some(engine) = &self.engine else {
+            return HandlerResult::success(format!(
+                "Dream skipped: no DreamEngine injected for job '{}' (id: {})",
+                job.name, job.id
+            ));
+        };
+        match engine.run_dream_if_due(&agent_id).await {
+            Ok(Some(summary)) => {
+                let summary = describe_summary(&summary);
+                tracing::info!(
+                    "Dream cycle for agent {} completed: {}",
+                    agent_id,
+                    summary
+                );
+                HandlerResult::success(format!(
+                    "Dream cycle complete for agent {}: {}",
+                    agent_id, summary
+                ))
+            }
+            Ok(None) => {
+                tracing::debug!("Dream not due for agent {} (job '{}')", agent_id, job.name);
+                HandlerResult::success(format!(
+                    "Dream not due for agent {} (job '{}')",
+                    agent_id, job.name
+                ))
+            }
+            Err(err) => {
+                tracing::error!("Dream cycle failed for agent {}: {}", agent_id, err);
+                HandlerResult::failure(format!("Dream cycle failed for agent {}: {}", agent_id, err))
+            }
+        }
     }
+}
+
+/// Render a [`DreamSummary`] as a short human-readable line.
+fn describe_summary(summary: &DreamSummary) -> String {
+    format!(
+        "{} memories, {} consolidated, {} patterns, {} abstractions",
+        summary.total_memories,
+        summary.consolidated,
+        summary.patterns_found,
+        summary.abstractions_created
+    )
 }
 
 /// A registry of named cron job handlers.
@@ -124,6 +190,17 @@ impl HandlerRegistry {
         r.register(Box::new(AutoProposeHandler::new()));
         r.register(Box::new(DreamHandler::new()));
         r
+    }
+
+    /// Builder: replace the default no-op `dream` handler with one wired to a
+    /// concrete [`DreamEngine`].
+    ///
+    /// Usage: `HandlerRegistry::with_defaults().with_dream_engine(engine)`.
+    /// Keeps all existing `with_defaults()` callers source-compatible.
+    pub fn with_dream_engine(mut self, engine: Arc<DreamEngine>) -> Self {
+        self.handlers.retain(|h| h.name() != "dream");
+        self.register(Box::new(DreamHandler::new_with_engine(engine)));
+        self
     }
 
     pub fn register(&mut self, handler: Box<dyn CronJobHandler>) {
@@ -183,5 +260,54 @@ mod tests {
         assert!(registry.has_handler("heartbeat"));
         assert!(registry.has_handler("auto_propose"));
         assert!(registry.has_handler("dream"));
+    }
+
+    #[tokio::test]
+    async fn test_dream_handler_without_engine_is_noop_success() {
+        let handler = DreamHandler::new();
+        let mut job = CronJob::new("dream", crate::types::ScheduleKind::Every(3600), "dream");
+        job.agent_id = Some(uuid::Uuid::new_v4());
+        let result = handler.execute(&job).await;
+        assert!(result.success);
+        assert!(result.result.unwrap().contains("no DreamEngine injected"));
+    }
+
+    #[tokio::test]
+    async fn test_dream_handler_requires_agent_id() {
+        let handler = DreamHandler::new();
+        let job = CronJob::new("dream", crate::types::ScheduleKind::Every(3600), "dream");
+        let result = handler.execute(&job).await;
+        assert!(result.success);
+        assert!(result.result.unwrap().contains("not bound to an agent"));
+    }
+
+    #[tokio::test]
+    async fn test_with_dream_engine_replaces_dream_handler() {
+        let engine = Arc::new(opensquilla_memory::DreamEngine::new(
+            opensquilla_memory::MemoryStore::in_memory().unwrap(),
+        ));
+        let registry = HandlerRegistry::with_defaults().with_dream_engine(engine.clone());
+        assert_eq!(registry.len(), 3);
+        assert!(registry.has_handler("dream"));
+        let dream = registry.get("dream").unwrap();
+        assert_eq!(dream.name(), "dream");
+    }
+
+    #[tokio::test]
+    async fn test_dream_handler_not_due_when_engine_injected() {
+        let store = opensquilla_memory::MemoryStore::in_memory().unwrap();
+        let engine = Arc::new(opensquilla_memory::DreamEngine::new(store));
+        let handler = DreamHandler::new_with_engine(engine.clone());
+        let agent = uuid::Uuid::new_v4();
+        // A fresh engine has no last-consolidation record, so the first
+        // invocation of the handler would be due. Run a cycle directly first
+        // so the engine records "consolidated just now", then the handler
+        // should report "not due".
+        engine.run_dream_cycle(&agent).await.unwrap();
+        let mut job = CronJob::new("dream", crate::types::ScheduleKind::Every(3600), "dream");
+        job.agent_id = Some(agent);
+        let result = handler.execute(&job).await;
+        assert!(result.success);
+        assert!(result.result.unwrap().contains("not due"));
     }
 }

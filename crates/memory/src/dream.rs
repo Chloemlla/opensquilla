@@ -29,6 +29,27 @@ use crate::retrieval::{RetrievalEngine, content_similarity};
 use crate::store::MemoryStore;
 use crate::types::MemoryEntry;
 
+// ---------------------------------------------------------------------------
+// Evidence-gated promotion pipeline (parity stubs)
+//
+// The Python `src/opensquilla/memory/dream/` package splits the dream feature
+// into candidate scanning, quarantine, evidence, ranking, rehydration, curated
+// apply, prompts and receipts. The engine below implements the
+// clustering/merging core; the submodules below are parity stubs that mirror
+// the Python dataclasses and function signatures so the promotion pipeline can
+// be ported incrementally. Each stub carries a `TODO(parity)` marker.
+// ---------------------------------------------------------------------------
+
+pub mod curated_apply;
+pub mod evidence;
+pub mod models;
+pub mod prompts;
+pub mod quarantine;
+pub mod ranking;
+pub mod receipts;
+pub mod rehydrate;
+pub mod runner;
+
 /// Configuration for the [`DreamEngine`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DreamConfig {

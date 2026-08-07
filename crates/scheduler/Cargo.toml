@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 opensquilla-core = { path = "../core" }
+opensquilla-memory = { path = "../memory" }
 tokio.workspace = true
 futures.workspace = true
 rusqlite.workspace = true
