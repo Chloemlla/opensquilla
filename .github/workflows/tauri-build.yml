@@ -44,17 +44,19 @@ jobs:
             targets: x86_64-pc-windows-msvc
             args: --target x86_64-pc-windows-msvc --bundles msi nsis
             artifact: opensquilla-windows
-            bundle_path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+            # src-tauri is a workspace member, so cargo emits to the
+            # REPO-ROOT target dir, not src-tauri/target/.
+            bundle_path: target/x86_64-pc-windows-msvc/release/bundle
           - os: macos-latest
             targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin --bundles app dmg
             artifact: opensquilla-macos
-            bundle_path: src-tauri/target/universal-apple-darwin/release/bundle
+            bundle_path: target/universal-apple-darwin/release/bundle
           - os: ubuntu-latest
             targets: ""
             args: --bundles deb appimage
             artifact: opensquilla-linux
-            bundle_path: src-tauri/target/release/bundle
+            bundle_path: target/release/bundle
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,9 +78,11 @@ jobs:
           targets: ${{ matrix.targets }}
 
       - name: Cache cargo
+        # The workspace root is the repo root (src-tauri is a member, and has
+        # no [workspace] table of its own), so cargo emits to ./target and
+        # that is what must be cached. The previous `workspaces: src-tauri`
+        # cached src-tauri/target — an unused dir — causing full recompiles.
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
