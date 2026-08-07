@@ -7,6 +7,7 @@
 pub mod audit;
 pub mod health;
 pub mod logging;
+pub mod logs;
 pub mod prometheus;
 pub mod telemetry;
 pub mod tracing;
@@ -15,6 +16,10 @@ pub use audit::AuditLog;
 pub use health::{
     ComponentHealth, HealthCheck, HealthIssue, HealthRegistry, HealthReport, HealthStatus,
     IssueSeverity, health_router,
+};
+pub use logs::{
+    CompactionLogRow, CostLogRow, DecisionLogRow, LogStore, PromptReportRow, SafetyEventType,
+    SafetyLogRow, ToolEntry, ToolResultLogRow, TurnCallLogRow,
 };
 pub use logging::Logger;
 pub use prometheus::{Counter, Gauge, Histogram, MetricsRegistry, global_registry, metrics_router};

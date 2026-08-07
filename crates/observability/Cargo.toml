@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 axum = { workspace = true }
+rusqlite = { workspace = true }
 
 [lib]
 path = "src/lib.rs"
