@@ -178,7 +178,7 @@ impl SecretType {
     }
 
     /// Parse a wire token back into a type (`custom` for unknown values).
-    pub fn from_str(token: &str) -> Self {
+    pub fn parse(token: &str) -> Self {
         match token.trim().to_lowercase().as_str() {
             "api_key" | "apikey" => SecretType::ApiKey,
             "token" => SecretType::Token,
@@ -508,9 +508,9 @@ mod sanitizer_tests {
 
     #[test]
     fn test_secret_type_round_trip() {
-        assert_eq!(SecretType::from_str("api_key"), SecretType::ApiKey);
-        assert_eq!(SecretType::from_str("private_key"), SecretType::PrivateKey);
-        assert_eq!(SecretType::from_str("nonsense"), SecretType::Custom);
+        assert_eq!(SecretType::parse("api_key"), SecretType::ApiKey);
+        assert_eq!(SecretType::parse("private_key"), SecretType::PrivateKey);
+        assert_eq!(SecretType::parse("nonsense"), SecretType::Custom);
         assert_eq!(SecretType::ApiKey.as_str(), "api_key");
     }
 }

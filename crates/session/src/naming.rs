@@ -148,7 +148,7 @@ impl SessionNamer {
     }
 
     /// Derive a name for an already-loaded session. Synchronous — the LLM
-    /// strategy falls back to extraction here; use [`auto_name_async`] for
+    /// strategy falls back to extraction here; use `auto_name_async` for
     /// the LLM path.
     pub fn name_for(&self, session: &Session, entries: &[TranscriptEntry]) -> String {
         match self.options.strategy {

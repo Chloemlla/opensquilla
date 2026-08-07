@@ -135,7 +135,7 @@ impl AgentRegistry {
         Ok(())
     }
 
-    /// Load a registry from a JSON file written by [`save_to_disk`].
+    /// Load a registry from a JSON file written by `save_to_disk`.
     ///
     /// The returned registry inherits `path` as its `config_path` with
     /// `persist_changes = true`, so subsequent mutations continue to flush

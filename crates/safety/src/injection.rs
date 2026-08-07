@@ -23,20 +23,15 @@ pub struct InjectionPattern {
 }
 
 /// Severity level of a detected injection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum InjectionSeverity {
     /// No injection detected.
+    #[default]
     None,
     Low,
     Medium,
     High,
     Critical,
-}
-
-impl Default for InjectionSeverity {
-    fn default() -> Self {
-        InjectionSeverity::None
-    }
 }
 
 /// Result of an injection scan.

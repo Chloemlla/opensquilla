@@ -1031,7 +1031,7 @@ impl SessionStorage {
 
     /// Update a plan revision's plan text and metadata (used to persist
     /// step-level state, which is encoded in `metadata["steps"]`). Status
-    /// changes should go through [`update_plan_status`].
+    /// changes should go through `update_plan_status`.
     pub fn update_plan_revision(&self, revision: &PlanRevision) -> CoreResult<()> {
         let conn = self
             .conn

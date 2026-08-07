@@ -271,7 +271,7 @@ pub enum PermissionScope {
 impl PermissionScope {
     /// Parse a scope from its string token (`tool`, `file`, `network`,
     /// `subprocess`, `config`).
-    pub fn from_str(token: &str) -> Option<Self> {
+    pub fn parse(token: &str) -> Option<Self> {
         match token.trim().to_lowercase().as_str() {
             "tool" => Some(PermissionScope::Tool),
             "file" | "filesystem" => Some(PermissionScope::File),
@@ -468,7 +468,7 @@ impl PermissionMatrix {
         // Inside a sandbox, even a safe action is bounded by the caller's scopes.
         if context.sandboxed {
             let scope_token = action.split('.').next().unwrap_or("");
-            if let Some(scope) = PermissionScope::from_str(scope_token) {
+            if let Some(scope) = PermissionScope::parse(scope_token) {
                 if !context.scopes.is_empty() && !context.scopes.contains(&scope) {
                     return PermissionCheck {
                         action: PermissionAction::Deny,
@@ -697,8 +697,8 @@ mod expansion_tests {
             PermissionScope::Subprocess,
             PermissionScope::Config,
         ] {
-            assert_eq!(PermissionScope::from_str(scope.as_str()), Some(scope));
+            assert_eq!(PermissionScope::parse(scope.as_str()), Some(scope));
         }
-        assert_eq!(PermissionScope::from_str("bogus"), None);
+        assert_eq!(PermissionScope::parse("bogus"), None);
     }
 }
