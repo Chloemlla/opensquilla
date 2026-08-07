@@ -13,7 +13,7 @@
   <a href="https://github.com/opensquilla/opensquilla/actions/workflows/rust-ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/opensquilla/opensquilla/rust-ci.yml?style=for-the-badge" alt="CI"></a>
   <a href="https://opensquilla.ai/"><img src="https://img.shields.io/badge/website-opensquilla.ai-blue?style=for-the-badge" alt="Website"></a>
   <a href="https://github.com/opensquilla/opensquilla/releases"><img src="https://img.shields.io/github/v/release/opensquilla/opensquilla?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?style=for-the-badge" alt="Rust"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable-orange?style=for-the-badge" alt="Rust"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge" alt="Apache 2.0 License"></a>
 </p>
 
@@ -29,11 +29,12 @@ OpenSquilla is a token-efficient AI agent built as a **native Rust desktop appli
 
 Every entry point — desktop Web UI, CLI, TUI, and chat channels — runs through that same loop, so tool dispatch, retries, and decision logging behave identically everywhere. A pluggable provider layer speaks to TokenRhythm, OpenRouter, OpenAI, Anthropic, Ollama, DeepSeek, Gemini, Qwen/DashScope, and 50+ other LLM providers with no change to your code or config schema.
 
-**Key differences from the Python version:**
-- Single native binary — no Python runtime, no pip, no uv
-- Tauri v2 desktop shell with system tray, deep links, and auto-updates
-- All 29 Rust workspace crates in one process, zero sidecars
-- Vue 3 WebUI embedded in the binary
+> ⚠️ **The Python backend is fully deprecated.** OpenSquilla 0.5.x is a complete
+> Rust + Tauri v2 rewrite. The legacy `src/opensquilla/` Python package, the
+> `uv`/`pip`/`wheel` install paths, the Electron shell, and `install_source`
+> scripts are no longer the runtime — they remain in the tree only as legacy
+> reference and will not receive updates. Build and install the **native Rust
+> binary** as described below.
 
 ---
 
@@ -46,10 +47,12 @@ Download the latest installer from the [Releases page](https://github.com/opensq
 | Platform | Format |
 |----------|--------|
 | Windows | `.msi` / `.exe` (NSIS) |
-| macOS | `.dmg` (Apple Silicon + Intel) |
+| macOS | `.dmg` (universal — Apple Silicon + Intel) |
 | Linux | `.deb` / `.AppImage` |
 
-Launch the app, run the onboarding wizard, and start chatting.
+Launch the app, run the onboarding wizard, and start chatting. The desktop
+bundle ships the Vue 3 WebUI, the agent runtime, and all provider/tool/channel
+adapters in a single binary — no Python, no Electron, no separate gateway.
 
 ### CLI
 
@@ -72,8 +75,8 @@ osq-tui
 
 | Requirement | Version |
 |-------------|---------|
-| Rust | 1.85+ (see `rust-toolchain.toml`) |
-| Node.js 22.12+ | (for WebUI build) |
+| Rust | stable (see `rust-toolchain.toml`, edition 2024) |
+| Node.js | 22.12+ (for WebUI build) |
 | npm | 10+ |
 
 **Linux** also requires system libraries for Tauri's WebView:
@@ -92,6 +95,9 @@ sudo apt install -y nodejs
 
 ### Build
 
+`src-tauri` is a workspace member, so `cargo` emits all build artifacts to the
+**repo-root** `target/` directory (not `src-tauri/target/`).
+
 ```sh
 # Build the WebUI
 cd opensquilla-webui
@@ -99,18 +105,19 @@ npm ci
 npm run build
 cd ..
 
-# Build the desktop app
-cargo tauri build --project-path src-tauri
+# Build the desktop app (all 28 crates compile into one binary)
+cargo tauri build
 
-# Or build CLI-only
+# Or build the CLI / TUI only
 cargo build -p opensquilla_cli
 cargo build -p osq_tui
 ```
 
-Build artifacts:
-- `src-tauri/target/release/opensquilla.exe` — desktop app
-- `target/release/osq.exe` — CLI
-- `target/release/osq-tui.exe` — TUI
+Build artifacts (repo-root `target/`):
+
+- `target/release/opensquilla` (`.exe` on Windows) — desktop app (Tauri v2)
+- `target/release/osq` — CLI
+- `target/release/osq-tui` — TUI
 
 ---
 
@@ -122,7 +129,7 @@ Build artifacts:
 │  ├─ Window / Tray / Deep links / Auto-updater                    │
 │  └─ Tauri commands → Rust Agent Runtime (same process)           │
 ├──────────────────────────────────────────────────────────────────┤
-│  Rust Agent Runtime (29 workspace crates, single binary)         │
+│  Rust Agent Runtime (28 workspace crates, single binary)         │
 │  ├─ Gateway (axum HTTP/WS)                                       │
 │  ├─ Agent Engine (tokio async state machine)                     │
 │  ├─ 30+ RPC handlers                                             │
@@ -136,19 +143,44 @@ Build artifacts:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+### Why the Rust + Tauri rewrite — performance gains
+
+The Python backend (asyncio + Starlette + httpx, packaged as a `uv`/`pip` wheel
+inside an Electron shell) has been **completely retired**. Everything now runs
+as one native binary compiled from 28 Rust workspace crates under a Tauri v2
+shell. The rewrite was driven by concrete performance and deployment wins, not
+aesthetics:
+
+| Dimension | Legacy Python + Electron | Native Rust + Tauri v2 | Effect |
+| --- | --- | --- | --- |
+| **Runtime model** | Python interpreter + pip/uv/venv + Electron V8 multi-process | Single static binary, no interpreter, no sidecars | No GIL, no GC pauses, no multi-process overhead |
+| **Concurrency** | `asyncio` single-threaded event loop | `tokio` multi-threaded work-stealing runtime | True parallel tool dispatch across cores |
+| **Turn loop** | Gateway process talks to shell over IPC/HTTP | Desktop WebUI, CLI, TUI, channels share one in-process `TurnRunner` | Zero IPC serialization per turn, lower latency |
+| **Memory footprint** | Interpreter + bundled deps + Electron renderer | One process, release profile `lto=true`, `opt-level="s"`, `strip=true` | Substantially lower RAM use on the same workload |
+| **Startup** | Interpreter init + import resolution + Electron boot | Native binary launch | Cold start in the tens of milliseconds range |
+| **Bundle size** | wheel + runtime libs + Electron (~hundreds of MB) | One Tauri bundle per platform (msi/nsis/dmg/deb/AppImage) | Smaller installer, no bundled runtime to ship |
+| **Deployment** | `uv tool install` + system libs (`libomp`, VC++ redist) | Run the binary / run the installer | No Python toolchain, no native dep troubleshooting |
+
+Because the agent engine, provider adapters, tools, channels, sandbox, skills,
+scheduler, session store, and memory all live in the same process, a turn never
+crosses a process boundary: tool dispatch, retries, decision logging, and
+session persistence are direct function calls. The Tauri v2 shell adds only the
+window, system tray, deep links, and an auto-updater around that runtime — no
+separate gateway process, no Electron main/renderer split.
+
 ### Runtime
 
-| Component | Rust Crate | Python Equivalent |
-|-----------|-----------|-------------------|
-| Async runtime | `tokio` | `asyncio` |
-| HTTP server | `axum` | `Starlette` |
-| HTTP client | `reqwest` | `httpx` |
-| WebSocket | `tokio-tungstenite` | `websockets` |
-| Serialization | `serde` | `Pydantic` |
-| Database | `rusqlite` | `aiosqlite` |
-| CLI | `clap` | `typer` |
-| TUI | `ratatui` | `Rich` |
-| Logging | `tracing` | `structlog` |
+| Component | Rust crate |
+|-----------|-----------|
+| Async runtime | `tokio` |
+| HTTP server | `axum` |
+| HTTP client | `reqwest` |
+| WebSocket | `tokio-tungstenite` |
+| Serialization | `serde` |
+| Database | `rusqlite` |
+| CLI | `clap` |
+| TUI | `ratatui` |
+| Logging | `tracing` |
 
 ---
 
@@ -206,7 +238,7 @@ PinchBench 1.2.1 average results across 25 tasks:
 ## Project Structure
 
 ```
-├── crates/             # 29 Rust workspace crates
+├── crates/             # 28 Rust workspace crates
 │   ├── engine/         # Agent runtime, turn runner, routing
 │   ├── gateway/        # axum HTTP/WS server, 30+ RPC handlers
 │   ├── provider/       # 50+ LLM provider adapters
@@ -224,9 +256,12 @@ PinchBench 1.2.1 average results across 25 tasks:
 │   ├── search/         # 7 search provider adapters
 │   ├── observability/  # Tracing, logging
 │   ├── eval/           # Benchmarks, scenarios
-│   └── ...             # 14 more crates
-├── src-tauri/          # Tauri v2 desktop shell (Rust)
-├── opensquilla-webui/  # Vue 3 WebUI (639 files, 100% reusable)
+│   └── ...             # 13 more crates (core, onboarding, identity,
+│                       #   persistence, health, plugins, uninstall,
+│                       #   chat, contrib, agents, ...)
+├── src-tauri/          # Tauri v2 desktop shell (workspace member)
+├── opensquilla-webui/  # Vue 3 WebUI (688 files, embedded in the binary)
+├── src/opensquilla/    # ⚠️ Legacy Python backend — DEPRECATED, not the runtime
 └── docs/               # Documentation
 ```
 
