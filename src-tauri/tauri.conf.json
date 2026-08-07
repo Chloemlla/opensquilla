@@ -115,7 +115,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWSdsQFT3Bt2MWenV/T9bHdy+vS1gg32SXY51ufHSciYkW+2kUxuoJZU",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkKUldTZHNRRlQzQnQyTVdlblYvVDliSGR5K3ZTMWdnMzJTWFk1MXVmSFNjaVlrVysya1V4dW9KWlUK",
       "endpoints": [
         "https://github.com/opensquilla/opensquilla/releases/latest/download/latest.json"
       ],
