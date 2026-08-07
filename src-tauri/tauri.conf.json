@@ -91,8 +91,6 @@
         "installerIcon": "icons/icon.ico",
         "installMode": "perMachine",
         "languages": ["English", "SimplifiedChinese", "Japanese"],
-        "sidebarImage": "icons/nsis-sidebar.bmp",
-        "headerImage": "icons/nsis-header.bmp",
         "template": null,
         "displayLanguageSelector": true
       },

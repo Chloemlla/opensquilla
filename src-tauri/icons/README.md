@@ -15,11 +15,10 @@ and `app.trayIcon.iconPath`.
 | `icon.png` | All (tray) | Tray icon and general-purpose 512x512+ source PNG. |
 | `icon.ico` | Windows | Multi-resolution Windows icon (16, 24, 32, 48, 64, 128, 256). Used for `.exe`/NSIS installer. |
 | `icon.icns` | macOS | Apple icon set for `.app` and `.dmg` bundles. |
-| `nsis-sidebar.bmp` | Windows (NSIS) | 164x314 24-bit BMP installer sidebar image. |
-| `nsis-header.bmp` | Windows (NSIS) | 150x57 24-bit BMP installer header image. |
 
-> The two NSIS BMP images are only required for the Windows NSIS installer
-> branding; the bundler will still produce a working installer without them.
+> No NSIS sidebar/header BMPs are shipped. `tauri.conf.json` does not set
+> `sidebarImage`/`headerImage`, so the NSIS installer uses Tauri's default
+> branding graphics.
 
 ## Generating icons from a source image
 
@@ -42,19 +41,6 @@ cargo tauri icon
 `128x128@2x.png`, `icon.icns`, `icon.ico`, plus iOS/Android sizes) into the
 `src-tauri/icons/` directory. It derives the Windows `.ico` and macOS `.icns`
 from the source PNG automatically.
-
-### NSIS installer branding images
-
-`cargo tauri icon` does not produce the NSIS sidebar/header BMPs. Generate
-them from the source PNG with ImageMagick (24-bit BMP, no alpha):
-
-```sh
-magick ./icon-source.png -resize 164x314^ -gravity center -extent 164x314 \
-  -background white -alpha off -type TrueColor src-tauri/icons/nsis-sidebar.bmp
-
-magick ./icon-source.png -resize 150x57^ -gravity center -extent 150x57 \
-  -background white -alpha off -type TrueColor src-tauri/icons/nsis-header.bmp
-```
 
 ### Updating the tray icon
 
