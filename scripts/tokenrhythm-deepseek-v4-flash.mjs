@@ -14,13 +14,34 @@
 //   --no-stream           non-streaming JSON response
 //   --no-markers          omit all OpenSquilla markers (privacy-sim)
 //   --install-id/--session-id/--turn-id/--execution-id <id>  override ids
+//
+// Output is UTF-8 on both stdout and stderr. Streaming mode prints live tokens
+// as they arrive, then re-emits the assembled reply as one formatted
+// {content, reasoning_content} JSON document on stdout.
+//
+// The script emits UTF-8 on both streams and, on Windows, switches the console
+// to CP65001. A PowerShell host caches its decode code page at startup, so
+// chcp cannot fix mojibake there; run once per session (or add to $PROFILE):
+//   [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
 
 import crypto from "node:crypto";
+import { execSync } from "node:child_process";
 
 // Force UTF-8 on both streams regardless of the Windows console code page so
 // reasoning_content / content (Chinese) never round-trips through GBK/CP936.
 process.stdout.setDefaultEncoding("utf8");
 process.stderr.setDefaultEncoding("utf8");
+
+// Chinese-locale Windows consoles default to CP936 (GBK) and would re-decode
+// the UTF-8 bytes we emit into mojibake. Switch the shared console to UTF-8
+// (CP65001) best-effort; harmless when there is no console to change.
+if (process.platform === "win32") {
+  try {
+    execSync("chcp 65001 >NUL", { stdio: "ignore" });
+  } catch {
+    /* non-console / headless */
+  }
+}
 
 const ENDPOINT = "https://tokenrhythm.studio/v1/chat/completions";
 const APP_REFERER = "https://opensquilla.ai";
@@ -138,6 +159,11 @@ function buildHeaders(args, apiKey) {
     "Content-Type": "application/json",
     Accept: args.stream ? "text/event-stream" : "application/json",
     Authorization: `Bearer ${apiKey}`,
+    // Close the socket after the response so the event loop drains promptly.
+    // process.exit() must not race undici's connection teardown (libuv
+    // assertion on Windows), and process.exitCode alone would wait on the
+    // keep-alive pool before exiting.
+    Connection: "close",
   };
   if (args.markers) Object.assign(headers, markerHeaders(args));
   return headers;
@@ -146,8 +172,30 @@ function buildHeaders(args, apiKey) {
 async function consumeStream(res) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  const chunks = { content: "", reasoning_content: "" };
   let buffer = "";
-  for (;;) {
+
+  const consume = (data) => {
+    if (data === "[DONE]") return true;
+    try {
+      const json = JSON.parse(data);
+      const delta = json.choices?.[0]?.delta ?? {};
+      // DeepSeek-style reasoning_content streams alongside content.
+      if (delta.reasoning_content) {
+        chunks.reasoning_content += delta.reasoning_content;
+        process.stderr.write(delta.reasoning_content);
+      }
+      if (delta.content) {
+        chunks.content += delta.content;
+        process.stdout.write(delta.content);
+      }
+    } catch {
+      // keep-alive / comment lines
+    }
+    return false;
+  };
+
+  outer: for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -156,19 +204,13 @@ async function consumeStream(res) {
     for (const line of lines) {
       const t = line.trim();
       if (!t.startsWith("data:")) continue;
-      const data = t.slice(5).trim();
-      if (data === "[DONE]") return;
-      try {
-        const json = JSON.parse(data);
-        const delta = json.choices?.[0]?.delta ?? {};
-        // DeepSeek-style reasoning_content streams alongside content.
-        if (delta.reasoning_content) process.stderr.write(delta.reasoning_content);
-        if (delta.content) process.stdout.write(delta.content);
-      } catch {
-        // keep-alive / comment lines
-      }
+      if (consume(t.slice(5).trim())) break outer;
     }
   }
+  // Flush a trailing partial multibyte char the stream decoder held back.
+  buffer += decoder.decode();
+  if (buffer.trim().startsWith("data:")) consume(buffer.trim().slice(5).trim());
+  return chunks;
 }
 
 async function main() {
@@ -200,13 +242,15 @@ async function main() {
   });
   if (!res.ok) {
     console.error(`HTTP ${res.status}: ${await res.text()}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   if (args.stream) {
     console.error("\n--- stream ---");
-    await consumeStream(res);
+    const chunks = await consumeStream(res);
     process.stdout.write("\n");
+    console.log(JSON.stringify(chunks, null, 2));
   } else {
     console.log(JSON.stringify(await res.json(), null, 2));
   }
@@ -214,5 +258,5 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
-  process.exit(1);
+  process.exitCode = 1;
 });
