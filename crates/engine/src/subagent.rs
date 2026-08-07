@@ -79,6 +79,10 @@ pub struct SubAgentSpec {
     pub workspace_dir: Option<PathBuf>,
     /// An optional system prompt overriding the default identity.
     pub system_prompt: Option<String>,
+    /// Spawn depth of this sub-agent (0 = spawned by the main session,
+    /// 1 = spawned by a depth-0 sub-agent, etc.). Mirrors Python's
+    /// `spawn_depth` from `opensquilla.agents.limits`.
+    pub depth: usize,
 }
 
 impl SubAgentSpec {
@@ -91,6 +95,7 @@ impl SubAgentSpec {
             token_budget_tokens: None,
             workspace_dir: None,
             system_prompt: None,
+            depth: 0,
         }
     }
 
@@ -117,6 +122,12 @@ impl SubAgentSpec {
         self.system_prompt = Some(prompt.into());
         self
     }
+
+    /// Set the spawn depth of this sub-agent.
+    pub fn with_depth(mut self, depth: usize) -> Self {
+        self.depth = depth;
+        self
+    }
 }
 
 /// A manager for spawning and collecting process-internal sub-agents.
@@ -136,6 +147,10 @@ pub struct SubAgentManager {
     token_budget: Option<u64>,
     /// Optional runner used to drive full pipeline turns.
     runner: Option<Arc<crate::runtime::TurnRunner>>,
+    /// Maximum spawn depth (mirrors Python `MAX_SPAWN_DEPTH = 3`).
+    /// Depth 0 = main session, 1 = first sub-agent, etc. A child whose
+    /// depth would exceed this limit is rejected at spawn time.
+    max_depth: usize,
 }
 
 impl SubAgentManager {
@@ -147,6 +162,7 @@ impl SubAgentManager {
             semaphore: Arc::new(tokio::sync::Semaphore::new(8)),
             token_budget: None,
             runner: None,
+            max_depth: 3,
         }
     }
 
@@ -154,6 +170,12 @@ impl SubAgentManager {
     pub fn max_concurrent(mut self, max: usize) -> Self {
         self.max_concurrent = max.max(1);
         self.semaphore = Arc::new(tokio::sync::Semaphore::new(self.max_concurrent));
+        self
+    }
+
+    /// Set the maximum spawn depth.
+    pub fn max_depth(mut self, depth: usize) -> Self {
+        self.max_depth = depth;
         self
     }
 
@@ -210,6 +232,14 @@ impl SubAgentManager {
     /// permit bounds the number of concurrently executing sub-agents.
     #[instrument(skip(self), fields(subagent = %spec.id))]
     pub async fn spawn(&self, spec: SubAgentSpec) -> Result<SubAgentHandle> {
+        let child_depth = spec.depth.saturating_add(1);
+        if child_depth > self.max_depth {
+            return Err(Error::Internal(format!(
+                "subagent spawn rejected: depth {child_depth} exceeds max {}",
+                self.max_depth
+            )));
+        }
+
         let permit = self
             .semaphore
             .clone()
@@ -366,7 +396,40 @@ impl SubAgentManager {
     pub fn concurrency_limit(&self) -> usize {
         self.max_concurrent
     }
+
+    /// Get the maximum spawn depth.
+    pub fn max_depth(&self) -> usize {
+        self.max_depth
+    }
+
+    /// Return the depth a child sub-agent spawned from `parent_depth` would
+    /// have, or `None` if it would exceed the limit.
+    ///
+    /// Mirrors Python `SubagentManager.can_spawn` for the depth dimension.
+    /// Concurrency is enforced separately by the semaphore.
+    pub fn can_spawn_at(&self, parent_depth: usize) -> Option<usize> {
+        let child_depth = parent_depth.saturating_add(1);
+        if child_depth > self.max_depth {
+            None
+        } else {
+            Some(child_depth)
+        }
+    }
 }
+
+// TODO(parity): Nested depth propagation. Python's `SubagentManager` carries
+// `spawn_depth` on the manager itself and passes `depth = spawn_depth + 1` to
+// the child's `agent_factory`, so the child inherits the depth and can itself
+// enforce the limit when it spawns further subagents. The Rust architecture
+// does not embed a `SubAgentManager` inside each child `Agent` — the manager
+// is a standalone spawner and `Agent` has no reference to it. To propagate
+// depth into nested spawns, a context channel is needed: either (a) embed a
+// `SubAgentManager` (or its `max_depth` + the child's depth) in the child
+// `Agent`/`AgentConfig`, or (b) thread depth through `ToolContext.subagent_depth`
+// (crates/tools/src/context.rs:167) and have the subagent-spawning tool read it
+// when building the `SubAgentSpec`. Until then, the depth check above enforces
+// the limit at the top-level spawn entry point only; callers that spawn nested
+// subagents must set `SubAgentSpec::with_depth` correctly themselves.
 
 /// Wrapper that lets an `Arc<dyn TurnGenerator>` be re-boxed as
 /// `Box<dyn TurnGenerator>` for each sub-agent's `Agent`.
@@ -589,5 +652,36 @@ mod tests {
         for outcome in results.values() {
             assert!(outcome.as_ref().unwrap().is_success());
         }
+    }
+
+    #[tokio::test]
+    async fn test_depth_rejects_past_max() {
+        let manager = SubAgentManager::new(Arc::new(MockGenerator));
+        // depth 0 → child depth 1 (ok), depth 2 (ok), depth 3 (ok, == max_depth).
+        // depth 3 → child depth 4 > max_depth 3 → rejected.
+        let spec = SubAgentSpec::new("leaf", "work").with_depth(3);
+        let err = manager.spawn(spec).await.unwrap_err();
+        assert!(
+            err.to_string().contains("depth 4 exceeds max 3"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_depth_allows_at_limit() {
+        let manager = SubAgentManager::new(Arc::new(MockGenerator));
+        // depth 2 → child depth 3 == max_depth 3 → allowed.
+        let spec = SubAgentSpec::new("leaf", "work").with_depth(2);
+        let handle = manager.spawn(spec).await.unwrap();
+        let outcome = handle.join().await.unwrap();
+        assert!(outcome.is_success());
+    }
+
+    #[test]
+    fn test_can_spawn_at() {
+        let manager = SubAgentManager::new(Arc::new(MockGenerator));
+        assert_eq!(manager.can_spawn_at(0), Some(1));
+        assert_eq!(manager.can_spawn_at(2), Some(3));
+        assert_eq!(manager.can_spawn_at(3), None); // child would be depth 4 > 3
     }
 }
