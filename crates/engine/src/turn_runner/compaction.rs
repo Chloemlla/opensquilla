@@ -73,6 +73,8 @@ pub struct CompactionStage {
     /// Optional session storage driving persisted compaction (feature `session`).
     #[cfg(feature = "session")]
     session_storage: Option<opensquilla_session::SessionStorage>,
+    /// Whether the persistence gate runs before applying compaction.
+    persistence_gate: super::compaction_lifecycle::PersistenceGateConfig,
 }
 
 impl fmt::Debug for CompactionStage {
@@ -83,6 +85,7 @@ impl fmt::Debug for CompactionStage {
             .field("context_window_tokens", &self.context_window_tokens)
             .field("hooks", &self.hooks.len())
             .field("enforce_budget", &self.enforce_budget)
+            .field("persistence_gate", &self.persistence_gate.enabled)
             .finish_non_exhaustive()
     }
 }
@@ -99,6 +102,7 @@ impl CompactionStage {
             last_outcome: std::sync::Mutex::new(None),
             #[cfg(feature = "session")]
             session_storage: None,
+            persistence_gate: super::compaction_lifecycle::PersistenceGateConfig::default(),
         }
     }
 
@@ -126,6 +130,32 @@ impl CompactionStage {
         self
     }
 
+    /// Enable or disable the persistence gate.
+    ///
+    /// When enabled, [`check_persistence_gate`] is consulted before compaction
+    /// is applied. A rejected gate skips compaction and emits a warning so the
+    /// turn proceeds without context surgery rather than risking data loss.
+    ///
+    /// [`check_persistence_gate`]: CompactionStage::check_persistence_gate
+    pub fn with_persistence_gate(mut self, enabled: bool) -> Self {
+        self.persistence_gate.enabled = enabled;
+        self
+    }
+
+    /// Set the receipt used by the persistence gate.
+    ///
+    /// When the persistence gate is enabled, this receipt is classified by
+    /// [`check_persistence_gate`] to decide whether compaction may proceed.
+    ///
+    /// [`check_persistence_gate`]: CompactionStage::check_persistence_gate
+    pub fn with_flush_receipt(
+        mut self,
+        receipt: super::compaction_lifecycle::FlushReceipt,
+    ) -> Self {
+        self.persistence_gate.receipt = Some(receipt);
+        self
+    }
+
     /// Attach a session storage so persisted transcripts are compacted too.
     ///
     /// Only available when the `session` feature is enabled.
@@ -141,6 +171,72 @@ impl CompactionStage {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// Check the persistence gate before applying compaction.
+    ///
+    /// When the persistence gate is disabled, this always returns `true`.
+    /// When enabled, it classifies the flush receipt via
+    /// [`decide_compaction_continuation`] and returns `true` only when the
+    /// gate allows compaction to proceed (`ContinueAfterCompaction` or
+    /// `DegradedContinueAfterCompaction`).
+    ///
+    /// The gate inputs default to safe values when not configured:
+    /// - `receipt_safe` is derived from the receipt's destructive-compaction
+    ///   safety check (or `true` when no receipt is set, treating the absence
+    ///   of a flush as "not required").
+    /// - `raw_session_durable` defaults to `true` (the session substrate is
+    ///   assumed durable until proven otherwise).
+    /// - `context_unsalvageable` defaults to `false`.
+    /// - `semantic_flush_ok` defaults to `true` when the receipt is absent or
+    ///   successful, `false` otherwise.
+    ///
+    /// Callers that have richer runtime state should call
+    /// [`decide_compaction_continuation`] directly and inspect the returned
+    /// [`CompactionContinuationDecision`].
+    ///
+    /// [`decide_compaction_continuation`]: super::compaction_lifecycle::decide_compaction_continuation
+    /// [`CompactionContinuationDecision`]: super::compaction_lifecycle::CompactionContinuationDecision
+    pub fn check_persistence_gate(&self) -> bool {
+        use super::compaction_lifecycle::{decide_compaction_continuation, flush_receipt_status, FlushReceiptStatus};
+
+        if !self.persistence_gate.enabled {
+            return true;
+        }
+
+        let receipt = self.persistence_gate.receipt.as_ref();
+        let receipt_status = flush_receipt_status(receipt);
+
+        // Derive the gate inputs from the receipt status.
+        let receipt_safe = matches!(receipt_status, FlushReceiptStatus::Safe);
+        let semantic_flush_ok = matches!(
+            receipt_status,
+            FlushReceiptStatus::Safe | FlushReceiptStatus::NoopNoMemory
+        );
+        let raw_session_durable = true;
+        let context_unsalvageable = false;
+
+        let decision = decide_compaction_continuation(
+            receipt_safe,
+            raw_session_durable,
+            context_unsalvageable,
+            semantic_flush_ok,
+            0,
+            0,
+            false,
+            false,
+        );
+
+        if !decision.may_proceed() {
+            warn!(
+                gate_action = %decision.action,
+                gate_reason = %decision.reason,
+                receipt_status = %receipt_status,
+                "persistence gate rejected compaction"
+            );
+        }
+
+        decision.may_proceed()
     }
 
     /// Estimate the token footprint of the message list.
@@ -401,6 +497,17 @@ impl Stage for CompactionStage {
             CompactionDecision::UrgentCompaction(s) => s,
         };
 
+        // Persistence gate: when enabled, check whether compaction may proceed
+        // based on the flush receipt safety. A rejected gate skips compaction
+        // and continues the turn without context surgery.
+        if !self.check_persistence_gate() {
+            warn!(
+                turn_id = %ctx.turn_id,
+                "compaction skipped: persistence gate rejected"
+            );
+            return Ok(StageOutput::Continue);
+        }
+
         // Attempt persisted compaction first; when the storage path runs, the
         // in-memory surgery still applies to the live context.
         #[cfg(feature = "session")]
@@ -589,5 +696,38 @@ mod tests {
         assert!(out.len() < 30);
         assert!(outcome.reclaimed() > 0);
         assert!(stage.last_outcome().is_some());
+    }
+
+    #[test]
+    fn test_persistence_gate_disabled_by_default() {
+        let stage = CompactionStage::new(50);
+        // Gate disabled by default: always proceeds.
+        assert!(stage.check_persistence_gate());
+    }
+
+    #[test]
+    fn test_persistence_gate_enabled_proceeds_without_receipt() {
+        let stage = CompactionStage::new(50).with_persistence_gate(true);
+        // No receipt set: status is NotRequested, receipt_safe=false,
+        // semantic_flush_ok=false. Gate blocks because !receipt_safe.
+        assert!(!stage.check_persistence_gate());
+    }
+
+    #[test]
+    fn test_persistence_gate_enabled_proceeds_with_safe_receipt() {
+        use super::compaction_lifecycle::FlushReceipt;
+        let receipt = FlushReceipt {
+            mode: Some("llm".to_string()),
+            indexed_chunk_count: 3,
+            integrity_status: Some("ok".to_string()),
+            output_coverage_status: Some("ok".to_string()),
+            obligation_count: 0,
+            obligation_missing_ids: vec![],
+            ..Default::default()
+        };
+        let stage = CompactionStage::new(50)
+            .with_persistence_gate(true)
+            .with_flush_receipt(receipt);
+        assert!(stage.check_persistence_gate());
     }
 }

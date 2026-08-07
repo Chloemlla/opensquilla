@@ -19,6 +19,7 @@
 pub mod agent_bootstrap;
 pub mod attachment;
 pub mod compaction;
+pub mod compaction_lifecycle;
 pub mod finalizer;
 pub mod harness;
 pub mod input;
@@ -267,6 +268,12 @@ pub use attachment::{
     AttachmentStage, MultipartField, TurnAttachment,
 };
 pub use compaction::CompactionOutcome;
+pub use compaction_lifecycle::{
+    CompactionContinuationAction, CompactionContinuationDecision, CompactionDurability,
+    CompactionLifecycleResult, CompactionTimeoutError, FlushReceipt, FlushReceiptStatus,
+    PersistenceGateConfig, compaction_event_chain, decide_compaction_continuation,
+    flush_receipt_status, new_compaction_id,
+};
 pub use finalizer::{CostRollup, FinalizeReport, FinalizerStage};
 pub use harness::{
     HarnessConfig, HarnessStage, StageMetrics, TurnErrorAggregator, TurnErrorBoundary,

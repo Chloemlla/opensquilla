@@ -111,6 +111,12 @@ pub use compaction_control::{
     CompactionDecision, CompactionInput, CompactionPlan, CompactionStrategy,
     average_message_tokens, plan_compaction, should_compact_before_generation,
 };
+pub use turn_runner::compaction_lifecycle::{
+    CompactionContinuationAction, CompactionContinuationDecision, CompactionDurability,
+    CompactionLifecycleResult, CompactionTimeoutError, FlushReceipt, FlushReceiptStatus,
+    PersistenceGateConfig, compaction_event_chain, decide_compaction_continuation,
+    flush_receipt_status, new_compaction_id,
+};
 pub use pricing::{ModelPrice, ModelPricing, PricingCache, PricingResult};
 /// Re-export the most commonly used types at the crate root for convenience.
 pub use runtime::{AgentHandle, AgentRuntime, TurnLoopGuardsConfig, TurnRunner, TurnRunnerBuilder};
