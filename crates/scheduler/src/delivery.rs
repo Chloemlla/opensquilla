@@ -157,6 +157,89 @@ impl DeliveryChannel for LogDelivery {
     }
 }
 
+/// Validate that a webhook URL uses http(s) and has a hostname.
+///
+/// Ports `validate_webhook_url` from `src/opensquilla/scheduler/delivery.py`.
+pub fn validate_webhook_url(url: &str) -> Result<(), String> {
+    if url.is_empty() {
+        return Err("webhook URL is required".to_string());
+    }
+
+    let scheme_end = match url.find("://") {
+        Some(idx) => idx,
+        None => return Err(format!("invalid webhook URL: {:?}", url)),
+    };
+    let scheme = url[..scheme_end].to_lowercase();
+
+    if scheme != "http" && scheme != "https" {
+        return Err(format!(
+            "webhook URL must use http or https scheme, got {:?}",
+            scheme
+        ));
+    }
+
+    let rest = &url[scheme_end + 3..];
+    let hostname_end = rest
+        .find(|c: char| c == '/' || c == '?' || c == '#' || c == ':')
+        .unwrap_or(rest.len());
+    let hostname = &rest[..hostname_end];
+
+    if hostname.is_empty() {
+        return Err(format!("webhook URL is missing a hostname: {:?}", url));
+    }
+
+    Ok(())
+}
+
+/// Webhook delivery channel — POSTs `JobExecution` as JSON to a URL.
+///
+/// Ports `_post_to_webhook` from `src/opensquilla/scheduler/delivery.py`.
+/// The URL is validated at construction via [`validate_webhook_url`].
+pub struct WebhookDelivery {
+    url: String,
+    token: Option<String>,
+}
+
+impl WebhookDelivery {
+    /// Create a new webhook delivery channel with an optional bearer token.
+    pub fn new(url: impl Into<String>, token: Option<String>) -> Result<Self, String> {
+        let url = url.into();
+        validate_webhook_url(&url)?;
+        Ok(Self { url, token })
+    }
+
+    /// The configured webhook URL.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
+#[async_trait]
+impl DeliveryChannel for WebhookDelivery {
+    fn name(&self) -> &str {
+        "webhook"
+    }
+
+    async fn deliver(&self, execution: &JobExecution) -> DeliveryResult {
+        let payload = match serde_json::to_value(execution) {
+            Ok(v) => v,
+            Err(e) => {
+                return DeliveryResult::failure(format!(
+                    "failed to serialize execution: {}",
+                    e
+                ))
+            }
+        };
+        // TODO(parity): POST `payload` to `self.url` with
+        // Content-Type: application/json and optional Authorization: Bearer
+        // <self.token>. Python uses httpx with a 10s timeout
+        // (src/opensquilla/scheduler/delivery.py:_post_to_webhook, line 323).
+        // reqwest is not in the scheduler Cargo.toml — add it when wiring real HTTP.
+        let _ = (payload, &self.token);
+        DeliveryResult::failure("webhook delivery not compiled — reqwest not in Cargo.toml")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,5 +259,46 @@ mod tests {
         let delivery = LogDelivery::new("test_log");
         let exec = JobExecution::new(uuid::Uuid::new_v4(), 0);
         assert!(delivery.deliver(&exec).await.success);
+    }
+
+    #[test]
+    fn test_validate_webhook_url_valid() {
+        assert!(validate_webhook_url("https://example.com/webhook").is_ok());
+        assert!(validate_webhook_url("http://localhost:8080/hook").is_ok());
+        assert!(validate_webhook_url("https://example.com:443/path?query=1").is_ok());
+    }
+
+    #[test]
+    fn test_validate_webhook_url_invalid_scheme() {
+        assert!(validate_webhook_url("ftp://example.com/webhook").is_err());
+        assert!(validate_webhook_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn test_validate_webhook_url_missing_hostname() {
+        assert!(validate_webhook_url("https:///webhook").is_err());
+        assert!(validate_webhook_url("https://").is_err());
+    }
+
+    #[test]
+    fn test_validate_webhook_url_empty() {
+        assert!(validate_webhook_url("").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_webhook_delivery_url_validated_at_construction() {
+        let result = WebhookDelivery::new("not-a-url", None);
+        assert!(result.is_err());
+        let ok = WebhookDelivery::new("https://example.com/hook", None).unwrap();
+        assert_eq!(ok.url(), "https://example.com/hook");
+    }
+
+    #[tokio::test]
+    async fn test_webhook_delivery_deliver_returns_failure_without_reqwest() {
+        let delivery = WebhookDelivery::new("https://example.com/hook", None).unwrap();
+        let exec = JobExecution::new(uuid::Uuid::new_v4(), 0);
+        let result = delivery.deliver(&exec).await;
+        assert!(!result.success);
+        assert!(result.error.unwrap().contains("not compiled"));
     }
 }

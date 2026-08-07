@@ -28,14 +28,14 @@ pub mod reaper;
 pub mod timer;
 pub mod types;
 
-pub use delivery::DeliveryChain;
+pub use delivery::{validate_webhook_url, DeliveryChain, WebhookDelivery};
 pub use engine::{SchedulerBuilder, SchedulerEngine};
 pub use handlers::HandlerRegistry;
 pub use heartbeat::{
     Heartbeat, HeartbeatBuilder, HeartbeatCheck, HeartbeatCycle, HeartbeatError, HeartbeatHandle,
     HeartbeatRunner, HeartbeatStatus, HeartbeatStore,
 };
-pub use jobs::JobExecutor;
+pub use jobs::{JobExecutor, TriggerError};
 pub use parser::CronParser;
 pub use persistence::JobStore;
 pub use reaper::SessionReaper;

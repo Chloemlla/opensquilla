@@ -136,6 +136,32 @@ impl JobExecutor {
         }
         handles
     }
+
+    /// Trigger a job immediately by ID, bypassing the schedule check.
+    ///
+    /// Looks up the job via `JobStore::get_job` and, if found, executes it
+    /// with `execute_job`. Returns `None` if the job does not exist.
+    pub async fn trigger_now(
+        &self,
+        job_id: &uuid::Uuid,
+    ) -> Result<tokio::task::JoinHandle<()>, TriggerError> {
+        let job = {
+            let s = self.store.lock().await;
+            s.get_job(job_id)
+                .map_err(|e| TriggerError::Lookup(e.to_string()))?
+        };
+        let job = job.ok_or(TriggerError::NotFound(*job_id))?;
+        Ok(self.execute_job(job).await)
+    }
+}
+
+/// Error from a manual `trigger_now` call.
+#[derive(Debug, thiserror::Error)]
+pub enum TriggerError {
+    #[error("job {0} not found")]
+    NotFound(uuid::Uuid),
+    #[error("failed to look up job: {0}")]
+    Lookup(String),
 }
 
 /// Compute backoff delay with exponential backoff and jitter.
@@ -187,6 +213,42 @@ mod tests {
         let executions = s.list_executions(&job.id, 10, 0).unwrap();
         assert!(!executions.is_empty());
         assert!(executions[0].success);
+    }
+
+    #[tokio::test]
+    async fn test_trigger_now_executes_job() {
+        let store = JobStore::in_memory().unwrap();
+        let store = Arc::new(Mutex::new(store));
+        let mut handlers = HandlerRegistry::new();
+        handlers.register(Box::new(TestHandler));
+        let handlers = Arc::new(handlers);
+
+        let job = {
+            let s = store.lock().await;
+            let job = CronJob::new("trigger_test", ScheduleKind::Every(3600), "test");
+            s.insert_job(&job).unwrap();
+            job
+        };
+
+        let executor = JobExecutor::new(store.clone(), handlers);
+        let handle = executor.trigger_now(&job.id).await.unwrap();
+        handle.await.unwrap();
+
+        let s = store.lock().await;
+        let executions = s.list_executions(&job.id, 10, 0).unwrap();
+        assert!(!executions.is_empty());
+        assert!(executions[0].success);
+    }
+
+    #[tokio::test]
+    async fn test_trigger_now_not_found() {
+        let store = JobStore::in_memory().unwrap();
+        let store = Arc::new(Mutex::new(store));
+        let handlers = Arc::new(HandlerRegistry::new());
+
+        let executor = JobExecutor::new(store, handlers);
+        let result = executor.trigger_now(&uuid::Uuid::new_v4()).await;
+        assert!(matches!(result, Err(TriggerError::NotFound(_))));
     }
 
     #[test]
