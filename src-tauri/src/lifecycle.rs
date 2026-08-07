@@ -566,7 +566,7 @@ fn windows_process_start_identity(pid: u32) -> Option<String> {
             "-NonInteractive",
             "-Command",
             &format!(
-                "$ErrorActionPreference='Stop'; (Get-Process -Id {pid}).StartTime.ToFileTime()"
+                "$ErrorActionPreference='Stop'; [System.Diagnostics.Process]::GetProcessById({pid}).StartTime.ToFileTime()"
             ),
         ])
         .stdin(std::process::Stdio::null())
