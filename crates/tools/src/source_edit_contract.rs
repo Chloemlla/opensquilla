@@ -38,7 +38,10 @@ pub fn source_revision_for_path(path: &Path) -> Result<String, SourceEditContrac
         .map_err(|e| contract_error(format!("cannot read {}: {e}", path.display())))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    Ok(format!("file_{:x}", hasher.finalize()).chars().take(17).collect())
+    Ok(format!("file_{:x}", hasher.finalize())
+        .chars()
+        .take(17)
+        .collect())
 }
 
 fn line_count(text: &str) -> usize {
@@ -58,7 +61,9 @@ fn validate_line_range(
         return Err(contract_error("line ranges must be positive"));
     }
     if start_line > end_line {
-        return Err(contract_error("start_line must be less than or equal to end_line"));
+        return Err(contract_error(
+            "start_line must be less than or equal to end_line",
+        ));
     }
     let end = end_line as usize;
     if end > line_count {
@@ -110,7 +115,10 @@ pub fn build_line_receipt(
     }))
 }
 
-fn replacement_lines(replacement: &serde_json::Value, index: usize) -> Result<Vec<String>, SourceEditContractError> {
+fn replacement_lines(
+    replacement: &serde_json::Value,
+    index: usize,
+) -> Result<Vec<String>, SourceEditContractError> {
     let Some(replacement) = replacement.as_str() else {
         return Err(contract_error(format!(
             "edits[{index}].replacement must be a string"
@@ -151,13 +159,20 @@ fn normalized_edits(
         let start_line = edit
             .get("start_line")
             .and_then(|v| v.as_i64())
-            .ok_or_else(|| contract_error("line ranges must use integer start_line and end_line"))?;
+            .ok_or_else(|| {
+                contract_error("line ranges must use integer start_line and end_line")
+            })?;
         let end_line = edit
             .get("end_line")
             .and_then(|v| v.as_i64())
-            .ok_or_else(|| contract_error("line ranges must use integer start_line and end_line"))?;
+            .ok_or_else(|| {
+                contract_error("line ranges must use integer start_line and end_line")
+            })?;
         let (start, end) = validate_line_range(start_line, end_line, line_count)?;
-        let replacement = replacement_lines(edit.get("replacement").unwrap_or(&serde_json::Value::Null), index)?;
+        let replacement = replacement_lines(
+            edit.get("replacement").unwrap_or(&serde_json::Value::Null),
+            index,
+        )?;
         normalized.push((start, end, replacement));
     }
 
@@ -190,13 +205,13 @@ pub fn apply_line_edits(
 ///
 /// When the diff exceeds `max_chars`, the tail is truncated with a
 /// `[diff_summary_truncated: omitted_chars=N]` marker.
-pub fn build_diff_summary(
-    before: &str,
-    after: &str,
-    path: &str,
-    max_chars: usize,
-) -> String {
-    let diff = render_unified(&diff_texts(before, after, &format!("a/{path}"), &format!("b/{path}")));
+pub fn build_diff_summary(before: &str, after: &str, path: &str, max_chars: usize) -> String {
+    let diff = render_unified(&diff_texts(
+        before,
+        after,
+        &format!("a/{path}"),
+        &format!("b/{path}"),
+    ));
     if diff.chars().count() <= max_chars {
         return diff;
     }

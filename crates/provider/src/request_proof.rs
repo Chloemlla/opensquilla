@@ -23,8 +23,8 @@
 //! - **Reasoning-effort budgeting** — when a reasoning model is in use, reserve
 //!   an additional reasoning token budget.
 
-use crate::compat_policy::{CompatPolicy, policy_for};
 use crate::compaction::{CompactionConfig, compact_tool_results};
+use crate::compat_policy::{CompatPolicy, policy_for};
 use crate::types::ChatConfig;
 use opensquilla_core::types::{ChatMessage, ContentBlock, MessageRole, ToolDefinition};
 use std::sync::Arc;

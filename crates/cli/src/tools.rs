@@ -12,7 +12,7 @@
 use anyhow::{Context, Result};
 use opensquilla_tools::registry::{Tool, ToolRegistry};
 
-use crate::table::{self, Alignment, Column, Color, KeyValue, Style, Table};
+use crate::table::{self, Alignment, Color, Column, KeyValue, Style, Table};
 
 /// Tool subcommands.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -46,8 +46,7 @@ pub async fn run_tool(action: ToolAction) -> Result<()> {
 
 /// Build the tool registry with all built-in tools.
 fn build_registry() -> Result<ToolRegistry> {
-    ToolRegistry::with_builtins()
-        .map_err(|e| anyhow::anyhow!("Failed to build tool registry: {e}"))
+    ToolRegistry::with_builtins().map_err(|e| anyhow::anyhow!("Failed to build tool registry: {e}"))
 }
 
 /// List all registered tools, optionally filtered by category.
@@ -74,7 +73,10 @@ pub async fn list_tools(category: Option<String>) -> Result<()> {
             continue;
         };
         let def = tool.definition();
-        let cat = def.category.clone().unwrap_or_else(|| "general".to_string());
+        let cat = def
+            .category
+            .clone()
+            .unwrap_or_else(|| "general".to_string());
         if let Some(ref filter) = category {
             if !cat.to_lowercase().contains(&filter.to_lowercase()) {
                 continue;
@@ -84,7 +86,12 @@ pub async fn list_tools(category: Option<String>) -> Result<()> {
             def.name.clone(),
             cat,
             def.risk_level.to_string(),
-            if def.requires_confirmation { "yes" } else { "no" }.to_string(),
+            if def.requires_confirmation {
+                "yes"
+            } else {
+                "no"
+            }
+            .to_string(),
             def.description.chars().take(48).collect(),
         ]);
     }
@@ -107,11 +114,19 @@ pub async fn show_tool(name: String) -> Result<()> {
     println!();
     KeyValue::new()
         .entry("Description", def.description.clone())
-        .entry("Category", def.category.clone().unwrap_or_else(|| "general".into()))
+        .entry(
+            "Category",
+            def.category.clone().unwrap_or_else(|| "general".into()),
+        )
         .entry("Risk level", def.risk_level.to_string())
         .entry(
             "Confirmation",
-            if def.requires_confirmation { "required" } else { "none" }.to_string(),
+            if def.requires_confirmation {
+                "required"
+            } else {
+                "none"
+            }
+            .to_string(),
         )
         .entry(
             "Behavior",
@@ -151,8 +166,9 @@ pub async fn test_tool(name: String, args: Option<String>) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Tool '{name}' not found"))?;
 
     let args_json: serde_json::Value = match args {
-        Some(a) => serde_json::from_str(&a)
-            .with_context(|| format!("Invalid JSON arguments: {a}"))?,
+        Some(a) => {
+            serde_json::from_str(&a).with_context(|| format!("Invalid JSON arguments: {a}"))?
+        }
         None => serde_json::json!({}),
     };
 
@@ -177,12 +193,18 @@ pub async fn test_tool(name: String, args: Option<String>) -> Result<()> {
 
     // Show what the tool would receive.
     let definition = def.to_json_schema();
-    println!("  JSON schema: {}", serde_json::to_string_pretty(&definition)?);
+    println!(
+        "  JSON schema: {}",
+        serde_json::to_string_pretty(&definition)?
+    );
 
     // If args were provided and the tool accepts them, print a dry-run notice.
     if !args_json.as_object().map(|o| o.is_empty()).unwrap_or(true) {
         println!();
-        println!("{} Dry-run: not executing tool (use the agent to run real calls)", table::info());
+        println!(
+            "{} Dry-run: not executing tool (use the agent to run real calls)",
+            table::info()
+        );
     }
     Ok(())
 }
@@ -217,7 +239,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

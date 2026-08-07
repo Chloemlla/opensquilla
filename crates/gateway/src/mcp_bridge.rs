@@ -118,8 +118,7 @@ impl SessionBridge for GatewayMcpBridge {
         let mut events: Vec<Value> = Vec::new();
         let mut timed_out = false;
 
-        let per_event_timeout =
-            std::cmp::max(timeout_ms / max_events as u64, 50);
+        let per_event_timeout = std::cmp::max(timeout_ms / max_events as u64, 50);
 
         while events.len() < max_events as usize {
             match self.chat.next_event(key, per_event_timeout).await {

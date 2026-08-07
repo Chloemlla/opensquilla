@@ -9,13 +9,8 @@
 pub const REASONING_HINT: &str = "For reasoning-capable models, keep private reasoning inside <think>...</think> when needed and put the user-visible answer inside <final>...</final>.";
 
 /// Substrings that mark a resolved model id as reasoning-capable.
-pub const REASONING_MODEL_MARKERS: &[&str] = &[
-    "gpt-5",
-    "codex",
-    "glm-4.7",
-    "glm-4.6",
-    "deepseek-r1",
-];
+pub const REASONING_MODEL_MARKERS: &[&str] =
+    &["gpt-5", "codex", "glm-4.7", "glm-4.6", "deepseek-r1"];
 
 /// Return the reasoning-capable model family for a resolved model id, or `None`.
 ///
@@ -51,7 +46,10 @@ mod tests {
 
     #[test]
     fn test_known_family_detected() {
-        assert_eq!(model_family("deepseek-r1-0528"), Some("deepseek-r1".to_string()));
+        assert_eq!(
+            model_family("deepseek-r1-0528"),
+            Some("deepseek-r1".to_string())
+        );
         assert_eq!(model_family("openai/gpt-5"), Some("gpt-5".to_string()));
         assert_eq!(model_family("GLM-4.6"), Some("glm-4.6".to_string()));
     }
@@ -76,6 +74,9 @@ mod tests {
 
     #[test]
     fn test_case_insensitive_matching() {
-        assert_eq!(model_family("DEEPSEEK-R1-TURBO"), Some("deepseek-r1".to_string()));
+        assert_eq!(
+            model_family("DEEPSEEK-R1-TURBO"),
+            Some("deepseek-r1".to_string())
+        );
     }
 }

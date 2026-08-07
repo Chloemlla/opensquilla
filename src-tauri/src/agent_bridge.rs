@@ -617,14 +617,17 @@ pub async fn send_message(
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id_str}")))?;
 
     let user_message = Message::user(&request.message);
-    state
-        .chat_store
-        .add_message(&session_id_str, message_to_chat_response(&session_id_str, &user_message));
+    state.chat_store.add_message(
+        &session_id_str,
+        message_to_chat_response(&session_id_str, &user_message),
+    );
 
     // Build the message list from history + current message.
     let mut messages: Vec<Message> = if request.history.is_empty() {
         // Use stored chat history.
-        state.chat_store.get_history(&session_id_str, 1000, 0)
+        state
+            .chat_store
+            .get_history(&session_id_str, 1000, 0)
             .iter()
             .map(chat_response_to_message)
             .collect()
@@ -706,12 +709,15 @@ pub async fn send_message_sync(
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id_str}")))?;
 
     let user_message = Message::user(&request.message);
-    state
-        .chat_store
-        .add_message(&session_id_str, message_to_chat_response(&session_id_str, &user_message));
+    state.chat_store.add_message(
+        &session_id_str,
+        message_to_chat_response(&session_id_str, &user_message),
+    );
 
     let mut messages: Vec<Message> = if request.history.is_empty() {
-        state.chat_store.get_history(&session_id_str, 1000, 0)
+        state
+            .chat_store
+            .get_history(&session_id_str, 1000, 0)
             .iter()
             .map(chat_response_to_message)
             .collect()
@@ -782,7 +788,10 @@ pub async fn send_message_sync(
     // Store assistant messages in the chat store.
     for msg in &response_messages {
         if msg.role == MessageRole::Assistant {
-            state.chat_store.add_message(&session_id_str, message_to_chat_response(&session_id_str, msg));
+            state.chat_store.add_message(
+                &session_id_str,
+                message_to_chat_response(&session_id_str, msg),
+            );
         }
     }
 
@@ -946,9 +955,7 @@ pub async fn archive_session(
     let sid = opensquilla_core::types::SessionId::from_string(&session_id)
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id}")))?;
 
-    let entry = state
-        .session_store
-        .archive(&sid)?;
+    let entry = state.session_store.archive(&sid)?;
 
     let info = SessionInfo {
         id: entry.id.to_string(),
@@ -1255,7 +1262,10 @@ fn dto_to_message(dto: &MessageDto) -> Result<Message, TauriError> {
 }
 
 /// Convert a `Message` to a `ChatMessageResponse` for the chat store.
-fn message_to_chat_response(session_id: &str, msg: &Message) -> opensquilla_gateway::chat::ChatMessageResponse {
+fn message_to_chat_response(
+    session_id: &str,
+    msg: &Message,
+) -> opensquilla_gateway::chat::ChatMessageResponse {
     opensquilla_gateway::chat::ChatMessageResponse {
         id: Uuid::new_v4().to_string(),
         session_id: session_id.to_string(),
@@ -1274,7 +1284,16 @@ fn chat_response_to_message(resp: &opensquilla_gateway::chat::ChatMessageRespons
         "system" => MessageRole::System,
         _ => MessageRole::User,
     };
-    Message { role, content: vec![opensquilla_core::types::ContentBlock::Text(resp.content.clone())], name: None, tool_call_id: None, tool_calls: None, tool_result: None }
+    Message {
+        role,
+        content: vec![opensquilla_core::types::ContentBlock::Text(
+            resp.content.clone(),
+        )],
+        name: None,
+        tool_call_id: None,
+        tool_calls: None,
+        tool_result: None,
+    }
 }
 
 /// Resolve a provider from the config.

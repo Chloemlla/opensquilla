@@ -417,8 +417,14 @@ impl ProviderHealthLedger {
 
     /// Clear all strikes and benches.
     pub fn clear(&self) {
-        self.strikes.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        self.benched_until.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.strikes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.benched_until
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -457,10 +463,7 @@ pub fn save_health_ledger(
 /// Load a health ledger's bench state from a JSON file.
 ///
 /// A missing or corrupt file is treated as an empty state.
-pub fn load_health_ledger(
-    ledger: &ProviderHealthLedger,
-    path: &std::path::Path,
-) -> usize {
+pub fn load_health_ledger(ledger: &ProviderHealthLedger, path: &std::path::Path) -> usize {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return 0;
     };

@@ -256,7 +256,10 @@ impl LlmConsolidator {
         self
     }
 
-    fn build_consolidation_prompt(&self, candidates: &[ConsolidationCandidate]) -> (String, String) {
+    fn build_consolidation_prompt(
+        &self,
+        candidates: &[ConsolidationCandidate],
+    ) -> (String, String) {
         let system = if self.language.starts_with("zh") {
             "你是一个记忆整合助手。把相似的记忆合并成一条简洁、信息密集的摘要。\
              保留姓名、数字、日期等关键细节。为每条候选输出一行 JSON 对象。"
@@ -406,7 +409,11 @@ impl DreamConsolidator for LlmConsolidator {
         let tags: Vec<String> = item
             .get("tags")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_else(|| vec!["dream".to_string(), "resolved".to_string()]);
 
         Ok(Some(ConsolidatedMemory {
@@ -461,7 +468,10 @@ pub fn merge_memories(a: &MemoryEntry, b: &MemoryEntry) -> MemoryEntry {
             "merged_from".to_string(),
             serde_json::json!([a.id.0.to_string(), b.id.0.to_string()]),
         );
-        obj.insert("merged_at".to_string(), serde_json::json!(updated_at.to_rfc3339()));
+        obj.insert(
+            "merged_at".to_string(),
+            serde_json::json!(updated_at.to_rfc3339()),
+        );
     } else {
         metadata = serde_json::json!({
             "merged_from": [a.id.0.to_string(), b.id.0.to_string()],
@@ -655,7 +665,10 @@ impl DreamEngine {
         self.store.insert_memory(&merged)?;
         self.store.delete_memory(&a.id)?;
         self.store.delete_memory(&b.id)?;
-        info!("Merged memories {:?} and {:?} into {:?}", a.id, b.id, merged.id);
+        info!(
+            "Merged memories {:?} and {:?} into {:?}",
+            a.id, b.id, merged.id
+        );
         Ok(merged.id)
     }
 
@@ -1771,7 +1784,10 @@ mod tests {
         ];
         let consolidated = consolidator.consolidate(&candidates).await.unwrap();
         assert_eq!(consolidated.len(), 2);
-        assert_eq!(consolidated[0].metadata["consolidation_method"], "heuristic");
+        assert_eq!(
+            consolidated[0].metadata["consolidation_method"],
+            "heuristic"
+        );
     }
 
     #[tokio::test]

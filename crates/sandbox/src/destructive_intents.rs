@@ -253,10 +253,7 @@ pub(crate) fn posix_split(input: &str) -> Result<Vec<String>, String> {
 
 /// Whitespace split fallback (quote characters kept literal).
 pub(crate) fn whitespace_split(input: &str) -> Vec<String> {
-    input
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect()
+    input.split_whitespace().map(|s| s.to_string()).collect()
 }
 
 /// Return every recognized destructive intent, deduped and normalized.
@@ -366,7 +363,10 @@ mod tests {
 
     #[test]
     fn single_intent_convenience() {
-        assert_eq!(extract_intent("rm /x"), Some(("delete".to_string(), "/x".to_string())));
+        assert_eq!(
+            extract_intent("rm /x"),
+            Some(("delete".to_string(), "/x".to_string()))
+        );
         assert_eq!(extract_intent("echo hi"), None);
     }
 }

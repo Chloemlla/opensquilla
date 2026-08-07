@@ -45,7 +45,11 @@ fn is_valid_skill_name(name: &str) -> bool {
 
 /// Strip characters that could inject YAML structure.
 fn sanitize_yaml_value(value: &str) -> String {
-    value.replace('\n', " ").replace('\r', " ").trim().to_string()
+    value
+        .replace('\n', " ")
+        .replace('\r', " ")
+        .trim()
+        .to_string()
 }
 
 /// Render a SKILL.md file from parts. Frontmatter is hand-formatted with
@@ -63,7 +67,10 @@ fn render_skill_md(
         if !trigs.is_empty() {
             fm.push_str("triggers:\n");
             for t in trigs {
-                fm.push_str(&format!("  - {}\n", quote_yaml_scalar(&sanitize_yaml_value(t))));
+                fm.push_str(&format!(
+                    "  - {}\n",
+                    quote_yaml_scalar(&sanitize_yaml_value(t))
+                ));
             }
         }
     }
@@ -76,7 +83,28 @@ fn quote_yaml_scalar(value: &str) -> String {
     let needs_quote = value
         .chars()
         .next()
-        .map(|c| matches!(c, '"' | '\'' | '-' | '?' | ':' | '[' | ']' | '{' | '}' | '#' | '&' | '*' | '!' | '|' | '>' | '%' | '@' | '`'))
+        .map(|c| {
+            matches!(
+                c,
+                '"' | '\''
+                    | '-'
+                    | '?'
+                    | ':'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | '#'
+                    | '&'
+                    | '*'
+                    | '!'
+                    | '|'
+                    | '>'
+                    | '%'
+                    | '@'
+                    | '`'
+            )
+        })
         .unwrap_or(false)
         || value.contains(':')
         || value.contains(" #")
@@ -103,7 +131,10 @@ fn skill_to_json(skill: &SkillSpec) -> Value {
 }
 
 /// Serialize a community search result.
-fn community_result_to_dict(meta: &SkillMeta, installed: &std::collections::HashSet<String>) -> Value {
+fn community_result_to_dict(
+    meta: &SkillMeta,
+    installed: &std::collections::HashSet<String>,
+) -> Value {
     serde_json::json!({
         "name": meta.name,
         "description": meta.description,
@@ -278,7 +309,10 @@ impl Tool for SkillViewTool {
             if base.is_empty() {
                 return Err(ToolError::new(
                     "FILE_NOT_FOUND",
-                    format!("Skill '{}' has no on-disk directory; cannot read '{}'", name, fp),
+                    format!(
+                        "Skill '{}' has no on-disk directory; cannot read '{}'",
+                        name, fp
+                    ),
                 ));
             }
             let base_dir = std::path::Path::new(base)
@@ -389,11 +423,12 @@ impl Tool for SkillSearchCommunityTool {
             s => Some(s),
         };
 
-        let results = self
-            .hub
-            .discover(&query, source_id)
-            .await
-            .map_err(|e| ToolError::new("SKILL_SEARCH_FAILED", format!("Community search failed: {}", e)))?;
+        let results = self.hub.discover(&query, source_id).await.map_err(|e| {
+            ToolError::new(
+                "SKILL_SEARCH_FAILED",
+                format!("Community search failed: {}", e),
+            )
+        })?;
 
         let installed = installed_skill_names(&self.loader).await;
         let items: Vec<Value> = results
@@ -409,8 +444,10 @@ impl Tool for SkillSearchCommunityTool {
             "count": items.len(),
             "results": items,
         });
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-            .with_data(data))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
     }
 }
 
@@ -617,27 +654,30 @@ impl Tool for InstallSkillDepsTool {
             ));
         }
 
-        let spec = install_specs.iter().find_map(|s| {
-            let id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let fallback = format!(
-                "{}-{}",
-                s.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
-                install_specs.iter().position(|x| x == s)?
-            );
-            if id == install_id || fallback == install_id {
-                Some(s.clone())
-            } else {
-                None
-            }
-        }).ok_or_else(|| {
-            ToolError::new(
-                "INSTALL_SPEC_NOT_FOUND",
-                format!(
-                    "Install spec '{}' not found for skill '{}'",
-                    install_id, skill_name
-                ),
-            )
-        })?;
+        let spec = install_specs
+            .iter()
+            .find_map(|s| {
+                let id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let fallback = format!(
+                    "{}-{}",
+                    s.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+                    install_specs.iter().position(|x| x == s)?
+                );
+                if id == install_id || fallback == install_id {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                ToolError::new(
+                    "INSTALL_SPEC_NOT_FOUND",
+                    format!(
+                        "Install spec '{}' not found for skill '{}'",
+                        install_id, skill_name
+                    ),
+                )
+            })?;
 
         let kind = spec.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         let package = spec
@@ -723,7 +763,12 @@ fn build_install_argv(kind: &str, package: &str) -> Result<Vec<String>, ToolErro
         }
         "uv" => {
             validate_install_value(package, &UV_PACKAGE_RE, "package")?;
-            Ok(vec!["uv".into(), "tool".into(), "install".into(), package.into()])
+            Ok(vec![
+                "uv".into(),
+                "tool".into(),
+                "install".into(),
+                package.into(),
+            ])
         }
         "download" => Err(ToolError::new(
             "INSTALL_KIND_DEFERRED",
@@ -736,7 +781,11 @@ fn build_install_argv(kind: &str, package: &str) -> Result<Vec<String>, ToolErro
     }
 }
 
-fn validate_install_value(value: &str, pattern: &regex::Regex, label: &str) -> Result<(), ToolError> {
+fn validate_install_value(
+    value: &str,
+    pattern: &regex::Regex,
+    label: &str,
+) -> Result<(), ToolError> {
     if !pattern.is_match(value) {
         return Err(ToolError::invalid_args(format!(
             "Unsafe install value for {}: {}",
@@ -806,7 +855,9 @@ impl Tool for SkillCreateTool {
                     ),
                     (
                         "description".to_string(),
-                        ParameterDefinition::required_string("One-line description of what the skill does"),
+                        ParameterDefinition::required_string(
+                            "One-line description of what the skill does",
+                        ),
                     ),
                     (
                         "content".to_string(),
@@ -863,16 +914,22 @@ impl Tool for SkillCreateTool {
             ));
         }
 
-        let triggers: Option<Vec<String>> = params["triggers"]
-            .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+        let triggers: Option<Vec<String>> = params["triggers"].as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
 
         let skill_dir = self.workspace_dir.join(name);
         let skill_file = skill_dir.join("SKILL.md");
         if skill_file.exists() {
             return Err(ToolError::new(
                 "SKILL_EXISTS",
-                format!("Skill '{}' already exists at {}", name, skill_file.display()),
+                format!(
+                    "Skill '{}' already exists at {}",
+                    name,
+                    skill_file.display()
+                ),
             ));
         }
 
@@ -883,8 +940,7 @@ impl Tool for SkillCreateTool {
             )
         })?;
 
-        let skill_md =
-            render_skill_md(name, description, content, triggers.as_deref());
+        let skill_md = render_skill_md(name, description, content, triggers.as_deref());
         std::fs::write(&skill_file, skill_md).map_err(|e| {
             ToolError::new(
                 "SKILL_CREATE_FAILED",
@@ -986,17 +1042,18 @@ impl Tool for SkillEditTool {
                 "SKILL_NOT_MUTABLE",
                 format!(
                     "Skill '{}' is in layer '{}' and cannot be edited. Only workspace-layer skills can be modified. Create a workspace override with skill_create instead.",
-                    name,
-                    existing.layer
+                    name, existing.layer
                 ),
             ));
         }
 
         let new_content = params["content"].as_str();
         let new_description = params["description"].as_str();
-        let new_triggers: Option<Vec<String>> = params["triggers"]
-            .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+        let new_triggers: Option<Vec<String>> = params["triggers"].as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
 
         if new_content.is_none() && new_description.is_none() && new_triggers.is_none() {
             return Err(ToolError::invalid_args(
@@ -1010,16 +1067,13 @@ impl Tool for SkillEditTool {
             .unwrap_or_else(|| existing.body.clone());
         let triggers: Option<Vec<String>> = match new_triggers {
             Some(t) => Some(t),
-            None => existing
-                .metadata
-                .as_ref()
-                .and_then(|m| {
-                    if m.triggers.is_empty() {
-                        None
-                    } else {
-                        Some(m.triggers.clone())
-                    }
-                }),
+            None => existing.metadata.as_ref().and_then(|m| {
+                if m.triggers.is_empty() {
+                    None
+                } else {
+                    Some(m.triggers.clone())
+                }
+            }),
         };
 
         let skill_file = existing
@@ -1122,8 +1176,7 @@ impl Tool for SkillDeleteTool {
                 "SKILL_NOT_MUTABLE",
                 format!(
                     "Skill '{}' is in layer '{}' and cannot be deleted. Only workspace-layer skills can be removed.",
-                    name,
-                    existing.layer
+                    name, existing.layer
                 ),
             ));
         }
@@ -1179,10 +1232,8 @@ mod tests {
     }
 
     fn test_workspace_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "opensquilla-skill-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-skill-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp workspace dir");
         dir
     }
@@ -1292,9 +1343,7 @@ mod tests {
     async fn test_skill_delete_not_found() {
         let loader = test_loader();
         let delete = SkillDeleteTool::from_arc(loader);
-        let result = delete
-            .execute(serde_json::json!({ "name": "ghost" }))
-            .await;
+        let result = delete.execute(serde_json::json!({ "name": "ghost" })).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "SKILL_NOT_FOUND");
     }

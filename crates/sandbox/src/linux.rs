@@ -873,7 +873,8 @@ mod backend {
             if !base.exists() {
                 std::fs::create_dir_all(&base).map_err(|e| format!("cgroup mkdir: {e}"))?;
                 // Enable controllers the kernel allows.
-                if let Ok(controllers) = std::fs::read_to_string("/sys/fs/cgroup/cgroup.subtree_control")
+                if let Ok(controllers) =
+                    std::fs::read_to_string("/sys/fs/cgroup/cgroup.subtree_control")
                 {
                     let mut enabled = String::new();
                     for c in ["cpu", "memory", "pids"] {
@@ -1121,12 +1122,7 @@ mod backend {
                 }
 
                 // Restrict the current process.
-                let ret = syscall3(
-                    libc::SYS_landlock_restrict_self,
-                    ruleset_fd as usize,
-                    0,
-                    0,
-                );
+                let ret = syscall3(libc::SYS_landlock_restrict_self, ruleset_fd as usize, 0, 0);
                 libc::close(ruleset_fd as i32);
                 if ret != 0 {
                     return Err(format!(

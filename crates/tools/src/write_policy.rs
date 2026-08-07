@@ -206,10 +206,7 @@ fn lexical_workspace_path(original: &str, workspace: &Path) -> Option<PathBuf> {
         match component {
             std::path::Component::CurDir => {}
             std::path::Component::ParentDir => {
-                if !matches!(
-                    components.last(),
-                    Some(std::path::Component::Normal(_))
-                ) {
+                if !matches!(components.last(), Some(std::path::Component::Normal(_))) {
                     return None;
                 }
                 components.pop();
@@ -226,14 +223,24 @@ fn lexical_workspace_path(original: &str, workspace: &Path) -> Option<PathBuf> {
 }
 
 /// Whether git tracks the path; lookup failures fail closed (tracked).
-fn workspace_path_is_git_tracked(workspace: &Path, relative_path: &str, as_directory: bool) -> bool {
+fn workspace_path_is_git_tracked(
+    workspace: &Path,
+    relative_path: &str,
+    as_directory: bool,
+) -> bool {
     let result = if as_directory {
         run_git(workspace, &["ls-files", "--", &format!("{relative_path}/")])
     } else {
-        run_git(workspace, &["ls-files", "--error-unmatch", "--", relative_path])
+        run_git(
+            workspace,
+            &["ls-files", "--error-unmatch", "--", relative_path],
+        )
     };
     match result {
-        Some(Output { status: code, stdout }) => {
+        Some(Output {
+            status: code,
+            stdout,
+        }) => {
             if as_directory {
                 code == 0 && !stdout.trim().is_empty()
             } else if code == 0 {
@@ -433,9 +440,7 @@ pub fn gate_workspace_scratch_artifact(
     workspace: Option<&Path>,
     ctx: &ToolContext,
 ) -> Result<(), ToolError> {
-    if let Some(matched) =
-        match_workspace_scratch_artifact(path, original_path, workspace, ctx)
-    {
+    if let Some(matched) = match_workspace_scratch_artifact(path, original_path, workspace, ctx) {
         let payload = workspace_scratch_artifact_block(tool_name, &matched, None);
         let message = payload["message"].as_str().unwrap_or("blocked").to_string();
         return Err(ToolError::new("WORKSPACE_SCRATCH_ARTIFACT", message));
@@ -537,7 +542,13 @@ pub fn verify_mirror_path(
         return None;
     }
     let scratch = scratch_dir.canonicalize().ok().unwrap_or(scratch_dir);
-    Some(scratch.join("verify-mirror").join(relative).to_string_lossy().to_string())
+    Some(
+        scratch
+            .join("verify-mirror")
+            .join(relative)
+            .to_string_lossy()
+            .to_string(),
+    )
 }
 
 #[cfg(test)]
@@ -637,12 +648,8 @@ mod tests {
 
         // Existing files are not flagged.
         let temp = tempfile::NamedTempFile::new().expect("temp");
-        let existing = match_workspace_scratch_artifact(
-            temp.path(),
-            Some("debug_x.py"),
-            None,
-            &ctx,
-        );
+        let existing =
+            match_workspace_scratch_artifact(temp.path(), Some("debug_x.py"), None, &ctx);
         assert!(existing.is_none());
 
         // Subdirectory files are not flagged.
@@ -671,7 +678,8 @@ mod tests {
             resolved_path: "/workspace/debug.py".to_string(),
             scratch_dir: "/scratch".to_string(),
         };
-        let payload = workspace_scratch_artifact_block("exec_command", &matched, Some("python debug.py"));
+        let payload =
+            workspace_scratch_artifact_block("exec_command", &matched, Some("python debug.py"));
         assert_eq!(payload["status"], "blocked");
         assert_eq!(payload["reason"], "workspace_scratch_artifact");
         assert_eq!(payload["retryable"], true);
@@ -686,7 +694,8 @@ mod tests {
             path: "Cargo.lock".to_string(),
             resolved_path: "/workspace/Cargo.lock".to_string(),
         };
-        let payload = workspace_write_deny_block("write_file", &matched, None, &ctx_with(&["**/*.lock"]));
+        let payload =
+            workspace_write_deny_block("write_file", &matched, None, &ctx_with(&["**/*.lock"]));
         assert_eq!(payload["status"], "blocked");
         assert_eq!(payload["reason"], "workspace_write_deny");
         assert_eq!(payload["retryable"], false);
@@ -696,22 +705,26 @@ mod tests {
     #[test]
     fn gate_functions_return_errors() {
         let ctx = ctx_with(&["**/*.lock"]);
-        assert!(gate_workspace_write_deny(
-            "write_file",
-            Path::new("/workspace/Cargo.lock"),
-            Some("Cargo.lock"),
-            None,
-            &ctx,
-        )
-        .is_err());
-        assert!(gate_workspace_write_deny(
-            "write_file",
-            Path::new("/workspace/src/main.rs"),
-            Some("src/main.rs"),
-            None,
-            &ctx,
-        )
-        .is_ok());
+        assert!(
+            gate_workspace_write_deny(
+                "write_file",
+                Path::new("/workspace/Cargo.lock"),
+                Some("Cargo.lock"),
+                None,
+                &ctx,
+            )
+            .is_err()
+        );
+        assert!(
+            gate_workspace_write_deny(
+                "write_file",
+                Path::new("/workspace/src/main.rs"),
+                Some("src/main.rs"),
+                None,
+                &ctx,
+            )
+            .is_ok()
+        );
     }
 
     #[test]

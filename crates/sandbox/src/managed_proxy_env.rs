@@ -167,27 +167,51 @@ mod tests {
     #[test]
     fn proxy_env_points_everything_at_proxy() {
         let env = managed_proxy_env("127.0.0.1", 8765, false);
-        assert_eq!(env.get("HTTP_PROXY"), Some(&"http://127.0.0.1:8765".to_string()));
-        assert_eq!(env.get("HTTPS_PROXY"), Some(&"http://127.0.0.1:8765".to_string()));
-        assert_eq!(env.get("http_proxy"), Some(&"http://127.0.0.1:8765".to_string()));
-        assert_eq!(env.get("PIP_PROXY"), Some(&"http://127.0.0.1:8765".to_string()));
-        assert_eq!(env.get("ALL_PROXY"), Some(&"http://127.0.0.1:8765".to_string()));
+        assert_eq!(
+            env.get("HTTP_PROXY"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
+        assert_eq!(
+            env.get("HTTPS_PROXY"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
+        assert_eq!(
+            env.get("http_proxy"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
+        assert_eq!(
+            env.get("PIP_PROXY"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
+        assert_eq!(
+            env.get("ALL_PROXY"),
+            Some(&"http://127.0.0.1:8765".to_string())
+        );
     }
 
     #[test]
     fn no_proxy_and_control_vars() {
         let env = managed_proxy_env("127.0.0.1", 8765, false);
-        assert_eq!(env.get("NO_PROXY"), Some(&DEFAULT_NO_PROXY_VALUE.to_string()));
+        assert_eq!(
+            env.get("NO_PROXY"),
+            Some(&DEFAULT_NO_PROXY_VALUE.to_string())
+        );
         assert_eq!(env.get(PROXY_ACTIVE_ENV_KEY), Some(&"1".to_string()));
         assert_eq!(env.get(ALLOW_LOCAL_BINDING_ENV_KEY), Some(&"0".to_string()));
-        assert_eq!(env.get(OPENSQUILLA_NETWORK_ENV_KEY), Some(&"proxy_allowlist".to_string()));
+        assert_eq!(
+            env.get(OPENSQUILLA_NETWORK_ENV_KEY),
+            Some(&"proxy_allowlist".to_string())
+        );
     }
 
     #[test]
     fn windows_git_ssl_optional() {
         let env = managed_proxy_env("127.0.0.1", 8765, true);
         assert_eq!(env.get("GIT_CONFIG_COUNT"), Some(&"1".to_string()));
-        assert_eq!(env.get("GIT_CONFIG_KEY_0"), Some(&"http.sslBackend".to_string()));
+        assert_eq!(
+            env.get("GIT_CONFIG_KEY_0"),
+            Some(&"http.sslBackend".to_string())
+        );
         assert!(!managed_proxy_env("127.0.0.1", 8765, false).contains_key("GIT_CONFIG_COUNT"));
     }
 

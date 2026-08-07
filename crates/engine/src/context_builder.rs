@@ -183,7 +183,10 @@ impl TokenBudgetAllocation {
 
     /// Validate that the fractions sum to at most 1.0.
     pub fn validate(&self) -> Result<()> {
-        let total = self.system_fraction + self.history_fraction + self.tools_fraction + self.output_fraction;
+        let total = self.system_fraction
+            + self.history_fraction
+            + self.tools_fraction
+            + self.output_fraction;
         if total > 1.0 + 1e-9 {
             return Err(opensquilla_core::error::Error::InvalidInput(format!(
                 "Token budget fractions sum to {total:.3}, which exceeds 1.0"
@@ -194,7 +197,10 @@ impl TokenBudgetAllocation {
 
     /// Normalize fractions so they sum to exactly 1.0, scaling proportionally.
     pub fn normalized(mut self) -> Self {
-        let total = self.system_fraction + self.history_fraction + self.tools_fraction + self.output_fraction;
+        let total = self.system_fraction
+            + self.history_fraction
+            + self.tools_fraction
+            + self.output_fraction;
         if total <= 0.0 {
             return Self::default();
         }
@@ -221,7 +227,12 @@ impl TokenBudgetAllocation {
     ) -> Self {
         let total = system + history + tools + output;
         let (s, h, t, o) = if total > 1.0 {
-            (system / total, history / total, tools / total, output / total)
+            (
+                system / total,
+                history / total,
+                tools / total,
+                output / total,
+            )
         } else {
             (system, history, tools, output)
         };
@@ -395,7 +406,9 @@ impl ContextWindowManager {
 
     /// The remaining tokens in the context window.
     pub fn remaining(&self) -> u64 {
-        self.budget.context_window.saturating_sub(self.total_consumed())
+        self.budget
+            .context_window
+            .saturating_sub(self.total_consumed())
     }
 
     /// The available tokens for history, given the current system/tools/output.
@@ -544,10 +557,15 @@ impl SystemPromptAssembler {
         let mut sorted: Vec<&SystemPromptSection> = self.sections.values().collect();
         sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
 
-        let required: Vec<&SystemPromptSection> = sorted.iter().copied().filter(|s| s.required).collect();
-        let optional: Vec<&SystemPromptSection> = sorted.iter().copied().filter(|s| !s.required).collect();
+        let required: Vec<&SystemPromptSection> =
+            sorted.iter().copied().filter(|s| s.required).collect();
+        let optional: Vec<&SystemPromptSection> =
+            sorted.iter().copied().filter(|s| !s.required).collect();
 
-        let required_tokens: u64 = required.iter().map(|s| self.estimator.estimate_text(s.effective_body())).sum();
+        let required_tokens: u64 = required
+            .iter()
+            .map(|s| self.estimator.estimate_text(s.effective_body()))
+            .sum();
         let mut remaining_budget = self.max_tokens.saturating_sub(required_tokens);
 
         // Truncate optional sections (lowest priority first) until they fit.
@@ -562,7 +580,8 @@ impl SystemPromptAssembler {
                 // Try to fit a truncated version of this section.
                 let affordable_tokens = remaining_budget;
                 if affordable_tokens > 10 {
-                    let affordable_chars = (affordable_tokens as f64 * self.estimator.chars_per_token) as usize;
+                    let affordable_chars =
+                        (affordable_tokens as f64 * self.estimator.chars_per_token) as usize;
                     let truncated_body: String = body.chars().take(affordable_chars).collect();
                     if !truncated_body.is_empty() {
                         let mut truncated_section = (*section).clone();
@@ -634,13 +653,15 @@ impl ContextPromptBuilder {
     pub fn new(context_window: u64) -> Self {
         let budget = TokenBudgetAllocation::new(context_window);
         let assembler = SystemPromptAssembler::from_budget(&budget);
-        let window_manager = ContextWindowManager::new(context_window)
-            .with_budget(budget.clone());
+        let window_manager = ContextWindowManager::new(context_window).with_budget(budget.clone());
         Self {
             assembler,
             window_manager,
             workspace_root: None,
-            context_files: DEFAULT_CONTEXT_FILES.iter().map(|s| s.to_string()).collect(),
+            context_files: DEFAULT_CONTEXT_FILES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
@@ -658,7 +679,11 @@ impl ContextPromptBuilder {
 
     /// Set the system prompt fraction of the token budget.
     pub fn with_system_fraction(mut self, frac: f64) -> Self {
-        let budget = self.window_manager.budget.clone().with_system_fraction(frac);
+        let budget = self
+            .window_manager
+            .budget
+            .clone()
+            .with_system_fraction(frac);
         self.window_manager = self.window_manager.with_budget(budget.clone());
         self.assembler = SystemPromptAssembler::from_budget(&budget);
         self
@@ -686,8 +711,8 @@ impl ContextPromptBuilder {
                         .and_then(|n| n.to_str())
                         .unwrap_or(file)
                         .to_string();
-                    let section = SystemPromptSection::new(file.clone(), label, content)
-                        .with_priority(10);
+                    let section =
+                        SystemPromptSection::new(file.clone(), label, content).with_priority(10);
                     self.assembler.add_section(section);
                     debug!(file = %file, "loaded workspace instruction file");
                 }
@@ -829,13 +854,19 @@ impl FragmentBuilder {
 
     /// Build the assembled prompt from the collected fragments.
     pub fn build(self) -> String {
-        let builder = self.fragments.into_iter().fold(ContextBuilder::new(), |b, f| b.add_fragment(f));
+        let builder = self
+            .fragments
+            .into_iter()
+            .fold(ContextBuilder::new(), |b, f| b.add_fragment(f));
         builder.build_prompt()
     }
 
     /// Build the assembled prompt as a system [`Message`].
     pub fn build_message(self) -> Message {
-        let builder = self.fragments.into_iter().fold(ContextBuilder::new(), |b, f| b.add_fragment(f));
+        let builder = self
+            .fragments
+            .into_iter()
+            .fold(ContextBuilder::new(), |b, f| b.add_fragment(f));
         builder.build_message()
     }
 
@@ -891,16 +922,13 @@ mod tests {
     fn test_system_prompt_assembler_priority_order() {
         let mut assembler = SystemPromptAssembler::new(100_000);
         assembler.add_section(
-            SystemPromptSection::new("low", "Low", "low priority body")
-                .with_priority(1),
+            SystemPromptSection::new("low", "Low", "low priority body").with_priority(1),
         );
         assembler.add_section(
-            SystemPromptSection::new("high", "High", "high priority body")
-                .with_priority(10),
+            SystemPromptSection::new("high", "High", "high priority body").with_priority(10),
         );
         assembler.add_section(
-            SystemPromptSection::new("mid", "Mid", "mid priority body")
-                .with_priority(5),
+            SystemPromptSection::new("mid", "Mid", "mid priority body").with_priority(5),
         );
         let prompt = assembler.assemble();
         let high_idx = prompt.find("high priority body").unwrap();
@@ -919,8 +947,12 @@ mod tests {
                 .required(),
         );
         assembler.add_section(
-            SystemPromptSection::new("optional", "Optional", "this is a very long optional section that will not fit")
-                .with_priority(1),
+            SystemPromptSection::new(
+                "optional",
+                "Optional",
+                "this is a very long optional section that will not fit",
+            )
+            .with_priority(1),
         );
         let prompt = assembler.assemble();
         assert!(prompt.contains("must keep this"));
@@ -928,8 +960,7 @@ mod tests {
 
     #[test]
     fn test_context_window_manager_truncate_history() {
-        let manager = ContextWindowManager::new(1000)
-            .with_estimator_ratio(1.0); // 1 char = 1 token for testing
+        let manager = ContextWindowManager::new(1000).with_estimator_ratio(1.0); // 1 char = 1 token for testing
         let messages: Vec<Message> = (0..100)
             .map(|i| Message::user(format!("message {i} that is fairly long")))
             .collect();
@@ -984,15 +1015,12 @@ mod tests {
 
     #[test]
     fn test_window_manager_history_over_budget() {
-        let mut manager = ContextWindowManager::new(1_000)
-            .with_estimator_ratio(1.0);
+        let mut manager = ContextWindowManager::new(1_000).with_estimator_ratio(1.0);
         manager.set_system_tokens(800);
         manager.set_tools_tokens(0);
         manager.set_output_tokens(0);
         // Available history = 1_000 - 800 = 200
-        let messages: Vec<Message> = (0..50)
-            .map(|i| Message::user(format!("msg{i}")))
-            .collect();
+        let messages: Vec<Message> = (0..50).map(|i| Message::user(format!("msg{i}"))).collect();
         manager.update_history(&messages);
         assert!(manager.history_over_budget());
         assert!(manager.history_overage() > 0);
@@ -1002,8 +1030,7 @@ mod tests {
     fn test_build_context_preserves_system() {
         let mut builder = ContextPromptBuilder::new(128_000);
         builder.add_section(
-            SystemPromptSection::new("identity", "Identity", "You are helpful.")
-                .required(),
+            SystemPromptSection::new("identity", "Identity", "You are helpful.").required(),
         );
         let messages = vec![
             Message::system("existing system"),

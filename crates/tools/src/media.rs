@@ -199,9 +199,12 @@ impl ImageTool {
             std::fs::create_dir_all(parent).ok();
         }
 
-        cropped
-            .save(output_path)
-            .map_err(|e| ToolError::new("IMAGE_ERROR", format!("Failed to save cropped image: {}", e)))?;
+        cropped.save(output_path).map_err(|e| {
+            ToolError::new(
+                "IMAGE_ERROR",
+                format!("Failed to save cropped image: {}", e),
+            )
+        })?;
 
         let data = serde_json::json!({
             "original_width": img_width,
@@ -240,7 +243,7 @@ impl ImageTool {
                 return Err(ToolError::invalid_args(format!(
                     "Unsupported rotation: {} degrees (must be a multiple of 90)",
                     other
-                )))
+                )));
             }
         };
 
@@ -248,9 +251,12 @@ impl ImageTool {
             std::fs::create_dir_all(parent).ok();
         }
 
-        rotated
-            .save(output_path)
-            .map_err(|e| ToolError::new("IMAGE_ERROR", format!("Failed to save rotated image: {}", e)))?;
+        rotated.save(output_path).map_err(|e| {
+            ToolError::new(
+                "IMAGE_ERROR",
+                format!("Failed to save rotated image: {}", e),
+            )
+        })?;
 
         let data = serde_json::json!({
             "degrees": degrees,
@@ -268,14 +274,16 @@ impl ImageTool {
         let reader = image::ImageReader::open(path)
             .map_err(|e| ToolError::new("IMAGE_ERROR", format!("Failed to open image: {}", e)))?;
 
-        let format = reader.format().map(|f| format!("{:?}", f)).unwrap_or_default();
+        let format = reader
+            .format()
+            .map(|f| format!("{:?}", f))
+            .unwrap_or_default();
         let (width, height) = reader.into_dimensions().map_err(|e| {
             ToolError::new("IMAGE_ERROR", format!("Failed to read dimensions: {}", e))
         })?;
 
-        let file_metadata = std::fs::metadata(path).map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read metadata: {}", e))
-        })?;
+        let file_metadata = std::fs::metadata(path)
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read metadata: {}", e)))?;
 
         // Basic EXIF-style metadata extraction from JPEG APP1 header.
         let mut exif = serde_json::Map::new();
@@ -294,10 +302,7 @@ impl ImageTool {
                             if tiff_start + 8 <= bytes.len()
                                 && &bytes[tiff_start..tiff_start + 4] == b"Exif"
                             {
-                                exif.insert(
-                                    "exif_version".to_string(),
-                                    serde_json::json!("2.x"),
-                                );
+                                exif.insert("exif_version".to_string(), serde_json::json!("2.x"));
                             }
                             break;
                         } else if marker != 0xD8 && marker != 0xD9 {
@@ -577,7 +582,7 @@ impl Tool for PdfTool {
                     "Read and extract text content from PDF files, or get PDF metadata ",
                     "such as page count. The 'info' operation returns document metadata; ",
                     "the 'extract' operation returns text content page by page.",
-),
+                ),
                 HashMap::from([
                     (
                         "operation".to_string(),
@@ -649,8 +654,10 @@ impl Tool for PdfTool {
                 "pdf_version": "unknown",
             });
 
-            return Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-                .with_data(data));
+            return Ok(ToolOutput::success(
+                serde_json::to_string_pretty(&data).unwrap_or_default(),
+            )
+            .with_data(data));
         }
 
         let page_start = params["page_start"].as_i64().unwrap_or(1).max(1) as u32;
@@ -735,7 +742,7 @@ impl Tool for TtsTool {
                 concat!(
                     "Convert text to speech using an ElevenLabs-compatible TTS API. ",
                     "Returns the audio as a base64-encoded MP3 file.",
-),
+                ),
                 HashMap::from([
                     (
                         "text".to_string(),
@@ -896,7 +903,7 @@ impl Tool for TranscriptionTool {
                 concat!(
                     "Transcribe an audio file to text using an OpenAI-Whisper-compatible API. ",
                     "Supports mp3, mp4, mpeg, mpga, m4a, wav, and webm audio files.",
-),
+                ),
                 HashMap::from([
                     (
                         "path".to_string(),
@@ -904,7 +911,9 @@ impl Tool for TranscriptionTool {
                     ),
                     (
                         "language".to_string(),
-                        ParameterDefinition::string("Optional language hint (ISO-639-1, e.g. 'en')"),
+                        ParameterDefinition::string(
+                            "Optional language hint (ISO-639-1, e.g. 'en')",
+                        ),
                     ),
                     (
                         "prompt".to_string(),
@@ -938,24 +947,24 @@ impl Tool for TranscriptionTool {
         if metadata.len() > 25 * 1024 * 1024 {
             return Err(ToolError::new(
                 "FILE_TOO_LARGE",
-                format!(
-                    "Audio file too large: {} bytes (max 25 MB)",
-                    metadata.len()
-                ),
+                format!("Audio file too large: {} bytes (max 25 MB)", metadata.len()),
             ));
         }
 
         let api_key = self.api_key.as_deref().ok_or_else(|| {
-            ToolError::new("CONFIG_ERROR", "Transcription API key is not configured".to_string())
+            ToolError::new(
+                "CONFIG_ERROR",
+                "Transcription API key is not configured".to_string(),
+            )
         })?;
 
         let language = params["language"].as_str().unwrap_or("");
         let prompt = params["prompt"].as_str().unwrap_or("");
 
         // Read the file bytes.
-        let audio_bytes = tokio::fs::read(&path).await.map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read audio file: {}", e))
-        })?;
+        let audio_bytes = tokio::fs::read(&path)
+            .await
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read audio file: {}", e)))?;
 
         // Determine the mime type from the file extension.
         let ext = path
@@ -977,9 +986,16 @@ impl Tool for TranscriptionTool {
         // Build a multipart request.
         let client = reqwest::Client::new();
         let part = reqwest::multipart::Part::bytes(audio_bytes)
-            .file_name(path.file_name().unwrap_or_default().to_string_lossy().to_string())
+            .file_name(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+            )
             .mime_str(mime_type)
-            .map_err(|e| ToolError::new("HTTP_ERROR", format!("Failed to build multipart: {}", e)))?;
+            .map_err(|e| {
+                ToolError::new("HTTP_ERROR", format!("Failed to build multipart: {}", e))
+            })?;
 
         let mut form = reqwest::multipart::Form::new().part("file", part);
         form = form.text("model", "whisper-1");
@@ -996,7 +1012,9 @@ impl Tool for TranscriptionTool {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| ToolError::new("HTTP_ERROR", format!("Transcription request failed: {}", e)))?;
+            .map_err(|e| {
+                ToolError::new("HTTP_ERROR", format!("Transcription request failed: {}", e))
+            })?;
 
         let status = resp.status().as_u16();
         if !(200..300).contains(&status) {
@@ -1007,10 +1025,9 @@ impl Tool for TranscriptionTool {
             ));
         }
 
-        let body: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| ToolError::new("HTTP_ERROR", format!("Failed to parse response: {}", e)))?;
+        let body: serde_json::Value = resp.json().await.map_err(|e| {
+            ToolError::new("HTTP_ERROR", format!("Failed to parse response: {}", e))
+        })?;
 
         let text = body["text"].as_str().unwrap_or("").to_string();
 

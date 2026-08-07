@@ -339,19 +339,21 @@ mod tests {
     /// actually passes the proxy vars through to the child environment.
     #[test]
     fn filter_env_keeps_allowlisted_proxy_vars() {
-        let mut allowlist = vec![
-            "PATH".to_string(),
-            "HOME".to_string(),
-            "TMPDIR".to_string(),
-        ];
+        let mut allowlist = vec!["PATH".to_string(), "HOME".to_string(), "TMPDIR".to_string()];
         crate::managed_proxy_env::extend_env_allowlist_with_proxy_vars(&mut allowlist, true);
         let policy = SandboxPolicy {
             env_allowlist: allowlist,
             ..SandboxPolicy::default()
         };
         let mut supplied = HashMap::new();
-        supplied.insert("HTTP_PROXY".to_string(), "http://127.0.0.1:8765".to_string());
-        supplied.insert("HTTPS_PROXY".to_string(), "http://127.0.0.1:8765".to_string());
+        supplied.insert(
+            "HTTP_PROXY".to_string(),
+            "http://127.0.0.1:8765".to_string(),
+        );
+        supplied.insert(
+            "HTTPS_PROXY".to_string(),
+            "http://127.0.0.1:8765".to_string(),
+        );
         supplied.insert("GIT_CONFIG_COUNT".to_string(), "1".to_string());
         supplied.insert("SECRET_TOKEN".to_string(), "leak".to_string());
 

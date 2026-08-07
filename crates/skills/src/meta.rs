@@ -163,10 +163,7 @@ pub fn render_bilingual_step(
         .unwrap_or(default_language);
 
     // A step may carry bilingual bodies in metadata.bilingual.
-    let bilingual = step
-        .metadata
-        .get("bilingual")
-        .and_then(|v| v.as_object());
+    let bilingual = step.metadata.get("bilingual").and_then(|v| v.as_object());
     let body = if let Some(map) = bilingual {
         let key = if language.to_ascii_lowercase().starts_with("zh") {
             "zh"
@@ -789,7 +786,10 @@ impl Dag {
         let ids: HashSet<&str> = self.steps.iter().map(|s| s.id.as_str()).collect();
         for edge in &self.edges {
             if !ids.contains(edge.from.as_str()) {
-                issues.push(format!("step '{}' depends on unknown step '{}'", edge.to, edge.from));
+                issues.push(format!(
+                    "step '{}' depends on unknown step '{}'",
+                    edge.to, edge.from
+                ));
             }
         }
         // Cycles: a topological order shorter than the step count implies one.
@@ -801,10 +801,7 @@ impl Dag {
                 .map(|s| s.id.clone())
                 .filter(|id| !ordered.contains(id.as_str()))
                 .collect();
-            issues.push(format!(
-                "dependency cycle among steps: {:?}",
-                in_cycle
-            ));
+            issues.push(format!("dependency cycle among steps: {:?}", in_cycle));
         }
         DagValidation {
             valid: issues.is_empty(),
@@ -825,7 +822,10 @@ impl Dag {
                 .max()
                 .unwrap_or(0);
             depth.insert(step_id.clone(), best + 1);
-            if let Some(best_dep) = deps.iter().max_by_key(|d| depth.get(*d).copied().unwrap_or(0)) {
+            if let Some(best_dep) = deps
+                .iter()
+                .max_by_key(|d| depth.get(*d).copied().unwrap_or(0))
+            {
                 parent.insert(step_id.clone(), best_dep.clone());
             }
         }
@@ -854,7 +854,10 @@ impl Dag {
     /// The total estimated effort across all steps, using each step's
     /// `priority` as a weight (defaulting to 1).
     pub fn total_effort(&self) -> usize {
-        self.steps.iter().map(|s| s.priority.unwrap_or(1).max(1) as usize).sum()
+        self.steps
+            .iter()
+            .map(|s| s.priority.unwrap_or(1).max(1) as usize)
+            .sum()
     }
 
     /// Compute independent clusters (weakly-connected components) of the DAG.
@@ -866,8 +869,14 @@ impl Dag {
             adjacency.entry(step.id.clone()).or_default();
         }
         for edge in &self.edges {
-            adjacency.entry(edge.from.clone()).or_default().push(edge.to.clone());
-            adjacency.entry(edge.to.clone()).or_default().push(edge.from.clone());
+            adjacency
+                .entry(edge.from.clone())
+                .or_default()
+                .push(edge.to.clone());
+            adjacency
+                .entry(edge.to.clone())
+                .or_default()
+                .push(edge.from.clone());
         }
 
         let mut visited: HashSet<String> = HashSet::new();
@@ -2639,7 +2648,10 @@ mod tests {
         let clusters = dag.independent_clusters();
         // Cluster 1 = {a, b}; cluster 2 = {c}; cluster 3 = {d}.
         assert!(clusters.len() >= 2);
-        let ab = clusters.iter().find(|c| c.contains(&"a".to_string())).unwrap();
+        let ab = clusters
+            .iter()
+            .find(|c| c.contains(&"a".to_string()))
+            .unwrap();
         assert!(ab.contains(&"b".to_string()));
     }
 
@@ -2715,14 +2727,11 @@ mod tests {
 
     #[test]
     fn dag_validation_clean_dag() {
-        let steps = vec![
-            SkillStep::new("a", StepType::Agent),
-            {
-                let mut s = SkillStep::new("b", StepType::LlmChat);
-                s.depends_on = Some(vec!["a".to_string()]);
-                s
-            },
-        ];
+        let steps = vec![SkillStep::new("a", StepType::Agent), {
+            let mut s = SkillStep::new("b", StepType::LlmChat);
+            s.depends_on = Some(vec!["a".to_string()]);
+            s
+        }];
         let dag = Dag::new(&steps).unwrap();
         assert!(dag.validate().valid);
     }

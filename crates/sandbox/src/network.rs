@@ -12,9 +12,7 @@
 //! - `HOST` — direct host networking (the proxy is not used).
 
 use crate::default_allowlist::default_allowlist_source;
-use crate::domain_validation::{
-    DomainStatus, domain_matches, validate_domain_pattern,
-};
+use crate::domain_validation::{DomainStatus, domain_matches, validate_domain_pattern};
 use crate::package_bundles::expand_package_bundle;
 use crate::policy::NetworkPolicy;
 use chrono::{DateTime, Utc};
@@ -259,9 +257,7 @@ impl NetworkProxy {
         match *self.mode.read().await {
             NetworkMode::Host => true,
             NetworkMode::None => false,
-            NetworkMode::ProxyAllowlist => {
-                self.allowlist_hits(domain).await
-            }
+            NetworkMode::ProxyAllowlist => self.allowlist_hits(domain).await,
         }
     }
 
@@ -1286,7 +1282,9 @@ mod tests {
     #[tokio::test]
     async fn default_allowlist_opt_in() {
         let proxy = NetworkProxy::new(NetworkConfig::default()).await.unwrap();
-        proxy.apply_policy(&NetworkPolicy::ProxyAllowlist(vec![]), &[]).await;
+        proxy
+            .apply_policy(&NetworkPolicy::ProxyAllowlist(vec![]), &[])
+            .await;
         // Off by default: an empty allowlist denies github.com.
         assert!(!proxy.is_domain_allowed("github.com").await);
         // Opt in: the built-in developer allowlist is honoured.
@@ -1300,7 +1298,9 @@ mod tests {
     #[tokio::test]
     async fn package_bundles_opt_in() {
         let proxy = NetworkProxy::new(NetworkConfig::default()).await.unwrap();
-        proxy.apply_policy(&NetworkPolicy::ProxyAllowlist(vec![]), &[]).await;
+        proxy
+            .apply_policy(&NetworkPolicy::ProxyAllowlist(vec![]), &[])
+            .await;
         assert!(!proxy.is_domain_allowed("pypi.org").await);
         proxy
             .set_enabled_bundles(&["python-package-install".to_string()])

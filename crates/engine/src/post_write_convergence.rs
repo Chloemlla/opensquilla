@@ -81,8 +81,14 @@ impl PostWriteConvergenceDecision {
     /// Render the decision as a JSON object.
     pub fn to_dict(&self) -> serde_json::Value {
         let mut obj = serde_json::Map::new();
-        obj.insert("action".into(), serde_json::Value::String(self.action.as_str().into()));
-        obj.insert("reason".into(), serde_json::Value::String(self.reason.clone()));
+        obj.insert(
+            "action".into(),
+            serde_json::Value::String(self.action.as_str().into()),
+        );
+        obj.insert(
+            "reason".into(),
+            serde_json::Value::String(self.reason.clone()),
+        );
         obj.insert("details".into(), self.details.clone());
         serde_json::Value::Object(obj)
     }
@@ -125,10 +131,18 @@ impl PostWriteConvergenceTracker {
     }
 
     /// Observe one convergence sample and return a decision.
-    pub fn observe(&mut self, observation: &PostWriteConvergenceObservation) -> PostWriteConvergenceDecision {
+    pub fn observe(
+        &mut self,
+        observation: &PostWriteConvergenceObservation,
+    ) -> PostWriteConvergenceDecision {
         if !self.eligible(observation) {
             self.reset();
-            return self.decision(PostWriteConvergenceAction::Observe, "not_eligible", observation, &[]);
+            return self.decision(
+                PostWriteConvergenceAction::Observe,
+                "not_eligible",
+                observation,
+                &[],
+            );
         }
 
         if let Some(previous) = &self.diff_fingerprint {
@@ -142,7 +156,10 @@ impl PostWriteConvergenceTracker {
                     PostWriteConvergenceAction::Reset,
                     "diff_fingerprint_changed",
                     observation,
-                    &[("previous_diff_fingerprint", serde_json::Value::String(previous))],
+                    &[(
+                        "previous_diff_fingerprint",
+                        serde_json::Value::String(previous),
+                    )],
                 );
             }
         }
@@ -218,10 +235,22 @@ impl PostWriteConvergenceTracker {
         extra: &[(&str, serde_json::Value)],
     ) -> PostWriteConvergenceDecision {
         let mut details = serde_json::Map::new();
-        details.insert("iteration".into(), serde_json::Value::from(observation.iteration));
-        details.insert("provider_call_count".into(), serde_json::Value::from(observation.provider_call_count));
-        details.insert("workspace_write_count".into(), serde_json::Value::from(observation.workspace_write_count));
-        details.insert("changed_receipt_count".into(), serde_json::Value::from(observation.changed_receipt_count));
+        details.insert(
+            "iteration".into(),
+            serde_json::Value::from(observation.iteration),
+        );
+        details.insert(
+            "provider_call_count".into(),
+            serde_json::Value::from(observation.provider_call_count),
+        );
+        details.insert(
+            "workspace_write_count".into(),
+            serde_json::Value::from(observation.workspace_write_count),
+        );
+        details.insert(
+            "changed_receipt_count".into(),
+            serde_json::Value::from(observation.changed_receipt_count),
+        );
         details.insert(
             "diff_fingerprint".into(),
             observation
@@ -232,12 +261,30 @@ impl PostWriteConvergenceTracker {
         );
         details.insert(
             "diff_paths".into(),
-            serde_json::Value::Array(observation.diff_paths.iter().map(|p| serde_json::Value::String(p.clone())).collect()),
+            serde_json::Value::Array(
+                observation
+                    .diff_paths
+                    .iter()
+                    .map(|p| serde_json::Value::String(p.clone()))
+                    .collect(),
+            ),
         );
-        details.insert("stable_count".into(), serde_json::Value::from(self.stable_count));
-        details.insert("warn_threshold".into(), serde_json::Value::from(self.warn_threshold));
-        details.insert("finalize_after_warning".into(), serde_json::Value::from(self.finalize_after_warning));
-        details.insert("warned_at_count".into(), serde_json::Value::from(self.warned_at_count));
+        details.insert(
+            "stable_count".into(),
+            serde_json::Value::from(self.stable_count),
+        );
+        details.insert(
+            "warn_threshold".into(),
+            serde_json::Value::from(self.warn_threshold),
+        );
+        details.insert(
+            "finalize_after_warning".into(),
+            serde_json::Value::from(self.finalize_after_warning),
+        );
+        details.insert(
+            "warned_at_count".into(),
+            serde_json::Value::from(self.warned_at_count),
+        );
         for (key, value) in extra {
             details.insert((*key).to_string(), value.clone());
         }
@@ -287,14 +334,20 @@ mod tests {
         }
         let warn = tracker.observe(&obs);
         assert_eq!(warn.action, PostWriteConvergenceAction::Warn);
-        assert_eq!(warn.reason, "stable_verified_workspace_diff_continued_activity");
+        assert_eq!(
+            warn.reason,
+            "stable_verified_workspace_diff_continued_activity"
+        );
 
         // Two more stable observations finalize.
         let observe_again = tracker.observe(&obs);
         assert_eq!(observe_again.action, PostWriteConvergenceAction::Observe);
         let finalize = tracker.observe(&obs);
         assert_eq!(finalize.action, PostWriteConvergenceAction::Finalize);
-        assert_eq!(finalize.reason, "stable_verified_workspace_diff_finalization");
+        assert_eq!(
+            finalize.reason,
+            "stable_verified_workspace_diff_finalization"
+        );
     }
 
     #[test]

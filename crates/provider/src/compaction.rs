@@ -61,14 +61,12 @@ pub const BOUNDARY_PROJECTED_RESULT_PREFIXES: [&str; 3] = [
 // Environment switches (parity: request_proof.py:46-55)
 // ---------------------------------------------------------------------------
 
-pub const TINY_COMPACTION_GUARD_ENV: &str =
-    "OPENSQUILLA_PROVIDER_COMPACTION_TINY_GUARD_CHARS";
+pub const TINY_COMPACTION_GUARD_ENV: &str = "OPENSQUILLA_PROVIDER_COMPACTION_TINY_GUARD_CHARS";
 pub const PROTECT_RECENT_ASSISTANT_ENV: &str =
     "OPENSQUILLA_PROVIDER_COMPACTION_PROTECT_RECENT_ASSISTANT";
 pub const PROTECT_RECENT_RESULTS_ENV: &str =
     "OPENSQUILLA_PROVIDER_COMPACTION_PROTECT_RECENT_RESULTS";
-pub const PROTECT_ERROR_RESULTS_ENV: &str =
-    "OPENSQUILLA_PROVIDER_COMPACTION_PROTECT_ERROR_RESULTS";
+pub const PROTECT_ERROR_RESULTS_ENV: &str = "OPENSQUILLA_PROVIDER_COMPACTION_PROTECT_ERROR_RESULTS";
 pub const PROTECT_UNRESOLVED_RESULTS_ENV: &str =
     "OPENSQUILLA_PROVIDER_COMPACTION_PROTECT_UNRESOLVED_RESULTS";
 pub const SKIP_PROJECTED_ENV: &str = "OPENSQUILLA_PROVIDER_COMPACTION_SKIP_PROJECTED";
@@ -110,7 +108,10 @@ fn env_usize(name: &str, default: usize) -> usize {
             if trimmed.is_empty() {
                 default
             } else {
-                trimmed.parse::<i64>().map(|v| v.max(0) as usize).unwrap_or(default)
+                trimmed
+                    .parse::<i64>()
+                    .map(|v| v.max(0) as usize)
+                    .unwrap_or(default)
             }
         }
         Err(_) => default,
@@ -130,7 +131,10 @@ fn env_protect_recent_results() -> usize {
             } else if FALSE_VALUES.contains(&trimmed.to_ascii_lowercase().as_str()) {
                 0
             } else {
-                trimmed.parse::<i64>().map(|v| v.max(0) as usize).unwrap_or(default)
+                trimmed
+                    .parse::<i64>()
+                    .map(|v| v.max(0) as usize)
+                    .unwrap_or(default)
             }
         }
         Err(_) => default,
@@ -215,9 +219,8 @@ impl CompactionConfig {
         let omitted = chars_len(value)
             .saturating_sub(chars_len(&head))
             .saturating_sub(chars_len(&tail));
-        let compacted = format!(
-            "{head}\n\n[provider_request_compacted: omitted {omitted} chars]\n\n{tail}"
-        );
+        let compacted =
+            format!("{head}\n\n[provider_request_compacted: omitted {omitted} chars]\n\n{tail}");
         if keep_original_for_never_worse(self, value, &compacted) {
             return value.to_string();
         }
@@ -547,7 +550,13 @@ fn head_chars(s: &str, n: usize) -> String {
 }
 
 fn tail_chars(s: &str, n: usize) -> String {
-    s.chars().rev().take(n).collect::<Vec<char>>().into_iter().rev().collect()
+    s.chars()
+        .rev()
+        .take(n)
+        .collect::<Vec<char>>()
+        .into_iter()
+        .rev()
+        .collect()
 }
 
 fn sha256_hex(s: &str) -> String {

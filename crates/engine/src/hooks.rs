@@ -316,7 +316,12 @@ pub trait PreToolHook: Send + Sync + fmt::Debug {
 #[async_trait]
 pub trait PostToolHook: Send + Sync + fmt::Debug {
     /// Called after the tool call. May modify the result.
-    async fn post_tool(&self, turn_id: &str, call: &ToolCall, result: ToolResult) -> Result<ToolResult>;
+    async fn post_tool(
+        &self,
+        turn_id: &str,
+        call: &ToolCall,
+        result: ToolResult,
+    ) -> Result<ToolResult>;
 
     /// The hook's priority (higher runs earlier).
     fn priority(&self) -> i32 {
@@ -677,7 +682,12 @@ impl MaxResultLengthHook {
 
 #[async_trait]
 impl PostToolHook for MaxResultLengthHook {
-    async fn post_tool(&self, _turn_id: &str, _call: &ToolCall, result: ToolResult) -> Result<ToolResult> {
+    async fn post_tool(
+        &self,
+        _turn_id: &str,
+        _call: &ToolCall,
+        result: ToolResult,
+    ) -> Result<ToolResult> {
         if result.content.chars().count() > self.max_chars {
             let truncated: String = result.content.chars().take(self.max_chars).collect();
             Ok(ToolResult {

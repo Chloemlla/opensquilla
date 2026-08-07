@@ -4,7 +4,6 @@
 //! inspecting [`SandboxPolicy`] instances, selecting isolation levels for
 //! operations, and previewing the policy that would apply to a given run.
 
-use std::sync::Arc;
 use opensquilla_core::error::AppError;
 use opensquilla_sandbox::policy::{
     AuditEntry, FilesystemPolicy, NetworkPolicy, ResourceLimits, SandboxLevel, SandboxPolicy,
@@ -12,8 +11,9 @@ use opensquilla_sandbox::policy::{
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use crate::rpc::{rpc_handler, RpcRegistry};
+use crate::rpc::{RpcRegistry, rpc_handler};
 
 /// An in-memory store of named sandbox policies keyed by run/context id.
 #[derive(Clone, Default)]
@@ -120,7 +120,10 @@ pub fn register_sandbox_handlers(registry: &mut RpcRegistry, store: SandboxConte
 
                 let overrides = if params.get("overrides").is_some() {
                     let policy: SandboxPolicy = serde_json::from_value(
-                        params.get("overrides").cloned().unwrap_or(serde_json::Value::Null),
+                        params
+                            .get("overrides")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
                     )
                     .map_err(|e| AppError::bad_request(format!("Invalid overrides: {e}")))?;
                     Some(policy)
@@ -308,7 +311,10 @@ mod tests {
         register_sandbox_handlers(&mut registry, store);
 
         let r = registry
-            .dispatch("sandbox.select_level", serde_json::json!({"operation": "code_execution"}))
+            .dispatch(
+                "sandbox.select_level",
+                serde_json::json!({"operation": "code_execution"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["level"], "STRICT");
@@ -322,7 +328,10 @@ mod tests {
         assert!(r.unwrap().is_ok());
 
         let r = registry
-            .dispatch("sandbox.get_policy", serde_json::json!({"context_id": "ctx-1"}))
+            .dispatch(
+                "sandbox.get_policy",
+                serde_json::json!({"context_id": "ctx-1"}),
+            )
             .await;
         assert!(r.unwrap().is_ok());
 
@@ -349,7 +358,10 @@ mod tests {
         assert!(r.unwrap().is_ok());
 
         let r = registry
-            .dispatch("sandbox.get_result", serde_json::json!({"context_id": "run-1"}))
+            .dispatch(
+                "sandbox.get_result",
+                serde_json::json!({"context_id": "run-1"}),
+            )
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["stdout"], "hello");

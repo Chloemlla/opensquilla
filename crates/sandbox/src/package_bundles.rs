@@ -91,7 +91,10 @@ pub const PACKAGE_BUNDLES: &[(&str, &[&str])] = &[
 
 /// All bundle ids, in catalog order.
 pub fn default_package_bundle_ids() -> Vec<String> {
-    PACKAGE_BUNDLES.iter().map(|(id, _)| (*id).to_string()).collect()
+    PACKAGE_BUNDLES
+        .iter()
+        .map(|(id, _)| (*id).to_string())
+        .collect()
 }
 
 /// Expand a bundle id into its domains. Unknown or empty ids yield an empty

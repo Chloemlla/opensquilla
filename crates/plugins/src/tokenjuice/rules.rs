@@ -272,10 +272,7 @@ pub fn parse_rule(value: &Value) -> Option<Rule> {
         .and_then(Value::as_str)
         .unwrap_or("postKeep")
         .to_string();
-    let priority = obj
-        .get("priority")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
+    let priority = obj.get("priority").and_then(Value::as_i64).unwrap_or(0);
 
     Some(Rule {
         id: id.to_string(),
@@ -314,23 +311,21 @@ pub fn load_rules(dir: &Path) -> Vec<Rule> {
         tracing::debug!(target: "tokenjuice", dir = %dir.display(), "rules directory absent; using no file rules");
         return rules;
     }
-    iter_json_files(dir, &mut |path| {
-        match fs::read_to_string(path) {
-            Ok(text) => match serde_json::from_str::<Value>(&text) {
-                Ok(value) => {
-                    if let Some(rule) = parse_rule(&value) {
-                        rules.push(rule);
-                    } else {
-                        tracing::warn!(target: "tokenjuice", path = %path.display(), "rule file missing id; skipped");
-                    }
+    iter_json_files(dir, &mut |path| match fs::read_to_string(path) {
+        Ok(text) => match serde_json::from_str::<Value>(&text) {
+            Ok(value) => {
+                if let Some(rule) = parse_rule(&value) {
+                    rules.push(rule);
+                } else {
+                    tracing::warn!(target: "tokenjuice", path = %path.display(), "rule file missing id; skipped");
                 }
-                Err(err) => {
-                    tracing::warn!(target: "tokenjuice", path = %path.display(), error = %err, "invalid rule JSON; skipped");
-                }
-            },
-            Err(err) => {
-                tracing::warn!(target: "tokenjuice", path = %path.display(), error = %err, "unreadable rule file; skipped");
             }
+            Err(err) => {
+                tracing::warn!(target: "tokenjuice", path = %path.display(), error = %err, "invalid rule JSON; skipped");
+            }
+        },
+        Err(err) => {
+            tracing::warn!(target: "tokenjuice", path = %path.display(), error = %err, "unreadable rule file; skipped");
         }
     });
     sort_rules(rules)
@@ -344,7 +339,10 @@ fn iter_json_files(root: &Path, f: &mut dyn FnMut(&Path)) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if name == "fixtures" {
             continue;
         }
@@ -364,10 +362,7 @@ pub fn sort_rules(mut rules: Vec<Rule>) -> Vec<Rule> {
         match (fallback(a), fallback(b)) {
             (false, true) => std::cmp::Ordering::Less,
             (true, false) => std::cmp::Ordering::Greater,
-            _ => b
-                .priority
-                .cmp(&a.priority)
-                .then_with(|| a.id.cmp(&b.id)),
+            _ => b.priority.cmp(&a.priority).then_with(|| a.id.cmp(&b.id)),
         }
     });
     rules
@@ -379,7 +374,8 @@ mod tests {
     use std::io::Write;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let base = std::env::temp_dir().join(format!("tokenjuice-rules-{}-{}", std::process::id(), name));
+        let base =
+            std::env::temp_dir().join(format!("tokenjuice-rules-{}-{}", std::process::id(), name));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base
@@ -393,7 +389,10 @@ mod tests {
         // Higher priority (help=25) precedes lower priority (fallback=0).
         let help_idx = rules.iter().position(|r| r.id == "generic/help").unwrap();
         let status_idx = rules.iter().position(|r| r.id == "git/status").unwrap();
-        let fallback_idx = rules.iter().position(|r| r.id == "generic/fallback").unwrap();
+        let fallback_idx = rules
+            .iter()
+            .position(|r| r.id == "generic/fallback")
+            .unwrap();
         assert!(help_idx < fallback_idx);
         assert!(status_idx < fallback_idx);
     }
@@ -401,7 +400,10 @@ mod tests {
     #[test]
     fn default_rules_parse_match_output_alias() {
         let rules = default_rules();
-        let npm = rules.iter().find(|r| r.id == "install/npm-install").unwrap();
+        let npm = rules
+            .iter()
+            .find(|r| r.id == "install/npm-install")
+            .unwrap();
         assert_eq!(npm.output_matches.len(), 1);
         assert_eq!(npm.output_matches[0].message, "npm install: up to date");
     }

@@ -22,7 +22,7 @@ use crate::registry::{
 use async_trait::async_trait;
 use calamine::Reader;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -481,7 +481,7 @@ impl Tool for GeneratePdfTool {
                     "Create a simple PDF report from structured text sections and save it to the ",
                     "workspace. Use this for channel PDF requests instead of returning PDF ",
                     "source text.",
-),
+                ),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -606,7 +606,7 @@ impl Tool for GenerateXlsxTool {
                 concat!(
                     "Create an XLSX workbook from structured sheets and save it to the workspace. ",
                     "Use this for spreadsheet requests from channels.",
-),
+                ),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -802,7 +802,7 @@ impl Tool for GenerateJsonTool {
                 concat!(
                     "Validate and write a JSON document to the workspace. The content is parsed ",
                     "and re-serialized (pretty-printed) so invalid JSON fails fast.",
-),
+                ),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -1075,7 +1075,7 @@ impl Tool for GenerateHtmlTool {
                 concat!(
                     "Generate an HTML document from structured content (title, body, paragraphs, ",
                     "list, table) and save it to the workspace.",
-),
+                ),
                 HashMap::from([
                     (
                         "filename".to_string(),
@@ -1173,9 +1173,8 @@ pub struct XlsxSheet {
 
 /// Read an Excel workbook using calamine and convert cells to JSON values.
 fn read_xlsx(path: &Path, sheet_filter: Option<&[String]>) -> ToolResult<Vec<XlsxSheet>> {
-    let mut workbook = calamine::open_workbook_auto(path).map_err(|e| {
-        ToolError::new("XLSX_ERROR", format!("Failed to open workbook: {}", e))
-    })?;
+    let mut workbook = calamine::open_workbook_auto(path)
+        .map_err(|e| ToolError::new("XLSX_ERROR", format!("Failed to open workbook: {}", e)))?;
 
     // Determine which sheets to read.
     let sheets: Vec<String> = match sheet_filter {
@@ -1190,7 +1189,10 @@ fn read_xlsx(path: &Path, sheet_filter: Option<&[String]>) -> ToolResult<Vec<Xls
     let mut result = Vec::new();
     for name in &sheets {
         let range = workbook.worksheet_range(name).map_err(|e| {
-            ToolError::new("XLSX_ERROR", format!("Failed to read sheet '{}': {}", name, e))
+            ToolError::new(
+                "XLSX_ERROR",
+                format!("Failed to read sheet '{}': {}", name, e),
+            )
         })?;
 
         let mut data: Vec<Vec<Value>> = Vec::new();
@@ -1262,7 +1264,7 @@ impl Tool for ReadXlsxTool {
                 concat!(
                     "Read an Excel workbook (.xlsx or .xls) and return its contents as JSON. ",
                     "Optionally filter to specific sheets. Useful for inspecting spreadsheets.",
-),
+                ),
                 HashMap::from([
                     (
                         "path".to_string(),
@@ -1290,10 +1292,8 @@ impl Tool for ReadXlsxTool {
 
         let path = self.base.resolve(path_str)?;
 
-        let sheets_filter: Option<Vec<String>> = params
-            .get("sheets")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
+        let sheets_filter: Option<Vec<String>> =
+            params.get("sheets").and_then(|v| v.as_array()).map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str().map(String::from))
                     .collect()
@@ -1410,7 +1410,7 @@ impl Tool for ReadCsvTool {
                 concat!(
                     "Read and parse a CSV file. Returns the parsed rows as JSON, ",
                     "optionally using the first row as headers.",
-),
+                ),
                 HashMap::from([
                     (
                         "path".to_string(),
@@ -1447,7 +1447,10 @@ impl Tool for ReadCsvTool {
             .await
             .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read CSV: {e}")))?;
 
-        let has_headers = params.get("has_headers").and_then(|v| v.as_bool()).unwrap_or(true);
+        let has_headers = params
+            .get("has_headers")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         let delimiter = params
             .get("delimiter")
             .and_then(|v| v.as_str())
@@ -1457,13 +1460,12 @@ impl Tool for ReadCsvTool {
         let rows = parse_csv(&content, delimiter);
         let column_count = rows.first().map(|r| r.len()).unwrap_or(0);
 
-        let (headers, data_rows): (Option<Vec<String>>, Vec<Vec<String>>) = if has_headers
-            && !rows.is_empty()
-        {
-            (Some(rows[0].clone()), rows[1..].to_vec())
-        } else {
-            (None, rows)
-        };
+        let (headers, data_rows): (Option<Vec<String>>, Vec<Vec<String>>) =
+            if has_headers && !rows.is_empty() {
+                (Some(rows[0].clone()), rows[1..].to_vec())
+            } else {
+                (None, rows)
+            };
 
         let records: Vec<Value> = if let Some(ref headers) = headers {
             data_rows
@@ -1484,9 +1486,7 @@ impl Tool for ReadCsvTool {
         } else {
             data_rows
                 .iter()
-                .map(|row| {
-                    Value::Array(row.iter().map(|c| Value::String(c.clone())).collect())
-                })
+                .map(|row| Value::Array(row.iter().map(|c| Value::String(c.clone())).collect()))
                 .collect()
         };
 
@@ -1727,7 +1727,10 @@ mod tests {
 
     #[test]
     fn test_escape_html() {
-        assert_eq!(escape_html("<script>&\"'"), "&lt;script&gt;&amp;&quot;&#39;");
+        assert_eq!(
+            escape_html("<script>&\"'"),
+            "&lt;script&gt;&amp;&quot;&#39;"
+        );
     }
 
     #[test]

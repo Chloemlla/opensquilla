@@ -143,16 +143,18 @@ pub async fn disable_skill(name: String) -> Result<()> {
 /// Update an installed skill.
 pub async fn update_skill(name: String) -> Result<()> {
     let hub = build_hub()?;
-    let results = hub
-        .update(Some(&name))
-        .await;
+    let results = hub.update(Some(&name)).await;
     for result in results {
         match result {
             Ok(r) => {
                 if r.success {
                     println!("{} Skill '{}' updated.", crate::table::ok(), r.name);
                 } else {
-                    println!("{} Skill update failed: {}", crate::table::fail(), r.message);
+                    println!(
+                        "{} Skill update failed: {}",
+                        crate::table::fail(),
+                        r.message
+                    );
                 }
             }
             Err(e) => {
@@ -176,7 +178,10 @@ pub async fn info_skill(name: String) -> Result<()> {
     crate::table::KeyValue::new()
         .entry("Description", skill.description.clone())
         .entry("Layer", skill.layer.to_string())
-        .entry("Version", skill.version.as_deref().unwrap_or("—").to_string())
+        .entry(
+            "Version",
+            skill.version.as_deref().unwrap_or("—").to_string(),
+        )
         .entry("Author", skill.author.as_deref().unwrap_or("—").to_string())
         .entry("Kind", format!("{:?}", skill.kind))
         .entry("Tags", skill.tags.join(", "))

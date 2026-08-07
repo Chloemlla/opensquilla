@@ -41,8 +41,8 @@ pub mod whitelist;
 pub mod windows;
 
 pub use command_rules::{
-    CommandAssessment, CommandRule, RiskTier, assess_command, assess_with_rules,
-    command_basename, default_command_rules, profile_id_for_command,
+    CommandAssessment, CommandRule, RiskTier, assess_command, assess_with_rules, command_basename,
+    default_command_rules, profile_id_for_command,
 };
 pub use config::{
     ApprovalsReviewer, Backend, EffectiveMode, NetworkDefault, SandboxSettings, SecurityLevel,
@@ -54,7 +54,9 @@ pub use default_allowlist::{
 pub use denial_attribution::{SandboxRunOutcome, is_likely_sandbox_denied};
 pub use destructive_intents::{extract_intent, extract_intents};
 pub use directory_listing::format_directory_entry;
-pub use domain_validation::{DomainDecision, DomainStatus, domain_matches, normalize_domain, validate_domain_pattern};
+pub use domain_validation::{
+    DomainDecision, DomainStatus, domain_matches, normalize_domain, validate_domain_pattern,
+};
 pub use error::{SandboxError, SandboxErrorKind};
 pub use governance::{
     ApprovalQueue, ApprovalRequest, ApprovalStatus, ApproverChannel, EscalationPolicy,
@@ -92,22 +94,22 @@ pub use profile::{ProfileNotes, ProfileRegistry, SandboxProfile};
 pub use run_mode::{
     RunMode, RunModeConfigInput, RunModeConfigPatch, RunModeError, approval_behavior,
     config_run_mode, display_name, execution_target, full_mode_is_explicit,
-    legacy_state_to_run_mode, normalize_run_mode, project_default_run_mode,
-    run_mode_config_patch, sandbox_runtime_capability_mode,
+    legacy_state_to_run_mode, normalize_run_mode, project_default_run_mode, run_mode_config_patch,
+    sandbox_runtime_capability_mode,
 };
 pub use run_mode_policy::{
     Principal, allowed_run_modes_for_principal, coerce_run_mode_for_principal,
-    default_run_mode_for_principal, hello_auth_payload, principal_payload, run_mode_allowed_for_principal,
-    run_mode_policy_payload,
+    default_run_mode_for_principal, hello_auth_payload, principal_payload,
+    run_mode_allowed_for_principal, run_mode_policy_payload,
 };
 pub use sandbox_manager::{
     ManagedSandbox, RunRequest, SandboxBuilder, SandboxManager, SandboxOutcome,
 };
-pub use seatbelt::operations::{SeatbeltCategory, SeatbeltOperation};
 pub use seatbelt::SeatbeltProfile;
+pub use seatbelt::operations::{SeatbeltCategory, SeatbeltOperation};
 pub use seccomp::{
-    AllowRule, ArgComparator, BpfProgram, ComparisonOp, SeccompAction, SeccompInstruction,
-    SeccompPolicy, SeccompFilterBuilder, syscall_name_to_number,
+    AllowRule, ArgComparator, BpfProgram, ComparisonOp, SeccompAction, SeccompFilterBuilder,
+    SeccompInstruction, SeccompPolicy, syscall_name_to_number,
 };
 pub use sensitive_paths::{
     build_block_envelope, is_sensitive_path, linux_runtime_sensitive_deny_roots,
@@ -117,7 +119,10 @@ pub use stale_output_cache::{
     CacheEntry, NullStaleOutputCache, StaleOutputCache, TtlPolicy, VerifiedEntry,
     VerifiedOutputCache, content_hash,
 };
-pub use supervisor::{DenialTracker, ResourcePoller, ResourceSample, SpawnOptions, SupervisedChild, SupervisedRun, spawn_supervised};
+pub use supervisor::{
+    DenialTracker, ResourcePoller, ResourceSample, SpawnOptions, SupervisedChild, SupervisedRun,
+    spawn_supervised,
+};
 pub use whitelist::{AccessIntent, AccessMode, AccessVerdict, PathRule, PathWhitelist};
 pub use windows::WindowsSandbox;
 

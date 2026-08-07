@@ -207,9 +207,10 @@ impl SessionBrancher {
         turn_id: &Uuid,
         config: &BranchConfig,
     ) -> CoreResult<Session> {
-        let source = self.manager.get(source_id)?.ok_or_else(|| {
-            CoreError::NotFound(format!("Session {}", source_id))
-        })?;
+        let source = self
+            .manager
+            .get(source_id)?
+            .ok_or_else(|| CoreError::NotFound(format!("Session {}", source_id)))?;
 
         let entries = self.manager.full_transcript(source_id)?;
         let branch_idx = entries
@@ -218,9 +219,10 @@ impl SessionBrancher {
             .ok_or_else(|| CoreError::NotFound(format!("Transcript entry {}", turn_id)))?;
 
         let now = Utc::now();
-        let name = config.name.clone().unwrap_or_else(|| {
-            format!("Branch of {} @ {}", source.name, short_id(turn_id))
-        });
+        let name = config
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Branch of {} @ {}", source.name, short_id(turn_id)));
 
         let mut metadata = serde_json::json!({
             "branch_turn": turn_id.to_string(),
@@ -270,7 +272,11 @@ impl SessionBrancher {
 
     /// Branch from the latest entry in the parent session (equivalent to a
     /// full fork).
-    pub fn branch_from_latest(&self, source_id: &Uuid, config: &BranchConfig) -> CoreResult<Session> {
+    pub fn branch_from_latest(
+        &self,
+        source_id: &Uuid,
+        config: &BranchConfig,
+    ) -> CoreResult<Session> {
         let entries = self.manager.full_transcript(source_id)?;
         let latest = entries
             .last()
@@ -279,10 +285,15 @@ impl SessionBrancher {
     }
 
     /// Branch from the beginning of the session (an empty child).
-    pub fn branch_from_start(&self, source_id: &Uuid, config: &BranchConfig) -> CoreResult<Session> {
-        let source = self.manager.get(source_id)?.ok_or_else(|| {
-            CoreError::NotFound(format!("Session {}", source_id))
-        })?;
+    pub fn branch_from_start(
+        &self,
+        source_id: &Uuid,
+        config: &BranchConfig,
+    ) -> CoreResult<Session> {
+        let source = self
+            .manager
+            .get(source_id)?
+            .ok_or_else(|| CoreError::NotFound(format!("Session {}", source_id)))?;
         let now = Utc::now();
         let name = config
             .name
@@ -336,11 +347,14 @@ impl SessionBrancher {
                 .unwrap_or(0)
         };
 
-        let common_prefix: Vec<TranscriptEntry> = parent_entries[..branch_idx.min(parent_entries.len())].to_vec();
-        let parent_only: Vec<TranscriptEntry> = parent_entries[branch_idx.min(parent_entries.len())..].to_vec();
+        let common_prefix: Vec<TranscriptEntry> =
+            parent_entries[..branch_idx.min(parent_entries.len())].to_vec();
+        let parent_only: Vec<TranscriptEntry> =
+            parent_entries[branch_idx.min(parent_entries.len())..].to_vec();
 
         let common_count = common_prefix.len();
-        let child_only: Vec<TranscriptEntry> = child_entries.iter().skip(common_count).cloned().collect();
+        let child_only: Vec<TranscriptEntry> =
+            child_entries.iter().skip(common_count).cloned().collect();
 
         let common_tokens: u64 = common_prefix.iter().map(|e| e.token_count).sum();
         let parent_only_tokens: u64 = parent_only.iter().map(|e| e.token_count).sum();
@@ -369,9 +383,10 @@ impl SessionBrancher {
         child_id: &Uuid,
         archive_child: bool,
     ) -> CoreResult<MergeResult> {
-        let parent = self.manager.get(parent_id)?.ok_or_else(|| {
-            CoreError::NotFound(format!("Session {}", parent_id))
-        })?;
+        let parent = self
+            .manager
+            .get(parent_id)?
+            .ok_or_else(|| CoreError::NotFound(format!("Session {}", parent_id)))?;
         if parent.status == SessionStatus::Killed {
             return Err(CoreError::InvalidInput(
                 "Cannot merge into a killed session".into(),
@@ -655,9 +670,7 @@ mod tests {
             .unwrap();
 
         let before = mgr.full_transcript(&parent.id).unwrap().len();
-        let result = brancher
-            .merge_branch(&parent.id, &child.id, true)
-            .unwrap();
+        let result = brancher.merge_branch(&parent.id, &child.id, true).unwrap();
         let after = mgr.full_transcript(&parent.id).unwrap().len();
 
         assert!(!result.is_noop());

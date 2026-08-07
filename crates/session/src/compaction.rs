@@ -443,7 +443,11 @@ impl CompactionPlanner {
     /// Estimate the full context-window usage of a session: the active
     /// transcript tokens plus the active summary tokens plus the system
     /// prompt overhead.
-    pub fn estimate_context_window(&self, session: &Session, entries: &[TranscriptEntry]) -> ContextEstimate {
+    pub fn estimate_context_window(
+        &self,
+        session: &Session,
+        entries: &[TranscriptEntry],
+    ) -> ContextEstimate {
         let active_tokens: u64 = entries
             .iter()
             .filter(|e| !e.compacted)
@@ -918,14 +922,20 @@ impl CompactionExecutor {
             entries.iter().filter(|e| !e.compacted).cloned().collect();
         let n = un_compacted.len();
         if n == 0 {
-            return Ok(self.planner.plan_compaction(&session, &entries)?.to_report("no_op"));
+            return Ok(self
+                .planner
+                .plan_compaction(&session, &entries)?
+                .to_report("no_op"));
         }
 
         let raw_cutoff = count.min(n).saturating_sub(1);
         let boundary_cutoff = self.planner.floor_to_boundary(&un_compacted, raw_cutoff);
         let to_compact = un_compacted[..boundary_cutoff.min(n)].to_vec();
         if to_compact.is_empty() {
-            return Ok(self.planner.plan_compaction(&session, &entries)?.to_report("no_op"));
+            return Ok(self
+                .planner
+                .plan_compaction(&session, &entries)?
+                .to_report("no_op"));
         }
         let retained = un_compacted[boundary_cutoff.min(n)..].to_vec();
 
@@ -947,7 +957,11 @@ impl CompactionExecutor {
     /// Compact just enough to fit a target token budget: repeatedly compact
     /// the oldest boundary group until the retained window fits, or nothing
     /// more can be compacted.
-    pub fn compact_to_budget(&self, session_id: &Uuid, budget: u64) -> CoreResult<CompactionReport> {
+    pub fn compact_to_budget(
+        &self,
+        session_id: &Uuid,
+        budget: u64,
+    ) -> CoreResult<CompactionReport> {
         let _session = self.require_session(session_id)?;
         let entries = self.storage.list_by_session(session_id)?;
         let un_compacted: Vec<TranscriptEntry> =
@@ -1024,9 +1038,7 @@ impl CompactionExecutor {
         for (i, entry) in entries.iter().enumerate() {
             prompt.push_str(&format!(
                 "[{}] ({} tokens) {}\n",
-                entry.role,
-                entry.token_count,
-                entry.content
+                entry.role, entry.token_count, entry.content
             ));
             if i == 0 {
                 continue;
@@ -1038,11 +1050,7 @@ impl CompactionExecutor {
 
     /// Select the boundary index that splits the transcript so that the
     /// retained tail fits `budget` tokens, rounding to an exchange boundary.
-    pub fn boundary_for_budget(
-        &self,
-        session_id: &Uuid,
-        budget: u64,
-    ) -> CoreResult<usize> {
+    pub fn boundary_for_budget(&self, session_id: &Uuid, budget: u64) -> CoreResult<usize> {
         let entries = self.storage.list_by_session(session_id)?;
         let un_compacted: Vec<TranscriptEntry> =
             entries.iter().filter(|e| !e.compacted).cloned().collect();
@@ -1450,7 +1458,11 @@ mod tests {
             .with_threshold(50)
             .with_target_budget(100)
             .with_keep_last(1);
-        assert!(planner.would_still_exceed(&session, &entries, CompactionStrategy::KeepLast).unwrap());
+        assert!(
+            planner
+                .would_still_exceed(&session, &entries, CompactionStrategy::KeepLast)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -1509,19 +1521,18 @@ mod tests {
         let storage = SessionStorage::in_memory().unwrap();
         let session = test_session(1000);
         storage.create_session(&session).unwrap();
-        let entries: Vec<TranscriptEntry> = (0..3)
-            .map(|i| entry(session.id, i, 10))
-            .collect();
+        let entries: Vec<TranscriptEntry> = (0..3).map(|i| entry(session.id, i, 10)).collect();
         let executor = CompactionExecutor::new(storage);
-        let preview = executor.preview_summary(&session.id, &entries).await.unwrap();
+        let preview = executor
+            .preview_summary(&session.id, &entries)
+            .await
+            .unwrap();
         assert!(preview.contains("message number"));
     }
 
     #[test]
     fn build_summary_prompt_detailed_includes_tokens() {
-        let entries: Vec<TranscriptEntry> = (0..2)
-            .map(|i| entry(Uuid::new_v4(), i, 42))
-            .collect();
+        let entries: Vec<TranscriptEntry> = (0..2).map(|i| entry(Uuid::new_v4(), i, 42)).collect();
         let prompt = CompactionExecutor::build_summary_prompt_detailed(&entries);
         assert!(prompt.contains("42 tokens"));
         assert!(prompt.contains("Summary:"));
@@ -1530,9 +1541,7 @@ mod tests {
     #[test]
     fn context_estimate_utilization() {
         let session = test_session(1000);
-        let entries: Vec<TranscriptEntry> = (0..10)
-            .map(|i| entry(session.id, i, 100))
-            .collect();
+        let entries: Vec<TranscriptEntry> = (0..10).map(|i| entry(session.id, i, 100)).collect();
         let planner = CompactionPlanner::new().with_target_budget(200);
         let estimate = planner.estimate_context_window(&session, &entries);
         assert!(estimate.over_budget);

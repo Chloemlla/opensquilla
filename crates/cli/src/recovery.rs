@@ -72,10 +72,7 @@ pub async fn recovery_list() -> Result<()> {
 
     println!("Crash snapshots ({}):", snapshots.len());
     println!("{:-<90}", "");
-    println!(
-        "{:<38} {:<24} {:<24}",
-        "ID", "Timestamp", "Session"
-    );
+    println!("{:<38} {:<24} {:<24}", "ID", "Timestamp", "Session");
     println!("{:-<90}", "");
     for s in &snapshots {
         println!(
@@ -129,7 +126,11 @@ pub async fn recovery_recover(id: String) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Recovery failed: {e}"))?;
 
-    let icon = if result.recovered { table::ok() } else { table::warn() };
+    let icon = if result.recovered {
+        table::ok()
+    } else {
+        table::warn()
+    };
     println!("{icon} {}", result.message);
     println!("  snapshot: {}", result.snapshot_id);
     println!("  recovered: {}", result.recovered);
@@ -205,8 +206,15 @@ pub async fn recovery_clear() -> Result<()> {
 pub async fn validate_session(session: SessionState) -> Result<()> {
     let recovery = build_recovery()?;
     let validation = recovery.validate_session_state(&session).await;
-    let icon = if validation.valid { table::ok() } else { table::fail() };
-    println!("{icon} Session {} ({} messages)", validation.session_id, validation.message_count);
+    let icon = if validation.valid {
+        table::ok()
+    } else {
+        table::fail()
+    };
+    println!(
+        "{icon} Session {} ({} messages)",
+        validation.session_id, validation.message_count
+    );
     KeyValue::new()
         .entry("valid", validation.valid.to_string())
         .entry("issues", validation.issues.len().to_string())

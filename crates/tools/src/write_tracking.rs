@@ -299,14 +299,19 @@ pub fn record_workspace_file_read(
     );
     read_record.insert(
         "name".into(),
-        json!(path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()),
+        json!(
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        ),
     );
     read_record.insert(
         "suffix".into(),
-        json!(path
-            .extension()
-            .map(|e| e.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default()),
+        json!(
+            path.extension()
+                .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                .unwrap_or_default()
+        ),
     );
     read_record.insert("operation".into(), json!(operation));
     if let Some(offset) = offset {
@@ -372,7 +377,11 @@ pub fn require_fresh_workspace_file_read(
 
     let key = resolved.to_string_lossy().to_string();
     let Some(state) = ctx.workspace_file_read_state.get(&key) else {
-        let action = if tool_name == "edit_file" { "edit" } else { "write" };
+        let action = if tool_name == "edit_file" {
+            "edit"
+        } else {
+            "write"
+        };
         return Err(ToolError::new(
             "FRESH_READ_REQUIRED",
             format!(
@@ -518,8 +527,7 @@ pub fn summarize_workspace_write_notes(ctx: &ToolContext, paths: &[&Path]) -> St
     }
     if saw_docs {
         notes.push(
-            "documentation file(s) changed; verify the docs build if retaining them"
-                .to_string(),
+            "documentation file(s) changed; verify the docs build if retaining them".to_string(),
         );
     }
     if saw_tests {
@@ -584,12 +592,7 @@ pub fn summarize_patch_hygiene_warning(ctx: &ToolContext, paths: &[&Path]) -> St
 /// Snapshot workspace git mutation state as a `relative_path -> status` map.
 pub fn snapshot_workspace_mutations(workspace: &Path) -> BTreeMap<String, String> {
     let Ok(output) = std::process::Command::new("git")
-        .args([
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-        ])
+        .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
         .current_dir(workspace)
         .output()
     else {
@@ -613,11 +616,7 @@ pub fn parse_git_status_z(output: &str) -> BTreeMap<String, String> {
             continue;
         }
         let status = &entry[..entry.len().min(2)];
-        let mut relative_path = if entry.len() > 3 {
-            &entry[3..]
-        } else {
-            ""
-        };
+        let mut relative_path = if entry.len() > 3 { &entry[3..] } else { "" };
         if relative_path.is_empty() {
             continue;
         }
@@ -677,8 +676,14 @@ mod tests {
     #[test]
     fn classifies_test_paths() {
         let ctx = workspace_ctx();
-        assert_eq!(classify_workspace_path("tests/test_foo.py", &ctx), "test-like");
-        assert_eq!(classify_workspace_path("src/foo.test.ts", &ctx), "test-like");
+        assert_eq!(
+            classify_workspace_path("tests/test_foo.py", &ctx),
+            "test-like"
+        );
+        assert_eq!(
+            classify_workspace_path("src/foo.test.ts", &ctx),
+            "test-like"
+        );
         assert_eq!(
             classify_workspace_path("src/foo_spec_test.go", &ctx),
             "test-like"
@@ -790,12 +795,7 @@ mod tests {
         let mut ctx = workspace_ctx();
         ctx.file_edit_requires_fresh_read = true;
         let temp = tempfile::NamedTempFile::new().expect("temp");
-        let result = require_fresh_workspace_file_read(
-            &ctx,
-            temp.path(),
-            "edit_file",
-            "the file",
-        );
+        let result = require_fresh_workspace_file_read(&ctx, temp.path(), "edit_file", "the file");
         // Temp file is outside the workspace, so the guard is skipped.
         assert!(result.is_ok());
 

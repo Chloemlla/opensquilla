@@ -370,7 +370,8 @@ mod tests {
 
     fn unique_test_dir() -> PathBuf {
         let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("opensquilla-test-{}-{}", std::process::id(), id));
+        let dir =
+            std::env::temp_dir().join(format!("opensquilla-test-{}-{}", std::process::id(), id));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -437,8 +438,12 @@ mod tests {
     fn test_list_snapshots() {
         let config = config_with_tempdir();
         let recovery = CrashRecovery::new(config);
-        recovery.save_snapshot(&CrashSnapshot::new("t1", "s1")).unwrap();
-        recovery.save_snapshot(&CrashSnapshot::new("t2", "s1")).unwrap();
+        recovery
+            .save_snapshot(&CrashSnapshot::new("t1", "s1"))
+            .unwrap();
+        recovery
+            .save_snapshot(&CrashSnapshot::new("t2", "s1"))
+            .unwrap();
         let ids = recovery.list_snapshots().unwrap();
         assert_eq!(ids.len(), 2);
     }
@@ -487,7 +492,9 @@ mod tests {
     fn test_finalize_snapshot() {
         let config = config_with_tempdir();
         let recovery = CrashRecovery::new(config);
-        recovery.save_snapshot(&CrashSnapshot::new("t1", "s1")).unwrap();
+        recovery
+            .save_snapshot(&CrashSnapshot::new("t1", "s1"))
+            .unwrap();
         recovery.finalize_snapshot("t1").unwrap();
         // With cleanup, the snapshot should be deleted.
         let loaded = recovery.load_snapshot("t1").unwrap();

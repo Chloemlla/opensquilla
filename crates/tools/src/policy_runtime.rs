@@ -178,7 +178,12 @@ mod tests {
     #[test]
     fn resolve_surface_prunes_allowlist() {
         let ctx = ToolContext {
-            allowed_tools: Some(["cron", "web_search"].iter().map(|s| s.to_string()).collect()),
+            allowed_tools: Some(
+                ["cron", "web_search"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            ),
             ..Default::default()
         };
         let resolved = resolve_runtime_tool_surface(&ctx, &ToolSurfaceCapabilities::default());

@@ -39,10 +39,7 @@ pub fn sandbox_disabled_full_host_fallback() -> bool {
 /// - `Some(false)` with the fallback lever on — Full Host Access.
 /// - `Some(false)` with the fallback lever off — not Full.
 /// - `None` — unknown runtime; falls back to the context alone.
-pub fn full_host_access_for_context(
-    ctx: &ToolContext,
-    sandbox_enabled: Option<bool>,
-) -> bool {
+pub fn full_host_access_for_context(ctx: &ToolContext, sandbox_enabled: Option<bool>) -> bool {
     if let Some(enabled) = sandbox_enabled {
         if !enabled {
             if sandbox_disabled_full_host_fallback() {
@@ -149,28 +146,29 @@ mod tests {
     async fn scoped_run_mode_helpers() {
         let mut ctx = ToolContext::owner();
         assert_eq!(
-            crate::context::run_with_tool_context(Some(ctx.clone()), async {
-                current_run_mode()
-            })
-            .await,
+            crate::context::run_with_tool_context(Some(ctx.clone()), async { current_run_mode() })
+                .await,
             None
         );
         ctx.run_mode = Some(RunMode::Full);
-        let (mode, full, trusted) = crate::context::run_with_tool_context(
-            Some(ctx.clone()),
-            async { (current_run_mode(), full_host_access_active(), trusted_sandbox_active()) },
-        )
-        .await;
+        let (mode, full, trusted) =
+            crate::context::run_with_tool_context(Some(ctx.clone()), async {
+                (
+                    current_run_mode(),
+                    full_host_access_active(),
+                    trusted_sandbox_active(),
+                )
+            })
+            .await;
         assert_eq!(mode, Some(RunMode::Full));
         assert!(full);
         assert!(!trusted);
 
         let mut trusted_ctx = ToolContext::owner();
         trusted_ctx.run_mode = Some(RunMode::Trusted);
-        let (full, trusted) = crate::context::run_with_tool_context(
-            Some(trusted_ctx),
-            async { (full_host_access_active(), trusted_sandbox_active()) },
-        )
+        let (full, trusted) = crate::context::run_with_tool_context(Some(trusted_ctx), async {
+            (full_host_access_active(), trusted_sandbox_active())
+        })
         .await;
         assert!(!full);
         assert!(trusted);

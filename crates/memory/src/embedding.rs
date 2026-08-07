@@ -359,7 +359,9 @@ impl OnnxEmbeddingProvider {
         }
     }
 
-    fn load_session(config: &EmbeddingConfig) -> Option<Arc<std::sync::Mutex<ort::session::Session>>> {
+    fn load_session(
+        config: &EmbeddingConfig,
+    ) -> Option<Arc<std::sync::Mutex<ort::session::Session>>> {
         let path = config.model_path.as_ref()?;
         let builder = match ort::session::Session::builder() {
             Ok(b) => b,

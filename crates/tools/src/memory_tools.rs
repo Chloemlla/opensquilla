@@ -68,7 +68,7 @@ impl Tool for MemorySaveTool {
                 concat!(
                     "Store a memory for an agent. Memories are persistent and searchable ",
                     "via memory_search. Optional tags can be attached for classification.",
-),
+                ),
                 HashMap::from([
                     (
                         "content".to_string(),
@@ -219,7 +219,7 @@ impl Tool for MemorySearchTool {
                 concat!(
                     "Full-text search over stored memories using SQLite FTS5. ",
                     "Returns matching memories ordered by relevance.",
-),
+                ),
                 HashMap::from([
                     (
                         "query".to_string(),

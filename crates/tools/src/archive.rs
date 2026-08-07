@@ -16,7 +16,9 @@
 //! pattern of avoiding external dependencies where a compact implementation
 //! suffices.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -327,12 +329,7 @@ impl ZipReader {
         let mut eocd_offset = None;
         for i in (0..data.len().saturating_sub(22)).rev() {
             if data.len() >= i + 4 {
-                let sig = u32::from_le_bytes([
-                    data[i],
-                    data[i + 1],
-                    data[i + 2],
-                    data[i + 3],
-                ]);
+                let sig = u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]);
                 if sig == ZIP_END_CENTRAL_SIG {
                     eocd_offset = Some(i);
                     break;
@@ -373,12 +370,7 @@ impl ZipReader {
             if pos + 46 > data.len() {
                 break;
             }
-            let sig = u32::from_le_bytes([
-                data[pos],
-                data[pos + 1],
-                data[pos + 2],
-                data[pos + 3],
-            ]);
+            let sig = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
             if sig != ZIP_CENTRAL_SIG {
                 break;
             }
@@ -412,7 +404,8 @@ impl ZipReader {
             ]) as u64;
 
             let name_start = pos + 46;
-            let name = String::from_utf8_lossy(&data[name_start..name_start + name_len]).to_string();
+            let name =
+                String::from_utf8_lossy(&data[name_start..name_start + name_len]).to_string();
 
             entries.push(ZipEntry {
                 name,
@@ -466,14 +459,10 @@ impl ZipReader {
             ));
         }
 
-        let name_len = u16::from_le_bytes([
-            self.data[offset + 26],
-            self.data[offset + 27],
-        ]) as usize;
-        let extra_len = u16::from_le_bytes([
-            self.data[offset + 28],
-            self.data[offset + 29],
-        ]) as usize;
+        let name_len =
+            u16::from_le_bytes([self.data[offset + 26], self.data[offset + 27]]) as usize;
+        let extra_len =
+            u16::from_le_bytes([self.data[offset + 28], self.data[offset + 29]]) as usize;
 
         let data_start = offset + 30 + name_len + extra_len;
         let data_end = data_start + entry.compressed_size as usize;
@@ -708,7 +697,10 @@ pub fn gzip_unwrap(data: &[u8]) -> std::io::Result<Vec<u8>> {
     if flg & 0x04 != 0 {
         // FEXTRA: 2-byte length then that many bytes.
         if pos + 2 > data.len() {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Truncated gzip header"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Truncated gzip header",
+            ));
         }
         let xlen = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
         pos += 2 + xlen;
@@ -749,12 +741,18 @@ pub fn gzip_unwrap(data: &[u8]) -> std::io::Result<Vec<u8>> {
             0 => {
                 // Stored block: skip byte alignment (none needed), then LEN/NLEN.
                 if pos + 4 > data.len() {
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Truncated stored block"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Truncated stored block",
+                    ));
                 }
                 let len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
                 pos += 4; // skip LEN and NLEN
                 if pos + len > data.len() {
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Truncated stored block data"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Truncated stored block data",
+                    ));
                 }
                 out.extend_from_slice(&data[pos..pos + len]);
                 pos += len;
@@ -826,7 +824,10 @@ impl ArchiveTool {
             path
         };
         let canonical = resolved.canonicalize().map_err(|e| {
-            ToolError::new("PATH_INVALID", format!("Cannot access path '{}': {}", path_str, e))
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
         })?;
         if !canonical.starts_with(&self.allowed_base) {
             return Err(ToolError::new(
@@ -875,7 +876,10 @@ impl ArchiveTool {
         format: ArchiveFormat,
     ) -> ToolResult<ArchiveEntry> {
         let files = collect_files(source, source).map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read source directory: {}", e))
+            ToolError::new(
+                "IO_ERROR",
+                format!("Failed to read source directory: {}", e),
+            )
         })?;
 
         match format {
@@ -888,16 +892,25 @@ impl ArchiveTool {
                 let mut count = 0usize;
                 for (name, path) in &files {
                     let data = std::fs::read(path).map_err(|e| {
-                        ToolError::new("IO_ERROR", format!("Failed to read '{}': {}", path.display(), e))
+                        ToolError::new(
+                            "IO_ERROR",
+                            format!("Failed to read '{}': {}", path.display(), e),
+                        )
                     })?;
                     writer.add_file(name, &data).map_err(|e| {
-                        ToolError::new("ARCHIVE_ERROR", format!("Failed to add file to archive: {}", e))
+                        ToolError::new(
+                            "ARCHIVE_ERROR",
+                            format!("Failed to add file to archive: {}", e),
+                        )
                     })?;
                     total_size += data.len() as u64;
                     count += 1;
                 }
                 writer.finish().map_err(|e| {
-                    ToolError::new("ARCHIVE_ERROR", format!("Failed to finalize archive: {}", e))
+                    ToolError::new(
+                        "ARCHIVE_ERROR",
+                        format!("Failed to finalize archive: {}", e),
+                    )
                 })?;
                 Ok(ArchiveEntry {
                     path: output.to_string_lossy().to_string(),
@@ -910,7 +923,10 @@ impl ArchiveTool {
                 let mut total_size = 0u64;
                 for (name, path) in &files {
                     let data = std::fs::read(path).map_err(|e| {
-                        ToolError::new("IO_ERROR", format!("Failed to read '{}': {}", path.display(), e))
+                        ToolError::new(
+                            "IO_ERROR",
+                            format!("Failed to read '{}': {}", path.display(), e),
+                        )
                     })?;
                     entries_data.push((name.clone(), data.clone()));
                     total_size += data.len() as u64;
@@ -945,12 +961,14 @@ impl ArchiveTool {
         format: ArchiveFormat,
     ) -> ToolResult<Vec<ArchiveEntry>> {
         std::fs::create_dir_all(dest).map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to create destination directory: {}", e))
+            ToolError::new(
+                "IO_ERROR",
+                format!("Failed to create destination directory: {}", e),
+            )
         })?;
 
-        let data = std::fs::read(archive_path).map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read archive: {}", e))
-        })?;
+        let data = std::fs::read(archive_path)
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read archive: {}", e)))?;
 
         match format {
             ArchiveFormat::Zip => {
@@ -978,7 +996,10 @@ impl ArchiveTool {
                     // Canonicalize parent to check.
                     if let Some(parent) = file_path.parent() {
                         std::fs::create_dir_all(parent).map_err(|e| {
-                            ToolError::new("IO_ERROR", format!("Failed to create parent directory: {}", e))
+                            ToolError::new(
+                                "IO_ERROR",
+                                format!("Failed to create parent directory: {}", e),
+                            )
                         })?;
                     }
                     let parent_canonical = file_path
@@ -988,14 +1009,23 @@ impl ArchiveTool {
                     if !parent_canonical.starts_with(&dest_canonical) {
                         return Err(ToolError::new(
                             "PATH_TRAVERSAL",
-                            format!("Archive entry '{}' escapes destination directory", entry.name),
+                            format!(
+                                "Archive entry '{}' escapes destination directory",
+                                entry.name
+                            ),
                         ));
                     }
                     let content = reader.extract(&entry.name).map_err(|e| {
-                        ToolError::new("ARCHIVE_ERROR", format!("Failed to extract '{}': {}", entry.name, e))
+                        ToolError::new(
+                            "ARCHIVE_ERROR",
+                            format!("Failed to extract '{}': {}", entry.name, e),
+                        )
                     })?;
                     std::fs::write(&file_path, &content).map_err(|e| {
-                        ToolError::new("IO_ERROR", format!("Failed to write '{}': {}", file_path.display(), e))
+                        ToolError::new(
+                            "IO_ERROR",
+                            format!("Failed to write '{}': {}", file_path.display(), e),
+                        )
                     })?;
                     extracted.push(ArchiveEntry {
                         path: entry.name.clone(),
@@ -1009,10 +1039,7 @@ impl ArchiveTool {
                 // For tar.gz, unwrap the gzip container to recover the tar.
                 let tar_data = if format == ArchiveFormat::TarGz {
                     gzip_unwrap(&data).map_err(|e| {
-                        ToolError::new(
-                            "ARCHIVE_ERROR",
-                            format!("Failed to decompress gzip: {}", e),
-                        )
+                        ToolError::new("ARCHIVE_ERROR", format!("Failed to decompress gzip: {}", e))
                     })?
                 } else {
                     data
@@ -1049,7 +1076,10 @@ impl ArchiveTool {
                         ));
                     }
                     std::fs::write(&file_path, content).map_err(|e| {
-                        ToolError::new("IO_ERROR", format!("Failed to write '{}': {}", file_path.display(), e))
+                        ToolError::new(
+                            "IO_ERROR",
+                            format!("Failed to write '{}': {}", file_path.display(), e),
+                        )
                     })?;
                     extracted.push(ArchiveEntry {
                         path: name.clone(),
@@ -1063,10 +1093,13 @@ impl ArchiveTool {
     }
 
     /// List the contents of an archive.
-    fn list_archive(&self, archive_path: &Path, format: ArchiveFormat) -> ToolResult<Vec<ArchiveEntry>> {
-        let data = std::fs::read(archive_path).map_err(|e| {
-            ToolError::new("IO_ERROR", format!("Failed to read archive: {}", e))
-        })?;
+    fn list_archive(
+        &self,
+        archive_path: &Path,
+        format: ArchiveFormat,
+    ) -> ToolResult<Vec<ArchiveEntry>> {
+        let data = std::fs::read(archive_path)
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read archive: {}", e)))?;
         match format {
             ArchiveFormat::Zip => {
                 let reader = ZipReader::from_bytes(data).map_err(|e| {
@@ -1085,10 +1118,7 @@ impl ArchiveTool {
             ArchiveFormat::Tar | ArchiveFormat::TarGz => {
                 let tar_data = if format == ArchiveFormat::TarGz {
                     gzip_unwrap(&data).map_err(|e| {
-                        ToolError::new(
-                            "ARCHIVE_ERROR",
-                            format!("Failed to decompress gzip: {}", e),
-                        )
+                        ToolError::new("ARCHIVE_ERROR", format!("Failed to decompress gzip: {}", e))
                     })?
                 } else {
                     data
@@ -1187,11 +1217,18 @@ impl Tool for ArchiveTool {
                 let source_for_task = source.clone();
                 let output_for_task = output.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let tool = ArchiveTool::new(source_for_task.parent().unwrap_or(Path::new(".")).to_path_buf());
+                    let tool = ArchiveTool::new(
+                        source_for_task
+                            .parent()
+                            .unwrap_or(Path::new("."))
+                            .to_path_buf(),
+                    );
                     tool.create_archive(&source_for_task, &output_for_task, format)
                 })
                 .await
-                .map_err(|e| ToolError::new("ARCHIVE_ERROR", format!("Archive task failed: {}", e)))??;
+                .map_err(|e| {
+                    ToolError::new("ARCHIVE_ERROR", format!("Archive task failed: {}", e))
+                })??;
 
                 let data = serde_json::json!({
                     "archive_path": result.path,
@@ -1243,7 +1280,9 @@ impl Tool for ArchiveTool {
                     tool.extract_archive(&source_for_task, &output_for_task, format)
                 })
                 .await
-                .map_err(|e| ToolError::new("ARCHIVE_ERROR", format!("Extract task failed: {}", e)))??;
+                .map_err(|e| {
+                    ToolError::new("ARCHIVE_ERROR", format!("Extract task failed: {}", e))
+                })??;
 
                 let file_count = extracted.iter().filter(|e| !e.is_dir).count();
                 let dir_count = extracted.iter().filter(|e| e.is_dir).count();
@@ -1257,7 +1296,9 @@ impl Tool for ArchiveTool {
 
                 Ok(ToolOutput::success(format!(
                     "Extracted {} files and {} directories to '{}'",
-                    file_count, dir_count, output.display()
+                    file_count,
+                    dir_count,
+                    output.display()
                 ))
                 .with_data(data))
             }
@@ -1293,7 +1334,9 @@ impl Tool for ArchiveTool {
                     tool.list_archive(&source_for_task, format)
                 })
                 .await
-                .map_err(|e| ToolError::new("ARCHIVE_ERROR", format!("List task failed: {}", e)))??;
+                .map_err(|e| {
+                    ToolError::new("ARCHIVE_ERROR", format!("List task failed: {}", e))
+                })??;
 
                 let file_count = entries.iter().filter(|e| !e.is_dir).count();
                 let total_size: u64 = entries.iter().map(|e| e.size).sum();
@@ -1317,7 +1360,10 @@ impl Tool for ArchiveTool {
 
                 Ok(ToolOutput::success(content).with_data(data))
             }
-            other => Err(ToolError::invalid_args(format!("Unknown operation: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown operation: {}",
+                other
+            ))),
         }
     }
 }

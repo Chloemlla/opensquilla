@@ -182,9 +182,7 @@ pub async fn run_agent(action: AgentAction) -> Result<()> {
             provider,
             model,
             max_rounds,
-        } => {
-            agent_create(name, system_prompt, provider, model, max_rounds).await
-        }
+        } => agent_create(name, system_prompt, provider, model, max_rounds).await,
         AgentAction::Delete { name } => agent_delete(name).await,
         AgentAction::Skill { skill, input } => agent_skill(skill, input).await,
     }
@@ -218,9 +216,7 @@ impl TurnGenerator for AgentTurnGenerator {
                 .map_err(|e| opensquilla_core::error::Error::Provider(e.to_string()))?;
             let mut full = String::new();
             while let Some(event) = stream.next().await {
-                match event.map_err(|e| {
-                    opensquilla_core::error::Error::Provider(e.to_string())
-                })? {
+                match event.map_err(|e| opensquilla_core::error::Error::Provider(e.to_string()))? {
                     StreamEvent::Text { text } => {
                         print!("{text}");
                         use std::io::Write;
@@ -354,9 +350,7 @@ pub async fn agent_run(
     for stage in stages {
         builder = builder.add_stage(stage);
     }
-    let runner = builder
-        .max_tool_rounds(max_rounds)
-        .build();
+    let runner = builder.max_tool_rounds(max_rounds).build();
 
     let messages = vec![
         Message::system(&runner_config.default_system_prompt),
@@ -457,8 +451,17 @@ pub async fn agent_show(name: String) -> Result<()> {
     let profile = load_profile(&name)?;
     println!("Agent: {}", profile.name);
     KeyValue::new()
-        .entry("Provider", profile.provider.clone().unwrap_or_else(|| "(default)".into()))
-        .entry("Model", profile.model.clone().unwrap_or_else(|| "(default)".into()))
+        .entry(
+            "Provider",
+            profile
+                .provider
+                .clone()
+                .unwrap_or_else(|| "(default)".into()),
+        )
+        .entry(
+            "Model",
+            profile.model.clone().unwrap_or_else(|| "(default)".into()),
+        )
         .entry("Max rounds", profile.max_rounds.to_string())
         .entry("Tools", profile.tools.join(", "))
         .entry("Created", profile.created_at.to_rfc3339())
@@ -503,8 +506,7 @@ pub async fn agent_delete(name: String) -> Result<()> {
     if !path.exists() {
         anyhow::bail!("Agent '{name}' not found");
     }
-    std::fs::remove_file(&path)
-        .with_context(|| format!("Failed to delete agent '{name}'"))?;
+    std::fs::remove_file(&path).with_context(|| format!("Failed to delete agent '{name}'"))?;
     println!("Deleted agent profile: {name}");
     Ok(())
 }
@@ -520,7 +522,11 @@ pub async fn agent_skill(skill: String, input: Option<String>) -> Result<()> {
         .await
         .ok_or_else(|| anyhow::anyhow!("Skill '{skill}' not found"))?;
 
-    println!("Executing skill: {} ({} steps)", skill_def.name, skill_def.steps.len());
+    println!(
+        "Executing skill: {} ({} steps)",
+        skill_def.name,
+        skill_def.steps.len()
+    );
     println!();
 
     // Build a goal from the skill's first step and the input.
@@ -545,9 +551,7 @@ pub async fn agent_skill(skill: String, input: Option<String>) -> Result<()> {
 }
 
 /// Build a skill loader (shared with the skills command module).
-async fn build_skill_loader(
-    config: &Config,
-) -> Result<opensquilla_skills::loader::SkillLoader> {
+async fn build_skill_loader(config: &Config) -> Result<opensquilla_skills::loader::SkillLoader> {
     use opensquilla_skills::bundled::load_bundled_skills;
     use opensquilla_skills::loader::SkillLoader;
     use opensquilla_skills::types::SkillLayer;

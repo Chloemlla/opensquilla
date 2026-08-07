@@ -24,8 +24,7 @@ use tracing::{debug, instrument};
 fn image_ref_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?i)\b(image|picture|photo|screenshot|screen|diagram)\b")
-            .expect("valid regex")
+        Regex::new(r"(?i)\b(image|picture|photo|screenshot|screen|diagram)\b").expect("valid regex")
     })
 }
 
@@ -316,11 +315,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_disabled_skips() {
-        let step =
-            VisionFollowupGateStep::with_config(VisionFollowupGateConfig {
-                enabled: false,
-                ..Default::default()
-            });
+        let step = VisionFollowupGateStep::with_config(VisionFollowupGateConfig {
+            enabled: false,
+            ..Default::default()
+        });
         let mut ctx = ctx_with_user("hello");
         let action = step.execute(&mut ctx).await.unwrap();
         assert!(matches!(action, StepAction::Continue));

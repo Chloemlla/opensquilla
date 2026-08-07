@@ -154,13 +154,15 @@ impl TranscriptionService {
         let mime_type_owned = mime_type.to_string();
         let audio_bytes_clone = audio_bytes.clone();
         let audio_size = audio_bytes.len();
-        let text = tokio::task::spawn_blocking(move || api.transcribe(&mime_type_owned, &audio_bytes_clone))
-            .await
-            .map_err(|e| AppError::internal(format!("Transcription task failed: {e}")))?
-            .map_err(|e| {
-                warn!(error = %e, "Transcription failed");
-                e
-            })?;
+        let text = tokio::task::spawn_blocking(move || {
+            api.transcribe(&mime_type_owned, &audio_bytes_clone)
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("Transcription task failed: {e}")))?
+        .map_err(|e| {
+            warn!(error = %e, "Transcription failed");
+            e
+        })?;
 
         let duration_ms = started.elapsed().as_millis() as u64;
         let record = TranscriptionRecord {

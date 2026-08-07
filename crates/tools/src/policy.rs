@@ -5,9 +5,9 @@
 //! Each policy in the chain can approve, deny, or flag a tool execution
 //! before it reaches the actual tool implementation.
 
+use async_trait::async_trait;
 use opensquilla_core::ToolCall;
 use opensquilla_core::error::AppError;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -796,7 +796,7 @@ impl PolicyChain for ToolPolicy {
                     Err(_) => {
                         return PolicyDecision::Deny {
                             reason: "Tool policy lock poisoned".to_string(),
-                        }
+                        };
                     }
                 };
                 let count = counts.entry(key).or_insert(0);
@@ -882,7 +882,11 @@ impl ConfirmationPolicy {
         let mut hasher = Sha256::new();
         hasher.update(serialized.as_bytes());
         let digest = hasher.finalize();
-        digest.iter().take(8).map(|b| format!("{:02x}", b)).collect()
+        digest
+            .iter()
+            .take(8)
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 }
 
@@ -1058,7 +1062,10 @@ mod tests {
         let call = ToolCall::new("1", "git_push", json!({}));
         let ctx = PolicyContext::new("git_push", call, "session-1");
         let decision = policy.evaluate(&ctx).await;
-        assert!(matches!(decision, PolicyDecision::RequireConfirmation { .. }));
+        assert!(matches!(
+            decision,
+            PolicyDecision::RequireConfirmation { .. }
+        ));
     }
 
     #[tokio::test]
@@ -1094,8 +1101,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_policy_max_calls() {
-        let policy = ToolPolicy::new("toolpolicy")
-            .with_rule("limited", ToolRule::new().with_max_calls(2));
+        let policy =
+            ToolPolicy::new("toolpolicy").with_rule("limited", ToolRule::new().with_max_calls(2));
         let call = ToolCall::new("1", "limited", json!({}));
         let ctx = PolicyContext::new("limited", call, "session-1");
 
@@ -1131,7 +1138,10 @@ mod tests {
         let call = ToolCall::new("1", "some_tool", json!({"a": 1}));
         let ctx = PolicyContext::new("some_tool", call, "session-1");
         let decision = policy.evaluate(&ctx).await;
-        assert!(matches!(decision, PolicyDecision::RequireConfirmation { .. }));
+        assert!(matches!(
+            decision,
+            PolicyDecision::RequireConfirmation { .. }
+        ));
     }
 
     #[tokio::test]

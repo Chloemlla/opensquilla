@@ -105,26 +105,26 @@ pub mod route_plan;
 
 pub use agent::{
     Agent, AgentBuilder, AgentConfig, AgentError, AgentRegistry, AgentSnapshot, AgentState,
-    BackgroundProcess, BackgroundProcessManager, CommandResult, ErrorCategory,
-    ErrorClassification, GitOpResult, GitOperation, GitResult, PlaceholderGenerator,
-    RecoveryAction, ToolCallBudget, ToolCallDecision, ToolRoundResult, TurnContext,
-    TurnGenerator, TurnOutcome, TurnPhase, UsageEvent, UsageStats, classify_error,
+    BackgroundProcess, BackgroundProcessManager, CommandResult, ErrorCategory, ErrorClassification,
+    GitOpResult, GitOperation, GitResult, PlaceholderGenerator, RecoveryAction, ToolCallBudget,
+    ToolCallDecision, ToolRoundResult, TurnContext, TurnGenerator, TurnOutcome, TurnPhase,
+    UsageEvent, UsageStats, classify_error,
 };
 pub use compaction_control::{
     CompactionDecision, CompactionInput, CompactionPlan, CompactionStrategy,
     average_message_tokens, plan_compaction, should_compact_before_generation,
-};
-pub use turn_runner::compaction_lifecycle::{
-    CompactionContinuationAction, CompactionContinuationDecision, CompactionDurability,
-    CompactionLifecycleResult, CompactionTimeoutError, FlushReceipt, FlushReceiptStatus,
-    PersistenceGateConfig, compaction_event_chain, decide_compaction_continuation,
-    flush_receipt_status, new_compaction_id,
 };
 pub use pricing::{ModelPrice, ModelPricing, PricingCache, PricingResult};
 /// Re-export the most commonly used types at the crate root for convenience.
 pub use runtime::{AgentHandle, AgentRuntime, TurnLoopGuardsConfig, TurnRunner, TurnRunnerBuilder};
 pub use runtime::{NoopToolExecutor, ToolExecutor};
 pub use session_lock::{SessionLockGuard, SessionLockSet, with_session_lock};
+pub use turn_runner::compaction_lifecycle::{
+    CompactionContinuationAction, CompactionContinuationDecision, CompactionDurability,
+    CompactionLifecycleResult, CompactionTimeoutError, FlushReceipt, FlushReceiptStatus,
+    PersistenceGateConfig, compaction_event_chain, decide_compaction_continuation,
+    flush_receipt_status, new_compaction_id,
+};
 
 // Pre-turn pipeline steps. The `PipelineStep` trait and `StepAction` live in
 // the `pipeline` module (re-exported above); the concrete step types and the
@@ -143,9 +143,9 @@ pub use turn_runner::{
     AttachmentFileMetadata, AttachmentLoadOutcome, AttachmentStage, BootstrapSettings,
     BufferedToolCall, CompactionOutcome, CostRollup, FailoverOrder, FinalizeReport, HarnessConfig,
     InputConfig, InputMode, InputReport, MultipartField, PipelineConfig, ProviderCallReport,
-    ProviderFailoverPolicy, ProviderOutcomeTracker, ProviderRetryPolicy, RateLimiter, RoutingConfig,
-    StageMetric, StageMetrics, StageMetricsCollector, StageRollup, StageTimer, StreamConfig,
-    StreamConsumerStage, StreamConsumerState, TurnAttachment, TurnErrorAggregator,
+    ProviderFailoverPolicy, ProviderOutcomeTracker, ProviderRetryPolicy, RateLimiter,
+    RoutingConfig, StageMetric, StageMetrics, StageMetricsCollector, StageRollup, StageTimer,
+    StreamConfig, StreamConsumerStage, StreamConsumerState, TurnAttachment, TurnErrorAggregator,
     TurnErrorBoundary, TurnErrorKind, TurnRunnerConfig,
 };
 
@@ -166,7 +166,7 @@ pub use context_builder::{
 pub use tool_executor::{
     ToolConcurrencyLimiter, ToolErrorKind, ToolExecutionConfig, ToolExecutionEngine,
     ToolExecutionEngineBuilder, ToolExecutionHook, ToolExecutionOutcome, ToolExecutorRegistry,
-    ToolPermission, ToolPermissionRule, ToolPolicy, ToolResultCache, ToolOutputStream,
+    ToolOutputStream, ToolPermission, ToolPermissionRule, ToolPolicy, ToolResultCache,
 };
 
 // Disk-backed tool-result storage with per-result and whole-disk budgets.
@@ -179,13 +179,13 @@ pub use tool_result_store::{
 
 // Budget enforcement, rate limiting, and circuit breakers.
 pub use budget::{
-    BudgetCheckResult, BudgetConfig, BudgetManager, CostBudget, ModelRateLimiter,
-    RequestAdmission, SessionBudgetReport, SessionBudgetTracker,
+    BudgetCheckResult, BudgetConfig, BudgetManager, CostBudget, ModelRateLimiter, RequestAdmission,
+    SessionBudgetReport, SessionBudgetTracker,
 };
 
 // Crash recovery, state reconstruction, and replay.
 pub use recovery::{
-    CrashRecovery, CrashRecoveryConfig, CrashSnapshot, RecoveryStatus, ReconstructedState,
+    CrashRecovery, CrashRecoveryConfig, CrashSnapshot, ReconstructedState, RecoveryStatus,
     ReplayCheckpoint, ReplayDecision, ReplayOutcome, StateReconstructor, TransactionOutcome,
     TransactionStatus, TransactionalUpdate, TurnReplay,
     transactional::{TransactionJournal, TransactionJournalEntry},

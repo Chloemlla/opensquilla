@@ -1198,7 +1198,9 @@ pub fn normalize_frontmatter(content: &str) -> Result<String, SkillLoadError> {
 /// Normalize the raw frontmatter into a canonical [`crate::types::SkillManifest`],
 /// applying `schema_version` detection and merging `metadata.tags` into the
 /// top-level `tags` list.
-pub fn normalize_manifest(mut manifest: crate::types::SkillManifest) -> crate::types::SkillManifest {
+pub fn normalize_manifest(
+    mut manifest: crate::types::SkillManifest,
+) -> crate::types::SkillManifest {
     // Fold nested metadata classification into the top-level tags.
     if let Some(meta) = &manifest.metadata {
         if let Some(ref class) = meta.classification {
@@ -1483,13 +1485,8 @@ pub fn validate_skill_file(path: &Path) -> Result<(String, Vec<String>), SkillLo
             path: path.to_path_buf(),
             message: e.to_string(),
         })?;
-    let layer = SkillLayer::from_str_loose(
-        manifest
-            .layer
-            .as_deref()
-            .unwrap_or("managed"),
-    )
-    .unwrap_or(SkillLayer::Managed);
+    let layer = SkillLayer::from_str_loose(manifest.layer.as_deref().unwrap_or("managed"))
+        .unwrap_or(SkillLayer::Managed);
     let spec = manifest_to_spec(manifest, layer, path.to_path_buf(), body, frontmatter)?;
     let mut warnings = Vec::new();
     if spec.is_meta() && spec.steps.is_empty() {
@@ -1839,7 +1836,12 @@ steps:
         assert_eq!(resolution.winner, SkillLayer::Project);
         assert!(resolution.shadowed.contains(&SkillLayer::Bundled));
         assert!(resolution.shadowed.contains(&SkillLayer::Personal));
-        assert!(resolver.resolve_path("same").unwrap().ends_with("project/same/SKILL.md"));
+        assert!(
+            resolver
+                .resolve_path("same")
+                .unwrap()
+                .ends_with("project/same/SKILL.md")
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }

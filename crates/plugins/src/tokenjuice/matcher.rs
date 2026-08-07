@@ -157,7 +157,10 @@ pub fn git_subcommand(argv: &[String]) -> Option<String> {
             index += 2;
             continue;
         }
-        if GIT_GLOBAL_OPTION_INLINE_PREFIXES.iter().any(|p| arg.starts_with(p)) {
+        if GIT_GLOBAL_OPTION_INLINE_PREFIXES
+            .iter()
+            .any(|p| arg.starts_with(p))
+        {
             index += 1;
             continue;
         }
@@ -196,7 +199,10 @@ pub fn rule_matches(
     let normalized_tool = if command.is_some() { "exec" } else { tool_name };
 
     if !m.tool_names.is_empty()
-        && !m.tool_names.iter().any(|t| t == normalized_tool || t == tool_name)
+        && !m
+            .tool_names
+            .iter()
+            .any(|t| t == normalized_tool || t == tool_name)
     {
         return false;
     }
@@ -237,8 +243,7 @@ pub fn rule_matches(
         .map(|c| c.to_string())
         .unwrap_or_else(|| argv.join(" "));
 
-    if !m.command_includes.is_empty()
-        && !contains_command_text(&command_text, &m.command_includes)
+    if !m.command_includes.is_empty() && !contains_command_text(&command_text, &m.command_includes)
     {
         return false;
     }
@@ -466,7 +471,15 @@ mod tests {
     #[test]
     fn command_argv_splits_shell_command() {
         let argv = command_argv(Some("git -C 'path' status"), None);
-        assert_eq!(argv, vec!["git".to_string(), "-C".to_string(), "path".to_string(), "status".to_string()]);
+        assert_eq!(
+            argv,
+            vec![
+                "git".to_string(),
+                "-C".to_string(),
+                "path".to_string(),
+                "status".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -476,14 +489,26 @@ mod tests {
 
     #[test]
     fn git_subcommand_skips_global_option_with_value() {
-        let argv = vec!["git".to_string(), "-C".to_string(), "repo".to_string(), "status".to_string()];
+        let argv = vec![
+            "git".to_string(),
+            "-C".to_string(),
+            "repo".to_string(),
+            "status".to_string(),
+        ];
         assert_eq!(git_subcommand(&argv), Some("status".to_string()));
     }
 
     #[test]
     fn rule_matches_empty_match_always() {
         let r = rule("generic/fallback", RuleMatch::default(), 0);
-        assert!(rule_matches(&r, "exec", Some("ls"), &command_argv(Some("ls"), None), "x", 0));
+        assert!(rule_matches(
+            &r,
+            "exec",
+            Some("ls"),
+            &command_argv(Some("ls"), None),
+            "x",
+            0
+        ));
     }
 
     #[test]
@@ -497,9 +522,23 @@ mod tests {
             },
             0,
         );
-        assert!(rule_matches(&r, "exec", Some("ls -la"), &command_argv(Some("ls -la"), None), "x", 0));
+        assert!(rule_matches(
+            &r,
+            "exec",
+            Some("ls -la"),
+            &command_argv(Some("ls -la"), None),
+            "x",
+            0
+        ));
         // Wrong argv0.
-        assert!(!rule_matches(&r, "exec", Some("cat f"), &command_argv(Some("cat f"), None), "x", 0));
+        assert!(!rule_matches(
+            &r,
+            "exec",
+            Some("cat f"),
+            &command_argv(Some("cat f"), None),
+            "x",
+            0
+        ));
         // tool_name only (no command) does not satisfy toolNames=["exec"] for arbitrary tool.
         assert!(!rule_matches(&r, "read", None, &[], "x", 0));
     }
@@ -515,8 +554,22 @@ mod tests {
             },
             0,
         );
-        assert!(rule_matches(&r, "exec", Some("git status"), &command_argv(Some("git status"), None), "x", 0));
-        assert!(!rule_matches(&r, "exec", Some("git log"), &command_argv(Some("git log"), None), "x", 0));
+        assert!(rule_matches(
+            &r,
+            "exec",
+            Some("git status"),
+            &command_argv(Some("git status"), None),
+            "x",
+            0
+        ));
+        assert!(!rule_matches(
+            &r,
+            "exec",
+            Some("git log"),
+            &command_argv(Some("git log"), None),
+            "x",
+            0
+        ));
     }
 
     #[test]
@@ -529,8 +582,22 @@ mod tests {
             },
             0,
         );
-        assert!(rule_matches(&r, "exec", Some("ls && git diff HEAD"), &command_argv(Some("ls && git diff HEAD"), None), "x", 0));
-        assert!(!rule_matches(&r, "exec", Some("ls -la"), &command_argv(Some("ls -la"), None), "x", 0));
+        assert!(rule_matches(
+            &r,
+            "exec",
+            Some("ls && git diff HEAD"),
+            &command_argv(Some("ls && git diff HEAD"), None),
+            "x",
+            0
+        ));
+        assert!(!rule_matches(
+            &r,
+            "exec",
+            Some("ls -la"),
+            &command_argv(Some("ls -la"), None),
+            "x",
+            0
+        ));
     }
 
     #[test]

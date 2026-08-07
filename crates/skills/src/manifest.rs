@@ -17,9 +17,8 @@
 //! step without a `tool` is an error, and so on.
 
 use crate::types::{
-    SkillAuthor, SkillDependency, SkillKind, SkillLayer, SkillLicense,
-    SkillManifest, SkillMetadata, SkillRequires, SkillSpec, SkillStep, SkillVersion, SkillVisibility,
-    StepType,
+    SkillAuthor, SkillDependency, SkillKind, SkillLayer, SkillLicense, SkillManifest,
+    SkillMetadata, SkillRequires, SkillSpec, SkillStep, SkillVersion, SkillVisibility, StepType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -127,12 +126,18 @@ impl ValidationReport {
 
     /// Only the error-severity issues.
     pub fn errors(&self) -> Vec<&ValidationIssue> {
-        self.issues.iter().filter(|i| i.severity == Severity::Error).collect()
+        self.issues
+            .iter()
+            .filter(|i| i.severity == Severity::Error)
+            .collect()
     }
 
     /// Only the warning-severity issues.
     pub fn warnings(&self) -> Vec<&ValidationIssue> {
-        self.issues.iter().filter(|i| i.severity == Severity::Warning).collect()
+        self.issues
+            .iter()
+            .filter(|i| i.severity == Severity::Warning)
+            .collect()
     }
 
     /// Whether the manifest passed validation entirely (no issues at all).
@@ -294,10 +299,7 @@ impl ManifestValidator {
                 Some(id) if !is_valid_slug(id) => report.issues.push(ValidationIssue {
                     severity: Severity::Warning,
                     field: "id".to_string(),
-                    message: format!(
-                        "skill id '{}' should be a lowercase slug (a-z0-9_-)",
-                        id
-                    ),
+                    message: format!("skill id '{}' should be a lowercase slug (a-z0-9_-)", id),
                 }),
                 _ => {}
             }
@@ -423,10 +425,7 @@ impl ManifestValidator {
                     report.issues.push(ValidationIssue {
                         severity: Severity::Error,
                         field: format!("{}.output_choices", path),
-                        message: format!(
-                            "step '{}' (llm_classify) has no output_choices",
-                            step.id
-                        ),
+                        message: format!("step '{}' (llm_classify) has no output_choices", step.id),
                     });
                 }
             }
@@ -440,8 +439,7 @@ impl ManifestValidator {
                         field: format!("{}.prompt", path),
                         message: format!(
                             "step '{}' ({}) has no prompt or task",
-                            step.id,
-                            step.step_type
+                            step.id, step.step_type
                         ),
                     });
                 }
@@ -720,8 +718,11 @@ fn dfs_cycle<'a>(
 /// Whether a string is a valid lowercase slug.
 fn is_valid_slug(s: &str) -> bool {
     !s.is_empty()
-        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-        && s.chars().next().map_or(false, |c| c.is_ascii_alphanumeric())
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        && s.chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_alphanumeric())
 }
 
 /// Whether a string looks like a 2-letter ISO-639-1 or 3-letter ISO-639-2
@@ -764,7 +765,10 @@ pub fn manifest_to_ordered_value(manifest: &SkillManifest) -> serde_json::Value 
     opt_str!(manifest.id.as_ref(), "id");
     opt_str!(manifest.name.as_ref(), "name");
     if let Some(kind) = &manifest.kind {
-        map.insert("kind".to_string(), serde_json::to_value(kind).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "kind".to_string(),
+            serde_json::to_value(kind).unwrap_or(serde_json::Value::Null),
+        );
     }
     opt_str!(manifest.description.as_ref(), "description");
     opt_str!(manifest.version.as_ref(), "version");
@@ -779,37 +783,70 @@ pub fn manifest_to_ordered_value(manifest: &SkillManifest) -> serde_json::Value 
     opt_str!(manifest.visibility.as_ref(), "visibility");
     opt_str!(manifest.scope.as_ref(), "scope");
     if !manifest.tags.is_empty() {
-        map.insert("tags".to_string(), serde_json::to_value(&manifest.tags).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "tags".to_string(),
+            serde_json::to_value(&manifest.tags).unwrap_or(serde_json::Value::Null),
+        );
     }
     if let Some(requires) = &manifest.requires {
-        map.insert("requires".to_string(), serde_json::to_value(requires).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "requires".to_string(),
+            serde_json::to_value(requires).unwrap_or(serde_json::Value::Null),
+        );
     }
     if let Some(metadata) = &manifest.metadata {
-        map.insert("metadata".to_string(), serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "metadata".to_string(),
+            serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null),
+        );
     }
     if !manifest.allowed_tools.is_empty() {
-        map.insert("allowed-tools".to_string(), serde_json::to_value(&manifest.allowed_tools).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "allowed-tools".to_string(),
+            serde_json::to_value(&manifest.allowed_tools).unwrap_or(serde_json::Value::Null),
+        );
     }
     if manifest.disable_model_invocation {
-        map.insert("disable_model_invocation".to_string(), serde_json::Value::Bool(true));
+        map.insert(
+            "disable_model_invocation".to_string(),
+            serde_json::Value::Bool(true),
+        );
     }
     if !manifest.steps.is_empty() {
-        map.insert("steps".to_string(), serde_json::to_value(&manifest.steps).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "steps".to_string(),
+            serde_json::to_value(&manifest.steps).unwrap_or(serde_json::Value::Null),
+        );
     }
     if !manifest.outputs.is_empty() {
-        map.insert("outputs".to_string(), serde_json::to_value(&manifest.outputs).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "outputs".to_string(),
+            serde_json::to_value(&manifest.outputs).unwrap_or(serde_json::Value::Null),
+        );
     }
     if !manifest.contexts.is_empty() {
-        map.insert("contexts".to_string(), serde_json::to_value(&manifest.contexts).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "contexts".to_string(),
+            serde_json::to_value(&manifest.contexts).unwrap_or(serde_json::Value::Null),
+        );
     }
     if !manifest.args.is_empty() {
-        map.insert("args".to_string(), serde_json::to_value(&manifest.args).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "args".to_string(),
+            serde_json::to_value(&manifest.args).unwrap_or(serde_json::Value::Null),
+        );
     }
     if !manifest.dependencies.is_empty() {
-        map.insert("dependencies".to_string(), serde_json::to_value(&manifest.dependencies).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "dependencies".to_string(),
+            serde_json::to_value(&manifest.dependencies).unwrap_or(serde_json::Value::Null),
+        );
     }
     if !manifest.changelog.is_empty() {
-        map.insert("changelog".to_string(), serde_json::to_value(&manifest.changelog).unwrap_or(serde_json::Value::Null));
+        map.insert(
+            "changelog".to_string(),
+            serde_json::to_value(&manifest.changelog).unwrap_or(serde_json::Value::Null),
+        );
     }
     for (k, v) in &manifest.extra {
         map.insert(k.clone(), v.clone());
@@ -838,7 +875,12 @@ pub fn minimal_manifest(id: &str, name: &str, description: &str) -> SkillManifes
 }
 
 /// Build a meta-skill manifest with the given steps.
-pub fn meta_manifest(id: &str, name: &str, description: &str, steps: Vec<SkillStep>) -> SkillManifest {
+pub fn meta_manifest(
+    id: &str,
+    name: &str,
+    description: &str,
+    steps: Vec<SkillStep>,
+) -> SkillManifest {
     SkillManifest {
         id: Some(id.to_string()),
         name: Some(name.to_string()),
@@ -922,7 +964,8 @@ pub fn merge_manifests(base: &SkillManifest, override_: &SkillManifest) -> Skill
         }
     }
     if !override_.contexts.is_empty() {
-        let mut seen: std::collections::HashSet<String> = base.contexts.iter().map(|c| c.name.clone()).collect();
+        let mut seen: std::collections::HashSet<String> =
+            base.contexts.iter().map(|c| c.name.clone()).collect();
         for ctx in &override_.contexts {
             if seen.insert(ctx.name.clone()) {
                 out.contexts.push(ctx.clone());
@@ -930,7 +973,8 @@ pub fn merge_manifests(base: &SkillManifest, override_: &SkillManifest) -> Skill
         }
     }
     if !override_.args.is_empty() {
-        let mut seen: std::collections::HashSet<String> = base.args.iter().map(|a| a.name.clone()).collect();
+        let mut seen: std::collections::HashSet<String> =
+            base.args.iter().map(|a| a.name.clone()).collect();
         for arg in &override_.args {
             if seen.insert(arg.name.clone()) {
                 out.args.push(arg.clone());
@@ -938,7 +982,8 @@ pub fn merge_manifests(base: &SkillManifest, override_: &SkillManifest) -> Skill
         }
     }
     if !override_.dependencies.is_empty() {
-        out.dependencies.extend(override_.dependencies.iter().cloned());
+        out.dependencies
+            .extend(override_.dependencies.iter().cloned());
     }
     if !override_.changelog.is_empty() {
         out.changelog.extend(override_.changelog.iter().cloned());
@@ -1030,7 +1075,14 @@ pub fn upgrade_manifest(mut manifest: SkillManifest) -> SkillManifest {
         manifest.kind = Some(SkillKind::Meta);
     }
     if manifest.id.is_none() && manifest.name.is_some() {
-        manifest.id = Some(manifest.name.as_ref().unwrap().to_lowercase().replace(' ', "_"));
+        manifest.id = Some(
+            manifest
+                .name
+                .as_ref()
+                .unwrap()
+                .to_lowercase()
+                .replace(' ', "_"),
+        );
     }
     if manifest.name.is_none() && manifest.id.is_some() {
         manifest.name = manifest.id.clone();
@@ -1047,13 +1099,11 @@ pub fn extract_author(manifest: &SkillManifest) -> Option<SkillAuthor> {
             let mut author = SkillAuthor::new(name);
             author.email = map.get("email").and_then(|v| v.as_str()).map(String::from);
             author.url = map.get("url").and_then(|v| v.as_str()).map(String::from);
-            author.organization =
-                map.get("organization").and_then(|v| v.as_str()).map(String::from);
-            if name.is_empty() {
-                None
-            } else {
-                Some(author)
-            }
+            author.organization = map
+                .get("organization")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            if name.is_empty() { None } else { Some(author) }
         }
         _ => None,
     }
@@ -1061,7 +1111,10 @@ pub fn extract_author(manifest: &SkillManifest) -> Option<SkillAuthor> {
 
 /// Extract a [`SkillLicense`] from the manifest's `license` field.
 pub fn extract_license(manifest: &SkillManifest) -> Option<SkillLicense> {
-    manifest.license.as_ref().map(|s| SkillLicense::new(s.clone()))
+    manifest
+        .license
+        .as_ref()
+        .map(|s| SkillLicense::new(s.clone()))
 }
 
 /// Extract a [`SkillRequires`] from the manifest, defaulting when absent.
@@ -1203,10 +1256,12 @@ mod tests {
         m.steps[1].prompt = Some("hello".to_string());
         let report = ManifestValidator::new().validate(&m);
         assert!(report.has_errors());
-        assert!(report
-            .issues
-            .iter()
-            .any(|i| i.field == "steps[1].id" && i.message.contains("duplicated")));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.field == "steps[1].id" && i.message.contains("duplicated"))
+        );
     }
 
     #[test]
@@ -1219,10 +1274,7 @@ mod tests {
         );
         let report = ManifestValidator::new().validate(&m);
         assert!(report.has_errors());
-        assert!(report
-            .issues
-            .iter()
-            .any(|i| i.field == "steps[0].tool"));
+        assert!(report.issues.iter().any(|i| i.field == "steps[0].tool"));
     }
 
     #[test]
@@ -1233,10 +1285,12 @@ mod tests {
         let m = meta_manifest("wf", "Workflow", "desc", vec![step]);
         let report = ManifestValidator::new().validate(&m);
         assert!(report.has_errors());
-        assert!(report
-            .issues
-            .iter()
-            .any(|i| i.field == "steps[0].depends_on"));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.field == "steps[0].depends_on")
+        );
     }
 
     #[test]
@@ -1250,10 +1304,7 @@ mod tests {
         let m = meta_manifest("wf", "Workflow", "desc", vec![a, b]);
         let report = ManifestValidator::new().validate(&m);
         assert!(report.has_errors());
-        assert!(report
-            .issues
-            .iter()
-            .any(|i| i.message.contains("cycle")));
+        assert!(report.issues.iter().any(|i| i.message.contains("cycle")));
     }
 
     #[test]
@@ -1263,10 +1314,12 @@ mod tests {
         let m = meta_manifest("wf", "Workflow", "desc", vec![step]);
         let report = ManifestValidator::new().validate(&m);
         assert!(report.has_errors());
-        assert!(report
-            .issues
-            .iter()
-            .any(|i| i.field == "steps[0].output_choices"));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.field == "steps[0].output_choices")
+        );
     }
 
     #[test]
@@ -1420,7 +1473,9 @@ mod tests {
     fn manifest_to_spec_public_produces_valid_spec() {
         let mut m = basic_manifest();
         m.version = Some("1.0.0".to_string());
-        let spec = manifest_to_spec_public(m, SkillLayer::Managed, None, String::new(), String::new()).unwrap();
+        let spec =
+            manifest_to_spec_public(m, SkillLayer::Managed, None, String::new(), String::new())
+                .unwrap();
         assert_eq!(spec.id, "my-skill");
         assert_eq!(spec.name, "My Skill");
         assert_eq!(spec.layer, SkillLayer::Managed);

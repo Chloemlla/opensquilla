@@ -74,13 +74,22 @@ impl TurnOutcome {
     /// Mirrors `TurnOutcome.to_dict()`.
     pub fn to_dict(&self) -> serde_json::Value {
         let mut obj = serde_json::Map::new();
-        obj.insert("kind".into(), serde_json::Value::String(self.kind.as_str().into()));
-        obj.insert("reason".into(), serde_json::Value::String(self.reason.clone()));
+        obj.insert(
+            "kind".into(),
+            serde_json::Value::String(self.kind.as_str().into()),
+        );
+        obj.insert(
+            "reason".into(),
+            serde_json::Value::String(self.reason.clone()),
+        );
         if let Some(cls) = &self.error_class {
             obj.insert("error_class".into(), serde_json::Value::String(cls.clone()));
         }
         if let Some(msg) = &self.error_message {
-            obj.insert("error_message".into(), serde_json::Value::String(msg.clone()));
+            obj.insert(
+                "error_message".into(),
+                serde_json::Value::String(msg.clone()),
+            );
         }
         // Python's `asdict(self)` keeps `retryable: False` (only `None` fields
         // are dropped), so the wire dict must always carry the flag — both
@@ -160,7 +169,11 @@ pub fn outcome_from_error(
     }
     TurnOutcome {
         kind: TurnOutcomeKind::Failed,
-        reason: if normalized.is_empty() { "error".into() } else { normalized.clone() },
+        reason: if normalized.is_empty() {
+            "error".into()
+        } else {
+            normalized.clone()
+        },
         error_class: cls.or_else(|| {
             if normalized.is_empty() {
                 Some("error".into())
@@ -250,7 +263,10 @@ mod tests {
 
     #[test]
     fn test_normalize_code_lowercases_and_replaces_dashes() {
-        assert_eq!(normalize_code(Some("  Provider-Request-Too-Large ")), "provider_request_too_large");
+        assert_eq!(
+            normalize_code(Some("  Provider-Request-Too-Large ")),
+            "provider_request_too_large"
+        );
         assert_eq!(normalize_code(None), "");
     }
 
@@ -261,7 +277,10 @@ mod tests {
         assert_eq!(outcome.reason, "provider_request_too_large");
         assert!(outcome.retryable);
         assert_eq!(outcome.error_message.as_deref(), Some("msg"));
-        assert_eq!(outcome.error_class.as_deref(), Some("provider_request_too_large"));
+        assert_eq!(
+            outcome.error_class.as_deref(),
+            Some("provider_request_too_large")
+        );
     }
 
     #[test]

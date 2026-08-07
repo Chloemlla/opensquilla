@@ -578,9 +578,10 @@ impl AgentUsageRollup {
         entry.calls += 1;
 
         if let Some(session_id) = session_id {
-            let session = self.sessions.entry(session_id.to_string()).or_insert_with(|| {
-                SessionUsageRollup::new(session_id)
-            });
+            let session = self
+                .sessions
+                .entry(session_id.to_string())
+                .or_insert_with(|| SessionUsageRollup::new(session_id));
             session.record(event);
         }
     }
@@ -599,9 +600,10 @@ impl AgentUsageRollup {
             entry.calls += usage.calls;
         }
         for (session_id, rollup) in &other.sessions {
-            let session = self.sessions.entry(session_id.clone()).or_insert_with(|| {
-                SessionUsageRollup::new(session_id)
-            });
+            let session = self
+                .sessions
+                .entry(session_id.clone())
+                .or_insert_with(|| SessionUsageRollup::new(session_id));
             session.input_tokens += rollup.input_tokens;
             session.output_tokens += rollup.output_tokens;
             session.total_tokens += rollup.total_tokens;
@@ -632,9 +634,9 @@ impl SessionUsageRegistry {
     /// Record an event against a session.
     pub fn record(&self, session_id: &str, event: &UsageEvent) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let rollup = inner.entry(session_id.to_string()).or_insert_with(|| {
-            SessionUsageRollup::new(session_id)
-        });
+        let rollup = inner
+            .entry(session_id.to_string())
+            .or_insert_with(|| SessionUsageRollup::new(session_id));
         rollup.record(event);
     }
 
@@ -692,7 +694,10 @@ impl SessionUsageRegistry {
 
     /// True when no sessions are tracked.
     pub fn is_empty(&self) -> bool {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 }
 
@@ -811,11 +816,9 @@ impl CostAggregatingSink {
 
 impl UsageEventSink for CostAggregatingSink {
     fn record(&self, event: &UsageEvent) {
-        let cost = self.pricing.cost_for(
-            &event.model,
-            event.input_tokens,
-            event.output_tokens,
-        );
+        let cost = self
+            .pricing
+            .cost_for(&event.model, event.input_tokens, event.output_tokens);
         self.cost_micro_usd.fetch_add(
             (cost * 1_000_000.0) as u64,
             std::sync::atomic::Ordering::SeqCst,

@@ -115,8 +115,14 @@ impl ProgressDecision {
     /// Render the decision as a JSON object.
     pub fn to_dict(&self) -> serde_json::Value {
         let mut obj = serde_json::Map::new();
-        obj.insert("action".into(), serde_json::Value::String(self.action.as_str().into()));
-        obj.insert("reason".into(), serde_json::Value::String(self.reason.clone()));
+        obj.insert(
+            "action".into(),
+            serde_json::Value::String(self.action.as_str().into()),
+        );
+        obj.insert(
+            "reason".into(),
+            serde_json::Value::String(self.reason.clone()),
+        );
         obj.insert("details".into(), self.details.clone());
         serde_json::Value::Object(obj)
     }
@@ -246,7 +252,8 @@ impl ProgressWatchdog {
 
     /// Observe one turn iteration and return a decision.
     pub fn observe(&mut self, observation: &ProgressObservation) -> ProgressDecision {
-        let workspace_progress_observed = self.sync_workspace_progress_count(workspace_progress_count(observation));
+        let workspace_progress_observed =
+            self.sync_workspace_progress_count(workspace_progress_count(observation));
 
         if let Some(decision) = self.record_source_context_without_write(observation) {
             return decision;
@@ -269,7 +276,11 @@ impl ProgressWatchdog {
 
         if has_progress(observation, workspace_progress_observed) {
             self.reset_progress_sensitive_counts();
-            return self.decision("progress", serde_json::Value::Object(serde_json::Map::new()), ProgressAction::Observe);
+            return self.decision(
+                "progress",
+                serde_json::Value::Object(serde_json::Map::new()),
+                ProgressAction::Observe,
+            );
         }
 
         if let Some(decision) = self.record_repeated_tool_error(observation) {
@@ -279,10 +290,17 @@ impl ProgressWatchdog {
             return decision;
         }
 
-        self.decision("no_signal", serde_json::Value::Object(serde_json::Map::new()), ProgressAction::Observe)
+        self.decision(
+            "no_signal",
+            serde_json::Value::Object(serde_json::Map::new()),
+            ProgressAction::Observe,
+        )
     }
 
-    fn record_source_context_without_write(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_source_context_without_write(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         if observation.artifact_completed {
             self.reset_source_context_without_write_count();
             return None;
@@ -294,7 +312,10 @@ impl ProgressWatchdog {
             return None;
         }
 
-        let signature = observation.source_context_signature.clone().unwrap_or_else(|| "<unknown>".to_string());
+        let signature = observation
+            .source_context_signature
+            .clone()
+            .unwrap_or_else(|| "<unknown>".to_string());
         if Some(signature.as_str()) == self.last_source_context_without_write_signature.as_deref() {
             self.source_context_without_write_count += 1;
         } else {
@@ -320,10 +341,17 @@ impl ProgressWatchdog {
             "source_context_signature": signature,
             "workspace_change_likely_required": observation.workspace_change_likely_required,
         });
-        Some(self.decision("source_context_without_workspace_write", details, ProgressAction::Warn))
+        Some(self.decision(
+            "source_context_without_workspace_write",
+            details,
+            ProgressAction::Warn,
+        ))
     }
 
-    fn record_source_context_exploration_without_write(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_source_context_exploration_without_write(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         if observation.artifact_completed {
             self.reset_source_context_exploration_without_write_count();
             return None;
@@ -337,7 +365,9 @@ impl ProgressWatchdog {
         }
 
         self.source_context_exploration_without_write_count += 1;
-        let threshold = self.source_context_exploration_without_write_threshold.max(0);
+        let threshold = self
+            .source_context_exploration_without_write_threshold
+            .max(0);
         if threshold <= 0 || self.source_context_exploration_without_write_count < threshold {
             return None;
         }
@@ -346,7 +376,8 @@ impl ProgressWatchdog {
         {
             return None;
         }
-        self.source_context_exploration_without_write_warned_at = self.source_context_exploration_without_write_count;
+        self.source_context_exploration_without_write_warned_at =
+            self.source_context_exploration_without_write_count;
         let details = json!({
             "count": self.source_context_exploration_without_write_count,
             "threshold": threshold,
@@ -355,10 +386,17 @@ impl ProgressWatchdog {
             "source_context_signature": observation.source_context_signature.clone().unwrap_or_else(|| "<unknown>".to_string()),
             "workspace_change_likely_required": observation.workspace_change_likely_required,
         });
-        Some(self.decision("source_context_exploration_without_workspace_write", details, ProgressAction::Warn))
+        Some(self.decision(
+            "source_context_exploration_without_workspace_write",
+            details,
+            ProgressAction::Warn,
+        ))
     }
 
-    fn record_source_context_after_write(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_source_context_after_write(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         if observation.artifact_completed {
             self.reset_source_context_after_write_count();
             return None;
@@ -376,7 +414,9 @@ impl ProgressWatchdog {
         if threshold <= 0 || self.source_context_after_write_count < threshold {
             return None;
         }
-        if self.source_context_after_write_warned_at != 0 && self.source_context_after_write_count % threshold != 0 {
+        if self.source_context_after_write_warned_at != 0
+            && self.source_context_after_write_count % threshold != 0
+        {
             return None;
         }
         self.source_context_after_write_warned_at = self.source_context_after_write_count;
@@ -387,10 +427,17 @@ impl ProgressWatchdog {
             "provider_call_count": observation.provider_call_count,
             "workspace_write_count": observation.workspace_write_count,
         });
-        Some(self.decision("source_context_after_workspace_write", details, ProgressAction::Warn))
+        Some(self.decision(
+            "source_context_after_workspace_write",
+            details,
+            ProgressAction::Warn,
+        ))
     }
 
-    fn record_repeated_failure_anchor_without_write(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_repeated_failure_anchor_without_write(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         let signature = observation.failure_anchor_signature.clone()?;
         if Some(signature.as_str()) == self.last_failure_anchor.as_deref() {
             self.failure_anchor_count += 1;
@@ -418,10 +465,17 @@ impl ProgressWatchdog {
             "failure_anchor_summary": observation.failure_anchor_summary.clone().unwrap_or_default(),
             "workspace_change_likely_required": observation.workspace_change_likely_required,
         });
-        Some(self.decision("repeated_failure_anchor_without_workspace_write", details, ProgressAction::Warn))
+        Some(self.decision(
+            "repeated_failure_anchor_without_workspace_write",
+            details,
+            ProgressAction::Warn,
+        ))
     }
 
-    fn record_tool_activity_without_write(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_tool_activity_without_write(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         if observation.artifact_completed {
             self.reset_tool_activity_without_write_count();
             return None;
@@ -442,7 +496,9 @@ impl ProgressWatchdog {
         if threshold <= 0 || self.tool_activity_without_write_count < threshold {
             return None;
         }
-        if self.tool_activity_without_write_warned_at != 0 && self.tool_activity_without_write_count % threshold != 0 {
+        if self.tool_activity_without_write_warned_at != 0
+            && self.tool_activity_without_write_count % threshold != 0
+        {
             return None;
         }
         self.tool_activity_without_write_warned_at = self.tool_activity_without_write_count;
@@ -455,10 +511,17 @@ impl ProgressWatchdog {
             "successful_execution_tool_result": observation.successful_execution_tool_result,
             "workspace_change_likely_required": observation.workspace_change_likely_required,
         });
-        Some(self.decision("tool_activity_without_workspace_write", details, ProgressAction::Warn))
+        Some(self.decision(
+            "tool_activity_without_workspace_write",
+            details,
+            ProgressAction::Warn,
+        ))
     }
 
-    fn record_verified_post_write_activity(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_verified_post_write_activity(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         if observation.artifact_completed {
             self.reset_verified_post_write_activity_count();
             return None;
@@ -474,7 +537,9 @@ impl ProgressWatchdog {
         if !observation.successful_tool_result {
             return None;
         }
-        if !observation.successful_execution_tool_result && !observation.successful_source_context_tool_result {
+        if !observation.successful_execution_tool_result
+            && !observation.successful_source_context_tool_result
+        {
             return None;
         }
 
@@ -483,7 +548,9 @@ impl ProgressWatchdog {
         if threshold <= 0 || self.verified_post_write_activity_count < threshold {
             return None;
         }
-        if self.verified_post_write_activity_warned_at != 0 && self.verified_post_write_activity_count % threshold != 0 {
+        if self.verified_post_write_activity_warned_at != 0
+            && self.verified_post_write_activity_count % threshold != 0
+        {
             return None;
         }
         self.verified_post_write_activity_warned_at = self.verified_post_write_activity_count;
@@ -499,7 +566,11 @@ impl ProgressWatchdog {
             "successful_execution_tool_result": observation.successful_execution_tool_result,
             "successful_source_context_tool_result": observation.successful_source_context_tool_result,
         });
-        Some(self.decision("verified_workspace_diff_continued_tool_activity", details, ProgressAction::Warn))
+        Some(self.decision(
+            "verified_workspace_diff_continued_tool_activity",
+            details,
+            ProgressAction::Warn,
+        ))
     }
 
     fn sync_workspace_progress_count(&mut self, workspace_progress_count: i64) -> bool {
@@ -515,7 +586,10 @@ impl ProgressWatchdog {
         false
     }
 
-    fn record_repeated_tool_error(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_repeated_tool_error(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         let signature = observation.tool_error_signature.clone()?;
         if Some(signature.as_str()) == self.last_tool_error.as_deref() {
             self.tool_error_count += 1;
@@ -530,7 +604,10 @@ impl ProgressWatchdog {
         Some(self.decision("repeated_tool_error", details, ProgressAction::Warn))
     }
 
-    fn record_repeated_provider_failure(&mut self, observation: &ProgressObservation) -> Option<ProgressDecision> {
+    fn record_repeated_provider_failure(
+        &mut self,
+        observation: &ProgressObservation,
+    ) -> Option<ProgressDecision> {
         let signature = observation.provider_failure_signature.clone()?;
         if Some(signature.as_str()) == self.last_provider_failure.as_deref() {
             self.provider_failure_count += 1;
@@ -545,7 +622,12 @@ impl ProgressWatchdog {
         Some(self.decision("repeated_provider_failure", details, ProgressAction::Warn))
     }
 
-    fn decision(&self, reason: &str, details: serde_json::Value, action: ProgressAction) -> ProgressDecision {
+    fn decision(
+        &self,
+        reason: &str,
+        details: serde_json::Value,
+        action: ProgressAction,
+    ) -> ProgressDecision {
         ProgressDecision {
             action: if action == ProgressAction::Observe {
                 ProgressAction::Observe
@@ -616,7 +698,11 @@ pub fn has_progress(observation: &ProgressObservation, workspace_progress_observ
         || observation.artifact_completed
 }
 
-fn decision_details(observation: &ProgressObservation, signature: &str, count: i64) -> serde_json::Value {
+fn decision_details(
+    observation: &ProgressObservation,
+    signature: &str,
+    count: i64,
+) -> serde_json::Value {
     json!({
         "signature": signature,
         "count": count,
@@ -733,7 +819,10 @@ mod tests {
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
-        assert_eq!(decision.reason, "repeated_failure_anchor_without_workspace_write");
+        assert_eq!(
+            decision.reason,
+            "repeated_failure_anchor_without_workspace_write"
+        );
         assert_eq!(decision.action, ProgressAction::Warn);
     }
 
@@ -748,7 +837,10 @@ mod tests {
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
-        assert_eq!(decision.reason, "verified_workspace_diff_continued_tool_activity");
+        assert_eq!(
+            decision.reason,
+            "verified_workspace_diff_continued_tool_activity"
+        );
     }
 
     #[test]

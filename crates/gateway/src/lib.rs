@@ -64,8 +64,8 @@
 //! - [`turn_ingress`]     — Inbound turn queueing, validation, deduplication
 
 pub mod agents;
-pub mod approvals;
 pub mod app;
+pub mod approvals;
 pub mod artifact_preview;
 pub mod attachments;
 pub mod audio_transcription;
@@ -124,27 +124,25 @@ pub use auth::{
     OpenScopeResolver, ScopeResolver, TokenScopeResolver, TokenStore, is_loopback,
     is_loopback_bind, normalize_operator_scopes, resolve_auth,
 };
+pub use chat::ChatStore;
+pub use config::ConfigStore;
 pub use middleware::{
     AuthenticatedUser, RateLimiter, SlidingWindowRateLimiter, client_ip, error_response,
     extract_token, is_public_path, origin_allowed, sliding_window_rate_limit_middleware,
     token_auth_middleware, unsafe_origin_guard_middleware,
 };
 pub use protocol::{
-    ErrorFrame, EventFrame, GatewayMessage, HelloOk, PingFrame, PongFrame, ReqFrame, ResFrame,
-    ResponseFrame, RequestFrame, WsEventFrame, make_error_res, make_ok_res, negotiate_protocol,
-    ErrorShape, StateVersion, ClientInfo, ConnectParams, ServerInfo, FeaturesInfo, SnapshotInfo,
-    PolicyInfo,
+    ClientInfo, ConnectParams, ErrorFrame, ErrorShape, EventFrame, FeaturesInfo, GatewayMessage,
+    HelloOk, PingFrame, PolicyInfo, PongFrame, ReqFrame, RequestFrame, ResFrame, ResponseFrame,
+    ServerInfo, SnapshotInfo, StateVersion, WsEventFrame, make_error_res, make_ok_res,
+    negotiate_protocol,
 };
 pub use rpc::{
-    rpc_handler, rpc_handler_with_ctx, RpcContext, RpcErrorCode, RpcHandler, RpcRegistry,
+    RpcContext, RpcErrorCode, RpcHandler, RpcRegistry, rpc_handler, rpc_handler_with_ctx,
 };
 pub use rpc_handlers::register_domain_handlers;
 pub use sessions::SessionStore;
-pub use chat::ChatStore;
-pub use config::ConfigStore;
-pub use websocket::{
-    ConnectionRegistry, SubscriptionManager, WsConnection, WsError, WsSender,
-};
+pub use websocket::{ConnectionRegistry, SubscriptionManager, WsConnection, WsError, WsSender};
 
 // Re-export the service/handle types from the new RPC handler modules.
 pub use agents::AgentStore;
@@ -155,9 +153,9 @@ pub use cron::SchedulerHandle;
 pub use diagnostics::DiagnosticsService;
 pub use doctor::DoctorService;
 pub use dream_bridge::{DreamBridge, DreamReconcilerFn, DreamStatus};
+pub use mcp_bridge::GatewayMcpBridge;
 pub use memory::MemoryHandle;
 pub use meta_runs::MetaRunStore;
-pub use mcp_bridge::GatewayMcpBridge;
 pub use models::ModelCatalog;
 pub use onboarding::OnboardingSession;
 pub use proposals::ProposalStore;

@@ -134,16 +134,14 @@ pub async fn add_task_opts(
     let handler = handler.unwrap_or_else(|| "heartbeat".to_string());
 
     let agent_id = match agent {
-        Some(a) => Some(
-            Uuid::parse_str(&a)
-                .map_err(|_| anyhow::anyhow!("Invalid agent id: {a}"))?,
-        ),
+        Some(a) => Some(Uuid::parse_str(&a).map_err(|_| anyhow::anyhow!("Invalid agent id: {a}"))?),
         None => Some(util::default_agent_id()),
     };
 
     let payload_value = match payload {
-        Some(p) => serde_json::from_str(&p)
-            .map_err(|_| anyhow::anyhow!("Invalid JSON payload: {p}"))?,
+        Some(p) => {
+            serde_json::from_str(&p).map_err(|_| anyhow::anyhow!("Invalid JSON payload: {p}"))?
+        }
         None => serde_json::Value::Null,
     };
 

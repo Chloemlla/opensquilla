@@ -47,9 +47,7 @@ pub enum RouterAction {
         tier: Option<String>,
     },
     /// Show which model would be selected for a task.
-    Select {
-        task: String,
-    },
+    Select { task: String },
 }
 
 /// A model tier definition for routing.
@@ -101,7 +99,12 @@ pub async fn simulate_decision(task: &str, tier: Option<String>) -> Result<()> {
         .entry("Task", task.to_string())
         .entry(
             "Routing enabled",
-            if is_routing_enabled(&config) { "yes" } else { "no (static selection)" }.to_string(),
+            if is_routing_enabled(&config) {
+                "yes"
+            } else {
+                "no (static selection)"
+            }
+            .to_string(),
         )
         .entry(
             "Forced tier",
@@ -139,15 +142,14 @@ pub async fn simulate_decision(task: &str, tier: Option<String>) -> Result<()> {
                 .border(table::TableBorder::Header);
             for model in &t.models {
                 let cal = calibration.iter().find(|c| &c.model == model);
-                let latency = cal.map(|c| format!("{}ms", c.latency_ms)).unwrap_or_else(|| "—".into());
-                let cost = cal.map(|c| format!("${:.4}", c.cost_usd)).unwrap_or_else(|| "—".into());
+                let latency = cal
+                    .map(|c| format!("{}ms", c.latency_ms))
+                    .unwrap_or_else(|| "—".into());
+                let cost = cal
+                    .map(|c| format!("${:.4}", c.cost_usd))
+                    .unwrap_or_else(|| "—".into());
                 let calibrated = if cal.is_some() { "yes" } else { "no" };
-                table = table.row_owned(vec![
-                    model.clone(),
-                    latency,
-                    cost,
-                    calibrated.to_string(),
-                ]);
+                table = table.row_owned(vec![model.clone(), latency, cost, calibrated.to_string()]);
             }
             table.print();
 
@@ -242,17 +244,18 @@ fn classify_task(task: &str) -> (f64, &'static str) {
         }
     }
 
-    let task_type = if lower.contains("code") || lower.contains("program") || lower.contains("debug") {
-        "code"
-    } else if lower.contains("write") || lower.contains("draft") || lower.contains("email") {
-        "writing"
-    } else if lower.contains("summar") || lower.contains("extract") {
-        "summarization"
-    } else if lower.contains("math") || lower.contains("equation") {
-        "math"
-    } else {
-        "general"
-    };
+    let task_type =
+        if lower.contains("code") || lower.contains("program") || lower.contains("debug") {
+            "code"
+        } else if lower.contains("write") || lower.contains("draft") || lower.contains("email") {
+            "writing"
+        } else if lower.contains("summar") || lower.contains("extract") {
+            "summarization"
+        } else if lower.contains("math") || lower.contains("equation") {
+            "math"
+        } else {
+            "general"
+        };
 
     (score.clamp(0.0, 1.0), task_type)
 }
@@ -281,7 +284,10 @@ pub async fn calibrate(probes: usize, tier_filter: Option<String>) -> Result<()>
     println!();
     KeyValue::new()
         .entry("Probes per model", probes.to_string())
-        .entry("Tier filter", tier_filter.clone().unwrap_or_else(|| "all".into()))
+        .entry(
+            "Tier filter",
+            tier_filter.clone().unwrap_or_else(|| "all".into()),
+        )
         .print();
     println!();
 
@@ -299,7 +305,10 @@ pub async fn calibrate(probes: usize, tier_filter: Option<String>) -> Result<()>
     let mut results = Vec::new();
 
     for tier in &target_tiers {
-        println!("{}", format!("Tier: {} ({})", tier.name, tier.models.join(", ")).bold());
+        println!(
+            "{}",
+            format!("Tier: {} ({})", tier.name, tier.models.join(", ")).bold()
+        );
         for model_name in &tier.models {
             let mut model_results = Vec::new();
             for probe_idx in 0..probes {
@@ -330,7 +339,11 @@ pub async fn calibrate(probes: usize, tier_filter: Option<String>) -> Result<()>
 
             println!(
                 "  {} {:<24} latency={:>5}ms  success={:>5.1}%  quality={:.2}  cost=${:.4}",
-                if success_rate > 0.8 { table::ok() } else { table::warn() },
+                if success_rate > 0.8 {
+                    table::ok()
+                } else {
+                    table::warn()
+                },
                 model_name,
                 avg_latency,
                 success_rate * 100.0,
@@ -519,10 +532,7 @@ pub async fn reset_calibration() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Build the routing tiers from config and registry.
-fn build_tiers(
-    config: &Config,
-    registry: &opensquilla_provider::ProviderRegistry,
-) -> Vec<Tier> {
+fn build_tiers(config: &Config, registry: &opensquilla_provider::ProviderRegistry) -> Vec<Tier> {
     let mut tiers = Vec::new();
 
     // Try to read tiers from config.
@@ -530,7 +540,10 @@ fn build_tiers(
     for name in &tier_names {
         let key = format!("router.tiers.{name}.models");
         if let Some(models_str) = config.get(&key) {
-            let models: Vec<String> = models_str.split(',').map(|s| s.trim().to_string()).collect();
+            let models: Vec<String> = models_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
             if !models.is_empty() {
                 tiers.push(Tier {
                     name: name.to_string(),
@@ -629,18 +642,15 @@ async fn run_probe(
     prompt: &str,
 ) -> CalibrationResult {
     // Find a provider that supports this model.
-    let provider = registry
-        .list()
-        .iter()
-        .find_map(|name| {
-            registry.get(name).and_then(|p| {
-                if p.supported_models().iter().any(|m| m == model) {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-        });
+    let provider = registry.list().iter().find_map(|name| {
+        registry.get(name).and_then(|p| {
+            if p.supported_models().iter().any(|m| m == model) {
+                Some(p)
+            } else {
+                None
+            }
+        })
+    });
 
     let Some(provider) = provider else {
         return CalibrationResult {
@@ -745,18 +755,11 @@ fn score_quality(prompt: &str, reply: &str) -> f64 {
         return 1.0;
     }
     // Partial credit for non-empty responses.
-    if reply.len() > 2 {
-        0.5
-    } else {
-        0.1
-    }
+    if reply.len() > 2 { 0.5 } else { 0.1 }
 }
 
 /// Save calibration data to config.
-fn save_calibration(
-    config: &Config,
-    results: &[CalibrationResult],
-) -> Result<()> {
+fn save_calibration(config: &Config, results: &[CalibrationResult]) -> Result<()> {
     let mut config = config.clone();
     let now = chrono::Utc::now().to_rfc3339();
     config.set("router.last_calibration", &now).ok();
@@ -769,9 +772,7 @@ fn save_calibration(
 /// Load calibration data from config.
 fn load_calibration(config: &Config) -> Result<Vec<CalibrationResult>> {
     match config.get("router.calibration_data") {
-        Some(json) => {
-            serde_json::from_str(&json).context("Failed to parse calibration data")
-        }
+        Some(json) => serde_json::from_str(&json).context("Failed to parse calibration data"),
         None => Ok(Vec::new()),
     }
 }
@@ -783,7 +784,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

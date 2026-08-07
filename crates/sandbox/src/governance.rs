@@ -642,18 +642,12 @@ impl ApproverChannel {
 impl Default for EscalationPolicy {
     fn default() -> Self {
         let mut routing = std::collections::HashMap::new();
-        routing.insert(
-            "credential_access".to_string(),
-            ApproverChannel::security(),
-        );
+        routing.insert("credential_access".to_string(), ApproverChannel::security());
         routing.insert(
             "system_modification".to_string(),
             ApproverChannel::security(),
         );
-        routing.insert(
-            "package_install".to_string(),
-            ApproverChannel::release(),
-        );
+        routing.insert("package_install".to_string(), ApproverChannel::release());
         routing.insert("code_execution".to_string(), ApproverChannel::security());
         Self {
             routing,
@@ -709,7 +703,11 @@ impl EscalationPolicy {
     pub fn resolve_channel(&self, operation: &str, touched_paths: &[&str]) -> ApproverChannel {
         // Sensitive paths always escalate to security.
         for path in touched_paths {
-            if self.sensitive_paths.iter().any(|s| path.starts_with(s.as_str())) {
+            if self
+                .sensitive_paths
+                .iter()
+                .any(|s| path.starts_with(s.as_str()))
+            {
                 return ApproverChannel::security();
             }
         }
@@ -778,7 +776,9 @@ impl GovernanceAuditTrail {
     /// Create a trail with the given in-memory capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
-            entries: Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(capacity))),
+            entries: Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(
+                capacity,
+            ))),
             capacity,
             path: Arc::new(Mutex::new(None)),
         }
@@ -865,8 +865,7 @@ impl GovernanceAuditTrail {
                 .await
                 .map_err(|e| format!("audit mkdir: {e}"))?;
         }
-        let line = serde_json::to_string(entry)
-            .map_err(|e| format!("audit serialize: {e}"))?;
+        let line = serde_json::to_string(entry).map_err(|e| format!("audit serialize: {e}"))?;
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -950,11 +949,7 @@ impl GovernanceCoordinator {
     }
 
     /// Approve a request, recording the approver.
-    pub async fn approve(
-        &self,
-        request_id: &str,
-        approver: &str,
-    ) -> Result<(), String> {
+    pub async fn approve(&self, request_id: &str, approver: &str) -> Result<(), String> {
         self.queue.approve(request_id).await?;
         let pending = self.queue.get_pending().await;
         let req = pending
@@ -1047,9 +1042,7 @@ mod tests {
             .await
             .unwrap();
         q.reject(&id, "no", "tester").await.unwrap();
-        let again = q
-            .submit("code_execution", "python", &[], "test")
-            .await;
+        let again = q.submit("code_execution", "python", &[], "test").await;
         assert!(again.is_err());
     }
 
@@ -1120,7 +1113,13 @@ mod tests {
     async fn coordinator_submit_records_audit() {
         let coord = GovernanceCoordinator::new();
         let id = coord
-            .submit("credential_access", "cat", &["/etc/shadow".to_string()], "test", &["/etc/shadow"])
+            .submit(
+                "credential_access",
+                "cat",
+                &["/etc/shadow".to_string()],
+                "test",
+                &["/etc/shadow"],
+            )
             .await
             .unwrap();
         assert!(!id.is_empty());

@@ -368,7 +368,7 @@ impl Tool for SessionSwitchTool {
                 concat!(
                     "Set the current session for an agent. The session must already exist. ",
                     "Returns the now-current session.",
-),
+                ),
                 HashMap::from([
                     (
                         "agent_id".to_string(),
@@ -472,7 +472,7 @@ impl Tool for SessionExportTool {
                 concat!(
                     "Export a session's transcript as plain text. Includes session metadata ",
                     "and every transcript entry in chronological order.",
-),
+                ),
                 HashMap::from([(
                     "session_id".to_string(),
                     ParameterDefinition::required_string("The session UUID to export"),

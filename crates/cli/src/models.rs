@@ -170,7 +170,13 @@ pub async fn compare_models(models: Vec<String>) -> Result<()> {
 
     // Build comparison rows.
     let attrs = [
-        ("Backend", specs.iter().map(|(_, b)| b.clone()).collect::<Vec<String>>()),
+        (
+            "Backend",
+            specs
+                .iter()
+                .map(|(_, b)| b.clone())
+                .collect::<Vec<String>>(),
+        ),
         (
             "Context window",
             specs

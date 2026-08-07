@@ -28,7 +28,7 @@ pub mod reaper;
 pub mod timer;
 pub mod types;
 
-pub use delivery::{validate_webhook_url, DeliveryChain, WebhookDelivery};
+pub use delivery::{DeliveryChain, WebhookDelivery, validate_webhook_url};
 pub use engine::{SchedulerBuilder, SchedulerEngine};
 pub use handlers::HandlerRegistry;
 pub use heartbeat::{

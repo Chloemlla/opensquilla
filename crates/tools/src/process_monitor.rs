@@ -7,7 +7,9 @@
 //!
 //! This is the Rust counterpart of the Python `process_monitor.py` module.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -86,12 +88,7 @@ impl ProcessMonitorTool {
             ])
             .output()
             .await
-            .map_err(|e| {
-                ToolError::new(
-                    "PROCESS_ERROR",
-                    format!("Failed to run ps: {}", e),
-                )
-            })?;
+            .map_err(|e| ToolError::new("PROCESS_ERROR", format!("Failed to run ps: {}", e)))?;
 
         if !output.status.success() {
             return Err(ToolError::new(
@@ -144,10 +141,7 @@ impl ProcessMonitorTool {
             .output()
             .await
             .map_err(|e| {
-                ToolError::new(
-                    "PROCESS_ERROR",
-                    format!("Failed to run tasklist: {}", e),
-                )
+                ToolError::new("PROCESS_ERROR", format!("Failed to run tasklist: {}", e))
             })?;
 
         if !output.status.success() {
@@ -170,7 +164,11 @@ impl ProcessMonitorTool {
             }
             let name = fields[0].clone();
             let pid = fields[1].parse::<u32>().unwrap_or(0);
-            let mem_str = fields[4].replace(',', "").replace('K', "").trim().to_string();
+            let mem_str = fields[4]
+                .replace(',', "")
+                .replace('K', "")
+                .trim()
+                .to_string();
             let memory_bytes: u64 = mem_str.parse::<u64>().unwrap_or(0) * 1024;
 
             processes.push(ProcessInfo {
@@ -213,7 +211,10 @@ impl ProcessMonitorTool {
         let pid_str = pid.to_string();
         let (program, args) = if self.is_windows {
             if force {
-                ("taskkill", vec![String::from("/F"), String::from("/PID"), pid_str])
+                (
+                    "taskkill",
+                    vec![String::from("/F"), String::from("/PID"), pid_str],
+                )
             } else {
                 ("taskkill", vec![String::from("/PID"), pid_str])
             }
@@ -227,9 +228,7 @@ impl ProcessMonitorTool {
             .args(&args)
             .output()
             .await
-            .map_err(|e| {
-                ToolError::new("PROCESS_ERROR", format!("Failed to run kill: {}", e))
-            })?;
+            .map_err(|e| ToolError::new("PROCESS_ERROR", format!("Failed to run kill: {}", e)))?;
 
         if !output.status.success() {
             return Err(ToolError::new(
@@ -399,10 +398,7 @@ impl ProcessMonitorTool {
         }
 
         if samples.is_empty() {
-            return Err(ToolError::not_found(format!(
-                "Process {} not found",
-                pid
-            )));
+            return Err(ToolError::not_found(format!("Process {} not found", pid)));
         }
         Ok(samples)
     }
@@ -436,8 +432,9 @@ fn parse_csv_line(line: &str) -> Vec<String> {
 #[async_trait]
 impl Tool for ProcessMonitorTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: std::sync::LazyLock<ToolDefinition> = std::sync::LazyLock::new(|| {
-            ToolDefinition::new(
+        static DEF: std::sync::LazyLock<ToolDefinition> =
+            std::sync::LazyLock::new(|| {
+                ToolDefinition::new(
                 "process_monitor",
                 concat!(
                     "Monitor system processes: list all processes, get process details by PID, ",
@@ -486,7 +483,7 @@ impl Tool for ProcessMonitorTool {
             .category("system")
             .risk_level(3)
             .with_confirmation()
-        });
+            });
         &DEF
     }
 
@@ -524,7 +521,8 @@ impl Tool for ProcessMonitorTool {
                     as u32;
                 let process = self.get_process(pid).await?;
                 let content = serde_json::to_string_pretty(&process).unwrap_or_default();
-                Ok(ToolOutput::success(content).with_data(serde_json::to_value(&process).unwrap_or_default()))
+                Ok(ToolOutput::success(content)
+                    .with_data(serde_json::to_value(&process).unwrap_or_default()))
             }
             "find" => {
                 let name = params["name"]
@@ -634,7 +632,10 @@ impl Tool for ProcessMonitorTool {
 
                 Ok(ToolOutput::success(content).with_data(data))
             }
-            other => Err(ToolError::invalid_args(format!("Unknown operation: {}", other))),
+            other => Err(ToolError::invalid_args(format!(
+                "Unknown operation: {}",
+                other
+            ))),
         }
     }
 }
@@ -662,9 +663,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_monitor_list() {
         let tool = ProcessMonitorTool::new();
-        let result = tool
-            .execute(serde_json::json!({"operation": "list"}))
-            .await;
+        let result = tool.execute(serde_json::json!({"operation": "list"})).await;
         // This may fail in restricted environments; just ensure no panic.
         if let Ok(output) = result {
             assert!(output.data.is_some());
@@ -697,9 +696,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_monitor_missing_pid() {
         let tool = ProcessMonitorTool::new();
-        let result = tool
-            .execute(serde_json::json!({"operation": "get"}))
-            .await;
+        let result = tool.execute(serde_json::json!({"operation": "get"})).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "INVALID_ARGS");
     }

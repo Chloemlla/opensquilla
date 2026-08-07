@@ -186,10 +186,10 @@ impl FinalizerStage {
     /// last-resort default ([`crate::pricing::FALLBACK_INPUT_PRICE_PER_1M`] /
     /// [`crate::pricing::FALLBACK_OUTPUT_PRICE_PER_1M`]).
     pub fn estimate_cost(usage: &Usage) -> CostRollup {
-        let input_usd = usage.input_tokens as f64 / 1_000_000.0
-            * crate::pricing::FALLBACK_INPUT_PRICE_PER_1M;
-        let output_usd = usage.output_tokens as f64 / 1_000_000.0
-            * crate::pricing::FALLBACK_OUTPUT_PRICE_PER_1M;
+        let input_usd =
+            usage.input_tokens as f64 / 1_000_000.0 * crate::pricing::FALLBACK_INPUT_PRICE_PER_1M;
+        let output_usd =
+            usage.output_tokens as f64 / 1_000_000.0 * crate::pricing::FALLBACK_OUTPUT_PRICE_PER_1M;
         CostRollup {
             estimated_input_cost_usd: input_usd,
             estimated_output_cost_usd: output_usd,

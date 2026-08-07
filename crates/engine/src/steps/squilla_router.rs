@@ -114,11 +114,7 @@ impl SquillaRouterStep {
             .map(|(name, _)| name.clone())
             .collect();
         // Sort by canonical ladder position; unknown/custom tiers sort after.
-        tiers.sort_by_key(|name| {
-            Self::tier_index(name)
-                .map(|i| (0u8, i))
-                .unwrap_or((1u8, 0))
-        });
+        tiers.sort_by_key(|name| Self::tier_index(name).map(|i| (0u8, i)).unwrap_or((1u8, 0)));
         tiers
     }
 
@@ -170,7 +166,10 @@ impl SquillaRouterStep {
     ) {
         ctx.set_metadata("routed_tier", &decision.tier);
         ctx.set_metadata("routed_model", &decision.model);
-        ctx.set_metadata("routing_applied", if routing_applied { "true" } else { "false" });
+        ctx.set_metadata(
+            "routing_applied",
+            if routing_applied { "true" } else { "false" },
+        );
         ctx.set_metadata("rollout_phase", &self.config.rollout_phase);
         ctx.set_metadata("applied_model", &decision.model);
         ctx.set_metadata("routing_confidence", &decision.confidence.to_string());
@@ -216,7 +215,11 @@ impl PipelineStep for SquillaRouterStep {
         // TODO(parity): the Python step skips subagent sessions
         // (`":subagent:" in ctx.session_key`). The Rust PipelineContext has
         // no session_key; we check the `is_subagent` metadata flag instead.
-        if ctx.get_metadata("is_subagent").map(|v| v == "true").unwrap_or(false) {
+        if ctx
+            .get_metadata("is_subagent")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+        {
             debug!("squilla_router: skipping subagent session");
             return Ok(StepAction::Continue);
         }
@@ -264,7 +267,14 @@ impl PipelineStep for SquillaRouterStep {
 
             let routing_applied = true;
             self.record_routing_metadata(ctx, &decision, routing_applied);
-            ctx.set_metadata("image_route_reason", if current_turn_has_image { "current_turn" } else { "gate_history" });
+            ctx.set_metadata(
+                "image_route_reason",
+                if current_turn_has_image {
+                    "current_turn"
+                } else {
+                    "gate_history"
+                },
+            );
             self.record_thinking_metadata(ctx, tier_name);
 
             // Record the routing decision as JSON for ModelSelectStep.

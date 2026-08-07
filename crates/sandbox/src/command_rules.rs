@@ -124,8 +124,12 @@ impl CommandRule {
 pub fn default_command_rules() -> Vec<CommandRule> {
     vec![
         // Credential / key access.
-        CommandRule::new("ssh", RiskTier::High, "remote access; possible credential access")
-            .with_escalation_arg("-i"),
+        CommandRule::new(
+            "ssh",
+            RiskTier::High,
+            "remote access; possible credential access",
+        )
+        .with_escalation_arg("-i"),
         CommandRule::new("scp", RiskTier::High, "remote file copy"),
         CommandRule::new("sftp", RiskTier::High, "remote file transfer"),
         CommandRule::new("gpg", RiskTier::Medium, "key management")
@@ -217,8 +221,7 @@ pub fn default_command_rules() -> Vec<CommandRule> {
             .with_escalation_arg("--data-binary")
             .with_escalation_arg("--connect-to")
             .with_escalation_arg("--resolve"),
-        CommandRule::new("wget", RiskTier::Low, "HTTP client")
-            .with_escalation_arg("--post-file"),
+        CommandRule::new("wget", RiskTier::Low, "HTTP client").with_escalation_arg("--post-file"),
         CommandRule::new("nc", RiskTier::Critical, "raw network socket"),
         CommandRule::new("ncat", RiskTier::Critical, "raw network socket"),
         CommandRule::new("socat", RiskTier::Critical, "socket relay"),
@@ -269,8 +272,7 @@ pub fn default_command_rules() -> Vec<CommandRule> {
         CommandRule::new("env", RiskTier::Benign, "print environment"),
         CommandRule::new("printenv", RiskTier::Benign, "print environment"),
         // Dev tools.
-        CommandRule::new("make", RiskTier::Medium, "build system")
-            .with_escalation_arg("install"),
+        CommandRule::new("make", RiskTier::Medium, "build system").with_escalation_arg("install"),
         CommandRule::new("cmake", RiskTier::Medium, "build system")
             .with_escalation_arg("--install"),
         CommandRule::new("ninja", RiskTier::Low, "build tool"),
@@ -311,11 +313,7 @@ pub fn assess_command(command: &str, args: &[&str]) -> CommandAssessment {
 }
 
 /// Classify a command line against an explicit rule table.
-pub fn assess_with_rules(
-    command: &str,
-    args: &[&str],
-    rules: &[CommandRule],
-) -> CommandAssessment {
+pub fn assess_with_rules(command: &str, args: &[&str], rules: &[CommandRule]) -> CommandAssessment {
     let name = command_basename(command);
     let mut tier = RiskTier::Low;
     let mut reason = "no matching rule; treated as low risk".to_string();
@@ -442,7 +440,10 @@ mod tests {
     #[test]
     fn escalation_arg_raises_tier() {
         // curl is Low; --resolve (SSRF-ish) escalates.
-        let a = assess_command("curl", &["--resolve", "internal:443:127.0.0.1", "http://internal/"]);
+        let a = assess_command(
+            "curl",
+            &["--resolve", "internal:443:127.0.0.1", "http://internal/"],
+        );
         assert!(a.tier >= RiskTier::Medium);
     }
 

@@ -377,9 +377,10 @@ mod tests {
         assert!(!mode.sandbox_enabled);
         assert!(!mode.grading_enabled);
         assert!(mode.insecure_mode);
-        assert!(mode
-            .notes
-            .contains(&"grading_coerced_to_false_because_sandbox_disabled".to_string()));
+        assert!(
+            mode.notes
+                .contains(&"grading_coerced_to_false_because_sandbox_disabled".to_string())
+        );
     }
 
     #[test]

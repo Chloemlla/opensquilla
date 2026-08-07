@@ -1839,8 +1839,15 @@ pub fn rank_models<'a>(
     inputs: impl IntoIterator<Item = ScoreInput<'a>>,
     weights: &SelectorWeights,
 ) -> Vec<ScoredModel> {
-    let mut scored: Vec<ScoredModel> = inputs.into_iter().map(|i| score_model(&i, weights)).collect();
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    let mut scored: Vec<ScoredModel> = inputs
+        .into_iter()
+        .map(|i| score_model(&i, weights))
+        .collect();
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored
 }
 
@@ -1981,10 +1988,7 @@ impl Default for PolicyConfig {
 ///
 /// This is a thin wrapper over [`RoutingPolicyEngine::run`] that honors the
 /// `Passthrough` and `Conservative` strategies.
-pub fn run_policy_with_strategy(
-    inputs: &PolicyInputs,
-    config: &PolicyConfig,
-) -> PolicyResult {
+pub fn run_policy_with_strategy(inputs: &PolicyInputs, config: &PolicyConfig) -> PolicyResult {
     match config.strategy {
         PolicyStrategy::Passthrough => PolicyResult {
             decision: inputs.decision.clone(),
@@ -2010,13 +2014,19 @@ pub fn run_policy_with_strategy(
 
 /// Serialize a routing decision into a compact JSON record for persistence
 /// and calibration.
-pub fn decision_to_record(decision: &RoutingDecision, extra: Option<&HashMap<String, Value>>) -> Value {
+pub fn decision_to_record(
+    decision: &RoutingDecision,
+    extra: Option<&HashMap<String, Value>>,
+) -> Value {
     let mut record = serde_json::Map::new();
     record.insert("tier".to_string(), json!(decision.tier));
     record.insert("model".to_string(), json!(decision.model));
     record.insert("confidence".to_string(), json!(decision.confidence));
     record.insert("source".to_string(), json!(decision.source));
-    record.insert("ts_ms".to_string(), json!(crate::routing::calibration::SCHEMA_VERSION));
+    record.insert(
+        "ts_ms".to_string(),
+        json!(crate::routing::calibration::SCHEMA_VERSION),
+    );
     if let Some(extra) = extra {
         for (k, v) in extra {
             record.insert(k.clone(), v.clone());

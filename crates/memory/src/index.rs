@@ -216,10 +216,7 @@ impl FtsIndexManager {
     /// Estimate the total token volume across all memories.
     pub fn total_tokens(&self) -> CoreResult<u64> {
         let memories = self.store.list_memories_by_agent_all()?;
-        Ok(memories
-            .iter()
-            .map(|e| estimate_tokens(&e.content))
-            .sum())
+        Ok(memories.iter().map(|e| estimate_tokens(&e.content)).sum())
     }
 }
 
@@ -286,7 +283,9 @@ mod tests {
 
         // Inject a raw FTS row for a rowid that has no memory, simulating
         // external-content-table drift.
-        store.inject_fts_row(9_999_999, "orphaned index entry", "episodic").unwrap();
+        store
+            .inject_fts_row(9_999_999, "orphaned index entry", "episodic")
+            .unwrap();
 
         assert!(manager.orphan_count().unwrap() >= 1);
         let removed = manager.prune_orphans().unwrap();

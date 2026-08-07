@@ -1172,9 +1172,7 @@ impl MemoryStore {
             .conn
             .lock()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
-        match conn.query_row("SELECT count(*) FROM files", [], |row| {
-            row.get::<_, i64>(0)
-        }) {
+        match conn.query_row("SELECT count(*) FROM files", [], |row| row.get::<_, i64>(0)) {
             Ok(n) => Ok(Some(n as u64)),
             Err(_) => Ok(None),
         }

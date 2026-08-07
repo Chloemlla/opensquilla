@@ -58,7 +58,8 @@ impl TransactionOutcome {
 /// Returns the new state (messages, agent state) or an error. Implementations
 /// must be pure with respect to the inputs (no external side effects), so a
 /// rollback can restore the prior state exactly.
-pub type StateMutation = Box<dyn Fn(&[Message], &AgentState) -> Result<(Vec<Message>, AgentState)> + Send + Sync>;
+pub type StateMutation =
+    Box<dyn Fn(&[Message], &AgentState) -> Result<(Vec<Message>, AgentState)> + Send + Sync>;
 
 /// A transactional state update.
 #[derive(Debug)]
@@ -77,11 +78,7 @@ pub struct TransactionalUpdate {
 
 impl TransactionalUpdate {
     /// Begin a new transactional update.
-    pub fn begin(
-        turn_id: impl Into<String>,
-        messages: Vec<Message>,
-        state: AgentState,
-    ) -> Self {
+    pub fn begin(turn_id: impl Into<String>, messages: Vec<Message>, state: AgentState) -> Self {
         Self {
             turn_id: turn_id.into(),
             before_messages: messages,
@@ -277,7 +274,11 @@ impl TransactionJournal {
     }
 
     /// Begin a new journal entry for a turn.
-    pub fn begin_entry(&mut self, turn_id: &str, before_message_count: usize) -> TransactionJournalEntry {
+    pub fn begin_entry(
+        &mut self,
+        turn_id: &str,
+        before_message_count: usize,
+    ) -> TransactionJournalEntry {
         let mut entry = TransactionJournalEntry::new(turn_id, self.next_seq);
         entry.before_message_count = before_message_count;
         self.next_seq += 1;
@@ -334,7 +335,8 @@ pub fn transactional_update(
     before_state: &AgentState,
     mutation: StateMutation,
 ) -> Result<TransactionOutcome> {
-    let mut tx = TransactionalUpdate::begin(turn_id, before_messages.to_vec(), before_state.clone());
+    let mut tx =
+        TransactionalUpdate::begin(turn_id, before_messages.to_vec(), before_state.clone());
     tx.apply(mutation)
 }
 
@@ -370,9 +372,7 @@ mod tests {
         let mut tx = TransactionalUpdate::begin("t1", vec![Message::user("hi")], AgentState::Idle);
         let outcome = tx
             .apply(|_messages, _state| {
-                Err(opensquilla_core::error::Error::Internal(
-                    "boom".to_string(),
-                ))
+                Err(opensquilla_core::error::Error::Internal("boom".to_string()))
             })
             .unwrap();
         assert!(outcome.is_rolled_back());

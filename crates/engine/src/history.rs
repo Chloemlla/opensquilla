@@ -490,7 +490,10 @@ pub fn truncate_by_importance(
         .filter(|m| matches!(m.role, MessageRole::System))
         .cloned()
         .collect();
-    let system_tokens: u64 = system.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let system_tokens: u64 = system
+        .iter()
+        .map(|m| estimate_tokens(m, tokens_per_char))
+        .sum();
     let budget = max_tokens.saturating_sub(system_tokens);
 
     // Score the non-system messages with a recency bonus.
@@ -562,14 +565,18 @@ pub fn truncate_preserving_tool_pairs(
         .filter(|m| matches!(m.role, MessageRole::System))
         .cloned()
         .collect();
-    let system_tokens: u64 = system.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let system_tokens: u64 = system
+        .iter()
+        .map(|m| estimate_tokens(m, tokens_per_char))
+        .sum();
     let mut budget = max_tokens.saturating_sub(system_tokens);
     if budget == 0 && !system.is_empty() {
         return system;
     }
 
     // Build a map of tool_use id -> index so we can detect round boundaries.
-    let mut tool_use_indices: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut tool_use_indices: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for (i, msg) in messages.iter().enumerate() {
         for block in &msg.content {
             if let ContentBlock::ToolUse(call) = block {
@@ -597,32 +604,36 @@ pub fn truncate_preserving_tool_pairs(
 
         // Determine whether this message starts a tool round: an assistant
         // message with tool_use blocks whose results appear at index >= i.
-        let is_tool_round_start = matches!(msg.role, MessageRole::Assistant) && {
-            let has_calls = msg.content.iter().any(|b| matches!(b, ContentBlock::ToolUse(_)))
-                || msg.tool_calls.as_ref().map_or(false, |c| !c.is_empty());
-            if !has_calls {
-                false
-            } else {
-                // A tool round is complete only if every call has a result in
-                // the already-kept window.
-                let mut complete = true;
-                for block in &msg.content {
-                    if let ContentBlock::ToolUse(call) = block {
-                        let has_result = kept.iter().any(|k| {
+        let is_tool_round_start = matches!(msg.role, MessageRole::Assistant)
+            && {
+                let has_calls = msg
+                    .content
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::ToolUse(_)))
+                    || msg.tool_calls.as_ref().map_or(false, |c| !c.is_empty());
+                if !has_calls {
+                    false
+                } else {
+                    // A tool round is complete only if every call has a result in
+                    // the already-kept window.
+                    let mut complete = true;
+                    for block in &msg.content {
+                        if let ContentBlock::ToolUse(call) = block {
+                            let has_result = kept.iter().any(|k| {
                             matches!(k.role, MessageRole::Tool)
                                 && k.content.iter().any(|b| {
                                     matches!(b, ContentBlock::ToolResult(r) if r.tool_use_id == call.id)
                                 })
                         });
-                        if !has_result {
-                            complete = false;
-                            break;
+                            if !has_result {
+                                complete = false;
+                                break;
+                            }
                         }
                     }
+                    complete
                 }
-                complete
-            }
-        };
+            };
 
         if is_tool_round_start {
             // Keep the whole round (from round_start to i). We already kept
@@ -712,7 +723,8 @@ pub fn detect_compaction_boundary(
     }
 
     // Build a map from tool_use id to its message index.
-    let mut tool_use_indices: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut tool_use_indices: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for (i, msg) in messages.iter().enumerate() {
         for block in &msg.content {
             if let ContentBlock::ToolUse(call) = block {
@@ -751,7 +763,10 @@ pub fn detect_compaction_boundary(
     }
 
     // Compute the token counts.
-    let total_tokens: u64 = messages.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    let total_tokens: u64 = messages
+        .iter()
+        .map(|m| estimate_tokens(m, tokens_per_char))
+        .sum();
     let compacted_tokens: u64 = messages[..=compact_through]
         .iter()
         .map(|m| estimate_tokens(m, tokens_per_char))
@@ -843,7 +858,10 @@ pub struct HistoryProfile {
 pub fn profile_history(messages: &[Message], tokens_per_char: f64) -> HistoryProfile {
     let mut profile = HistoryProfile::default();
     profile.message_count = messages.len();
-    profile.estimated_tokens = messages.iter().map(|m| estimate_tokens(m, tokens_per_char)).sum();
+    profile.estimated_tokens = messages
+        .iter()
+        .map(|m| estimate_tokens(m, tokens_per_char))
+        .sum();
 
     let mut all_call_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for msg in messages {

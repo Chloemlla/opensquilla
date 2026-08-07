@@ -75,13 +75,23 @@ impl RouteCapabilitySnapshot {
     pub fn from_dict(value: &serde_json::Value) -> Option<Self> {
         let obj = value.as_object()?;
         Some(Self {
-            context_window: obj.get("context_window").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-            effective_max_tokens: obj.get("effective_max_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            context_window: obj
+                .get("context_window")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+            effective_max_tokens: obj
+                .get("effective_max_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
             supports_reasoning: obj.get("supports_reasoning").and_then(|v| v.as_bool()),
             supports_tools: obj.get("supports_tools").and_then(|v| v.as_bool()),
             supports_streaming: obj.get("supports_streaming").and_then(|v| v.as_bool()),
             supports_vision: obj.get("supports_vision").and_then(|v| v.as_bool()),
-            reasoning_format: obj.get("reasoning_format").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            reasoning_format: obj
+                .get("reasoning_format")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         })
     }
 }
@@ -114,10 +124,24 @@ impl RouteFallback {
     pub fn from_dict(value: &serde_json::Value) -> Option<Self> {
         let obj = value.as_object()?;
         Some(Self {
-            tier: obj.get("tier").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            provider: obj.get("provider").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            model: obj.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            capabilities: RouteCapabilitySnapshot::from_dict(obj.get("capabilities").unwrap_or(&serde_json::Value::Null))?,
+            tier: obj
+                .get("tier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            provider: obj
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            model: obj
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            capabilities: RouteCapabilitySnapshot::from_dict(
+                obj.get("capabilities").unwrap_or(&serde_json::Value::Null),
+            )?,
         })
     }
 }
@@ -180,23 +204,61 @@ impl RoutePlan {
             .unwrap_or_default();
         Some(Self {
             version: obj.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as usize,
-            plan_id: obj.get("plan_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            turn_id: obj.get("turn_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            tier: obj.get("tier").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            provider: obj.get("provider").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            model: obj.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            source: obj.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            routing_applied: obj.get("routing_applied").and_then(|v| v.as_bool()).unwrap_or(false),
-            thinking: obj.get("thinking").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            prompt_policy: obj.get("prompt_policy").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            plan_id: obj
+                .get("plan_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            turn_id: obj
+                .get("turn_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            tier: obj
+                .get("tier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            provider: obj
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            model: obj
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            source: obj
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            routing_applied: obj
+                .get("routing_applied")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            thinking: obj
+                .get("thinking")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            prompt_policy: obj
+                .get("prompt_policy")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             fallback_chain,
-            capabilities: RouteCapabilitySnapshot::from_dict(obj.get("capabilities").unwrap_or(&serde_json::Value::Null))?,
+            capabilities: RouteCapabilitySnapshot::from_dict(
+                obj.get("capabilities").unwrap_or(&serde_json::Value::Null),
+            )?,
         })
     }
 }
 
 /// Fallback candidate capability facts keyed by `(provider, model)`.
-pub type FallbackCapabilityMap = std::collections::HashMap<(String, String), RouteCapabilitySnapshot>;
+pub type FallbackCapabilityMap =
+    std::collections::HashMap<(String, String), RouteCapabilitySnapshot>;
 
 /// Create the turn's `RoutePlan` once and return the already-pinned value later.
 ///
@@ -325,25 +387,48 @@ pub fn record_execution_leg(
     };
     let mut leg = serde_json::Map::new();
     leg.insert("index".to_string(), serde_json::Value::from(arr.len()));
-    leg.insert("kind".to_string(), serde_json::Value::String(kind.trim().to_string()));
-    leg.insert("provider".to_string(), serde_json::Value::String(provider.trim().to_string()));
-    leg.insert("model".to_string(), serde_json::Value::String(model.trim().to_string()));
+    leg.insert(
+        "kind".to_string(),
+        serde_json::Value::String(kind.trim().to_string()),
+    );
+    leg.insert(
+        "provider".to_string(),
+        serde_json::Value::String(provider.trim().to_string()),
+    );
+    leg.insert(
+        "model".to_string(),
+        serde_json::Value::String(model.trim().to_string()),
+    );
     leg.insert("plan_id".to_string(), serde_json::Value::String(plan_id));
     if let Some(id) = execution_id.filter(|s| !s.is_empty()) {
-        leg.insert("execution_id".to_string(), serde_json::Value::String(id.to_string()));
+        leg.insert(
+            "execution_id".to_string(),
+            serde_json::Value::String(id.to_string()),
+        );
     }
     if let Some(call) = call_kind.filter(|s| !s.is_empty()) {
-        leg.insert("call_kind".to_string(), serde_json::Value::String(call.to_string()));
+        leg.insert(
+            "call_kind".to_string(),
+            serde_json::Value::String(call.to_string()),
+        );
     }
     if !reason.is_empty() {
-        leg.insert("reason".to_string(), serde_json::Value::String(reason.to_string()));
+        leg.insert(
+            "reason".to_string(),
+            serde_json::Value::String(reason.to_string()),
+        );
     }
     arr.push(serde_json::Value::Object(leg));
 }
 
 /// Return the stored route-plan snapshot, if any.
-pub fn route_plan_snapshot(metadata: &std::collections::HashMap<String, serde_json::Value>) -> Option<serde_json::Value> {
-    metadata.get("route_plan").filter(|v| v.is_object()).cloned()
+pub fn route_plan_snapshot(
+    metadata: &std::collections::HashMap<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    metadata
+        .get("route_plan")
+        .filter(|v| v.is_object())
+        .cloned()
 }
 
 fn text_value(value: Option<&serde_json::Value>) -> String {
@@ -423,10 +508,33 @@ mod tests {
     #[test]
     fn test_pin_route_plan_builds_and_is_idempotent() {
         let mut metadata = empty_metadata();
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
-        metadata.insert("routing_source".into(), serde_json::Value::String("calibration".into()));
-        let caps = RouteCapabilitySnapshot::new(128_000, 0, Some(true), Some(true), Some(true), None, "think");
-        let plan = pin_route_plan(&mut metadata, "turn-1", "openrouter", "model-x", Some(&caps), "", None).unwrap();
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
+        metadata.insert(
+            "routing_source".into(),
+            serde_json::Value::String("calibration".into()),
+        );
+        let caps = RouteCapabilitySnapshot::new(
+            128_000,
+            0,
+            Some(true),
+            Some(true),
+            Some(true),
+            None,
+            "think",
+        );
+        let plan = pin_route_plan(
+            &mut metadata,
+            "turn-1",
+            "openrouter",
+            "model-x",
+            Some(&caps),
+            "",
+            None,
+        )
+        .unwrap();
         assert_eq!(plan.tier, "fast");
         assert_eq!(plan.provider, "openrouter");
         assert_eq!(plan.model, "model-x");
@@ -436,24 +544,62 @@ mod tests {
         assert!(plan.capabilities.supports_reasoning == Some(true));
 
         // Re-pinning returns the stored plan (idempotent).
-        let plan2 = pin_route_plan(&mut metadata, "turn-1", "openrouter", "model-x", None, "", None).unwrap();
+        let plan2 = pin_route_plan(
+            &mut metadata,
+            "turn-1",
+            "openrouter",
+            "model-x",
+            None,
+            "",
+            None,
+        )
+        .unwrap();
         assert_eq!(plan2.as_dict(), plan.as_dict());
     }
 
     #[test]
     fn test_pin_route_plan_without_tier_returns_none() {
         let mut metadata = empty_metadata();
-        assert!(pin_route_plan(&mut metadata, "turn-1", "openrouter", "model-x", None, "", None).is_none());
+        assert!(
+            pin_route_plan(
+                &mut metadata,
+                "turn-1",
+                "openrouter",
+                "model-x",
+                None,
+                "",
+                None
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn test_routed_metadata_overrides_arguments() {
         let mut metadata = empty_metadata();
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
-        metadata.insert("routed_provider".into(), serde_json::Value::String("anthropic".into()));
-        metadata.insert("routed_model".into(), serde_json::Value::String("claude-x".into()));
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
+        metadata.insert(
+            "routed_provider".into(),
+            serde_json::Value::String("anthropic".into()),
+        );
+        metadata.insert(
+            "routed_model".into(),
+            serde_json::Value::String("claude-x".into()),
+        );
         metadata.insert("routing_applied".into(), serde_json::Value::Bool(false));
-        let plan = pin_route_plan(&mut metadata, "turn-1", "openrouter", "model-x", None, "", None).unwrap();
+        let plan = pin_route_plan(
+            &mut metadata,
+            "turn-1",
+            "openrouter",
+            "model-x",
+            None,
+            "",
+            None,
+        )
+        .unwrap();
         assert_eq!(plan.provider, "anthropic");
         assert_eq!(plan.model, "claude-x");
         assert!(!plan.routing_applied);
@@ -462,8 +608,14 @@ mod tests {
     #[test]
     fn test_thinking_snapshot_uses_metadata_first() {
         let mut metadata = empty_metadata();
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
-        metadata.insert("thinking_mode".into(), serde_json::Value::String("high".into()));
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
+        metadata.insert(
+            "thinking_mode".into(),
+            serde_json::Value::String("high".into()),
+        );
         let plan = pin_route_plan(&mut metadata, "turn-1", "p", "m", None, "", None).unwrap();
         assert_eq!(plan.thinking, "high");
     }
@@ -471,7 +623,10 @@ mod tests {
     #[test]
     fn test_thinking_boolean_string_maps_to_enabled() {
         let mut metadata = empty_metadata();
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
         let plan = pin_route_plan(&mut metadata, "turn-1", "p", "m", None, "true", None).unwrap();
         assert_eq!(plan.thinking, "enabled");
     }
@@ -479,7 +634,10 @@ mod tests {
     #[test]
     fn test_fallback_chain_built_and_deduped() {
         let mut metadata = empty_metadata();
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
         metadata.insert(
             "router_fallback_chain".into(),
             serde_json::json!([
@@ -490,7 +648,16 @@ mod tests {
             ]),
         );
         let caps = FallbackCapabilityMap::new();
-        let plan = pin_route_plan(&mut metadata, "turn-1", "openrouter", "model-x", None, "", Some(&caps)).unwrap();
+        let plan = pin_route_plan(
+            &mut metadata,
+            "turn-1",
+            "openrouter",
+            "model-x",
+            None,
+            "",
+            Some(&caps),
+        )
+        .unwrap();
         assert_eq!(plan.fallback_chain.len(), 2);
         assert_eq!(plan.fallback_chain[0].model, "model-y");
         assert_eq!(plan.fallback_chain[1].model, "model-z");
@@ -499,8 +666,24 @@ mod tests {
     #[test]
     fn test_record_execution_leg_appends() {
         let mut metadata = empty_metadata();
-        record_execution_leg(&mut metadata, "openrouter", "model-x", "chat", Some("exec-1"), Some("retry"), "rate_limited");
-        record_execution_leg(&mut metadata, "openrouter", "model-y", "chat", None, None, "");
+        record_execution_leg(
+            &mut metadata,
+            "openrouter",
+            "model-x",
+            "chat",
+            Some("exec-1"),
+            Some("retry"),
+            "rate_limited",
+        );
+        record_execution_leg(
+            &mut metadata,
+            "openrouter",
+            "model-y",
+            "chat",
+            None,
+            None,
+            "",
+        );
         let legs = metadata["execution_legs"].as_array().unwrap();
         assert_eq!(legs.len(), 2);
         assert_eq!(legs[0]["index"], 0);
@@ -513,7 +696,10 @@ mod tests {
     #[test]
     fn test_record_execution_leg_carries_plan_id() {
         let mut metadata = empty_metadata();
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
         pin_route_plan(&mut metadata, "turn-9", "p", "m", None, "", None).unwrap();
         record_execution_leg(&mut metadata, "p", "m", "chat", None, None, "");
         let legs = metadata["execution_legs"].as_array().unwrap();
@@ -524,7 +710,10 @@ mod tests {
     fn test_route_plan_snapshot() {
         let mut metadata = empty_metadata();
         assert!(route_plan_snapshot(&metadata).is_none());
-        metadata.insert("routed_tier".into(), serde_json::Value::String("fast".into()));
+        metadata.insert(
+            "routed_tier".into(),
+            serde_json::Value::String("fast".into()),
+        );
         pin_route_plan(&mut metadata, "turn-1", "p", "m", None, "", None).unwrap();
         let snapshot = route_plan_snapshot(&metadata).unwrap();
         assert_eq!(snapshot["tier"], "fast");
@@ -548,9 +737,25 @@ mod tests {
                 tier: "fast".into(),
                 provider: "openrouter".into(),
                 model: "model-y".into(),
-                capabilities: RouteCapabilitySnapshot::new(64_000, 0, None, Some(true), None, None, ""),
+                capabilities: RouteCapabilitySnapshot::new(
+                    64_000,
+                    0,
+                    None,
+                    Some(true),
+                    None,
+                    None,
+                    "",
+                ),
             }],
-            capabilities: RouteCapabilitySnapshot::new(128_000, 0, Some(true), Some(true), Some(true), None, "think"),
+            capabilities: RouteCapabilitySnapshot::new(
+                128_000,
+                0,
+                Some(true),
+                Some(true),
+                Some(true),
+                None,
+                "think",
+            ),
         };
         let restored = RoutePlan::from_dict(&plan.as_dict()).unwrap();
         assert_eq!(restored, plan);

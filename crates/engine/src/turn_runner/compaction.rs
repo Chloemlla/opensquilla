@@ -198,7 +198,9 @@ impl CompactionStage {
     /// [`decide_compaction_continuation`]: super::compaction_lifecycle::decide_compaction_continuation
     /// [`CompactionContinuationDecision`]: super::compaction_lifecycle::CompactionContinuationDecision
     pub fn check_persistence_gate(&self) -> bool {
-        use super::compaction_lifecycle::{decide_compaction_continuation, flush_receipt_status, FlushReceiptStatus};
+        use super::compaction_lifecycle::{
+            FlushReceiptStatus, decide_compaction_continuation, flush_receipt_status,
+        };
 
         if !self.persistence_gate.enabled {
             return true;

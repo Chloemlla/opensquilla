@@ -156,8 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disabled_is_noop() {
-        let step =
-            InjectPlatformHintStep::with_config(InjectPlatformHintConfig { enabled: false });
+        let step = InjectPlatformHintStep::with_config(InjectPlatformHintConfig { enabled: false });
         let mut ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
         let action = step.execute(&mut ctx).await.unwrap();
         assert!(matches!(action, StepAction::Continue));
@@ -184,12 +183,14 @@ mod tests {
         ctx.set_metadata("channel_kind", "slack");
         step.execute(&mut ctx).await.unwrap();
         assert_eq!(
-            ctx.get_metadata("platform_markdown_hint").map(String::as_str),
+            ctx.get_metadata("platform_markdown_hint")
+                .map(String::as_str),
             Some("slack")
         );
-        assert!(ctx
-            .messages
-            .iter()
-            .any(|m| m.text_content().contains("Channel Rendering")));
+        assert!(
+            ctx.messages
+                .iter()
+                .any(|m| m.text_content().contains("Channel Rendering"))
+        );
     }
 }

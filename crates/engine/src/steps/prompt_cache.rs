@@ -118,10 +118,7 @@ impl PipelineStep for PromptCacheStep {
         // has no `session_key` or `provider` field. The agent id and provider
         // are carried in metadata when the runtime sets them; we use those
         // when present.
-        let agent_id = ctx
-            .get_metadata("agent_id")
-            .cloned()
-            .unwrap_or_default();
+        let agent_id = ctx.get_metadata("agent_id").cloned().unwrap_or_default();
         let provider_after_rewrite = ctx
             .get_metadata("provider_name")
             .cloned()
@@ -156,16 +153,17 @@ impl PipelineStep for PromptCacheStep {
 
         if !system_text.is_empty() {
             ctx.set_metadata("cache_base_prompt", &system_text);
-            ctx.set_metadata(
-                "cache_base_chars",
-                &system_text.chars().count().to_string(),
-            );
+            ctx.set_metadata("cache_base_chars", &system_text.chars().count().to_string());
             ctx.set_metadata("cache_base_hash", &hash16(&system_text));
         }
 
         // The Python step sets `cache_last_tool = True` when tool_defs are
         // present. The Rust pipeline carries tool availability as metadata.
-        if ctx.get_metadata("has_tool_defs").map(|v| v == "true").unwrap_or(false) {
+        if ctx
+            .get_metadata("has_tool_defs")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+        {
             ctx.set_metadata("cache_last_tool", "true");
         }
 
@@ -208,10 +206,11 @@ mod tests {
             Some("true")
         );
         assert!(ctx.get_metadata("cache_base_hash").is_some());
-        assert!(ctx
-            .get_metadata("cache_base_hash")
-            .map(|h| h.len() == 16)
-            .unwrap_or(false));
+        assert!(
+            ctx.get_metadata("cache_base_hash")
+                .map(|h| h.len() == 16)
+                .unwrap_or(false)
+        );
     }
 
     #[tokio::test]

@@ -82,8 +82,16 @@ pub async fn run_chat(
     prompt: Option<String>,
     standalone: bool,
 ) -> Result<()> {
-    run_chat_with_attachments(config, session_id, provider, model, prompt, standalone, Vec::new())
-        .await
+    run_chat_with_attachments(
+        config,
+        session_id,
+        provider,
+        model,
+        prompt,
+        standalone,
+        Vec::new(),
+    )
+    .await
 }
 
 /// Entry point for the `chat` subcommand with attachment support.
@@ -666,6 +674,9 @@ fn compact_session(manager: &SessionManager, session_id: &uuid::Uuid) -> Result<
     let report = manager
         .compact(session_id)
         .map_err(|e| anyhow::anyhow!("Failed to compact session: {e}"))?;
-    println!("Session compacted: {} entries removed", report.entries_compacted);
+    println!(
+        "Session compacted: {} entries removed",
+        report.entries_compacted
+    );
     Ok(())
 }

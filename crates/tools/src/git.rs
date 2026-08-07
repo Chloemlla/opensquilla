@@ -398,7 +398,7 @@ impl Tool for GitTool {
                         return Err(ToolError::invalid_args(format!(
                             "Unknown stash operation: {}",
                             other
-                        )))
+                        )));
                     }
                 }
                 self.run_git(&args, working_dir).await
@@ -432,30 +432,30 @@ impl Tool for GitTool {
                 match remote_op {
                     "list" => {}
                     "add" => {
-                        let name = params["name"]
-                            .as_str()
-                            .ok_or_else(|| ToolError::invalid_args("Missing 'name' for remote add"))?;
-                        let url = params["repo_url"]
-                            .as_str()
-                            .ok_or_else(|| ToolError::invalid_args("Missing 'repo_url' for remote add"))?;
+                        let name = params["name"].as_str().ok_or_else(|| {
+                            ToolError::invalid_args("Missing 'name' for remote add")
+                        })?;
+                        let url = params["repo_url"].as_str().ok_or_else(|| {
+                            ToolError::invalid_args("Missing 'repo_url' for remote add")
+                        })?;
                         args.push("add".to_string());
                         args.push(name.to_string());
                         args.push(url.to_string());
                     }
                     "remove" => {
-                        let name = params["name"]
-                            .as_str()
-                            .ok_or_else(|| ToolError::invalid_args("Missing 'name' for remote remove"))?;
+                        let name = params["name"].as_str().ok_or_else(|| {
+                            ToolError::invalid_args("Missing 'name' for remote remove")
+                        })?;
                         args.push("remove".to_string());
                         args.push(name.to_string());
                     }
                     "set-url" => {
-                        let name = params["name"]
-                            .as_str()
-                            .ok_or_else(|| ToolError::invalid_args("Missing 'name' for remote set-url"))?;
-                        let url = params["repo_url"]
-                            .as_str()
-                            .ok_or_else(|| ToolError::invalid_args("Missing 'repo_url' for remote set-url"))?;
+                        let name = params["name"].as_str().ok_or_else(|| {
+                            ToolError::invalid_args("Missing 'name' for remote set-url")
+                        })?;
+                        let url = params["repo_url"].as_str().ok_or_else(|| {
+                            ToolError::invalid_args("Missing 'repo_url' for remote set-url")
+                        })?;
                         args.push("set-url".to_string());
                         args.push(name.to_string());
                         args.push(url.to_string());
@@ -464,7 +464,7 @@ impl Tool for GitTool {
                         return Err(ToolError::invalid_args(format!(
                             "Unknown remote operation: {}",
                             other
-                        )))
+                        )));
                     }
                 }
                 self.run_git(&args, working_dir).await

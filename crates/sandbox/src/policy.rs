@@ -1006,7 +1006,10 @@ impl EnvironmentPolicy {
     /// `supplied` is the environment the caller wants to pass; the parent
     /// process's environment is consulted for allowlisted variables that are
     /// not in `supplied`.
-    pub fn filter(&self, supplied: &std::collections::HashMap<String, String>) -> std::collections::HashMap<String, String> {
+    pub fn filter(
+        &self,
+        supplied: &std::collections::HashMap<String, String>,
+    ) -> std::collections::HashMap<String, String> {
         let mut out = std::collections::HashMap::new();
         if !self.clear {
             // Inherit allowlisted variables from the parent when not supplied.
@@ -1188,7 +1191,14 @@ mod tests {
 
     #[test]
     fn resource_limits_for_level() {
-        assert!(ResourceLimits::for_level(SandboxLevel::Locked).cpu_time_secs.unwrap() < ResourceLimits::for_level(SandboxLevel::Standard).cpu_time_secs.unwrap());
+        assert!(
+            ResourceLimits::for_level(SandboxLevel::Locked)
+                .cpu_time_secs
+                .unwrap()
+                < ResourceLimits::for_level(SandboxLevel::Standard)
+                    .cpu_time_secs
+                    .unwrap()
+        );
     }
 
     #[test]

@@ -21,9 +21,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::manager::{CreateSessionConfig, SessionManager};
-use crate::models::{
-    Session, SessionAttachment, SessionSummary, TranscriptEntry,
-};
+use crate::models::{Session, SessionAttachment, SessionSummary, TranscriptEntry};
 
 // ---------------------------------------------------------------------------
 // Export document format
@@ -211,11 +209,7 @@ impl<'a> SessionExporter<'a> {
     }
 
     /// Export a session to a pretty-printed JSON string.
-    pub fn export_json(
-        &self,
-        session_id: &Uuid,
-        options: &ExportOptions,
-    ) -> CoreResult<String> {
+    pub fn export_json(&self, session_id: &Uuid, options: &ExportOptions) -> CoreResult<String> {
         let document = self.export(session_id, options)?;
         serde_json::to_string_pretty(&document)
             .map_err(|e| CoreError::Internal(format!("export serialization failed: {}", e)))
@@ -466,14 +460,9 @@ impl<'a> SessionImporter<'a> {
     }
 
     /// Import a session from a JSON string.
-    pub fn import_json(
-        &self,
-        json: &str,
-        options: &ImportOptions,
-    ) -> CoreResult<ImportResult> {
-        let document: SessionExportDocument = serde_json::from_str(json).map_err(|e| {
-            CoreError::InvalidInput(format!("invalid session export JSON: {}", e))
-        })?;
+    pub fn import_json(&self, json: &str, options: &ImportOptions) -> CoreResult<ImportResult> {
+        let document: SessionExportDocument = serde_json::from_str(json)
+            .map_err(|e| CoreError::InvalidInput(format!("invalid session export JSON: {}", e)))?;
         if document.format_version != EXPORT_FORMAT_VERSION {
             debug!(
                 "importing session export with format version {} (current {})",
@@ -654,10 +643,12 @@ mod tests {
         assert_eq!(document.transcript.len(), 2);
         assert_eq!(document.transcript[0].content, "hello there");
         assert!(document.tags.contains(&"test".to_string()));
-        assert!(document
-            .metadata
-            .iter()
-            .any(|(k, v)| k == "theme" && v == "dark"));
+        assert!(
+            document
+                .metadata
+                .iter()
+                .any(|(k, v)| k == "theme" && v == "dark")
+        );
     }
 
     #[test]
@@ -731,8 +722,7 @@ mod tests {
         let mgr = manager();
         let exporter = SessionExporter::new(&mgr);
         let session = create_session(&mgr, "file-export");
-        let path = std::env::temp_dir()
-            .join(format!("osq-session-export-{}.json", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("osq-session-export-{}.json", Uuid::new_v4()));
         let path_str = path.to_str().unwrap().to_string();
         let len = exporter
             .export_to_file(&session.id, &path_str, &ExportOptions::default())
@@ -751,8 +741,7 @@ mod tests {
         mgr.add_message(&session.id, "user".into(), "hello".into(), 3)
             .unwrap();
 
-        let path = std::env::temp_dir()
-            .join(format!("osq-session-import-{}.json", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("osq-session-import-{}.json", Uuid::new_v4()));
         let path_str = path.to_str().unwrap().to_string();
         exporter
             .export_to_file(&session.id, &path_str, &ExportOptions::default())

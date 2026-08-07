@@ -494,11 +494,21 @@ impl ToolRegistry {
         // File authoring: pdf/xlsx/csv/html generation + readers.
         // Note: generate_json and generate_markdown are already registered by
         // the artifacts module above, so they are intentionally not duplicated.
-        registry.register(crate::file_authoring::GeneratePdfTool::new(working_dir.clone()))?;
-        registry.register(crate::file_authoring::GenerateXlsxTool::new(working_dir.clone()))?;
-        registry.register(crate::file_authoring::GenerateCsvTool::new(working_dir.clone()))?;
-        registry.register(crate::file_authoring::GenerateHtmlTool::new(working_dir.clone()))?;
-        registry.register(crate::file_authoring::ReadXlsxTool::new(working_dir.clone()))?;
+        registry.register(crate::file_authoring::GeneratePdfTool::new(
+            working_dir.clone(),
+        ))?;
+        registry.register(crate::file_authoring::GenerateXlsxTool::new(
+            working_dir.clone(),
+        ))?;
+        registry.register(crate::file_authoring::GenerateCsvTool::new(
+            working_dir.clone(),
+        ))?;
+        registry.register(crate::file_authoring::GenerateHtmlTool::new(
+            working_dir.clone(),
+        ))?;
+        registry.register(crate::file_authoring::ReadXlsxTool::new(
+            working_dir.clone(),
+        ))?;
         registry.register(crate::file_authoring::ReadCsvTool::new(working_dir))?;
 
         // Memory tools share a single in-memory store.
@@ -576,13 +586,12 @@ impl ToolRegistry {
         let skill_loader = Arc::new(opensquilla_skills::SkillLoader::new());
         let skill_workspace_dir = std::env::temp_dir().join("opensquilla-skills-workspace");
         let skill_hub = Arc::new(
-            opensquilla_skills::SkillHub::new(std::env::temp_dir().join("opensquilla-skills-managed"))
-                .map_err(|e| {
-                    ToolError::new(
-                        "SKILL_ERROR",
-                        format!("Failed to create skill hub: {}", e),
-                    )
-                })?,
+            opensquilla_skills::SkillHub::new(
+                std::env::temp_dir().join("opensquilla-skills-managed"),
+            )
+            .map_err(|e| {
+                ToolError::new("SKILL_ERROR", format!("Failed to create skill hub: {}", e))
+            })?,
         );
         registry.register(crate::skill_tools::SkillListTool::from_arc(
             skill_loader.clone(),
@@ -607,9 +616,7 @@ impl ToolRegistry {
         registry.register(crate::skill_tools::SkillEditTool::from_arc(
             skill_loader.clone(),
         ))?;
-        registry.register(crate::skill_tools::SkillDeleteTool::from_arc(
-            skill_loader,
-        ))?;
+        registry.register(crate::skill_tools::SkillDeleteTool::from_arc(skill_loader))?;
 
         // Plan-control tools share the session storage already built above.
         registry.register(crate::plan_control::SubmitPlanTool::from_arc(

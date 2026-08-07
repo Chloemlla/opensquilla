@@ -20,13 +20,9 @@ pub mod state_reconstruction;
 pub mod transactional;
 
 pub use crash::{CrashRecovery, CrashRecoveryConfig, CrashSnapshot, RecoveryStatus};
-pub use replay::{
-    ReplayCheckpoint, ReplayDecision, ReplayOutcome, TurnReplay,
-};
-pub use state_reconstruction::{
-    ReconstructedState, StateReconstructor,
-};
+pub use replay::{ReplayCheckpoint, ReplayDecision, ReplayOutcome, TurnReplay};
+pub use state_reconstruction::{ReconstructedState, StateReconstructor};
 pub use transactional::{
-    TransactionJournal, TransactionJournalEntry, TransactionalUpdate, TransactionOutcome,
-    TransactionStatus,
+    TransactionJournal, TransactionJournalEntry, TransactionOutcome, TransactionStatus,
+    TransactionalUpdate,
 };

@@ -291,8 +291,7 @@ impl LogStore {
 
     /// Create an in-memory log store (used by tests and ephemeral runs).
     pub fn in_memory() -> CoreResult<Self> {
-        let conn =
-            Connection::open_in_memory().map_err(|e| CoreError::Storage(e.to_string()))?;
+        let conn = Connection::open_in_memory().map_err(|e| CoreError::Storage(e.to_string()))?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -1465,7 +1464,10 @@ mod tests {
         };
         store.insert_tool_result(&row).unwrap();
 
-        let by_handle = store.tool_result_by_handle("tr-0123456789abcdef0123456789abcdef").unwrap().unwrap();
+        let by_handle = store
+            .tool_result_by_handle("tr-0123456789abcdef0123456789abcdef")
+            .unwrap()
+            .unwrap();
         assert_eq!(by_handle.tool_name, "bash");
         assert_eq!(by_handle.chars, 5000);
         assert_eq!(by_handle.stored_size_bytes, Some(1200));
@@ -1505,7 +1507,10 @@ mod tests {
         assert_eq!(by_session[0].tokens_after, Some(4000));
         assert_eq!(by_session[0].provider_state_valid, Some(true));
         assert_eq!(by_session[0].persisted_summary_id, Some(42));
-        assert_eq!(by_session[0].trigger_reason.as_deref(), Some("token_budget"));
+        assert_eq!(
+            by_session[0].trigger_reason.as_deref(),
+            Some("token_budget")
+        );
     }
 
     #[test]

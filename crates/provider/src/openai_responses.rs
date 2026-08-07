@@ -1401,7 +1401,14 @@ impl OpenAIResponsesProvider {
             .await
         {
             Ok(resp) if resp.status().is_success() => resp,
-            _ => return self.provider_kind.default_models().iter().map(|s| s.to_string()).collect(),
+            _ => {
+                return self
+                    .provider_kind
+                    .default_models()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+            }
         };
         match resp.json::<serde_json::Value>().await {
             Ok(data) => {
@@ -1414,12 +1421,21 @@ impl OpenAIResponsesProvider {
                     }
                 }
                 if models.is_empty() {
-                    self.provider_kind.default_models().iter().map(|s| s.to_string()).collect()
+                    self.provider_kind
+                        .default_models()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
                 } else {
                     models
                 }
             }
-            Err(_) => self.provider_kind.default_models().iter().map(|s| s.to_string()).collect(),
+            Err(_) => self
+                .provider_kind
+                .default_models()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 }

@@ -135,10 +135,7 @@ impl SupervisedChild {
                 return Ok(SupervisedRun {
                     exit_code: -1,
                     stdout: String::new(),
-                    stderr: format!(
-                        "Process timed out after {}ms",
-                        self.timeout.as_millis()
-                    ),
+                    stderr: format!("Process timed out after {}ms", self.timeout.as_millis()),
                     duration,
                     timed_out: true,
                     rusage,
@@ -261,7 +258,7 @@ async fn kill_child(child_id: Option<u32>, kill_group: bool) {
     #[cfg(unix)]
     {
         if let Some(id) = child_id {
-            use nix::sys::signal::{killpg, Signal};
+            use nix::sys::signal::{Signal, killpg};
             use nix::unistd::Pid;
             let _ = killpg(Pid::from_raw(id as i32), Signal::SIGKILL);
         }
@@ -447,7 +444,8 @@ impl DenialTracker {
 
     /// Record one denial of the given category.
     pub fn record(&self) {
-        self.denials.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.denials
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The total number of denials recorded.

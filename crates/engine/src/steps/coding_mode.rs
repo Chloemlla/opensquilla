@@ -237,7 +237,8 @@ mod tests {
         let action = step.execute(&mut ctx).await.unwrap();
         assert!(matches!(action, StepAction::Continue));
         assert_eq!(
-            ctx.get_metadata("enforce_coding_mode__applied").map(String::as_str),
+            ctx.get_metadata("enforce_coding_mode__applied")
+                .map(String::as_str),
             Some("false")
         );
     }
@@ -260,9 +261,10 @@ mod tests {
             ctx.get_metadata("coding_mode").map(String::as_str),
             Some("true")
         );
-        assert!(ctx
-            .messages
-            .iter()
-            .any(|m| m.text_content().contains("[CODING MODE")));
+        assert!(
+            ctx.messages
+                .iter()
+                .any(|m| m.text_content().contains("[CODING MODE"))
+        );
     }
 }

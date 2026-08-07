@@ -63,4 +63,4 @@ pub mod util;
 
 pub use chat::run_chat;
 pub use commands::Cli;
-pub use tui::{run_tui, TuiApp};
+pub use tui::{TuiApp, run_tui};

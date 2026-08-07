@@ -46,7 +46,10 @@ pub async fn status_full() -> Result<()> {
     println!("{}", "Configuration".bold());
     KeyValue::new()
         .entry("Config path", config_path())
-        .entry("Gateway", format!("{}:{}", config.gateway.host, config.gateway.port))
+        .entry(
+            "Gateway",
+            format!("{}:{}", config.gateway.host, config.gateway.port),
+        )
         .entry("Providers", config.providers.len().to_string())
         .entry("Channels", config.channels.len().to_string())
         .entry(
@@ -105,9 +108,7 @@ pub async fn status_full() -> Result<()> {
                 let total_cost: f64 = sessions.iter().map(|s| s.total_cost_usd).sum();
                 let active = sessions
                     .iter()
-                    .filter(|s| {
-                        s.status == opensquilla_session::SessionStatus::Active
-                    })
+                    .filter(|s| s.status == opensquilla_session::SessionStatus::Active)
                     .count();
                 println!(
                     "  {} {} session(s), {} active, {} tokens, ${:.4}",
@@ -126,9 +127,7 @@ pub async fn status_full() -> Result<()> {
 
     // Memory store.
     println!("{}", "Memory".bold());
-    match opensquilla_memory::store::MemoryStore::new(
-        &util::memory_db_path().to_string_lossy(),
-    ) {
+    match opensquilla_memory::store::MemoryStore::new(&util::memory_db_path().to_string_lossy()) {
         Ok(store) => match store.list_memories(&util::default_agent_id(), None, 1000, 0) {
             Ok(entries) => {
                 println!("  {} {} memory entr(ies)", table::ok(), entries.len());
@@ -144,11 +143,7 @@ pub async fn status_full() -> Result<()> {
     match build_skill_loader(&config).await {
         Ok(loader) => {
             let skills = loader.get_skills(None).await;
-            println!(
-                "  {} {} skill(s) loaded",
-                table::ok(),
-                skills.len()
-            );
+            println!("  {} {} skill(s) loaded", table::ok(), skills.len());
         }
         Err(e) => println!("  {} Skill scan error: {e}", table::fail()),
     }
@@ -214,12 +209,10 @@ pub async fn status_brief() -> Result<()> {
         Err(_) => 0,
     };
 
-    let gateway_up = tokio::net::TcpStream::connect((
-        config.gateway.host.as_str(),
-        config.gateway.port,
-    ))
-    .await
-    .is_ok();
+    let gateway_up =
+        tokio::net::TcpStream::connect((config.gateway.host.as_str(), config.gateway.port))
+            .await
+            .is_ok();
 
     let gateway_str = if gateway_up { "up" } else { "down" };
     println!(
@@ -239,7 +232,11 @@ pub async fn status_components() -> Result<()> {
     rows.push((
         "config".to_string(),
         "ok",
-        format!("{} provider(s), {} channel(s)", config.providers.len(), config.channels.len()),
+        format!(
+            "{} provider(s), {} channel(s)",
+            config.providers.len(),
+            config.channels.len()
+        ),
     ));
 
     // Provider registry.
@@ -300,12 +297,10 @@ pub async fn status_components() -> Result<()> {
     }
 
     // Gateway.
-    let gateway_up = tokio::net::TcpStream::connect((
-        config.gateway.host.as_str(),
-        config.gateway.port,
-    ))
-    .await
-    .is_ok();
+    let gateway_up =
+        tokio::net::TcpStream::connect((config.gateway.host.as_str(), config.gateway.port))
+            .await
+            .is_ok();
     rows.push((
         "gateway".to_string(),
         if gateway_up { "ok" } else { "warn" },
@@ -328,16 +323,12 @@ pub async fn status_components() -> Result<()> {
 }
 
 /// Build a provider registry (helper).
-fn util_build_registry(
-    config: &Config,
-) -> Result<opensquilla_provider::ProviderRegistry> {
+fn util_build_registry(config: &Config) -> Result<opensquilla_provider::ProviderRegistry> {
     crate::util::build_provider_registry(config)
 }
 
 /// Build a skill loader (helper).
-async fn build_skill_loader(
-    config: &Config,
-) -> Result<opensquilla_skills::loader::SkillLoader> {
+async fn build_skill_loader(config: &Config) -> Result<opensquilla_skills::loader::SkillLoader> {
     use opensquilla_skills::bundled::load_bundled_skills;
     use opensquilla_skills::loader::SkillLoader;
     use opensquilla_skills::types::SkillLayer;
@@ -345,10 +336,7 @@ async fn build_skill_loader(
     let loader = SkillLoader::new();
     if let Some(skills_cfg) = config.skills.as_ref() {
         for dir in &skills_cfg.skill_dirs {
-            loader.register_layer_dir(
-                SkillLayer::Extra,
-                std::path::Path::new(dir).to_path_buf(),
-            );
+            loader.register_layer_dir(SkillLayer::Extra, std::path::Path::new(dir).to_path_buf());
         }
     }
     let managed = crate::util::skills_dir();
@@ -389,7 +377,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

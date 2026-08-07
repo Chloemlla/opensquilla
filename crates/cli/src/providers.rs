@@ -180,9 +180,9 @@ pub async fn add_provider(
             .map(|s| s.models.iter().map(|m| m.to_string()).collect())
             .unwrap_or_default(),
     };
-    let default_model = model.clone().or_else(|| {
-        ProviderSpecTable::get(&provider_type).map(|s| s.default_model.to_string())
-    });
+    let default_model = model
+        .clone()
+        .or_else(|| ProviderSpecTable::get(&provider_type).map(|s| s.default_model.to_string()));
 
     let provider_config = opensquilla_core::config::ProviderConfig {
         name: name.clone(),
@@ -197,7 +197,12 @@ pub async fn add_provider(
     config.providers.push(provider_config);
     config.save().context("Failed to save configuration")?;
 
-    println!("{} Added provider: {} ({})", crate::table::ok(), name, provider_type);
+    println!(
+        "{} Added provider: {} ({})",
+        crate::table::ok(),
+        name,
+        provider_type
+    );
     if let Some(m) = &default_model {
         println!("  Default model: {m}");
     }

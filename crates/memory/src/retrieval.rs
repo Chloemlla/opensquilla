@@ -380,10 +380,7 @@ impl RetrievalEngine {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().map(|(r, _)| r).collect()
     }
 
@@ -405,10 +402,7 @@ impl RetrievalEngine {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().map(|(r, _)| r).collect()
     }
 
@@ -427,10 +421,7 @@ impl RetrievalEngine {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().map(|(r, _)| r).collect()
     }
 
@@ -459,10 +450,7 @@ impl RetrievalEngine {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().map(|(r, _)| r).collect()
     }
 
@@ -489,7 +477,11 @@ impl RetrievalEngine {
         top_k: usize,
     ) -> CoreResult<Vec<MemorySearchResult>> {
         let results = self.search(query, query_embedding, agent_id, filters, top_k * 3)?;
-        Ok(self.apply_filter_expression(results, expression).into_iter().take(top_k).collect())
+        Ok(self
+            .apply_filter_expression(results, expression)
+            .into_iter()
+            .take(top_k)
+            .collect())
     }
 }
 
@@ -531,7 +523,11 @@ pub fn score_memory_relevance(entry: &MemoryEntry, query: &str) -> f64 {
 
     let content_lower = entry.content.to_lowercase();
     let type_lower = entry.memory_type.to_lowercase();
-    let tag_hits: usize = entry.tags.iter().filter(|t| query.contains(&t.to_lowercase())).count();
+    let tag_hits: usize = entry
+        .tags
+        .iter()
+        .filter(|t| query.contains(&t.to_lowercase()))
+        .count();
 
     let mut score = 0.0;
     for term in &terms {
@@ -622,10 +618,18 @@ impl FieldOp {
         match self {
             FieldOp::Eq(field, value) => field_value(entry, *field).eq_ignore_ascii_case(value),
             FieldOp::Ne(field, value) => !field_value(entry, *field).eq_ignore_ascii_case(value),
-            FieldOp::Gt(field, rhs) => field_number(entry, *field).map(|v| v > *rhs).unwrap_or(false),
-            FieldOp::Ge(field, rhs) => field_number(entry, *field).map(|v| v >= *rhs).unwrap_or(false),
-            FieldOp::Lt(field, rhs) => field_number(entry, *field).map(|v| v < *rhs).unwrap_or(false),
-            FieldOp::Le(field, rhs) => field_number(entry, *field).map(|v| v <= *rhs).unwrap_or(false),
+            FieldOp::Gt(field, rhs) => field_number(entry, *field)
+                .map(|v| v > *rhs)
+                .unwrap_or(false),
+            FieldOp::Ge(field, rhs) => field_number(entry, *field)
+                .map(|v| v >= *rhs)
+                .unwrap_or(false),
+            FieldOp::Lt(field, rhs) => field_number(entry, *field)
+                .map(|v| v < *rhs)
+                .unwrap_or(false),
+            FieldOp::Le(field, rhs) => field_number(entry, *field)
+                .map(|v| v <= *rhs)
+                .unwrap_or(false),
             FieldOp::Contains(field, needle) => field_value(entry, *field)
                 .to_lowercase()
                 .contains(&needle.to_lowercase()),
@@ -681,10 +685,7 @@ pub fn parse_filter_expression(input: &str) -> Result<FilterExpression, String> 
     let mut parser = ExpressionParser { tokens };
     let expr = parser.parse_or()?;
     if !parser.tokens.is_empty() {
-        return Err(format!(
-            "unexpected trailing tokens: {:?}",
-            parser.tokens
-        ));
+        return Err(format!("unexpected trailing tokens: {:?}", parser.tokens));
     }
     Ok(expr)
 }
@@ -834,12 +835,17 @@ impl ExpressionParser {
         // Handle compound operators (`not in`, `not contains`, `!=`, ...).
         let lower_op = op.to_lowercase();
         if lower_op == "not" {
-            let op2 = self.next().ok_or_else(|| "expected operator after 'not'".to_string())?;
+            let op2 = self
+                .next()
+                .ok_or_else(|| "expected operator after 'not'".to_string())?;
             let value = self.next().ok_or_else(|| "expected value".to_string())?;
             let values = parse_value_list(&value)?;
             return Ok(match op2.to_lowercase().as_str() {
                 "in" => FilterExpression::Comparison(FieldOp::NotIn(field, values)),
-                "contains" => FilterExpression::Comparison(FieldOp::NotContains(field, values.first().cloned().unwrap_or_default())),
+                "contains" => FilterExpression::Comparison(FieldOp::NotContains(
+                    field,
+                    values.first().cloned().unwrap_or_default(),
+                )),
                 _ => return Err(format!("unsupported operator 'not {}'", op2)),
             });
         }
@@ -848,13 +854,22 @@ impl ExpressionParser {
         let values = parse_value_list(&value)?;
 
         Ok(match lower_op.as_str() {
-            "==" | "=" => FilterExpression::Comparison(FieldOp::Eq(field, values.first().cloned().unwrap_or_default())),
-            "!=" => FilterExpression::Comparison(FieldOp::Ne(field, values.first().cloned().unwrap_or_default())),
+            "==" | "=" => FilterExpression::Comparison(FieldOp::Eq(
+                field,
+                values.first().cloned().unwrap_or_default(),
+            )),
+            "!=" => FilterExpression::Comparison(FieldOp::Ne(
+                field,
+                values.first().cloned().unwrap_or_default(),
+            )),
             ">" => FilterExpression::Comparison(FieldOp::Gt(field, parse_number(&values[0])?)),
             ">=" => FilterExpression::Comparison(FieldOp::Ge(field, parse_number(&values[0])?)),
             "<" => FilterExpression::Comparison(FieldOp::Lt(field, parse_number(&values[0])?)),
             "<=" => FilterExpression::Comparison(FieldOp::Le(field, parse_number(&values[0])?)),
-            "contains" => FilterExpression::Comparison(FieldOp::Contains(field, values.first().cloned().unwrap_or_default())),
+            "contains" => FilterExpression::Comparison(FieldOp::Contains(
+                field,
+                values.first().cloned().unwrap_or_default(),
+            )),
             "in" => FilterExpression::Comparison(FieldOp::In(field, values)),
             _ => return Err(format!("unsupported operator '{}'", op)),
         })
@@ -1135,12 +1150,16 @@ mod tests {
             MemorySearchResult::new(b.clone(), 0.5, "hybrid"),
             MemorySearchResult::new(a.clone(), 0.5, "hybrid"),
         ];
-        let reranked = engine.rerank_multi("rust async", results, &RerankWeights {
-            base: 0.2,
-            lexical: 0.6,
-            importance: 0.1,
-            recency: 0.1,
-        });
+        let reranked = engine.rerank_multi(
+            "rust async",
+            results,
+            &RerankWeights {
+                base: 0.2,
+                lexical: 0.6,
+                importance: 0.1,
+                recency: 0.1,
+            },
+        );
         assert_eq!(reranked[0].entry.id, a.id);
     }
 
@@ -1193,7 +1212,8 @@ mod tests {
 
     #[test]
     fn test_filter_expression_parser_and_not() {
-        let expr = parse_filter_expression(r#"memory_type == "episodic" AND importance >= 0.5"#).unwrap();
+        let expr =
+            parse_filter_expression(r#"memory_type == "episodic" AND importance >= 0.5"#).unwrap();
         let mut entry = make_entry(Uuid::new_v4(), "content");
         entry.memory_type = "episodic".to_string();
         entry.importance = 0.7;
@@ -1262,7 +1282,14 @@ mod tests {
 
         let expr = FilterExpression::memory_type_eq("document");
         let results = engine
-            .search_filtered("rust async", None, Some(&agent_id), &MemoryFilters::default(), &expr, 10)
+            .search_filtered(
+                "rust async",
+                None,
+                Some(&agent_id),
+                &MemoryFilters::default(),
+                &expr,
+                10,
+            )
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].entry.memory_type, "document");

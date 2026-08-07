@@ -717,9 +717,7 @@ fn linux_lookup(name: &str) -> Option<i64> {
 /// crate on the target, or on non-Linux platforms.
 fn fallback_x86_64_lookup(name: &str) -> Option<i64> {
     static TABLE: OnceLock<HashMap<&'static str, i64>> = OnceLock::new();
-    let table = TABLE.get_or_init(|| {
-        SYSCALL_NAMES.iter().copied().collect::<HashMap<_, _>>()
-    });
+    let table = TABLE.get_or_init(|| SYSCALL_NAMES.iter().copied().collect::<HashMap<_, _>>());
     table.get(name).copied()
 }
 

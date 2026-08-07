@@ -91,7 +91,10 @@ pub const CODING_MODE_DENIED_TOOLS: &[&str] = &[
 /// Tools to deny while the coding-mode toggle is on (empty when off).
 pub fn coding_mode_denied_tools(coding_mode: bool) -> BTreeSet<String> {
     if coding_mode {
-        CODING_MODE_DENIED_TOOLS.iter().map(|s| s.to_string()).collect()
+        CODING_MODE_DENIED_TOOLS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     } else {
         BTreeSet::new()
     }
@@ -147,9 +150,19 @@ pub(crate) fn tool_group(name: &str) -> Option<&'static [&'static str]> {
             "voice_convert",
             "voice_search",
         ],
-        "channel:doc" => &["create_pdf_report", "web_discover", "web_fetch", "web_search"],
+        "channel:doc" => &[
+            "create_pdf_report",
+            "web_discover",
+            "web_fetch",
+            "web_search",
+        ],
         "channel:wiki" => &["web_discover", "web_fetch", "web_search"],
-        "channel:drive" => &["create_csv", "create_pdf_report", "create_pptx", "create_xlsx"],
+        "channel:drive" => &[
+            "create_csv",
+            "create_pdf_report",
+            "create_pptx",
+            "create_xlsx",
+        ],
         "channel:scopes" => &[],
         "channel:perm" => &[],
         // Trusted host/gateway tools intentionally do not imply OS sandbox
@@ -270,13 +283,20 @@ fn union_profile(base: &[&'static str], extra: &[&'static str]) -> Vec<&'static 
 
 static CODING_PROFILE: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
     merged_profile(
-        &["group:fs", "group:runtime", "group:sessions", "group:memory"],
+        &[
+            "group:fs",
+            "group:runtime",
+            "group:sessions",
+            "group:memory",
+        ],
         &[],
     )
 });
 
 static SOURCE_EDIT_PATCH_FALLBACK_PROFILE: std::sync::LazyLock<Vec<&'static str>> =
-    std::sync::LazyLock::new(|| union_profile(REPO_CODING_SOURCE_EDIT_BALANCED_TOOLS, &["apply_patch"]));
+    std::sync::LazyLock::new(|| {
+        union_profile(REPO_CODING_SOURCE_EDIT_BALANCED_TOOLS, &["apply_patch"])
+    });
 
 static SCAFFOLD_PATCH_PROFILE: std::sync::LazyLock<Vec<&'static str>> =
     std::sync::LazyLock::new(|| union_profile(REPO_CODING_SCAFFOLD_EDIT_TOOLS, &["apply_patch"]));
@@ -284,7 +304,12 @@ static SCAFFOLD_PATCH_PROFILE: std::sync::LazyLock<Vec<&'static str>> =
 static MESSAGING_PROFILE: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
     union_profile(
         tool_group("group:messaging").unwrap_or(&[]),
-        &["sessions_list", "sessions_history", "sessions_send", "session_status"],
+        &[
+            "sessions_list",
+            "sessions_history",
+            "sessions_send",
+            "session_status",
+        ],
     )
 });
 
@@ -465,7 +490,10 @@ pub fn apply_base_policy(
 
     let mut allow_selectors: BTreeSet<String> = policy.allow.clone();
     allow_selectors.extend(policy.also_allow.iter().cloned());
-    allowed_tools = add_allowed(allowed_tools, &expand_selectors(&allow_selectors, available_tools));
+    allowed_tools = add_allowed(
+        allowed_tools,
+        &expand_selectors(&allow_selectors, available_tools),
+    );
     let denied = expand_selectors(&policy.deny, available_tools);
     denied_tools.extend(denied);
     if let Some(allowed) = &mut allowed_tools {
@@ -577,7 +605,8 @@ pub fn policy_from_config(value: &Value) -> Option<ToolPolicy> {
 
 fn policy_from_object(value: &Value) -> Option<ToolPolicy> {
     let tools_value = get_field(value, "tools");
-    let sender_value = get_field(value, "toolsBySender").or_else(|| get_field(value, "tools_by_sender"));
+    let sender_value =
+        get_field(value, "toolsBySender").or_else(|| get_field(value, "tools_by_sender"));
     if tools_value.is_some() {
         let base = policy_from_config(tools_value.unwrap()).unwrap_or_default();
         let wrapper_by_sender = sender_policies_from_config(sender_value);
@@ -585,13 +614,10 @@ fn policy_from_object(value: &Value) -> Option<ToolPolicy> {
         for (selector, policy) in wrapper_by_sender {
             by_sender.insert(selector, policy);
         }
-        let workspace_globs = get_field(
-            value,
-            "workspaceWriteDenyGlobs",
-        )
-        .or_else(|| get_field(value, "workspace_write_deny_globs"))
-        .map(string_set)
-        .unwrap_or_default();
+        let workspace_globs = get_field(value, "workspaceWriteDenyGlobs")
+            .or_else(|| get_field(value, "workspace_write_deny_globs"))
+            .map(string_set)
+            .unwrap_or_default();
         let mut merged_globs = base.workspace_write_deny_globs.clone();
         merged_globs.extend(workspace_globs);
         let fresh_read = file_edit_requires_fresh_read_from_config(value);
@@ -606,13 +632,19 @@ fn policy_from_object(value: &Value) -> Option<ToolPolicy> {
             file_edit_flexible_recovery: flexible.or(base.file_edit_flexible_recovery),
             by_sender,
         };
-        return if policy.is_empty() { None } else { Some(policy) };
+        return if policy.is_empty() {
+            None
+        } else {
+            Some(policy)
+        };
     }
 
     let profile = get_field(value, "profile").and_then(|v| v.as_str());
     let policy = ToolPolicy {
         profile: profile.map(|s| s.to_string()),
-        allow: get_field(value, "allow").map(string_set).unwrap_or_default(),
+        allow: get_field(value, "allow")
+            .map(string_set)
+            .unwrap_or_default(),
         deny: get_field(value, "deny").map(string_set).unwrap_or_default(),
         also_allow: get_field(value, "alsoAllow")
             .or_else(|| get_field(value, "also_allow"))
@@ -625,9 +657,8 @@ fn policy_from_object(value: &Value) -> Option<ToolPolicy> {
         file_edit_requires_fresh_read: file_edit_requires_fresh_read_from_config(value),
         file_edit_flexible_recovery: file_edit_flexible_recovery_from_config(value),
         by_sender: sender_policies_from_config(
-            sender_value.or_else(|| {
-                get_field(value, "by_sender").or_else(|| get_field(value, "bySender"))
-            }),
+            sender_value
+                .or_else(|| get_field(value, "by_sender").or_else(|| get_field(value, "bySender"))),
         ),
     };
     if policy.is_empty() {
@@ -744,7 +775,10 @@ pub fn apply_channel_layer(
     for group in SENDER_SCOPED_TOOL_GROUPS {
         channel_selectors.remove(*group);
     }
-    allowed_tools = add_allowed(allowed_tools, &expand_selectors(&channel_selectors, available_tools));
+    allowed_tools = add_allowed(
+        allowed_tools,
+        &expand_selectors(&channel_selectors, available_tools),
+    );
     channel_denied.extend(expand_selectors(&policy.deny, available_tools));
     Ok((allowed_tools, channel_denied))
 }
@@ -762,7 +796,10 @@ pub fn apply_sender_layer(
     for tool in &also_allowed {
         channel_denied.remove(tool);
     }
-    allowed_tools = add_allowed(allowed_tools, &expand_selectors(&policy.allow, available_tools));
+    allowed_tools = add_allowed(
+        allowed_tools,
+        &expand_selectors(&policy.allow, available_tools),
+    );
     allowed_tools = add_allowed(allowed_tools, &also_allowed);
     channel_denied.extend(expand_selectors(&policy.deny, available_tools));
     (allowed_tools, channel_denied)
@@ -857,8 +894,8 @@ mod tests {
             deny: set(&["write_file"]),
             ..Default::default()
         };
-        let (allowed, denied) = apply_base_policy(None, &BTreeSet::new(), &policy, &tools, true)
-            .unwrap();
+        let (allowed, denied) =
+            apply_base_policy(None, &BTreeSet::new(), &policy, &tools, true).unwrap();
         let allowed = allowed.unwrap();
         assert!(allowed.contains("read_file"));
         assert!(!allowed.contains("write_file"));
@@ -873,8 +910,8 @@ mod tests {
             ..Default::default()
         };
         let existing = Some(set(&["read_file", "exec_command"]));
-        let (allowed, _) = apply_base_policy(existing, &BTreeSet::new(), &policy, &tools, true)
-            .unwrap();
+        let (allowed, _) =
+            apply_base_policy(existing, &BTreeSet::new(), &policy, &tools, true).unwrap();
         // The profile replaces the base allowlist.
         assert_eq!(allowed.unwrap(), set(&["memory_search"]));
     }

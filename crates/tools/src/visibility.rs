@@ -256,7 +256,12 @@ pub fn effective_tool_context(
             allowed_tools: if is_owner {
                 None
             } else {
-                Some(CHANNEL_DEFAULT_ALLOW.iter().map(|s| s.to_string()).collect())
+                Some(
+                    CHANNEL_DEFAULT_ALLOW
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                )
             },
             session_key: session_key_owned,
             ..Default::default()
@@ -321,7 +326,11 @@ pub fn is_tool_visible(spec: &ToolVisibilitySpec, ctx: Option<&ToolContext>) -> 
         .map(|c| {
             c.caller_kind == CallerKind::Channel
                 && !c.is_owner
-                && profile_allows_tool(&spec.name, ToolProfile::ChannelDefault, c.allowed_tools.as_ref())
+                && profile_allows_tool(
+                    &spec.name,
+                    ToolProfile::ChannelDefault,
+                    c.allowed_tools.as_ref(),
+                )
         })
         .unwrap_or(false);
 
@@ -374,7 +383,11 @@ mod tests {
             ToolProfile::ChannelDefault,
             Some(&set(&["other"]))
         ));
-        assert!(profile_allows_tool("anything", ToolProfile::OwnerFull, None));
+        assert!(profile_allows_tool(
+            "anything",
+            ToolProfile::OwnerFull,
+            None
+        ));
     }
 
     #[test]
@@ -409,14 +422,7 @@ mod tests {
 
     #[test]
     fn effective_context_subagent() {
-        let ctx = effective_tool_context(
-            Some("subagent:1"),
-            Some("main"),
-            None,
-            None,
-            None,
-            true,
-        );
+        let ctx = effective_tool_context(Some("subagent:1"), Some("main"), None, None, None, true);
         assert_eq!(ctx.caller_kind, CallerKind::Subagent);
         assert_eq!(ctx.interaction_mode, InteractionMode::Unattended);
         assert!(ctx.denied_tools.contains("cron"));
@@ -424,14 +430,7 @@ mod tests {
 
     #[test]
     fn effective_context_cron_non_owner() {
-        let ctx = effective_tool_context(
-            Some("cron:job1"),
-            Some("main"),
-            None,
-            None,
-            None,
-            false,
-        );
+        let ctx = effective_tool_context(Some("cron:job1"), Some("main"), None, None, None, false);
         assert_eq!(ctx.caller_kind, CallerKind::Cron);
         assert!(ctx.allowed_tools.as_ref().unwrap().contains("web_search"));
         assert!(ctx.denied_tools.contains("exec_command"));

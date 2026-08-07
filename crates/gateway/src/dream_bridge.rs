@@ -66,10 +66,7 @@ impl DreamBridge {
     }
 
     /// Trigger a dream cycle only if one is due. Returns `None` when not due.
-    pub async fn trigger_if_due(
-        &self,
-        agent_id: &Uuid,
-    ) -> CoreResult<Option<DreamSummary>> {
+    pub async fn trigger_if_due(&self, agent_id: &Uuid) -> CoreResult<Option<DreamSummary>> {
         self.engine.run_dream_if_due(agent_id).await
     }
 

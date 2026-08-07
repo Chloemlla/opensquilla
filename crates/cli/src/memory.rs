@@ -273,7 +273,10 @@ pub async fn add_memory(
     println!("{} Added memory entry: {}", crate::table::ok(), entry.id.0);
     println!("  Type:       {memory_type}");
     println!("  Importance: {importance:.2}");
-    println!("  Content:    {}", content.chars().take(80).collect::<String>());
+    println!(
+        "  Content:    {}",
+        content.chars().take(80).collect::<String>()
+    );
     Ok(())
 }
 
@@ -298,8 +301,7 @@ pub async fn export_memory(output: String, kind: Option<String>) -> Result<()> {
     if let Some(dir) = std::path::Path::new(&output).parent() {
         std::fs::create_dir_all(dir).ok();
     }
-    std::fs::write(&output, json)
-        .with_context(|| format!("Failed to write {output}"))?;
+    std::fs::write(&output, json).with_context(|| format!("Failed to write {output}"))?;
     println!("Exported {} memory entries to {output}", entries.len());
     Ok(())
 }

@@ -887,7 +887,11 @@ impl TurnRunner {
 
     /// Create the turn's [`crate::route_plan::RoutePlan`] once and store it in
     /// pipeline metadata under the `route_plan` key.
-    fn pin_route_plan(&self, ctx: &mut PipelineContext, decision: &crate::routing::RoutingDecision) {
+    fn pin_route_plan(
+        &self,
+        ctx: &mut PipelineContext,
+        decision: &crate::routing::RoutingDecision,
+    ) {
         let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
         for key in [
             "routed_tier",
@@ -1254,20 +1258,18 @@ impl TurnRunner {
     ) {
         // Post-write convergence tracker (feature-gated).
         if let Some(tracker) = &mut guards.post_write_convergence {
-            let observation =
-                crate::post_write_convergence::PostWriteConvergenceObservation {
-                    iteration: stage_ctx.tool_round as i64,
-                    provider_call_count: stage_ctx.tool_round as i64,
-                    workspace_write_count: 0,
-                    changed_receipt_count: 0,
-                    diff_fingerprint: None,
-                    diff_paths: Vec::new(),
-                    focused_verification_success_observed: false,
-                    continued_activity_after_verification: false,
-                };
+            let observation = crate::post_write_convergence::PostWriteConvergenceObservation {
+                iteration: stage_ctx.tool_round as i64,
+                provider_call_count: stage_ctx.tool_round as i64,
+                workspace_write_count: 0,
+                changed_receipt_count: 0,
+                diff_fingerprint: None,
+                diff_paths: Vec::new(),
+                focused_verification_success_observed: false,
+                continued_activity_after_verification: false,
+            };
             let decision = tracker.observe(&observation);
-            if decision.action
-                != crate::post_write_convergence::PostWriteConvergenceAction::Observe
+            if decision.action != crate::post_write_convergence::PostWriteConvergenceAction::Observe
             {
                 stage_ctx
                     .metadata
@@ -1695,7 +1697,10 @@ mod tests {
         runner.apply_routing(&mut ctx);
         // The route plan is pinned once and stored as JSON in the pipeline
         // metadata (mirrors Python `pin_route_plan`).
-        let raw = ctx.get_metadata("route_plan").cloned().expect("route_plan metadata");
+        let raw = ctx
+            .get_metadata("route_plan")
+            .cloned()
+            .expect("route_plan metadata");
         let plan = crate::route_plan::RoutePlan::from_dict(
             &serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
         )
@@ -1727,10 +1732,12 @@ mod tests {
         // Plain strings do not round-trip through JSON parsing; only the
         // route-plan snapshot (a JSON object) is carried over.
         let raw_plan = ctx.get_metadata("route_plan").cloned().unwrap();
-        assert!(stage_metadata["route_plan"]
-            .as_object()
-            .map(|obj| obj.get("tier").and_then(|t| t.as_str()) == Some("c1"))
-            .unwrap_or(false));
+        assert!(
+            stage_metadata["route_plan"]
+                .as_object()
+                .map(|obj| obj.get("tier").and_then(|t| t.as_str()) == Some("c1"))
+                .unwrap_or(false)
+        );
         let _ = raw_plan;
     }
 

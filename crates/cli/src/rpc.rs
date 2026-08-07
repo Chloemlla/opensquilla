@@ -135,8 +135,7 @@ impl RpcClient {
             .with_context(|| format!("Failed to parse RPC '{method}' response"))?;
 
         if let Some(err) = rpc_response.error {
-            return Err(anyhow::Error::new(err)
-                .context(format!("RPC '{method}' failed")));
+            return Err(anyhow::Error::new(err).context(format!("RPC '{method}' failed")));
         }
 
         rpc_response
@@ -211,12 +210,7 @@ impl RpcClient {
     }
 
     /// Create a new session.
-    pub async fn create_session(
-        &self,
-        agent_id: &str,
-        name: &str,
-        mode: &str,
-    ) -> Result<Value> {
+    pub async fn create_session(&self, agent_id: &str, name: &str, mode: &str) -> Result<Value> {
         self.call(
             "sessions.create",
             serde_json::json!({
@@ -238,12 +232,7 @@ impl RpcClient {
     }
 
     /// Get a session transcript.
-    pub async fn get_transcript(
-        &self,
-        session_id: &str,
-        limit: u64,
-        offset: u64,
-    ) -> Result<Value> {
+    pub async fn get_transcript(&self, session_id: &str, limit: u64, offset: u64) -> Result<Value> {
         self.call(
             "sessions.transcript",
             serde_json::json!({
@@ -309,7 +298,8 @@ impl RpcClient {
 
     /// Get model details.
     pub async fn get_model(&self, name: &str) -> Result<Value> {
-        self.call("models.get", serde_json::json!({ "name": name })).await
+        self.call("models.get", serde_json::json!({ "name": name }))
+            .await
     }
 
     /// List installed skills.
@@ -319,48 +309,38 @@ impl RpcClient {
 
     /// Get skill details.
     pub async fn get_skill(&self, name: &str) -> Result<Value> {
-        self.call("skills.get", serde_json::json!({ "name": name })).await
+        self.call("skills.get", serde_json::json!({ "name": name }))
+            .await
     }
 
     /// Install a skill.
     pub async fn install_skill(&self, source: &str) -> Result<Value> {
-        self.call(
-            "skills.install",
-            serde_json::json!({ "source": source }),
-        )
-        .await
+        self.call("skills.install", serde_json::json!({ "source": source }))
+            .await
     }
 
     /// Uninstall a skill.
     pub async fn uninstall_skill(&self, name: &str) -> Result<Value> {
-        self.call(
-            "skills.uninstall",
-            serde_json::json!({ "name": name }),
-        )
-        .await
+        self.call("skills.uninstall", serde_json::json!({ "name": name }))
+            .await
     }
 
     /// Search the skill hub.
     pub async fn search_skills(&self, query: &str) -> Result<Value> {
-        self.call(
-            "skills.search",
-            serde_json::json!({ "query": query }),
-        )
-        .await
+        self.call("skills.search", serde_json::json!({ "query": query }))
+            .await
     }
 
     /// Enable a skill.
     pub async fn enable_skill(&self, name: &str) -> Result<Value> {
-        self.call("skills.enable", serde_json::json!({ "name": name })).await
+        self.call("skills.enable", serde_json::json!({ "name": name }))
+            .await
     }
 
     /// Disable a skill.
     pub async fn disable_skill(&self, name: &str) -> Result<Value> {
-        self.call(
-            "skills.disable",
-            serde_json::json!({ "name": name }),
-        )
-        .await
+        self.call("skills.disable", serde_json::json!({ "name": name }))
+            .await
     }
 
     /// List channels.
@@ -378,11 +358,7 @@ impl RpcClient {
     }
 
     /// Get cost/usage summary.
-    pub async fn cost_summary(
-        &self,
-        start: Option<&str>,
-        end: Option<&str>,
-    ) -> Result<Value> {
+    pub async fn cost_summary(&self, start: Option<&str>, end: Option<&str>) -> Result<Value> {
         let params = match (start, end) {
             (Some(s), Some(e)) => serde_json::json!({ "start": s, "end": e }),
             (Some(s), None) => serde_json::json!({ "start": s }),
@@ -393,11 +369,8 @@ impl RpcClient {
 
     /// Get usage breakdown.
     pub async fn usage_breakdown(&self, group_by: &str) -> Result<Value> {
-        self.call(
-            "cost.usage",
-            serde_json::json!({ "group_by": group_by }),
-        )
-        .await
+        self.call("cost.usage", serde_json::json!({ "group_by": group_by }))
+            .await
     }
 
     /// Get gateway info.
@@ -435,11 +408,8 @@ impl RpcClient {
 
     /// Trigger memory dream.
     pub async fn memory_dream(&self, agent_id: &str) -> Result<Value> {
-        self.call(
-            "memory.dream",
-            serde_json::json!({ "agent_id": agent_id }),
-        )
-        .await
+        self.call("memory.dream", serde_json::json!({ "agent_id": agent_id }))
+            .await
     }
 
     /// Run a health check.
@@ -476,7 +446,10 @@ pub async fn in_process_rpc(config: &Config, method: &str, params: Value) -> Res
 pub async fn connect(config: &Config) -> RpcClient {
     let client = RpcClient::from_config(config);
     if !client.is_reachable().await {
-        warn!("Gateway at {}:{} is not reachable; commands will use in-process fallback", config.gateway.host, config.gateway.port);
+        warn!(
+            "Gateway at {}:{} is not reachable; commands will use in-process fallback",
+            config.gateway.host, config.gateway.port
+        );
     }
     client
 }
@@ -492,10 +465,7 @@ pub struct StreamHandle {
 }
 
 /// Subscribe to a streaming chat session.
-pub async fn subscribe_stream(
-    client: &RpcClient,
-    session_id: &str,
-) -> Result<StreamHandle> {
+pub async fn subscribe_stream(client: &RpcClient, session_id: &str) -> Result<StreamHandle> {
     let result = client
         .call(
             "chat.stream",
@@ -514,15 +484,9 @@ pub async fn subscribe_stream(
 }
 
 /// Poll a stream for the next delta. Returns `None` when the stream is done.
-pub async fn poll_stream(
-    client: &RpcClient,
-    stream_id: &str,
-) -> Result<Option<Value>> {
+pub async fn poll_stream(client: &RpcClient, stream_id: &str) -> Result<Option<Value>> {
     let result = client
-        .call(
-            "chat.poll",
-            serde_json::json!({ "stream_id": stream_id }),
-        )
+        .call("chat.poll", serde_json::json!({ "stream_id": stream_id }))
         .await?;
     if result.is_null() {
         Ok(None)
@@ -534,10 +498,7 @@ pub async fn poll_stream(
 /// Cancel an active stream.
 pub async fn cancel_stream(client: &RpcClient, stream_id: &str) -> Result<()> {
     client
-        .call(
-            "chat.cancel",
-            serde_json::json!({ "stream_id": stream_id }),
-        )
+        .call("chat.cancel", serde_json::json!({ "stream_id": stream_id }))
         .await?;
     Ok(())
 }

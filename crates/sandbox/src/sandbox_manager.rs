@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
+use crate::Sandbox;
 use crate::config::{Backend, NetworkDefault, SandboxSettings};
 use crate::denial_attribution::{SandboxRunOutcome, is_likely_sandbox_denied};
 use crate::governance::GovernanceCoordinator;
@@ -35,7 +36,6 @@ use crate::policy::{NetworkPolicy, SandboxLevel, SandboxPolicy, SandboxResult, p
 use crate::profile::{ProfileRegistry, SandboxProfile};
 use crate::run_mode::RunMode;
 use crate::run_mode_policy::Principal;
-use crate::Sandbox;
 
 /// The outcome of a managed sandbox run.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -229,7 +229,10 @@ impl SandboxManager {
                 return builtin;
             }
         }
-        self.profiles.lock().unwrap().resolve_for_operation(request.operation)
+        self.profiles
+            .lock()
+            .unwrap()
+            .resolve_for_operation(request.operation)
     }
 
     /// Run an operation through the manager.
@@ -239,7 +242,9 @@ impl SandboxManager {
         if let Some(overrides) = request.overrides {
             policy = policy.merge(overrides);
         }
-        policy.validate().map_err(|e| format!("policy validation failed: {e}"))?;
+        policy
+            .validate()
+            .map_err(|e| format!("policy validation failed: {e}"))?;
 
         // Governance gate.
         let args_owned: Vec<String> = request.args.iter().map(|s| s.to_string()).collect();
@@ -311,9 +316,11 @@ impl SandboxManager {
         let effective = self.settings.as_ref().map(|s| s.validate_combination());
         // FULL run mode (explicit or principal-coerced) and settings that turn
         // sandboxing off both mean host execution via the noop backend.
-        let host_execution =
-            effective.as_ref().map(|e| !e.sandbox_enabled).unwrap_or(false)
-                || resolved_run_mode == Some(RunMode::Full);
+        let host_execution = effective
+            .as_ref()
+            .map(|e| !e.sandbox_enabled)
+            .unwrap_or(false)
+            || resolved_run_mode == Some(RunMode::Full);
 
         // Execute.
         let execution_id = uuid::Uuid::new_v4().to_string();

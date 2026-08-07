@@ -271,9 +271,7 @@ impl From<SkillFrontmatter> for MetaSkill {
 ///
 /// This bridges the frontmatter parser to the skills filter so a SKILL.md
 /// catalog can feed the gate directly.
-pub fn frontmatter_to_skill_spec(
-    fm: &SkillFrontmatter,
-) -> crate::steps::SkillSpec {
+pub fn frontmatter_to_skill_spec(fm: &SkillFrontmatter) -> crate::steps::SkillSpec {
     crate::steps::SkillSpec {
         id: fm.name.clone(),
         name: fm.name.clone(),

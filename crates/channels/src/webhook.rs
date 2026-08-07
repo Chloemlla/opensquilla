@@ -23,8 +23,8 @@
 //! ```
 
 use crate::types::{ChannelType, IncomingMessage, MessageAttachment};
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::Aes256;
+use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
@@ -567,8 +567,7 @@ pub fn verify_hmac_sha256(secret: &str, message: &[u8], signature_hex: &str) -> 
     let Ok(decoded) = hex::decode(signature_hex) else {
         return false;
     };
-    let mut mac = match <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(secret.as_bytes())
-    {
+    let mut mac = match <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(secret.as_bytes()) {
         Ok(m) => m,
         Err(_) => return false,
     };

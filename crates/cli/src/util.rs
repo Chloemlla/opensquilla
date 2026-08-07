@@ -253,7 +253,8 @@ pub fn truncate(s: &str, max: usize) -> String {
 
 /// Parse a `KEY=VALUE` environment string into a pair.
 pub fn parse_env_pair(s: &str) -> Option<(String, String)> {
-    s.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+    s.split_once('=')
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
 }
 
 /// Read the current timestamp as an RFC3339 string.

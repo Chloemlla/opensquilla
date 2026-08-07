@@ -29,8 +29,7 @@ use opensquilla_desktop_lib::gateway;
 use opensquilla_desktop_lib::state::AppState;
 use opensquilla_desktop_lib::workbench;
 use opensquilla_desktop_lib::{
-    TrayEvent, commands,
-    deep_link,
+    TrayEvent, commands, deep_link,
     tray::{TrayIconState, build_tray_menu, rebuild_menu},
     updater, window,
 };

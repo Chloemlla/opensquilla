@@ -6,7 +6,9 @@
 //!
 //! This is the Rust counterpart of the Python `diff_tools.py` module.
 
-use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use crate::registry::{
+    ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -39,7 +41,11 @@ impl Default for DiffFormat {
 pub enum LineChange {
     /// A line that is the same in both versions (context).
     #[serde(rename = "context")]
-    Context { text: String, old_num: usize, new_num: usize },
+    Context {
+        text: String,
+        old_num: usize,
+        new_num: usize,
+    },
     /// A line added in the new version.
     #[serde(rename = "added")]
     Added { text: String, new_num: usize },
@@ -611,7 +617,10 @@ impl DiffTool {
             path
         };
         let canonical = resolved.canonicalize().map_err(|e| {
-            ToolError::new("PATH_INVALID", format!("Cannot access path '{}': {}", path_str, e))
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
         })?;
         if !canonical.starts_with(&self.allowed_base) {
             return Err(ToolError::new(
@@ -632,15 +641,19 @@ impl Tool for DiffTool {
                 concat!(
                     "Diff two files or text strings and return the differences. ",
                     "Supports unified, context, JSON, and summary output formats.",
-),
+                ),
                 HashMap::from([
                     (
                         "old_path".to_string(),
-                        ParameterDefinition::string("Path to the old file. Either this or old_text is required."),
+                        ParameterDefinition::string(
+                            "Path to the old file. Either this or old_text is required.",
+                        ),
                     ),
                     (
                         "new_path".to_string(),
-                        ParameterDefinition::string("Path to the new file. Either this or new_text is required."),
+                        ParameterDefinition::string(
+                            "Path to the new file. Either this or new_text is required.",
+                        ),
                     ),
                     (
                         "old_text".to_string(),
@@ -652,8 +665,10 @@ impl Tool for DiffTool {
                     ),
                     (
                         "format".to_string(),
-                        ParameterDefinition::string("Output format: unified, context, json, summary")
-                            .default(serde_json::json!("unified")),
+                        ParameterDefinition::string(
+                            "Output format: unified, context, json, summary",
+                        )
+                        .default(serde_json::json!("unified")),
                     ),
                     (
                         "context".to_string(),
@@ -674,10 +689,15 @@ impl Tool for DiffTool {
         } else if let Some(p) = params["old_path"].as_str() {
             let path = self.resolve_path(p)?;
             tokio::fs::read_to_string(&path).await.map_err(|e| {
-                ToolError::new("IO_ERROR", format!("Failed to read '{}': {}", path.display(), e))
+                ToolError::new(
+                    "IO_ERROR",
+                    format!("Failed to read '{}': {}", path.display(), e),
+                )
             })?
         } else {
-            return Err(ToolError::invalid_args("Either 'old_text' or 'old_path' is required"));
+            return Err(ToolError::invalid_args(
+                "Either 'old_text' or 'old_path' is required",
+            ));
         };
 
         let new_text = if let Some(s) = params["new_text"].as_str() {
@@ -685,10 +705,15 @@ impl Tool for DiffTool {
         } else if let Some(p) = params["new_path"].as_str() {
             let path = self.resolve_path(p)?;
             tokio::fs::read_to_string(&path).await.map_err(|e| {
-                ToolError::new("IO_ERROR", format!("Failed to read '{}': {}", path.display(), e))
+                ToolError::new(
+                    "IO_ERROR",
+                    format!("Failed to read '{}': {}", path.display(), e),
+                )
             })?
         } else {
-            return Err(ToolError::invalid_args("Either 'new_text' or 'new_path' is required"));
+            return Err(ToolError::invalid_args(
+                "Either 'new_text' or 'new_path' is required",
+            ));
         };
 
         let format = params["format"].as_str().unwrap_or("unified");
@@ -719,7 +744,7 @@ impl Tool for DiffTool {
                 return Err(ToolError::invalid_args(format!(
                     "Unknown format: '{}'. Supported: unified, context, json, summary",
                     other
-                )))
+                )));
             }
         };
 
@@ -770,7 +795,10 @@ impl DirDiffTool {
             path
         };
         let canonical = resolved.canonicalize().map_err(|e| {
-            ToolError::new("PATH_INVALID", format!("Cannot access path '{}': {}", path_str, e))
+            ToolError::new(
+                "PATH_INVALID",
+                format!("Cannot access path '{}': {}", path_str, e),
+            )
         })?;
         if !canonical.starts_with(&self.allowed_base) {
             return Err(ToolError::new(
@@ -791,7 +819,7 @@ impl Tool for DirDiffTool {
                 concat!(
                     "Compare two directories and report added, removed, and modified files. ",
                     "Supports size-based (fast) or content-hash-based (accurate) comparison.",
-),
+                ),
                 HashMap::from([
                     (
                         "old_dir".to_string(),
@@ -852,17 +880,13 @@ impl Tool for DirDiffTool {
             let new = new_dir.clone();
             tokio::task::spawn_blocking(move || compare_directories_by_content(&old, &new))
                 .await
-                .map_err(|e| {
-                    ToolError::new("DIFF_ERROR", format!("Diff task failed: {}", e))
-                })??
+                .map_err(|e| ToolError::new("DIFF_ERROR", format!("Diff task failed: {}", e)))??
         } else {
             let old = old_dir.clone();
             let new = new_dir.clone();
             tokio::task::spawn_blocking(move || compare_directories(&old, &new))
                 .await
-                .map_err(|e| {
-                    ToolError::new("DIFF_ERROR", format!("Diff task failed: {}", e))
-                })??
+                .map_err(|e| ToolError::new("DIFF_ERROR", format!("Diff task failed: {}", e)))??
         };
 
         let content = match format {
@@ -895,7 +919,7 @@ impl Tool for DirDiffTool {
                 return Err(ToolError::invalid_args(format!(
                     "Unknown format: '{}'. Supported: json, summary",
                     other
-                )))
+                )));
             }
         };
 
@@ -926,14 +950,18 @@ mod tests {
     #[test]
     fn test_diff_lines_addition() {
         let changes = diff_lines("hello\nworld", "hello\nnew\nworld");
-        let has_addition = changes.iter().any(|c| matches!(c, LineChange::Added { .. }));
+        let has_addition = changes
+            .iter()
+            .any(|c| matches!(c, LineChange::Added { .. }));
         assert!(has_addition);
     }
 
     #[test]
     fn test_diff_lines_removal() {
         let changes = diff_lines("hello\nmiddle\nworld", "hello\nworld");
-        let has_removal = changes.iter().any(|c| matches!(c, LineChange::Removed { .. }));
+        let has_removal = changes
+            .iter()
+            .any(|c| matches!(c, LineChange::Removed { .. }));
         assert!(has_removal);
     }
 

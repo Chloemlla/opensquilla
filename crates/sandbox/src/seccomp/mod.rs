@@ -22,7 +22,7 @@ pub mod syscalls;
 
 pub use builder::{SeccompFilterBuilder, SeccompPolicy};
 pub use presets::preset_allowlist;
-pub use syscalls::{syscall_name_to_number, SYSCALL_NAMES};
+pub use syscalls::{SYSCALL_NAMES, syscall_name_to_number};
 
 use serde::{Deserialize, Serialize};
 

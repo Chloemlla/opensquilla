@@ -190,10 +190,7 @@ impl FlushReceipt {
         if self.indexed_chunk_count <= 0 {
             return false;
         }
-        let integrity = self
-            .integrity_status
-            .as_deref()
-            .unwrap_or("unverified");
+        let integrity = self.integrity_status.as_deref().unwrap_or("unverified");
         if integrity != "ok" {
             return false;
         }
@@ -213,10 +210,7 @@ impl FlushReceipt {
         if self.obligation_count <= 0 && self.obligation_missing_ids.is_empty() {
             return true;
         }
-        let obligation_status = self
-            .obligation_status
-            .as_deref()
-            .unwrap_or("unverified");
+        let obligation_status = self.obligation_status.as_deref().unwrap_or("unverified");
         if obligation_status != "ok" && obligation_status != "backfilled" {
             return false;
         }
@@ -231,10 +225,7 @@ impl FlushReceipt {
         if self.allows_destructive_compaction() {
             return true;
         }
-        matches!(
-            self.result_status.as_deref(),
-            Some("ok_noop_no_memory")
-        )
+        matches!(self.result_status.as_deref(), Some("ok_noop_no_memory"))
     }
 
     /// Whether a durable receipt (checkpoint/flush/preimage/repair scope)
@@ -538,9 +529,10 @@ fn receipt_has_archive_evidence(receipt: &FlushReceipt) -> bool {
         .content_hash
         .as_deref()
         .map_or(false, |s| !s.is_empty());
-    let has_fallback_path = receipt.flushed_paths.iter().any(|p| {
-        p.starts_with("memory/.raw_fallbacks/")
-    });
+    let has_fallback_path = receipt
+        .flushed_paths
+        .iter()
+        .any(|p| p.starts_with("memory/.raw_fallbacks/"));
     has_hash && has_fallback_path
 }
 
@@ -645,12 +637,18 @@ impl CompactionContinuationDecision {
 
     /// Returns `true` when the gate recommends a retry.
     pub fn is_retry(&self) -> bool {
-        matches!(self.action, CompactionContinuationAction::RetryAfterCompaction)
+        matches!(
+            self.action,
+            CompactionContinuationAction::RetryAfterCompaction
+        )
     }
 
     /// Returns `true` when the gate blocks compaction entirely.
     pub fn is_blocked(&self) -> bool {
-        matches!(self.action, CompactionContinuationAction::BlockedAfterCompaction)
+        matches!(
+            self.action,
+            CompactionContinuationAction::BlockedAfterCompaction
+        )
     }
 }
 
@@ -776,10 +774,7 @@ mod tests {
 
     #[test]
     fn test_flush_receipt_status_not_requested() {
-        assert_eq!(
-            flush_receipt_status(None),
-            FlushReceiptStatus::NotRequested
-        );
+        assert_eq!(flush_receipt_status(None), FlushReceiptStatus::NotRequested);
     }
 
     #[test]
@@ -793,7 +788,10 @@ mod tests {
             obligation_missing_ids: vec![],
             ..Default::default()
         };
-        assert_eq!(flush_receipt_status(Some(&receipt)), FlushReceiptStatus::Safe);
+        assert_eq!(
+            flush_receipt_status(Some(&receipt)),
+            FlushReceiptStatus::Safe
+        );
     }
 
     #[test]
@@ -882,7 +880,10 @@ mod tests {
             false, // prompt_changed
             false, // finalization_attempted
         );
-        assert_eq!(decision.action, CompactionContinuationAction::BlockedAfterCompaction);
+        assert_eq!(
+            decision.action,
+            CompactionContinuationAction::BlockedAfterCompaction
+        );
         assert_eq!(decision.reason, "context_unsalvageable");
     }
 
@@ -898,7 +899,10 @@ mod tests {
             false, // prompt_changed
             false, // finalization_attempted
         );
-        assert_eq!(decision.action, CompactionContinuationAction::BlockedAfterCompaction);
+        assert_eq!(
+            decision.action,
+            CompactionContinuationAction::BlockedAfterCompaction
+        );
         assert_eq!(decision.reason, "context_unsalvageable");
     }
 
@@ -914,7 +918,10 @@ mod tests {
             true,  // prompt_changed
             false, // finalization_attempted
         );
-        assert_eq!(decision.action, CompactionContinuationAction::ContinueAfterCompaction);
+        assert_eq!(
+            decision.action,
+            CompactionContinuationAction::ContinueAfterCompaction
+        );
         assert_eq!(decision.reason, "receipt_safe_prompt_changed");
     }
 
@@ -930,7 +937,10 @@ mod tests {
             false, // prompt_changed
             false, // finalization_attempted
         );
-        assert_eq!(decision.action, CompactionContinuationAction::RetryAfterCompaction);
+        assert_eq!(
+            decision.action,
+            CompactionContinuationAction::RetryAfterCompaction
+        );
         assert_eq!(decision.reason, "prompt_not_reduced");
     }
 
@@ -965,7 +975,10 @@ mod tests {
             false, // prompt_changed
             true,  // finalization_attempted
         );
-        assert_eq!(decision.action, CompactionContinuationAction::FailedAfterCompaction);
+        assert_eq!(
+            decision.action,
+            CompactionContinuationAction::FailedAfterCompaction
+        );
         assert_eq!(decision.reason, "finalization_failed_after_retries");
     }
 
@@ -981,7 +994,10 @@ mod tests {
             false, // prompt_changed
             false, // finalization_attempted
         );
-        assert_eq!(decision.action, CompactionContinuationAction::PartialAfterCompaction);
+        assert_eq!(
+            decision.action,
+            CompactionContinuationAction::PartialAfterCompaction
+        );
         assert_eq!(decision.reason, "finalization_required_after_retries");
     }
 

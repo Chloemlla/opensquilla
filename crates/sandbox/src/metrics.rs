@@ -13,8 +13,8 @@
 //! so a single instance can be shared across all sandbox backends in a process.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -199,8 +199,12 @@ impl SyscallClass {
             | "getsockname" | "shutdown" | "socketpair" => SyscallClass::Network,
             "fork" | "vfork" | "clone" | "clone3" | "execve" | "execveat" | "exit"
             | "exit_group" | "wait4" | "waitid" | "setpgid" | "setsid" | "getpid" | "getppid"
-            | "gettid" | "getuid" | "geteuid" | "getgid" | "getegid" | "prctl" => SyscallClass::Process,
-            "mmap" | "munmap" | "mprotect" | "brk" | "madvise" | "mremap" | "mincore" => SyscallClass::Memory,
+            | "gettid" | "getuid" | "geteuid" | "getgid" | "getegid" | "prctl" => {
+                SyscallClass::Process
+            }
+            "mmap" | "munmap" | "mprotect" | "brk" | "madvise" | "mremap" | "mincore" => {
+                SyscallClass::Memory
+            }
             "rt_sigaction" | "rt_sigprocmask" | "rt_sigreturn" | "sigaltstack" | "kill"
             | "tgkill" | "tkill" | "pause" => SyscallClass::Signal,
             "clock_gettime" | "gettimeofday" | "nanosleep" | "clock_nanosleep" | "time"
@@ -405,7 +409,9 @@ impl MetricsCollector {
 
     /// Record a completed execution.
     pub async fn record(&self, metrics: ExecutionMetrics) {
-        self.counters.total_executions.fetch_add(1, Ordering::Relaxed);
+        self.counters
+            .total_executions
+            .fetch_add(1, Ordering::Relaxed);
         if metrics.timed_out {
             self.counters.timed_out.fetch_add(1, Ordering::Relaxed);
         } else if metrics.exit_code == 0 {
@@ -582,7 +588,10 @@ mod tests {
         assert_eq!(SyscallClass::classify("connect"), SyscallClass::Network);
         assert_eq!(SyscallClass::classify("execve"), SyscallClass::Process);
         assert_eq!(SyscallClass::classify("mmap"), SyscallClass::Memory);
-        assert_eq!(SyscallClass::classify("unknown_syscall"), SyscallClass::Other);
+        assert_eq!(
+            SyscallClass::classify("unknown_syscall"),
+            SyscallClass::Other
+        );
     }
 
     #[test]

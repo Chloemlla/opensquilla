@@ -224,10 +224,7 @@ impl DeliveryChannel for WebhookDelivery {
         let payload = match serde_json::to_value(execution) {
             Ok(v) => v,
             Err(e) => {
-                return DeliveryResult::failure(format!(
-                    "failed to serialize execution: {}",
-                    e
-                ))
+                return DeliveryResult::failure(format!("failed to serialize execution: {}", e));
             }
         };
         // TODO(parity): POST `payload` to `self.url` with

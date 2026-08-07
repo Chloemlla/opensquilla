@@ -90,7 +90,10 @@ pub fn canonicalize_tool_arguments(
     let mut aliases_by_canonical: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
     for (alias, canonical) in aliases.iter().copied() {
         if normalized.contains_key(alias) {
-            match aliases_by_canonical.iter_mut().find(|(c, _)| *c == canonical) {
+            match aliases_by_canonical
+                .iter_mut()
+                .find(|(c, _)| *c == canonical)
+            {
                 Some((_, present)) => present.push(alias),
                 None => aliases_by_canonical.push((canonical, vec![alias])),
             }

@@ -52,11 +52,7 @@ pub async fn run_search(action: SearchAction) -> Result<()> {
 }
 
 /// Run a web search.
-pub async fn search_query(
-    query: &str,
-    provider: Option<&str>,
-    max_results: usize,
-) -> Result<()> {
+pub async fn search_query(query: &str, provider: Option<&str>, max_results: usize) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let registry = SearchRegistry::new(&config);
 
@@ -176,10 +172,7 @@ pub async fn provider_status() -> Result<()> {
         } else {
             "no credentials".to_string()
         };
-        table = table.row_owned(vec![
-            name.to_string(),
-            status.clone(),
-        ]);
+        table = table.row_owned(vec![name.to_string(), status.clone()]);
         let _ = status;
     }
     table.print();
@@ -193,7 +186,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

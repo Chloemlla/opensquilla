@@ -24,24 +24,34 @@ pub fn whitelist_from_filesystem(policy: &FilesystemPolicy) -> PathWhitelist {
 
     for path in &policy.write_allowed {
         if !path.is_empty() {
-            wl.add(PathRule::allow(format!("{}/**", trim_trailing(path)), AccessMode::ReadWrite)
-                .with_reason("filesystem policy write_allowed"));
-            wl.add(PathRule::allow(path.clone(), AccessMode::ReadWrite)
-                .with_reason("filesystem policy write_allowed (root)"));
+            wl.add(
+                PathRule::allow(format!("{}/**", trim_trailing(path)), AccessMode::ReadWrite)
+                    .with_reason("filesystem policy write_allowed"),
+            );
+            wl.add(
+                PathRule::allow(path.clone(), AccessMode::ReadWrite)
+                    .with_reason("filesystem policy write_allowed (root)"),
+            );
         }
     }
     for path in &policy.read_allowed {
         if !path.is_empty() {
-            wl.add(PathRule::allow(format!("{}/**", trim_trailing(path)), AccessMode::Read)
-                .with_reason("filesystem policy read_allowed"));
-            wl.add(PathRule::allow(path.clone(), AccessMode::Read)
-                .with_reason("filesystem policy read_allowed (root)"));
+            wl.add(
+                PathRule::allow(format!("{}/**", trim_trailing(path)), AccessMode::Read)
+                    .with_reason("filesystem policy read_allowed"),
+            );
+            wl.add(
+                PathRule::allow(path.clone(), AccessMode::Read)
+                    .with_reason("filesystem policy read_allowed (root)"),
+            );
         }
     }
     for path in &policy.denied {
         if !path.is_empty() {
-            wl.add(PathRule::deny(format!("{}/**", trim_trailing(path)))
-                .with_reason("filesystem policy denied"));
+            wl.add(
+                PathRule::deny(format!("{}/**", trim_trailing(path)))
+                    .with_reason("filesystem policy denied"),
+            );
             wl.add(PathRule::deny(path.clone()).with_reason("filesystem policy denied (root)"));
         }
     }
@@ -52,8 +62,10 @@ pub fn whitelist_from_filesystem(policy: &FilesystemPolicy) -> PathWhitelist {
     if policy.home_readable {
         if let Some(home) = std::env::var_os("HOME") {
             let home = home.to_string_lossy().to_string();
-            wl.add(PathRule::allow(format!("{home}/**"), AccessMode::Read)
-                .with_reason("home readable"));
+            wl.add(
+                PathRule::allow(format!("{home}/**"), AccessMode::Read)
+                    .with_reason("home readable"),
+            );
             wl.add(PathRule::allow(home, AccessMode::Read).with_reason("home readable (root)"));
         }
     }
@@ -202,11 +214,8 @@ impl PathAccessController {
                 files.push(format!("[blocked] {}", entry.file_name().to_string_lossy()));
                 continue;
             }
-            let (is_dir, line) = crate::directory_listing::format_directory_entry(
-                &entry_path,
-                follow_target,
-                false,
-            );
+            let (is_dir, line) =
+                crate::directory_listing::format_directory_entry(&entry_path, follow_target, false);
             if is_dir {
                 dirs.push(line);
             } else {
@@ -286,10 +295,7 @@ mod tests {
         let controller = PathAccessController::new(policy);
         let d = controller.check_read("/home/u/.ssh/id_rsa");
         assert!(!d.permitted());
-        assert_eq!(
-            d,
-            PathDecision::Deny("sensitive_path:/id_rsa".to_string())
-        );
+        assert_eq!(d, PathDecision::Deny("sensitive_path:/id_rsa".to_string()));
         let d = controller.check_read("/etc/shadow");
         assert!(!d.permitted());
         assert!(matches!(d, PathDecision::Deny(reason) if reason.starts_with("sensitive_path:")));
@@ -314,8 +320,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join(".env"), b"SECRET=1").unwrap();
 
-        let policy = FilesystemPolicy::default()
-            .with_read_allowed(dir.to_string_lossy().as_ref());
+        let policy = FilesystemPolicy::default().with_read_allowed(dir.to_string_lossy().as_ref());
         let controller = PathAccessController::new(policy);
         let (dirs, files) = controller.list_directory(&dir, true).unwrap();
         assert!(dirs.iter().any(|l| l.contains("[dir]  sub/")));

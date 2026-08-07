@@ -140,7 +140,10 @@ mod tests {
     fn owners_can_select_full() {
         let p = owner();
         assert!(run_mode_allowed_for_principal(Some("full"), &p));
-        assert_eq!(coerce_run_mode_for_principal(Some("full"), &p), RunMode::Full);
+        assert_eq!(
+            coerce_run_mode_for_principal(Some("full"), &p),
+            RunMode::Full
+        );
         assert_eq!(p.default_run_mode(), RunMode::Full);
     }
 
@@ -148,8 +151,14 @@ mod tests {
     fn non_owners_are_restricted() {
         let p = member();
         assert!(!run_mode_allowed_for_principal(Some("full"), &p));
-        assert_eq!(coerce_run_mode_for_principal(Some("full"), &p), RunMode::Trusted);
-        assert_eq!(coerce_run_mode_for_principal(Some("standard"), &p), RunMode::Standard);
+        assert_eq!(
+            coerce_run_mode_for_principal(Some("full"), &p),
+            RunMode::Trusted
+        );
+        assert_eq!(
+            coerce_run_mode_for_principal(Some("standard"), &p),
+            RunMode::Standard
+        );
         assert_eq!(p.default_run_mode(), RunMode::Trusted);
     }
 
@@ -157,14 +166,20 @@ mod tests {
     fn invalid_alias_fails_closed() {
         let p = member();
         assert!(!run_mode_allowed_for_principal(Some("bogus"), &p));
-        assert_eq!(coerce_run_mode_for_principal(Some("bogus"), &p), RunMode::Trusted);
+        assert_eq!(
+            coerce_run_mode_for_principal(Some("bogus"), &p),
+            RunMode::Trusted
+        );
     }
 
     #[test]
     fn payloads_are_well_formed() {
         let p = member();
         let payload = hello_auth_payload(&p);
-        assert_eq!(payload["principal"]["isOwner"], serde_json::Value::Bool(false));
+        assert_eq!(
+            payload["principal"]["isOwner"],
+            serde_json::Value::Bool(false)
+        );
         assert_eq!(
             payload["runModePolicy"]["fullHostAccessDisabledReason"],
             serde_json::Value::String("owner_required".to_string())

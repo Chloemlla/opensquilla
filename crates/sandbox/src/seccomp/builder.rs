@@ -327,7 +327,11 @@ fn align_up(value: usize, align: usize) -> usize {
 
 /// Describe a compiled program as a human-readable summary (for audit logs).
 pub fn describe_program(policy: &SeccompPolicy) -> String {
-    let mut sorted: Vec<&str> = policy.allowlist.iter().map(|r| r.syscall.as_str()).collect();
+    let mut sorted: Vec<&str> = policy
+        .allowlist
+        .iter()
+        .map(|r| r.syscall.as_str())
+        .collect();
     sorted.sort();
     sorted.dedup();
     format!(
@@ -368,8 +372,14 @@ mod tests {
 
     #[test]
     fn for_level_dispatch() {
-        assert_eq!(SeccompPolicy::for_level(SandboxLevel::Standard).name, "standard");
-        assert_eq!(SeccompPolicy::for_level(SandboxLevel::Locked).name, "locked");
+        assert_eq!(
+            SeccompPolicy::for_level(SandboxLevel::Standard).name,
+            "standard"
+        );
+        assert_eq!(
+            SeccompPolicy::for_level(SandboxLevel::Locked).name,
+            "locked"
+        );
     }
 
     #[test]

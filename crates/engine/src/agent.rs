@@ -97,13 +97,25 @@ pub fn is_valid_transition(from: &AgentState, to: &AgentState) -> bool {
         ),
         (Thinking, _) => matches!(
             to,
-            WaitingForTool | WaitingForUser | Completed | Idle | Stopped | Error(_) | Compacting
-                | Retrying { .. } | Interrupted
+            WaitingForTool
+                | WaitingForUser
+                | Completed
+                | Idle
+                | Stopped
+                | Error(_)
+                | Compacting
+                | Retrying { .. }
+                | Interrupted
         ),
         (WaitingForTool, _) => {
             matches!(
                 to,
-                Thinking | Completed | WaitingForUser | Stopped | Error(_) | Interrupted
+                Thinking
+                    | Completed
+                    | WaitingForUser
+                    | Stopped
+                    | Error(_)
+                    | Interrupted
                     | Retrying { .. }
             )
         }
@@ -117,7 +129,10 @@ pub fn is_valid_transition(from: &AgentState, to: &AgentState) -> bool {
         (Error(_), _) => matches!(to, Idle | Stopped | Initializing),
         (Stopped, _) => matches!(to, Idle | Initializing),
         (Interrupted, _) => matches!(to, Idle | Thinking | Stopped | Error(_) | Completed),
-        (Compacting, _) => matches!(to, Thinking | WaitingForTool | Completed | Stopped | Error(_)),
+        (Compacting, _) => matches!(
+            to,
+            Thinking | WaitingForTool | Completed | Stopped | Error(_)
+        ),
         (Retrying { .. }, _) => matches!(
             to,
             Thinking | WaitingForTool | Completed | Error(_) | Stopped | Idle
@@ -2120,8 +2135,10 @@ pub fn classify_error(error: &AgentError) -> ErrorClassification {
                     recovery: RecoveryAction::Retry { delay_ms: 250 },
                     code: "TIMEOUT".to_string(),
                 }
-            } else if lower.contains("context") || lower.contains("token")
-                || lower.contains("too long") || lower.contains("window")
+            } else if lower.contains("context")
+                || lower.contains("token")
+                || lower.contains("too long")
+                || lower.contains("window")
             {
                 ErrorClassification {
                     category: ContextOverflow,
@@ -2132,8 +2149,10 @@ pub fn classify_error(error: &AgentError) -> ErrorClassification {
                     },
                     code: "CONTEXT_OVERFLOW".to_string(),
                 }
-            } else if lower.contains("overloaded") || lower.contains("503")
-                || lower.contains("502") || lower.contains("network")
+            } else if lower.contains("overloaded")
+                || lower.contains("503")
+                || lower.contains("502")
+                || lower.contains("network")
             {
                 ErrorClassification {
                     category: Provider,
@@ -2304,7 +2323,12 @@ impl Agent {
             let output_tokens = estimate_message_tokens(&response);
             let model = self.generator.model_name().to_string();
             let provider = self.generator.provider_name().to_string();
-            self.track_usage(UsageEvent::new(model, provider, input_tokens, output_tokens));
+            self.track_usage(UsageEvent::new(
+                model,
+                provider,
+                input_tokens,
+                output_tokens,
+            ));
 
             let calls = crate::turn_control::pending_tool_calls(&response);
 
@@ -2484,7 +2508,8 @@ impl Agent {
             return first;
         }
         let lower = first.content.to_ascii_lowercase();
-        if lower.contains("timeout") || lower.contains("timed out") || lower.contains("rate limit") {
+        if lower.contains("timeout") || lower.contains("timed out") || lower.contains("rate limit")
+        {
             tokio::time::sleep(Duration::from_millis(250)).await;
             let retry = self.execute_tool_call(call).await;
             if !retry.is_error {
@@ -2520,12 +2545,19 @@ impl Agent {
 
     /// `git commit -m <message>`.
     pub async fn git_commit(&self, message: &str) -> Result<GitOpResult> {
-        self.git_op(GitOperation::Commit, &["-m".to_string(), message.to_string()])
-            .await
+        self.git_op(
+            GitOperation::Commit,
+            &["-m".to_string(), message.to_string()],
+        )
+        .await
     }
 
     /// `git push` (optionally with remote and branch).
-    pub async fn git_push(&self, remote: Option<&str>, branch: Option<&str>) -> Result<GitOpResult> {
+    pub async fn git_push(
+        &self,
+        remote: Option<&str>,
+        branch: Option<&str>,
+    ) -> Result<GitOpResult> {
         let mut args = Vec::new();
         if let Some(r) = remote {
             args.push(r.to_string());
@@ -2537,7 +2569,11 @@ impl Agent {
     }
 
     /// `git pull` (optionally with remote and branch).
-    pub async fn git_pull(&self, remote: Option<&str>, branch: Option<&str>) -> Result<GitOpResult> {
+    pub async fn git_pull(
+        &self,
+        remote: Option<&str>,
+        branch: Option<&str>,
+    ) -> Result<GitOpResult> {
         let mut args = Vec::new();
         if let Some(r) = remote {
             args.push(r.to_string());
@@ -2550,7 +2586,9 @@ impl Agent {
 
     /// `git log --oneline -n <limit>`.
     pub async fn git_log(&self, limit: Option<u32>) -> Result<GitOpResult> {
-        let args = limit.map(|n| vec!["-n".to_string(), n.to_string()]).unwrap_or_default();
+        let args = limit
+            .map(|n| vec!["-n".to_string(), n.to_string()])
+            .unwrap_or_default();
         self.git_op(GitOperation::Log, &args).await
     }
 
@@ -2565,7 +2603,8 @@ impl Agent {
 
     /// `git checkout <branch-or-commit>`.
     pub async fn git_checkout(&self, target: &str) -> Result<GitOpResult> {
-        self.git_op(GitOperation::Checkout, &[target.to_string()]).await
+        self.git_op(GitOperation::Checkout, &[target.to_string()])
+            .await
     }
 
     /// `git branch` listing.
@@ -2585,12 +2624,14 @@ impl Agent {
 
     /// `git show <ref>`.
     pub async fn git_show(&self, reference: &str) -> Result<GitOpResult> {
-        self.git_op(GitOperation::Show, &[reference.to_string()]).await
+        self.git_op(GitOperation::Show, &[reference.to_string()])
+            .await
     }
 
     /// `git merge <branch>`.
     pub async fn git_merge(&self, branch: &str) -> Result<GitOpResult> {
-        self.git_op(GitOperation::Merge, &[branch.to_string()]).await
+        self.git_op(GitOperation::Merge, &[branch.to_string()])
+            .await
     }
 
     /// Execute a git operation and wrap it with the operation metadata.

@@ -416,12 +416,15 @@ impl TurnErrorKind {
                     TurnErrorKind::RateLimited
                 } else if lower.contains("timeout") || lower.contains("timed out") {
                     TurnErrorKind::Transient
-                } else if lower.contains("context") || lower.contains("token")
+                } else if lower.contains("context")
+                    || lower.contains("token")
                     || lower.contains("window")
                 {
                     TurnErrorKind::ContextOverflow
-                } else if lower.contains("provider") || lower.contains("502")
-                    || lower.contains("503") || lower.contains("overloaded")
+                } else if lower.contains("provider")
+                    || lower.contains("502")
+                    || lower.contains("503")
+                    || lower.contains("overloaded")
                 {
                     TurnErrorKind::Provider
                 } else if lower.contains("tool") {

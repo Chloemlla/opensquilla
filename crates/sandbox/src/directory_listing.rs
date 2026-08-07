@@ -44,17 +44,24 @@ pub fn format_directory_entry(
             return (false, format!("[link] {name} (broken symlink)"));
         }
         if !follow_target {
-            return (false, format!("[link] {name} (target metadata unavailable)"));
+            return (
+                false,
+                format!("[link] {name} (target metadata unavailable)"),
+            );
         }
         return match std::fs::metadata(path) {
-            Ok(target) => {
-                (false, format!("[link] {name} ({} bytes target)", target.len()))
-            }
+            Ok(target) => (
+                false,
+                format!("[link] {name} ({} bytes target)", target.len()),
+            ),
             Err(e) => {
                 if is_broken_symlink_target_error(&e) {
                     (false, format!("[link] {name} (broken symlink)"))
                 } else {
-                    (false, format!("[link] {name} (target metadata unavailable)"))
+                    (
+                        false,
+                        format!("[link] {name} (target metadata unavailable)"),
+                    )
                 }
             }
         };

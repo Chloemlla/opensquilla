@@ -116,7 +116,11 @@ pub fn evaluate_explicit_submit(
         state.mark_reviewed("explicit");
         return SubmitAction::ShowChecklist;
     }
-    if state.stage == 1 && !state.acted_since_review && state.nudges < SUBMIT_REVIEW_NUDGE_LIMIT && headroom_ok {
+    if state.stage == 1
+        && !state.acted_since_review
+        && state.nudges < SUBMIT_REVIEW_NUDGE_LIMIT
+        && headroom_ok
+    {
         state.nudges += 1;
         return SubmitAction::Nudge;
     }
@@ -164,7 +168,14 @@ pub fn truncate_diff(diff_text: &str, max_chars: usize) -> (String, bool) {
     );
     let head_txt: String = diff_text.chars().take(head).collect();
     let tail_txt: String = if tail > 0 {
-        diff_text.chars().rev().take(tail).collect::<Vec<_>>().into_iter().rev().collect()
+        diff_text
+            .chars()
+            .rev()
+            .take(tail)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     } else {
         String::new()
     };
@@ -315,17 +326,33 @@ mod tests {
     #[test]
     fn test_should_fire_implicit_gates() {
         let state = SubmitReviewState::default();
-        assert!(should_fire_implicit(&state, true, false, true, false, false, true));
-        assert!(!should_fire_implicit(&state, false, false, true, false, false, true));
-        assert!(!should_fire_implicit(&state, true, true, true, false, false, true));
-        assert!(!should_fire_implicit(&state, true, false, false, false, false, true));
-        assert!(!should_fire_implicit(&state, true, false, true, true, false, true));
-        assert!(!should_fire_implicit(&state, true, false, true, false, true, true));
-        assert!(!should_fire_implicit(&state, true, false, true, false, false, false));
+        assert!(should_fire_implicit(
+            &state, true, false, true, false, false, true
+        ));
+        assert!(!should_fire_implicit(
+            &state, false, false, true, false, false, true
+        ));
+        assert!(!should_fire_implicit(
+            &state, true, true, true, false, false, true
+        ));
+        assert!(!should_fire_implicit(
+            &state, true, false, false, false, false, true
+        ));
+        assert!(!should_fire_implicit(
+            &state, true, false, true, true, false, true
+        ));
+        assert!(!should_fire_implicit(
+            &state, true, false, true, false, true, true
+        ));
+        assert!(!should_fire_implicit(
+            &state, true, false, true, false, false, false
+        ));
 
         let mut reviewed = SubmitReviewState::default();
         reviewed.mark_reviewed("implicit");
-        assert!(!should_fire_implicit(&reviewed, true, false, true, false, false, true));
+        assert!(!should_fire_implicit(
+            &reviewed, true, false, true, false, false, true
+        ));
     }
 
     #[test]

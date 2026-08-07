@@ -211,14 +211,21 @@ impl FinalDiffContractObservation {
 
     /// The first trigger, or `final_diff_contract_ok`.
     pub fn primary_reason(&self) -> &str {
-        self.triggers.first().map(|s| s.as_str()).unwrap_or("final_diff_contract_ok")
+        self.triggers
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("final_diff_contract_ok")
     }
 
     /// Render the observation as a JSON event-details payload.
     pub fn to_event_details(&self) -> serde_json::Value {
         let mut obj = serde_json::Map::new();
         let list = |v: &[String]| {
-            serde_json::Value::Array(v.iter().map(|s| serde_json::Value::String(s.clone())).collect())
+            serde_json::Value::Array(
+                v.iter()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .collect(),
+            )
         };
         obj.insert("diff_paths".into(), list(&self.diff_paths));
         obj.insert("source_paths".into(), list(&self.source_paths));
@@ -226,61 +233,126 @@ impl FinalDiffContractObservation {
         obj.insert("test_like_paths".into(), list(&self.test_like_paths));
         obj.insert("docs_paths".into(), list(&self.docs_paths));
         obj.insert("generated_paths".into(), list(&self.generated_paths));
-        obj.insert("diagnostic_source_like_paths".into(), list(&self.diagnostic_source_like_paths));
-        obj.insert("actionable_source_paths".into(), list(&self.actionable_source_paths));
-        obj.insert("candidate_source_paths".into(), list(&self.candidate_source_paths));
-        obj.insert("candidate_source_missing_paths".into(), list(&self.candidate_source_missing_paths));
+        obj.insert(
+            "diagnostic_source_like_paths".into(),
+            list(&self.diagnostic_source_like_paths),
+        );
+        obj.insert(
+            "actionable_source_paths".into(),
+            list(&self.actionable_source_paths),
+        );
+        obj.insert(
+            "candidate_source_paths".into(),
+            list(&self.candidate_source_paths),
+        );
+        obj.insert(
+            "candidate_source_missing_paths".into(),
+            list(&self.candidate_source_missing_paths),
+        );
         obj.insert(
             "candidate_actionable_source_missing_paths".into(),
             list(&self.candidate_actionable_source_missing_paths),
         );
         obj.insert("read_source_paths".into(), list(&self.read_source_paths));
-        obj.insert("read_source_missing_paths".into(), list(&self.read_source_missing_paths));
+        obj.insert(
+            "read_source_missing_paths".into(),
+            list(&self.read_source_missing_paths),
+        );
         obj.insert(
             "read_actionable_source_missing_paths".into(),
             list(&self.read_actionable_source_missing_paths),
         );
-        obj.insert("mutation_overlap_paths".into(), list(&self.mutation_overlap_paths));
-        obj.insert("changed_source_receipt_paths".into(), list(&self.changed_source_receipt_paths));
-        obj.insert("lost_source_mutation_paths".into(), list(&self.lost_source_mutation_paths));
+        obj.insert(
+            "mutation_overlap_paths".into(),
+            list(&self.mutation_overlap_paths),
+        );
+        obj.insert(
+            "changed_source_receipt_paths".into(),
+            list(&self.changed_source_receipt_paths),
+        );
+        obj.insert(
+            "lost_source_mutation_paths".into(),
+            list(&self.lost_source_mutation_paths),
+        );
         obj.insert(
             "source_diff_candidate_count".into(),
             serde_json::Value::from(self.source_diff_candidates.len()),
         );
-        obj.insert("recoverable_candidate_ids".into(), list(&self.recoverable_candidate_ids));
-        obj.insert("recoverable_candidate_count".into(), serde_json::Value::from(self.recoverable_candidate_ids.len()));
+        obj.insert(
+            "recoverable_candidate_ids".into(),
+            list(&self.recoverable_candidate_ids),
+        );
+        obj.insert(
+            "recoverable_candidate_count".into(),
+            serde_json::Value::from(self.recoverable_candidate_ids.len()),
+        );
         obj.insert("triggers".into(), list(&self.triggers));
-        obj.insert("source_file_count".into(), serde_json::Value::from(self.source_paths.len()));
-        obj.insert("scratch_file_count".into(), serde_json::Value::from(self.scratch_paths.len()));
-        obj.insert("test_like_file_count".into(), serde_json::Value::from(self.test_like_paths.len()));
+        obj.insert(
+            "source_file_count".into(),
+            serde_json::Value::from(self.source_paths.len()),
+        );
+        obj.insert(
+            "scratch_file_count".into(),
+            serde_json::Value::from(self.scratch_paths.len()),
+        );
+        obj.insert(
+            "test_like_file_count".into(),
+            serde_json::Value::from(self.test_like_paths.len()),
+        );
         obj.insert(
             "diagnostic_source_like_count".into(),
             serde_json::Value::from(self.diagnostic_source_like_paths.len()),
         );
-        obj.insert("actionable_source_count".into(), serde_json::Value::from(self.actionable_source_paths.len()));
+        obj.insert(
+            "actionable_source_count".into(),
+            serde_json::Value::from(self.actionable_source_paths.len()),
+        );
         obj.insert(
             "diagnostic_source_like_only".into(),
-            serde_json::Value::Bool(!self.source_paths.is_empty() && self.actionable_source_paths.is_empty()),
+            serde_json::Value::Bool(
+                !self.source_paths.is_empty() && self.actionable_source_paths.is_empty(),
+            ),
         );
-        obj.insert("candidate_source_count".into(), serde_json::Value::from(self.candidate_source_paths.len()));
+        obj.insert(
+            "candidate_source_count".into(),
+            serde_json::Value::from(self.candidate_source_paths.len()),
+        );
         obj.insert(
             "candidate_actionable_source_missing_count".into(),
             serde_json::Value::from(self.candidate_actionable_source_missing_paths.len()),
         );
-        obj.insert("read_source_count".into(), serde_json::Value::from(self.read_source_paths.len()));
-        obj.insert("read_source_missing_count".into(), serde_json::Value::from(self.read_source_missing_paths.len()));
+        obj.insert(
+            "read_source_count".into(),
+            serde_json::Value::from(self.read_source_paths.len()),
+        );
+        obj.insert(
+            "read_source_missing_count".into(),
+            serde_json::Value::from(self.read_source_missing_paths.len()),
+        );
         obj.insert(
             "read_actionable_source_missing_count".into(),
             serde_json::Value::from(self.read_actionable_source_missing_paths.len()),
         );
-        obj.insert("mutation_overlap_count".into(), serde_json::Value::from(self.mutation_overlap_paths.len()));
+        obj.insert(
+            "mutation_overlap_count".into(),
+            serde_json::Value::from(self.mutation_overlap_paths.len()),
+        );
         obj.insert(
             "changed_source_receipt_count".into(),
             serde_json::Value::from(self.changed_source_receipt_paths.len()),
         );
-        obj.insert("lost_source_mutation_count".into(), serde_json::Value::from(self.lost_source_mutation_paths.len()));
-        obj.insert("suspicious".into(), serde_json::Value::Bool(self.suspicious()));
-        obj.insert("primary_reason".into(), serde_json::Value::String(self.primary_reason().to_string()));
+        obj.insert(
+            "lost_source_mutation_count".into(),
+            serde_json::Value::from(self.lost_source_mutation_paths.len()),
+        );
+        obj.insert(
+            "suspicious".into(),
+            serde_json::Value::Bool(self.suspicious()),
+        );
+        obj.insert(
+            "primary_reason".into(),
+            serde_json::Value::String(self.primary_reason().to_string()),
+        );
         serde_json::Value::Object(obj)
     }
 }
@@ -302,7 +374,8 @@ pub fn build_final_diff_contract_observation(
     known_scratch_paths: &[String],
 ) -> FinalDiffContractObservation {
     let normalized_diff_paths = unique_paths(diff_paths);
-    let known_scratch_set: std::collections::HashSet<String> = unique_paths(known_scratch_paths).into_iter().collect();
+    let known_scratch_set: std::collections::HashSet<String> =
+        unique_paths(known_scratch_paths).into_iter().collect();
 
     let mut by_kind: std::collections::HashMap<FinalDiffPathKind, Vec<String>> = Default::default();
     for path in &normalized_diff_paths {
@@ -315,12 +388,16 @@ pub fn build_final_diff_contract_observation(
     }
     let kind_list = |kind| by_kind.get(&kind).cloned().unwrap_or_default();
 
-    let all_write_mutation: Vec<serde_json::Value> =
-        write_records.iter().chain(mutation_records.iter()).cloned().collect();
-    let touched_paths = paths_from_records(&all_write_mutation, Some(&[FinalDiffPathKind::Scratch]))
-        .into_iter()
-        .filter(|path| !known_scratch_set.contains(path))
-        .collect::<Vec<_>>();
+    let all_write_mutation: Vec<serde_json::Value> = write_records
+        .iter()
+        .chain(mutation_records.iter())
+        .cloned()
+        .collect();
+    let touched_paths =
+        paths_from_records(&all_write_mutation, Some(&[FinalDiffPathKind::Scratch]))
+            .into_iter()
+            .filter(|path| !known_scratch_set.contains(path))
+            .collect::<Vec<_>>();
     let changed_source_receipts = changed_source_paths_from_receipts(mutation_receipts)
         .into_iter()
         .filter(|path| !known_scratch_set.contains(path))
@@ -332,7 +409,13 @@ pub fn build_final_diff_contract_observation(
     } else if !changed_source_receipts.is_empty() {
         changed_source_receipts.clone()
     } else {
-        read_source_paths.iter().rev().take(10).rev().cloned().collect()
+        read_source_paths
+            .iter()
+            .rev()
+            .take(10)
+            .rev()
+            .cloned()
+            .collect()
     };
 
     let source_paths = kind_list(FinalDiffPathKind::Source);
@@ -373,7 +456,9 @@ pub fn build_final_diff_contract_observation(
         .collect::<Vec<_>>();
 
     let mutation_paths: std::collections::HashSet<String> =
-        paths_from_records(mutation_records, None).into_iter().collect();
+        paths_from_records(mutation_records, None)
+            .into_iter()
+            .collect();
     let mutation_overlap = normalized_diff_paths
         .iter()
         .filter(|path| mutation_paths.contains(*path))
@@ -385,7 +470,8 @@ pub fn build_final_diff_contract_observation(
         .cloned()
         .collect::<Vec<_>>();
     let normalized_candidates = source_diff_candidates.to_vec();
-    let recoverable_candidate_ids = recoverable_candidate_ids(&normalized_candidates, &lost_source_mutations);
+    let recoverable_candidate_ids =
+        recoverable_candidate_ids(&normalized_candidates, &lost_source_mutations);
 
     let scratch_paths = kind_list(FinalDiffPathKind::Scratch);
     let test_like_paths = kind_list(FinalDiffPathKind::TestLike);
@@ -406,7 +492,8 @@ pub fn build_final_diff_contract_observation(
         && !touched_source_paths.is_empty()
         && !candidate_missing.is_empty()
         && {
-            let touched_set: std::collections::HashSet<String> = touched_source_paths.iter().cloned().collect();
+            let touched_set: std::collections::HashSet<String> =
+                touched_source_paths.iter().cloned().collect();
             touched_set.is_disjoint(&source_set)
         }
     {
@@ -467,7 +554,9 @@ pub fn final_diff_contract_recovery_message(observation: &FinalDiffContractObser
 
     let mut message = String::new();
     message.push_str("[Runtime final-diff check]\n");
-    message.push_str("The model is about to finish, but the current repository diff looks suspicious: ");
+    message.push_str(
+        "The model is about to finish, but the current repository diff looks suspicious: ",
+    );
     message.push_str(&reason);
     message.push_str(". Current diff paths: ");
     message.push_str(&diff_text);
@@ -502,9 +591,13 @@ pub fn final_diff_contract_recovery_message(observation: &FinalDiffContractObser
     message
 }
 
-fn paths_from_records(records: &[serde_json::Value], excluded: Option<&[FinalDiffPathKind]>) -> Vec<String> {
-    let excluded_set: std::collections::HashSet<FinalDiffPathKind> =
-        excluded.map(|kinds| kinds.iter().copied().collect()).unwrap_or_default();
+fn paths_from_records(
+    records: &[serde_json::Value],
+    excluded: Option<&[FinalDiffPathKind]>,
+) -> Vec<String> {
+    let excluded_set: std::collections::HashSet<FinalDiffPathKind> = excluded
+        .map(|kinds| kinds.iter().copied().collect())
+        .unwrap_or_default();
     let mut paths: Vec<String> = Vec::new();
     for record in records {
         let Some(obj) = record.as_object() else {
@@ -580,7 +673,8 @@ fn recoverable_candidate_ids(
     candidates: &[serde_json::Value],
     lost_source_paths: &[String],
 ) -> Vec<String> {
-    let lost_set: std::collections::HashSet<String> = unique_paths(lost_source_paths).into_iter().collect();
+    let lost_set: std::collections::HashSet<String> =
+        unique_paths(lost_source_paths).into_iter().collect();
     if lost_set.is_empty() {
         return Vec::new();
     }
@@ -605,7 +699,10 @@ fn recoverable_candidate_ids(
             })
             .unwrap_or_default();
         let unique_candidate_paths = unique_paths(&candidate_paths);
-        if !unique_candidate_paths.iter().any(|path| lost_set.contains(path)) {
+        if !unique_candidate_paths
+            .iter()
+            .any(|path| lost_set.contains(path))
+        {
             continue;
         }
         if let Some(candidate_id) = obj.get("candidate_id").and_then(|v| v.as_str()) {
@@ -626,7 +723,9 @@ fn test_like_pollution_is_suspicious(test_like_count: usize, source_count: usize
 }
 
 fn looks_diagnostic_source_like_path(path: &str) -> bool {
-    diagnostic_source_like_patterns().iter().any(|re| re.is_match(path))
+    diagnostic_source_like_patterns()
+        .iter()
+        .any(|re| re.is_match(path))
 }
 
 fn render_path_list(paths: &[String]) -> String {
@@ -645,7 +744,10 @@ fn render_path_list_with_limit(paths: &[String], limit: usize) -> String {
 }
 
 fn unique_paths(paths: &[String]) -> Vec<String> {
-    let normalized: Vec<String> = paths.iter().map(|path| normalize_final_diff_path(path)).collect();
+    let normalized: Vec<String> = paths
+        .iter()
+        .map(|path| normalize_final_diff_path(path))
+        .collect();
     unique_strings(&normalized)
 }
 
@@ -668,32 +770,65 @@ mod tests {
 
     #[test]
     fn test_classify_test_like() {
-        assert_eq!(classify_final_diff_path("tests/test_a.py"), FinalDiffPathKind::TestLike);
-        assert_eq!(classify_final_diff_path("src/foo.spec.ts"), FinalDiffPathKind::TestLike);
-        assert_eq!(classify_final_diff_path("src/foo_test.py"), FinalDiffPathKind::TestLike);
+        assert_eq!(
+            classify_final_diff_path("tests/test_a.py"),
+            FinalDiffPathKind::TestLike
+        );
+        assert_eq!(
+            classify_final_diff_path("src/foo.spec.ts"),
+            FinalDiffPathKind::TestLike
+        );
+        assert_eq!(
+            classify_final_diff_path("src/foo_test.py"),
+            FinalDiffPathKind::TestLike
+        );
     }
 
     #[test]
     fn test_classify_scratch() {
-        assert_eq!(classify_final_diff_path("tmp/debug.log"), FinalDiffPathKind::Scratch);
-        assert_eq!(classify_final_diff_path("repro.py"), FinalDiffPathKind::Scratch);
-        assert_eq!(classify_final_diff_path("debug_issue.sh"), FinalDiffPathKind::Scratch);
+        assert_eq!(
+            classify_final_diff_path("tmp/debug.log"),
+            FinalDiffPathKind::Scratch
+        );
+        assert_eq!(
+            classify_final_diff_path("repro.py"),
+            FinalDiffPathKind::Scratch
+        );
+        assert_eq!(
+            classify_final_diff_path("debug_issue.sh"),
+            FinalDiffPathKind::Scratch
+        );
         // A nested path under a source tree stays source unless it matches the
         // standard test/generated/doc locations.
-        assert_eq!(classify_final_diff_path("src/debug_issue.py"), FinalDiffPathKind::Source);
+        assert_eq!(
+            classify_final_diff_path("src/debug_issue.py"),
+            FinalDiffPathKind::Source
+        );
     }
 
     #[test]
     fn test_classify_docs_generated_source() {
-        assert_eq!(classify_final_diff_path("docs/guide.md"), FinalDiffPathKind::Docs);
-        assert_eq!(classify_final_diff_path("dist/bundle.js"), FinalDiffPathKind::Generated);
-        assert_eq!(classify_final_diff_path("src/lib.rs"), FinalDiffPathKind::Source);
+        assert_eq!(
+            classify_final_diff_path("docs/guide.md"),
+            FinalDiffPathKind::Docs
+        );
+        assert_eq!(
+            classify_final_diff_path("dist/bundle.js"),
+            FinalDiffPathKind::Generated
+        );
+        assert_eq!(
+            classify_final_diff_path("src/lib.rs"),
+            FinalDiffPathKind::Source
+        );
     }
 
     #[test]
     fn test_classify_unknown_and_dev_null() {
         assert_eq!(classify_final_diff_path(""), FinalDiffPathKind::Unknown);
-        assert_eq!(classify_final_diff_path("/dev/null"), FinalDiffPathKind::Unknown);
+        assert_eq!(
+            classify_final_diff_path("/dev/null"),
+            FinalDiffPathKind::Unknown
+        );
     }
 
     #[test]
@@ -717,7 +852,11 @@ mod tests {
             &[],
         );
         assert!(observation.suspicious());
-        assert!(observation.triggers.contains(&"final_diff_without_source".to_string()));
+        assert!(
+            observation
+                .triggers
+                .contains(&"final_diff_without_source".to_string())
+        );
     }
 
     #[test]
@@ -736,7 +875,11 @@ mod tests {
             &[],
             &[],
         );
-        assert!(observation.triggers.contains(&"source_mutation_lost_before_final".to_string()));
+        assert!(
+            observation
+                .triggers
+                .contains(&"source_mutation_lost_before_final".to_string())
+        );
         assert_eq!(observation.changed_source_receipt_paths, vec!["src/lib.rs"]);
     }
 
@@ -769,8 +912,15 @@ mod tests {
             &[],
             &[],
         );
-        assert!(observation.triggers.contains(&"diagnostic_source_like_in_final_diff".to_string()));
-        assert_eq!(observation.diagnostic_source_like_paths, vec!["analysis.py"]);
+        assert!(
+            observation
+                .triggers
+                .contains(&"diagnostic_source_like_in_final_diff".to_string())
+        );
+        assert_eq!(
+            observation.diagnostic_source_like_paths,
+            vec!["analysis.py"]
+        );
         assert!(observation.actionable_source_paths.is_empty());
     }
 
@@ -785,7 +935,11 @@ mod tests {
             &[],
             &["src/custom_generated.rs".to_string()],
         );
-        assert!(observation.triggers.contains(&"scratch_artifact_in_final_diff".to_string()));
+        assert!(
+            observation
+                .triggers
+                .contains(&"scratch_artifact_in_final_diff".to_string())
+        );
         assert_eq!(observation.scratch_paths, vec!["src/custom_generated.rs"]);
     }
 

@@ -1252,7 +1252,11 @@ impl SessionManager {
     ///   `archive_long_paused` is `true`).
     ///
     /// Returns a [`RecoveryReport`] describing what was repaired.
-    pub fn recover(&self, archive_long_paused: bool, max_paused: chrono::Duration) -> CoreResult<RecoveryReport> {
+    pub fn recover(
+        &self,
+        archive_long_paused: bool,
+        max_paused: chrono::Duration,
+    ) -> CoreResult<RecoveryReport> {
         let sessions = self.storage.list_all_sessions(u64::MAX, 0)?;
         let now = Utc::now();
         let mut report = RecoveryReport {
@@ -1272,7 +1276,10 @@ impl SessionManager {
                 self.active_sessions.insert(updated.id, updated.clone());
                 report.interrupted_compactions += 1;
                 report.resumed_ids.push(updated.id);
-                warn!("Recovered session {} from interrupted compaction", session.id);
+                warn!(
+                    "Recovered session {} from interrupted compaction",
+                    session.id
+                );
             }
 
             // 2. Expired locks -> release.
@@ -1299,7 +1306,10 @@ impl SessionManager {
             }
         }
 
-        if report.interrupted_compactions > 0 || report.expired_locks_released > 0 || report.long_paused_archived > 0 {
+        if report.interrupted_compactions > 0
+            || report.expired_locks_released > 0
+            || report.long_paused_archived > 0
+        {
             info!(
                 "Session recovery repaired {} sessions ({} compactions, {} locks, {} paused)",
                 report.resumed_ids.len(),
@@ -1340,7 +1350,11 @@ impl SessionManager {
 
     /// Compact a session if it has outgrown `threshold`. Returns `None` when
     /// no compaction was needed, or `Some(report)` after a compaction ran.
-    pub fn compact_if_needed(&self, session_id: &Uuid, threshold: u64) -> CoreResult<Option<CompactionReport>> {
+    pub fn compact_if_needed(
+        &self,
+        session_id: &Uuid,
+        threshold: u64,
+    ) -> CoreResult<Option<CompactionReport>> {
         if self.needs_compaction(session_id, threshold)? {
             Ok(Some(self.compact(session_id)?))
         } else {
@@ -1420,8 +1434,13 @@ impl SessionManager {
         let persisted = self.storage.record_usage_event(&event, &items)?;
 
         // Also keep the in-memory ledger in sync.
-        self.ledger
-            .record(*session_id, prompt_tokens, completion_tokens, model.to_string(), provider.to_string());
+        self.ledger.record(
+            *session_id,
+            prompt_tokens,
+            completion_tokens,
+            model.to_string(),
+            provider.to_string(),
+        );
 
         // Fold the event cost into the session row.
         let mut session = self.require_session(session_id)?;
@@ -1440,12 +1459,14 @@ impl SessionManager {
             .storage
             .get_usage_summary(session_id)
             .unwrap_or_else(|_| {
-                self.ledger.get_summary(session_id).unwrap_or_else(|| crate::usage_ledger::UsageSummary {
-                    total_prompt_tokens: 0,
-                    total_completion_tokens: 0,
-                    total_cost_nanodollars: 0,
-                    total_calls: 0,
-                    by_model: std::collections::HashMap::new(),
+                self.ledger.get_summary(session_id).unwrap_or_else(|| {
+                    crate::usage_ledger::UsageSummary {
+                        total_prompt_tokens: 0,
+                        total_completion_tokens: 0,
+                        total_cost_nanodollars: 0,
+                        total_calls: 0,
+                        by_model: std::collections::HashMap::new(),
+                    }
                 })
             });
         Ok(UsageTotals {
@@ -1491,7 +1512,9 @@ impl SessionManager {
 
     /// Remove all workspaces associated with a session. Returns the count.
     pub fn clear_workspaces(&self, session_id: &Uuid) -> CoreResult<usize> {
-        let workspaces = self.storage.list_project_workspaces_by_session(session_id)?;
+        let workspaces = self
+            .storage
+            .list_project_workspaces_by_session(session_id)?;
         for workspace in &workspaces {
             self.storage.delete_project_workspace(&workspace.id)?;
         }
@@ -1519,13 +1542,19 @@ impl SessionManager {
 
         let mut removed = 1u64;
         // Attachments
-        let attachments = self.storage.list_session_attachments(session_id).unwrap_or_default();
+        let attachments = self
+            .storage
+            .list_session_attachments(session_id)
+            .unwrap_or_default();
         removed += attachments.len() as u64;
         for attachment in attachments {
             let _ = self.storage.delete_session_attachment(&attachment.id);
         }
         // Workspaces
-        let workspaces = self.storage.list_project_workspaces_by_session(session_id).unwrap_or_default();
+        let workspaces = self
+            .storage
+            .list_project_workspaces_by_session(session_id)
+            .unwrap_or_default();
         removed += workspaces.len() as u64;
         for workspace in workspaces {
             let _ = self.storage.delete_project_workspace(&workspace.id);
@@ -1589,10 +1618,7 @@ impl SessionManager {
     pub fn kill_with_tasks(&self, session_id: &Uuid) -> CoreResult<()> {
         let tasks = self.storage.list_agent_tasks_by_session(session_id)?;
         for task in tasks {
-            if matches!(
-                task.status,
-                TaskStatus::Queued | TaskStatus::Running
-            ) {
+            if matches!(task.status, TaskStatus::Queued | TaskStatus::Running) {
                 self.update_task_status(&task.id, TaskStatus::Cancelled, None, None)?;
             }
         }
@@ -1600,7 +1626,11 @@ impl SessionManager {
     }
 
     /// Verify a fork record exists between a parent and child, and return it.
-    pub fn get_fork_relationship(&self, parent_id: &Uuid, child_id: &Uuid) -> CoreResult<Option<SessionFork>> {
+    pub fn get_fork_relationship(
+        &self,
+        parent_id: &Uuid,
+        child_id: &Uuid,
+    ) -> CoreResult<Option<SessionFork>> {
         Ok(self
             .storage
             .list_session_forks_by_source(parent_id)?
@@ -2037,7 +2067,10 @@ mod tests {
 
         let report = m.recover(true, Duration::days(7)).unwrap();
         assert_eq!(report.long_paused_archived, 1);
-        assert_eq!(m.get(&s.id).unwrap().unwrap().status, SessionStatus::Archived);
+        assert_eq!(
+            m.get(&s.id).unwrap().unwrap().status,
+            SessionStatus::Archived
+        );
     }
 
     #[test]
@@ -2139,8 +2172,15 @@ mod tests {
     fn clear_attachments_and_workspaces() {
         let m = manager();
         let s = create(&m, "cleanup-material");
-        m.attach(&s.id, "file.txt", "text/plain", 10, "uri://x", serde_json::Value::Null)
-            .unwrap();
+        m.attach(
+            &s.id,
+            "file.txt",
+            "text/plain",
+            10,
+            "uri://x",
+            serde_json::Value::Null,
+        )
+        .unwrap();
         m.add_workspace(&s.id, "proj", "/tmp/proj", serde_json::Value::Null)
             .unwrap();
 
@@ -2181,7 +2221,9 @@ mod tests {
     fn kill_with_tasks_cancels_running() {
         let m = manager();
         let s = create(&m, "kill-tasks");
-        let task = m.spawn_task(&s.id, "agent", serde_json::Value::Null).unwrap();
+        let task = m
+            .spawn_task(&s.id, "agent", serde_json::Value::Null)
+            .unwrap();
         m.update_task_status(&task.id, TaskStatus::Running, None, None)
             .unwrap();
 
@@ -2195,9 +2237,7 @@ mod tests {
     fn get_fork_relationship_finds_record() {
         let m = manager();
         let s = create(&m, "rel");
-        let f = m
-            .fork(&s.id, ForkConfig::default())
-            .unwrap();
+        let f = m.fork(&s.id, ForkConfig::default()).unwrap();
         let rel = m.get_fork_relationship(&s.id, &f.id).unwrap();
         assert!(rel.is_some());
         assert_eq!(rel.unwrap().child_session_id, f.id);
@@ -2221,8 +2261,15 @@ mod tests {
             m.add_message(&s.id, "user".into(), format!("msg {}", i), 10)
                 .unwrap();
         }
-        m.attach(&s.id, "f.txt", "text/plain", 5, "uri://f", serde_json::Value::Null)
-            .unwrap();
+        m.attach(
+            &s.id,
+            "f.txt",
+            "text/plain",
+            5,
+            "uri://f",
+            serde_json::Value::Null,
+        )
+        .unwrap();
         m.add_tag(&s.id, "t").unwrap();
 
         let removed = m.delete_session_deep(&s.id).unwrap();

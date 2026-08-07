@@ -62,7 +62,11 @@ pub fn is_foreign_host_path(path: &str, platform: &str) -> bool {
         }
         let second = parts[1];
         return FOREIGN_POSIX_ROOTS.contains(&second)
-            || (second.len() == 1 && second.chars().next().is_some_and(|c| c.is_ascii_alphabetic()));
+            || (second.len() == 1
+                && second
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic()));
     }
 
     is_windows_drive_path(text)

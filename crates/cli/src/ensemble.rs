@@ -84,14 +84,35 @@ pub async fn ensemble_show() -> Result<()> {
     KeyValue::new()
         .entry("name", ensemble.name.clone())
         .entry("proposers", ensemble.proposers.len().to_string())
-        .entry("aggregator", aggregation_strategy_name(&ensemble.aggregator.strategy))
+        .entry(
+            "aggregator",
+            aggregation_strategy_name(&ensemble.aggregator.strategy),
+        )
         .entry("scoring", scoring_strategy_name(&ensemble.scoring))
-        .entry("execution_mode", execution_mode_name(&ensemble.execution_mode))
-        .entry("min_successful_proposers", ensemble.min_successful_proposers.to_string())
-        .entry("proposer_timeout", format!("{}s", ensemble.proposer_timeout.as_secs()))
-        .entry("aggregator_timeout", format!("{}s", ensemble.aggregator_timeout.as_secs()))
-        .entry("quorum_grace", format!("{}s", ensemble.quorum_grace.as_secs()))
-        .entry("shuffle_candidates", ensemble.shuffle_candidates.to_string())
+        .entry(
+            "execution_mode",
+            execution_mode_name(&ensemble.execution_mode),
+        )
+        .entry(
+            "min_successful_proposers",
+            ensemble.min_successful_proposers.to_string(),
+        )
+        .entry(
+            "proposer_timeout",
+            format!("{}s", ensemble.proposer_timeout.as_secs()),
+        )
+        .entry(
+            "aggregator_timeout",
+            format!("{}s", ensemble.aggregator_timeout.as_secs()),
+        )
+        .entry(
+            "quorum_grace",
+            format!("{}s", ensemble.quorum_grace.as_secs()),
+        )
+        .entry(
+            "shuffle_candidates",
+            ensemble.shuffle_candidates.to_string(),
+        )
         .entry("max_total_calls", ensemble.max_total_calls.to_string())
         .entry("proposer_tools", ensemble.proposer_tools.to_string())
         .print();
@@ -105,7 +126,11 @@ pub async fn ensemble_show() -> Result<()> {
                 "  {} {:<16} model={:<20} role={:?} weight={:.2}",
                 table::info(),
                 p.label,
-                if p.model.is_empty() { "(inherit)" } else { &p.model },
+                if p.model.is_empty() {
+                    "(inherit)"
+                } else {
+                    &p.model
+                },
                 p.role,
                 p.weight
             );
@@ -118,7 +143,11 @@ pub async fn ensemble_show() -> Result<()> {
             "{} fallback: provider={} model={}",
             table::warn(),
             fb.provider.as_deref().unwrap_or("(default)"),
-            if fb.model.is_empty() { "(inherit)" } else { &fb.model }
+            if fb.model.is_empty() {
+                "(inherit)"
+            } else {
+                &fb.model
+            }
         );
     }
     Ok(())
@@ -130,7 +159,11 @@ pub async fn ensemble_validate() -> Result<()> {
     match ensemble.validate() {
         Ok(()) => {
             println!("{} Ensemble configuration is valid", table::ok());
-            println!("  {} proposer(s), {} min successful", ensemble.proposers.len(), ensemble.min_successful_proposers);
+            println!(
+                "  {} proposer(s), {} min successful",
+                ensemble.proposers.len(),
+                ensemble.min_successful_proposers
+            );
             Ok(())
         }
         Err(e) => {
@@ -160,7 +193,11 @@ pub async fn ensemble_list() -> Result<()> {
         println!(
             "{:<16} {:<20} {:<12} {:<8.2} {:<8}",
             p.label,
-            if p.model.is_empty() { "(inherit)" } else { &p.model },
+            if p.model.is_empty() {
+                "(inherit)"
+            } else {
+                &p.model
+            },
             format!("{:?}", p.role),
             p.weight,
             p.tools_enabled
@@ -182,7 +219,10 @@ pub async fn ensemble_bench(
     // `BenchmarkEngine` implementation; wiring the ensemble as a benchmark
     // engine is out of scope for this port.
     let _ = prompts;
-    info!(dry_run, repeat, "ensemble bench requested (not yet implemented)");
+    info!(
+        dry_run,
+        repeat, "ensemble bench requested (not yet implemented)"
+    );
 
     let report = serde_json::json!({
         "status": "not_implemented",
@@ -196,7 +236,10 @@ pub async fn ensemble_bench(
         return Ok(());
     }
 
-    println!("{} Ensemble benchmark is not yet implemented in Rust.", table::warn());
+    println!(
+        "{} Ensemble benchmark is not yet implemented in Rust.",
+        table::warn()
+    );
     println!("  The Python `ensemble bench` command relies on `run_dry_run_benchmark`");
     println!("  and `run_config_benchmark`, which have not been ported.");
     Ok(())
@@ -239,7 +282,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

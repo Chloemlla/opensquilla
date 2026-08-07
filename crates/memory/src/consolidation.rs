@@ -253,18 +253,17 @@ impl Consolidator {
                     if self.config.delete_duplicates {
                         // Record provenance on the kept memory.
                         let mut kept = keep.clone();
-                        let mut meta = kept
-                            .metadata
-                            .as_object()
-                            .cloned()
-                            .unwrap_or_default();
+                        let mut meta = kept.metadata.as_object().cloned().unwrap_or_default();
                         let mut dup_list = meta
                             .get("merged_duplicates")
                             .and_then(|v| v.as_array())
                             .cloned()
                             .unwrap_or_default();
                         dup_list.push(serde_json::json!(duplicate.id.0.to_string()));
-                        meta.insert("merged_duplicates".to_string(), serde_json::Value::Array(dup_list));
+                        meta.insert(
+                            "merged_duplicates".to_string(),
+                            serde_json::Value::Array(dup_list),
+                        );
                         kept.metadata = serde_json::Value::Object(meta);
                         kept.updated_at = Utc::now();
                         self.store.update_memory(&kept)?;
@@ -330,7 +329,11 @@ impl Consolidator {
             }
         }
 
-        clusters.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        clusters.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(clusters)
     }
 
@@ -460,12 +463,12 @@ impl Consolidator {
 /// Extract the most frequent meaningful terms from a set of memories.
 fn extract_common_terms(members: &[MemoryEntry]) -> Vec<String> {
     let stop_words: std::collections::HashSet<&str> = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
-        "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall",
-        "can", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through",
-        "during", "before", "after", "and", "but", "or", "nor", "not", "so", "yet", "this",
-        "that", "these", "those", "it", "its", "i", "you", "he", "she", "we", "they", "me",
-        "him", "her", "us", "them", "my", "your", "his", "our", "their",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through",
+        "during", "before", "after", "and", "but", "or", "nor", "not", "so", "yet", "this", "that",
+        "these", "those", "it", "its", "i", "you", "he", "she", "we", "they", "me", "him", "her",
+        "us", "them", "my", "your", "his", "our", "their",
     ]
     .iter()
     .cloned()
@@ -563,8 +566,20 @@ mod tests {
         };
         let consolidator = Consolidator::with_config(store.clone(), config);
         let agent = Uuid::new_v4();
-        insert(&store, agent, "user prefers dark mode in the editor", "preference", 0.5);
-        insert(&store, agent, "user prefers dark mode in the editor", "preference", 0.4);
+        insert(
+            &store,
+            agent,
+            "user prefers dark mode in the editor",
+            "preference",
+            0.5,
+        );
+        insert(
+            &store,
+            agent,
+            "user prefers dark mode in the editor",
+            "preference",
+            0.4,
+        );
         insert(&store, agent, "user likes pizza", "preference", 0.5);
 
         let report = consolidator.consolidate_agent(&agent).unwrap();
@@ -586,7 +601,9 @@ mod tests {
         insert(&store, agent, "same exact content here", "episodic", 0.5);
         insert(&store, agent, "same exact content here", "episodic", 0.5);
 
-        let pairs = consolidator.deduplicate(&agent, &store.list_memories(&agent, None, 100, 0).unwrap()).unwrap();
+        let pairs = consolidator
+            .deduplicate(&agent, &store.list_memories(&agent, None, 100, 0).unwrap())
+            .unwrap();
         assert_eq!(pairs.len(), 1);
         assert!(!pairs[0].removed);
         assert_eq!(store.list_memories(&agent, None, 100, 0).unwrap().len(), 2);
@@ -602,12 +619,20 @@ mod tests {
         };
         let consolidator = Consolidator::with_config(store.clone(), config);
         let agent = Uuid::new_v4();
-        insert(&store, agent, "user works with rust async runtimes", "episodic", 0.5);
+        insert(
+            &store,
+            agent,
+            "user works with rust async runtimes",
+            "episodic",
+            0.5,
+        );
         insert(&store, agent, "rust async is fast", "episodic", 0.5);
         insert(&store, agent, "async rust code patterns", "episodic", 0.5);
         insert(&store, agent, "unrelated cooking tip", "episodic", 0.5);
 
-        let clusters = consolidator.cluster(&agent, &store.list_memories(&agent, None, 100, 0).unwrap()).unwrap();
+        let clusters = consolidator
+            .cluster(&agent, &store.list_memories(&agent, None, 100, 0).unwrap())
+            .unwrap();
         assert!(!clusters.is_empty());
         assert!(clusters[0].memory_ids.len() >= 3);
         assert!(!clusters[0].common_terms.is_empty());
@@ -696,7 +721,12 @@ mod tests {
 
         let report = consolidator.consolidate_agent(&agent).unwrap();
         assert_eq!(report.aged_expired, 1);
-        assert!(store.list_memories(&agent, None, 100, 0).unwrap().is_empty());
+        assert!(
+            store
+                .list_memories(&agent, None, 100, 0)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

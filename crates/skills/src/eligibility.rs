@@ -780,10 +780,7 @@ impl EligibilityChecker {
 
     /// Resolve the full dependency tree of a skill, returning the list of
     /// dependencies that are *not* satisfied on the current host.
-    pub fn resolve_dependencies(
-        &self,
-        deps: &[SkillDependency],
-    ) -> DependencyResolutionReport {
+    pub fn resolve_dependencies(&self, deps: &[SkillDependency]) -> DependencyResolutionReport {
         let mut report = DependencyResolutionReport::default();
         for dep in deps {
             let status = self.check_dependency(dep);
@@ -866,8 +863,8 @@ impl EligibilityChecker {
                         detail: "no supported package manager detected".to_string(),
                     };
                 }
-                let installed = self.is_binary_available(&mgr)
-                    && self.package_is_installed(&mgr, name);
+                let installed =
+                    self.is_binary_available(&mgr) && self.package_is_installed(&mgr, name);
                 DependencyStatus {
                     key: dep.key(),
                     kind: DependencyKind::Package,
@@ -1220,11 +1217,7 @@ fn parse_os_release(content: &str) -> Option<OsDistribution> {
     if name.is_empty() && id.is_empty() {
         None
     } else {
-        Some(OsDistribution {
-            name,
-            version,
-            id,
-        })
+        Some(OsDistribution { name, version, id })
     }
 }
 
@@ -1232,8 +1225,7 @@ fn parse_os_release(content: &str) -> Option<OsDistribution> {
 fn unquote_os_value(s: &str) -> String {
     let s = s.trim();
     if s.len() >= 2
-        && ((s.starts_with('"') && s.ends_with('"'))
-            || (s.starts_with('\'') && s.ends_with('\'')))
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
     {
         s[1..s.len() - 1].to_string()
     } else {

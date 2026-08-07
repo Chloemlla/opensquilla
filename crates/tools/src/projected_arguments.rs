@@ -13,9 +13,11 @@ pub const TOOL_ARGUMENT_PROJECTION_PREFIX: &str = "[tool_use_argument_projection
 /// Prefix for historical tool-argument omission markers.
 pub const HISTORICAL_TOOL_ARGUMENT_PROJECTION_PREFIX: &str = "[historical_tool_argument_omitted]\n";
 /// Prefix for invalid provider-context projection strings.
-pub const INVALID_PROVIDER_CONTEXT_PROJECTION_PREFIX: &str = "[invalid_provider_context_projection:";
+pub const INVALID_PROVIDER_CONTEXT_PROJECTION_PREFIX: &str =
+    "[invalid_provider_context_projection:";
 /// Prefix for provider-request tool-input compaction strings.
-pub const PROVIDER_REQUEST_TOOL_INPUT_COMPACTED_PREFIX: &str = "[provider_request_tool_input_compacted:";
+pub const PROVIDER_REQUEST_TOOL_INPUT_COMPACTED_PREFIX: &str =
+    "[provider_request_tool_input_compacted:";
 /// Object key that marks invalid provider-context arguments.
 pub const INVALID_PROVIDER_CONTEXT_ARGUMENTS_KEY: &str = "_invalid_provider_context_arguments";
 /// Object keys that mark compacted tool arguments.
@@ -80,7 +82,10 @@ fn projection_string_kind(value: &str) -> Option<&'static str> {
 /// Recursively scan a JSON value for projected/compacted placeholder markers.
 ///
 /// Returns the first match found, with a JSON path describing its location.
-pub fn find_projected_tool_argument(value: &Value, path: &str) -> Option<ProjectedToolArgumentMatch> {
+pub fn find_projected_tool_argument(
+    value: &Value,
+    path: &str,
+) -> Option<ProjectedToolArgumentMatch> {
     match value {
         Value::String(s) => {
             let kind = projection_string_kind(s)?;
@@ -143,7 +148,9 @@ mod tests {
 
     #[test]
     fn detects_projection_prefix() {
-        let value = json!(format!("{TOOL_ARGUMENT_PROJECTION_PREFIX}the file contents were here"));
+        let value = json!(format!(
+            "{TOOL_ARGUMENT_PROJECTION_PREFIX}the file contents were here"
+        ));
         let matched = find_projected_tool_argument(&value, "").expect("match");
         assert_eq!(matched.kind, "projection_string");
         assert_eq!(matched.path, "");
@@ -151,14 +158,17 @@ mod tests {
 
     #[test]
     fn detects_provider_request_compacted_prefix() {
-        let value = json!(format!("{PROVIDER_REQUEST_TOOL_INPUT_COMPACTED_PREFIX}123 chars]"));
+        let value = json!(format!(
+            "{PROVIDER_REQUEST_TOOL_INPUT_COMPACTED_PREFIX}123 chars]"
+        ));
         let matched = find_projected_tool_argument(&value, "").expect("match");
         assert_eq!(matched.kind, "provider_request_projection_string");
     }
 
     #[test]
     fn detects_compacted_marker_substring() {
-        let value = json!("prefix [provider_request_tool_input_compacted:foo original_chars=12] suffix");
+        let value =
+            json!("prefix [provider_request_tool_input_compacted:foo original_chars=12] suffix");
         let matched = find_projected_tool_argument(&value, "").expect("match");
         assert_eq!(matched.kind, "compacted_marker_substring");
 

@@ -129,9 +129,7 @@ impl ToolResultStore {
     /// Create a store rooted at `root`. The directory is created lazily on the
     /// first write.
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            root: root.into(),
-        }
+        Self { root: root.into() }
     }
 
     /// The store's disk root.
@@ -227,7 +225,8 @@ impl ToolResultStore {
             self.prune_to_fit(survivors, stored_size_bytes, disk_budget)?;
         }
 
-        let created_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+        let created_at = Utc::now()
+            .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
             .replace("+00:00", "Z");
 
         // The deterministic handle is tried first; a random handle is only
@@ -460,7 +459,10 @@ impl ToolResultStore {
     /// modification time without rewriting the file.
     fn touch(&self, handle: &str, session_id: &str) {
         let record_dir = self.record_dir(handle, session_id);
-        for content_name in [TOOL_RESULT_CONTENT_NAME, TOOL_RESULT_COMPRESSED_CONTENT_NAME] {
+        for content_name in [
+            TOOL_RESULT_CONTENT_NAME,
+            TOOL_RESULT_COMPRESSED_CONTENT_NAME,
+        ] {
             let content_path = record_dir.join(content_name);
             if !content_path.exists() {
                 continue;
@@ -493,7 +495,10 @@ impl ToolResultStore {
         let meta_bytes = serde_json::to_vec(meta)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         atomic_write_bytes(&record_dir.join(TOOL_RESULT_META_NAME), &meta_bytes)?;
-        atomic_write_bytes(&record_dir.join(meta.content_file.as_str()), content_payload)?;
+        atomic_write_bytes(
+            &record_dir.join(meta.content_file.as_str()),
+            content_payload,
+        )?;
         Ok(())
     }
 
@@ -508,7 +513,10 @@ impl ToolResultStore {
             return Vec::new();
         }
         let mut records = Vec::new();
-        for content_name in [TOOL_RESULT_CONTENT_NAME, TOOL_RESULT_COMPRESSED_CONTENT_NAME] {
+        for content_name in [
+            TOOL_RESULT_CONTENT_NAME,
+            TOOL_RESULT_COMPRESSED_CONTENT_NAME,
+        ] {
             walk_content_files(&root, content_name, &mut records);
         }
         records
@@ -517,7 +525,11 @@ impl ToolResultStore {
     /// Delete records older than the retention window and return the
     /// survivors, so the caller can reuse this single scan for the budget
     /// prune instead of walking the store again.
-    fn remove_expired(&self, records: Vec<StoredStat>, retention_seconds: Option<u64>) -> Vec<StoredStat> {
+    fn remove_expired(
+        &self,
+        records: Vec<StoredStat>,
+        retention_seconds: Option<u64>,
+    ) -> Vec<StoredStat> {
         let Some(retention) = retention_seconds else {
             return records;
         };
@@ -592,7 +604,10 @@ fn walk_content_files(root: &Path, content_name: &str, out: &mut Vec<StoredStat>
         // Only ever consider (and later delete) well-formed tr-<32hex> record
         // dirs, so cleanup can never touch a stray or foreign file that happens
         // to live under the shared media root.
-        let dir_name = record_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let dir_name = record_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
         if validate_handle(dir_name).is_err() {
             continue;
         }
@@ -600,10 +615,7 @@ fn walk_content_files(root: &Path, content_name: &str, out: &mut Vec<StoredStat>
             Ok(s) => s,
             Err(_) => continue,
         };
-        let mtime = stat
-            .modified()
-            .map(system_time_to_secs)
-            .unwrap_or(0);
+        let mtime = stat.modified().map(system_time_to_secs).unwrap_or(0);
         out.push(StoredStat {
             created_at_secs: mtime,
             size_bytes: stat.len(),
@@ -666,8 +678,7 @@ fn validate_non_empty(name: &str, value: &str) -> Result<String, ToolResultStore
 }
 
 fn validate_non_empty_io(name: &str, value: &str) -> io::Result<String> {
-    validate_non_empty(name, value)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.0))
+    validate_non_empty(name, value).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.0))
 }
 
 /// Sanitize a session token for use as a path component: replace runs of
@@ -711,7 +722,9 @@ fn random_hex_16() -> String {
     // sufficient for handle uniqueness within a single store.
     let mut state = seed;
     for byte in buf.iter_mut() {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         *byte = (state >> 56) as u8;
     }
     hex::encode(buf)
@@ -776,10 +789,14 @@ mod tests {
     fn write_reuses_identical_content() {
         let (_dir, store) = temp_store();
         let first = store
-            .write("same", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None)
+            .write(
+                "same", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None,
+            )
             .unwrap();
         let second = store
-            .write("same", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None)
+            .write(
+                "same", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None,
+            )
             .unwrap();
         assert_eq!(first.handle, second.handle);
     }
@@ -788,7 +805,9 @@ mod tests {
     fn empty_content_rejected() {
         let (_dir, store) = temp_store();
         let err = store
-            .write("", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None)
+            .write(
+                "", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None,
+            )
             .unwrap_err();
         assert!(err.0.contains("empty"));
     }
@@ -816,7 +835,9 @@ mod tests {
     fn read_rejects_wrong_session() {
         let (_dir, store) = temp_store();
         let record = store
-            .write("data", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None)
+            .write(
+                "data", "tu_1", "Read", "sess_1", "sk_1", "agent_1", None, None, None,
+            )
             .unwrap();
         let err = store.read(&record.handle, "sess_2").unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);

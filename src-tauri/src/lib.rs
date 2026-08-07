@@ -43,8 +43,8 @@ use opensquilla_gateway::Gateway;
 // Re-export the primary types for convenience.
 pub use commands::{
     check_updates, delete_secret, export_session, get_locale, get_secret, import_session,
-    install_update, list_secrets, open_external, pick_directory,
-    rotate_secret_key, save_secret, set_locale, zoom_in, zoom_out, zoom_reset,
+    install_update, list_secrets, open_external, pick_directory, rotate_secret_key, save_secret,
+    set_locale, zoom_in, zoom_out, zoom_reset,
 };
 pub use deep_link::{DeepLinkAction, DeepLinkError, parse_deep_link};
 pub use error::{TauriError, TauriResult};

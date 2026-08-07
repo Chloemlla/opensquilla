@@ -183,15 +183,17 @@ impl TemplateRegistry {
     /// parse or the name is already taken.
     pub fn register(&self, template: PromptTemplate) -> Result<(), TemplateError> {
         {
-            let mut tera = self.tera.write().map_err(|e| {
-                TemplateError::Parse(format!("tera lock poisoned: {e}"))
-            })?;
+            let mut tera = self
+                .tera
+                .write()
+                .map_err(|e| TemplateError::Parse(format!("tera lock poisoned: {e}")))?;
             tera.add_raw_template(&template.name, &template.body)
                 .map_err(|e| TemplateError::Parse(e.to_string()))?;
         }
-        let mut map = self.templates.write().map_err(|e| {
-            TemplateError::Parse(format!("templates lock poisoned: {e}"))
-        })?;
+        let mut map = self
+            .templates
+            .write()
+            .map_err(|e| TemplateError::Parse(format!("templates lock poisoned: {e}")))?;
         if map.contains_key(&template.name) {
             return Err(TemplateError::AlreadyExists {
                 name: template.name.clone(),
@@ -204,15 +206,17 @@ impl TemplateRegistry {
     /// Register a template, replacing any existing one with the same name.
     pub fn replace(&self, template: PromptTemplate) -> Result<(), TemplateError> {
         {
-            let mut tera = self.tera.write().map_err(|e| {
-                TemplateError::Parse(format!("tera lock poisoned: {e}"))
-            })?;
+            let mut tera = self
+                .tera
+                .write()
+                .map_err(|e| TemplateError::Parse(format!("tera lock poisoned: {e}")))?;
             tera.add_raw_template(&template.name, &template.body)
                 .map_err(|e| TemplateError::Parse(e.to_string()))?;
         }
-        let mut map = self.templates.write().map_err(|e| {
-            TemplateError::Parse(format!("templates lock poisoned: {e}"))
-        })?;
+        let mut map = self
+            .templates
+            .write()
+            .map_err(|e| TemplateError::Parse(format!("templates lock poisoned: {e}")))?;
         map.insert(template.name.clone(), template);
         Ok(())
     }
@@ -233,7 +237,10 @@ impl TemplateRegistry {
 
     /// Whether a template is registered.
     pub fn contains(&self, name: &str) -> bool {
-        self.templates.read().map(|m| m.contains_key(name)).unwrap_or(false)
+        self.templates
+            .read()
+            .map(|m| m.contains_key(name))
+            .unwrap_or(false)
     }
 
     /// The number of registered templates.
@@ -255,14 +262,11 @@ impl TemplateRegistry {
     }
 
     /// Render a named template against a JSON context.
-    pub fn render(
-        &self,
-        name: &str,
-        context: &serde_json::Value,
-    ) -> Result<String, TemplateError> {
-        let tera = self.tera.read().map_err(|e| {
-            TemplateError::Render(format!("tera lock poisoned: {e}"))
-        })?;
+    pub fn render(&self, name: &str, context: &serde_json::Value) -> Result<String, TemplateError> {
+        let tera = self
+            .tera
+            .read()
+            .map_err(|e| TemplateError::Render(format!("tera lock poisoned: {e}")))?;
         if !tera.templates.contains_key(name) {
             return Err(TemplateError::NotFound {
                 name: name.to_string(),
@@ -280,9 +284,10 @@ impl TemplateRegistry {
         template: &str,
         context: &serde_json::Value,
     ) -> Result<String, TemplateError> {
-        let mut tera = self.tera.write().map_err(|e| {
-            TemplateError::Render(format!("tera lock poisoned: {e}"))
-        })?;
+        let mut tera = self
+            .tera
+            .write()
+            .map_err(|e| TemplateError::Render(format!("tera lock poisoned: {e}")))?;
         let ctx = tera::Context::from_serialize(context)
             .map_err(|e| TemplateError::Render(e.to_string()))?;
         tera.render_str(template, &ctx)
@@ -306,9 +311,10 @@ impl TemplateRegistry {
         name: &str,
         filter: impl tera::Filter + Send + Sync + 'static,
     ) -> Result<(), TemplateError> {
-        let mut tera = self.tera.write().map_err(|e| {
-            TemplateError::Parse(format!("tera lock poisoned: {e}"))
-        })?;
+        let mut tera = self
+            .tera
+            .write()
+            .map_err(|e| TemplateError::Parse(format!("tera lock poisoned: {e}")))?;
         tera.register_filter(name, filter);
         Ok(())
     }
@@ -319,9 +325,10 @@ impl TemplateRegistry {
         name: &str,
         func: impl tera::Function + Send + Sync + 'static,
     ) -> Result<(), TemplateError> {
-        let mut tera = self.tera.write().map_err(|e| {
-            TemplateError::Parse(format!("tera lock poisoned: {e}"))
-        })?;
+        let mut tera = self
+            .tera
+            .write()
+            .map_err(|e| TemplateError::Parse(format!("tera lock poisoned: {e}")))?;
         tera.register_function(name, func);
         Ok(())
     }
@@ -614,11 +621,8 @@ pub fn validate_template(template: &str) -> Vec<String> {
 
 /// Render a template against a simple key-value context map.
 pub fn render_with_map(template: &str, vars: &HashMap<String, serde_json::Value>) -> String {
-    let context = serde_json::Value::Object(
-        vars.iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
-    );
+    let context =
+        serde_json::Value::Object(vars.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
     render_template_str(template, &context)
 }
 
@@ -630,7 +634,8 @@ mod tests {
     #[test]
     fn registry_register_and_render() {
         let reg = TemplateRegistry::new();
-        let tpl = PromptTemplate::new("greet", "Hello, {{ name }}!").with_variables(vec!["name".to_string()]);
+        let tpl = PromptTemplate::new("greet", "Hello, {{ name }}!")
+            .with_variables(vec!["name".to_string()]);
         reg.register(tpl).unwrap();
         let rendered = reg.render("greet", &json!({"name": "World"})).unwrap();
         assert_eq!(rendered, "Hello, World!");
@@ -639,16 +644,19 @@ mod tests {
     #[test]
     fn registry_rejects_duplicate() {
         let reg = TemplateRegistry::new();
-        reg.register(PromptTemplate::new("dup", "body"))
-            .unwrap();
-        let err = reg.register(PromptTemplate::new("dup", "other")).unwrap_err();
+        reg.register(PromptTemplate::new("dup", "body")).unwrap();
+        let err = reg
+            .register(PromptTemplate::new("dup", "other"))
+            .unwrap_err();
         assert!(matches!(err, TemplateError::AlreadyExists { .. }));
     }
 
     #[test]
     fn render_str_works() {
         let reg = TemplateRegistry::new();
-        let out = reg.render_str("{{ x }} + {{ y }}", &json!({"x": 1, "y": 2})).unwrap();
+        let out = reg
+            .render_str("{{ x }} + {{ y }}", &json!({"x": 1, "y": 2}))
+            .unwrap();
         assert_eq!(out, "1 + 2");
     }
 
@@ -702,10 +710,7 @@ mod tests {
     fn default_filter_works() {
         let reg = TemplateRegistry::new();
         let out = reg
-            .render_str(
-                "{{ x | default(default='fallback') }}",
-                &json!({"x": ""}),
-            )
+            .render_str("{{ x | default(default='fallback') }}", &json!({"x": ""}))
             .unwrap();
         assert_eq!(out, "fallback");
     }
@@ -725,10 +730,7 @@ mod tests {
         unsafe { std::env::set_var("OSQ_TEMPLATE_TEST", "hello-env") };
         let reg = TemplateRegistry::new();
         let out = reg
-            .render_str(
-                "{{ env(name='OSQ_TEMPLATE_TEST') }}",
-                &json!({}),
-            )
+            .render_str("{{ env(name='OSQ_TEMPLATE_TEST') }}", &json!({}))
             .unwrap();
         assert_eq!(out, "hello-env");
         // SAFETY: test-only, single-threaded environment variable cleanup.
@@ -748,15 +750,21 @@ mod tests {
     fn bilingual_render_works() {
         let reg = TemplateRegistry::new();
         let prompt = BilingualPrompt::new("Hello {{ name }}", "你好 {{ name }}");
-        let en = reg.render_bilingual(&prompt, "en", &json!({"name": "World"})).unwrap();
+        let en = reg
+            .render_bilingual(&prompt, "en", &json!({"name": "World"}))
+            .unwrap();
         assert_eq!(en, "Hello World");
-        let zh = reg.render_bilingual(&prompt, "zh", &json!({"name": "World"})).unwrap();
+        let zh = reg
+            .render_bilingual(&prompt, "zh", &json!({"name": "World"}))
+            .unwrap();
         assert_eq!(zh, "你好 World");
     }
 
     #[test]
     fn extract_variables_finds_refs() {
-        let vars = extract_variables("Hello {{ name }}, your score is {{ score }} and team is {{ team.name }}");
+        let vars = extract_variables(
+            "Hello {{ name }}, your score is {{ score }} and team is {{ team.name }}",
+        );
         assert!(vars.contains(&"name".to_string()));
         assert!(vars.contains(&"score".to_string()));
         assert!(vars.contains(&"team.name".to_string()));
@@ -816,10 +824,7 @@ mod tests {
     fn indent_filter_works() {
         let reg = TemplateRegistry::new();
         let out = reg
-            .render_str(
-                "{{ text | indent(n=2) }}",
-                &json!({"text": "line1\nline2"}),
-            )
+            .render_str("{{ text | indent(n=2) }}", &json!({"text": "line1\nline2"}))
             .unwrap();
         assert!(out.contains("  line1"));
         assert!(out.contains("  line2"));
@@ -852,23 +857,31 @@ mod tests {
     #[test]
     fn lowercase_and_uppercase_filters_work() {
         let reg = TemplateRegistry::new();
-        let lower = reg.render_str("{{ text | lowercase }}", &json!({"text": "HeLLo"})).unwrap();
+        let lower = reg
+            .render_str("{{ text | lowercase }}", &json!({"text": "HeLLo"}))
+            .unwrap();
         assert_eq!(lower, "hello");
-        let upper = reg.render_str("{{ text | uppercase }}", &json!({"text": "HeLLo"})).unwrap();
+        let upper = reg
+            .render_str("{{ text | uppercase }}", &json!({"text": "HeLLo"}))
+            .unwrap();
         assert_eq!(upper, "HELLO");
     }
 
     #[test]
     fn trim_filter_works() {
         let reg = TemplateRegistry::new();
-        let out = reg.render_str("{{ text | trim }}", &json!({"text": "  hello  "})).unwrap();
+        let out = reg
+            .render_str("{{ text | trim }}", &json!({"text": "  hello  "}))
+            .unwrap();
         assert_eq!(out, "hello");
     }
 
     #[test]
     fn char_count_filter_works() {
         let reg = TemplateRegistry::new();
-        let out = reg.render_str("{{ text | char_count }}", &json!({"text": "hello"})).unwrap();
+        let out = reg
+            .render_str("{{ text | char_count }}", &json!({"text": "hello"}))
+            .unwrap();
         assert_eq!(out, "5");
     }
 

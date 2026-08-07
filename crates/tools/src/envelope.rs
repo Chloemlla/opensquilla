@@ -85,9 +85,7 @@ fn user_message_for_class(class_name: &str) -> Option<&'static str> {
             "The sandbox environment could not run this operation. Do not retry with another \
              tool; report the sandbox failure once."
         }
-        "policy_denial" => {
-            "The action was blocked by policy. See user-facing reason for details."
-        }
+        "policy_denial" => "The action was blocked by policy. See user-facing reason for details.",
         _ => return None,
     })
 }
@@ -188,7 +186,11 @@ pub fn build_tool_failure_envelope(
     mro_names: &[&str],
     opts: &EnvelopeOptions,
 ) -> Value {
-    let tool = if tool_name.is_empty() { "<unknown>" } else { tool_name };
+    let tool = if tool_name.is_empty() {
+        "<unknown>"
+    } else {
+        tool_name
+    };
 
     let curated = opts.user_message_override.is_some() || opts.curated;
     let mut user_message = opts
@@ -292,7 +294,11 @@ pub fn build_denial_envelope(denial: &Value, tool_name: &str) -> Value {
         .or_insert_with(|| json!("denied"));
     payload.insert(
         "tool".to_string(),
-        json!(if tool_name.is_empty() { "<unknown>" } else { tool_name }),
+        json!(if tool_name.is_empty() {
+            "<unknown>"
+        } else {
+            tool_name
+        }),
     );
     Value::Object(payload)
 }
@@ -313,7 +319,12 @@ mod tests {
         assert_eq!(envelope["tool"], "web_fetch");
         assert_eq!(envelope["error_class"], "TimeoutError");
         assert_eq!(envelope["retry_allowed"], true);
-        assert!(envelope["user_message"].as_str().unwrap().contains("too long"));
+        assert!(
+            envelope["user_message"]
+                .as_str()
+                .unwrap()
+                .contains("too long")
+        );
     }
 
     #[test]
@@ -434,7 +445,9 @@ mod tests {
 
     #[test]
     fn denial_payload_detection() {
-        assert!(is_denial_payload(&json!({"status": "denied", "message": "no"})));
+        assert!(is_denial_payload(
+            &json!({"status": "denied", "message": "no"})
+        ));
         assert!(is_denial_payload(&json!({"status": "blocked"})));
         assert!(is_denial_payload(&json!({"status": "approval_denied"})));
         assert!(!is_denial_payload(&json!({"status": "approval_required"})));

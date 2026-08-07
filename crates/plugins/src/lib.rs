@@ -12,8 +12,8 @@ pub mod tokenjuice;
 pub use plugin::{Plugin, PluginInfo};
 pub use registry::PluginRegistry;
 pub use tokenjuice::{
-    default_rules, format_inline, load_rules, reduce_tool_result, reduce_tool_result_with_limit,
-    reduce_with_rule, select_rule, sort_rules, Reduction, Rule,
+    Reduction, Rule, default_rules, format_inline, load_rules, reduce_tool_result,
+    reduce_tool_result_with_limit, reduce_with_rule, select_rule, sort_rules,
 };
 
 /// Error type for plugin operations.

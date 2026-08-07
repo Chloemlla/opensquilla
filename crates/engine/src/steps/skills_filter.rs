@@ -237,10 +237,7 @@ impl SkillsFilterStep {
             .iter()
             .map(|s| (self.eligibility_score(s, ctx), s.clone()))
             .collect();
-        scored.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().map(|(_, s)| s).collect()
     }
 
@@ -251,12 +248,20 @@ impl SkillsFilterStep {
     /// and that meta skills are gated behind the meta-enable flag.
     pub fn is_eligible(&self, skill: &SkillSpec, ctx: &PipelineContext) -> bool {
         // Operator-disabled skills.
-        if self.config.disabled.iter().any(|d| d == &skill.id || d == &skill.name) {
+        if self
+            .config
+            .disabled
+            .iter()
+            .any(|d| d == &skill.id || d == &skill.name)
+        {
             return false;
         }
         // Turn-scoped disabled skills.
         if let Some(disabled) = ctx.get_metadata("disabled_skill_ids") {
-            if disabled.split(',').any(|d| d.trim() == skill.id || d.trim() == skill.name) {
+            if disabled
+                .split(',')
+                .any(|d| d.trim() == skill.id || d.trim() == skill.name)
+            {
                 return false;
             }
         }
@@ -270,12 +275,16 @@ impl SkillsFilterStep {
         }
         // Required tools.
         if !skill.requires_tools.is_empty()
-            && !skill.requires_tools.iter().all(|t| self.available_tools.contains(t))
+            && !skill
+                .requires_tools
+                .iter()
+                .all(|t| self.available_tools.contains(t))
         {
             return false;
         }
         // Fallback redundancy.
-        if skill.fallback_for_toolsets
+        if skill
+            .fallback_for_toolsets
             .iter()
             .any(|t| self.available_tools.contains(t))
         {

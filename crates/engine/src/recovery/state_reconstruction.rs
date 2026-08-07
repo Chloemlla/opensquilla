@@ -7,7 +7,7 @@
 //! pairing, and agent state so the agent can resume cleanly.
 
 use crate::agent::AgentState;
-use crate::history::{deduplicate, reconstruct_from_row, repair_tool_pairs, TranscriptRow};
+use crate::history::{TranscriptRow, deduplicate, reconstruct_from_row, repair_tool_pairs};
 use opensquilla_core::error::Result;
 use opensquilla_core::types::{Message, MessageRole, Usage};
 use tracing::{debug, info, warn};
@@ -200,9 +200,9 @@ impl StateReconstructor {
         let last = messages.last().unwrap();
         let has_pending_tool_calls = messages.iter().rev().any(|m| {
             m.role == MessageRole::Assistant
-                && m.content.iter().any(|b| {
-                    matches!(b, opensquilla_core::types::ContentBlock::ToolUse(_))
-                })
+                && m.content
+                    .iter()
+                    .any(|b| matches!(b, opensquilla_core::types::ContentBlock::ToolUse(_)))
         });
 
         let last_is_tool_result = last.role == MessageRole::Tool;
@@ -296,10 +296,7 @@ mod tests {
     #[test]
     fn test_reconstruct_simple_conversation() {
         let reconstructor = StateReconstructor::new("s1", "a1");
-        let rows = vec![
-            row("user", "hello"),
-            row("assistant", "hi there"),
-        ];
+        let rows = vec![row("user", "hello"), row("assistant", "hi there")];
         let state = reconstructor.reconstruct(&rows).unwrap();
         assert_eq!(state.messages.len(), 2);
         assert_eq!(state.message_count, 2);
@@ -384,7 +381,7 @@ mod tests {
     fn test_estimate_usage() {
         let messages = vec![
             Message::user("hello world this is a test"), // 25 chars -> 6 tokens (input)
-            Message::assistant("hi there"),               // 8 chars -> 2 tokens (output)
+            Message::assistant("hi there"),              // 8 chars -> 2 tokens (output)
         ];
         let usage = estimate_usage(&messages);
         assert!(usage.input_tokens > 0);

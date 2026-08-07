@@ -949,8 +949,7 @@ struct SchedulerInner {
 /// callable.  Using `Arc<dyn …>` avoids the generic type recursion that
 /// occurs when `request` and `schedule` call each other with fresh closure
 /// types.
-type RunCheck =
-    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+type RunCheck = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 impl UpdateCheckScheduler {
     /// Create a new scheduler.

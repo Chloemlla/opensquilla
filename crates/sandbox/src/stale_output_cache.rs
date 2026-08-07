@@ -567,7 +567,10 @@ impl VerifiedOutputCache {
                     &tokio::fs::read_to_string(self.meta_path(key)).await.ok()?,
                 )
                 .ok()?;
-                self.index.write().await.insert(key.to_string(), meta.clone());
+                self.index
+                    .write()
+                    .await
+                    .insert(key.to_string(), meta.clone());
                 meta
             }
         };
@@ -583,10 +586,7 @@ impl VerifiedOutputCache {
             }
         };
         if content_hash(&payload) != meta.payload_hash {
-            warn!(
-                "verified cache: hash mismatch for key '{}'; purging",
-                key
-            );
+            warn!("verified cache: hash mismatch for key '{}'; purging", key);
             self.purge(key).await;
             return None;
         }
@@ -662,11 +662,17 @@ mod tests {
 
     #[tokio::test]
     async fn verified_cache_detects_tampering() {
-        let dir = std::env::temp_dir().join(format!("osq_verified_tamper_{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("osq_verified_tamper_{}", uuid::Uuid::new_v4()));
         let cache = VerifiedOutputCache::new(dir.clone());
-        cache.put("k1", b"original", TtlPolicy::Never).await.unwrap();
+        cache
+            .put("k1", b"original", TtlPolicy::Never)
+            .await
+            .unwrap();
         // Tamper with the payload file.
-        tokio::fs::write(cache.entry_path("k1"), b"tampered").await.unwrap();
+        tokio::fs::write(cache.entry_path("k1"), b"tampered")
+            .await
+            .unwrap();
         assert_eq!(cache.get("k1").await, None);
         // Entry should have been purged.
         assert_eq!(cache.len().await, 0);

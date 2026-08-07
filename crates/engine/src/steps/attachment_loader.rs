@@ -348,9 +348,7 @@ impl MimeFamily {
             MimeFamily::Video
         } else if lower == "application/pdf" {
             MimeFamily::Pdf
-        } else if lower == "application/json"
-            || lower.ends_with("+json")
-        {
+        } else if lower == "application/json" || lower.ends_with("+json") {
             MimeFamily::Json
         } else if lower.starts_with("text/") {
             MimeFamily::Text
@@ -394,11 +392,17 @@ pub fn mime_from_extension(name: &str) -> Option<String> {
         "mp4" => Some("video/mp4".to_string()),
         "webm" => Some("video/webm".to_string()),
         "xls" => Some("application/vnd.ms-excel".to_string()),
-        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string()),
+        "xlsx" => {
+            Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string())
+        }
         "doc" => Some("application/msword".to_string()),
-        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string()),
+        "docx" => Some(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string(),
+        ),
         "ppt" => Some("application/vnd.ms-powerpoint".to_string()),
-        "pptx" => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation".to_string()),
+        "pptx" => Some(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation".to_string(),
+        ),
         "zip" => Some("application/zip".to_string()),
         "gz" | "tgz" => Some("application/gzip".to_string()),
         "7z" => Some("application/x-7z-compressed".to_string()),
@@ -444,7 +448,10 @@ pub fn sniff_mime_type(bytes: &[u8]) -> Option<String> {
         return Some("application/json".to_string());
     }
     // Text: printable ASCII.
-    if bytes.iter().all(|b| b.is_ascii_graphic() || b.is_ascii_whitespace()) {
+    if bytes
+        .iter()
+        .all(|b| b.is_ascii_graphic() || b.is_ascii_whitespace())
+    {
         return Some("text/plain".to_string());
     }
     None

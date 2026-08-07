@@ -131,8 +131,7 @@ impl AgentRegistry {
                     .map_err(|e| crate::Error::Persistence(e.to_string()))?;
             }
         }
-        std::fs::write(path, json)
-            .map_err(|e| crate::Error::Persistence(e.to_string()))?;
+        std::fs::write(path, json).map_err(|e| crate::Error::Persistence(e.to_string()))?;
         Ok(())
     }
 

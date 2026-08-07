@@ -635,9 +635,10 @@ mod backend {
         limits: &crate::policy::ResourceLimits,
     ) -> Result<(), String> {
         use windows::Win32::System::JobObjects::{
-            JOB_OBJECT_LIMIT_WORKINGSET, JOB_OBJECT_UILIMIT_HANDLES, JobObjectBasicUIRestrictions,
-            JobObjectExtendedLimitInformation, JOBOBJECT_BASIC_UI_RESTRICTIONS,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, QueryInformationJobObject,
+            JOB_OBJECT_LIMIT_WORKINGSET, JOB_OBJECT_UILIMIT_HANDLES,
+            JOBOBJECT_BASIC_UI_RESTRICTIONS, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectBasicUIRestrictions, JobObjectExtendedLimitInformation,
+            QueryInformationJobObject,
         };
         unsafe {
             // Read the current limits so we only amend them and do not clobber
@@ -709,9 +710,8 @@ mod backend {
             let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
             let name_pwstr = PWSTR(name_wide.as_ptr() as *mut u16);
 
-            let app_sid =
-                CreateAppContainerProfile(name_pwstr, PWSTR::null(), PWSTR::null(), None)
-                    .map_err(|e| format!("CreateAppContainerProfile: {e}"))?;
+            let app_sid = CreateAppContainerProfile(name_pwstr, PWSTR::null(), PWSTR::null(), None)
+                .map_err(|e| format!("CreateAppContainerProfile: {e}"))?;
             let _ = windows::Win32::Security::FreeSid(app_sid);
 
             let sid = DeriveAppContainerSidFromAppContainerName(name_pwstr)
@@ -746,14 +746,14 @@ mod backend {
     fn set_job_cpu_rate(job: HANDLE, rate_percent: u32) -> Result<(), String> {
         use windows::Win32::System::JobObjects::{
             JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
-            JobObjectCpuRateControlInformation, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
-            JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+            JOBOBJECT_CPU_RATE_CONTROL_INFORMATION, JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0,
+            JobObjectCpuRateControlInformation,
         };
         unsafe {
             let mut info = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION::default();
             // The CpuRate field is a 16.16 fixed-point percentage of a core.
-            info.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
-                | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+            info.ControlFlags =
+                JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
             info.Anonymous = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0 {
                 CpuRate: rate_percent << 16,
             };
@@ -778,7 +778,7 @@ mod backend {
         if let Some(mem) = limits.memory_bytes {
             unsafe {
                 use windows::Win32::System::JobObjects::{
-                    JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
                     QueryInformationJobObject,
                 };
                 let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();

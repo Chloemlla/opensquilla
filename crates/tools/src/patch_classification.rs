@@ -67,9 +67,7 @@ pub fn is_instrumentation_only_patch(patch: &str) -> bool {
         return false;
     }
     let re = instrumentation_line_re();
-    content_lines
-        .iter()
-        .all(|line| re.is_match(line))
+    content_lines.iter().all(|line| re.is_match(line))
 }
 
 /// Whether a single added content line looks like instrumentation.

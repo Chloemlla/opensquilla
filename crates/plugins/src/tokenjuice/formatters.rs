@@ -97,20 +97,40 @@ mod tests {
             "b".to_string(),
             "".to_string(),
         ];
-        assert_eq!(trim_empty_edges(&lines), vec!["a".to_string(), "".to_string(), "b".to_string()]);
+        assert_eq!(
+            trim_empty_edges(&lines),
+            vec!["a".to_string(), "".to_string(), "b".to_string()]
+        );
     }
 
     #[test]
     fn dedupes_only_adjacent() {
-        let lines = vec!["x".to_string(), "x".to_string(), "y".to_string(), "x".to_string()];
-        assert_eq!(dedupe_adjacent(&lines), vec!["x".to_string(), "y".to_string(), "x".to_string()]);
+        let lines = vec![
+            "x".to_string(),
+            "x".to_string(),
+            "y".to_string(),
+            "x".to_string(),
+        ];
+        assert_eq!(
+            dedupe_adjacent(&lines),
+            vec!["x".to_string(), "y".to_string(), "x".to_string()]
+        );
     }
 
     #[test]
     fn head_tail_inserts_marker() {
         let lines: Vec<String> = (0..10).map(|i| i.to_string()).collect();
         let out = head_tail(&lines, 2, 2);
-        assert_eq!(out, vec!["0".to_string(), "1".to_string(), "... omitted 6 lines ...".to_string(), "8".to_string(), "9".to_string()]);
+        assert_eq!(
+            out,
+            vec![
+                "0".to_string(),
+                "1".to_string(),
+                "... omitted 6 lines ...".to_string(),
+                "8".to_string(),
+                "9".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -121,7 +141,11 @@ mod tests {
 
     #[test]
     fn counts_case_insensitive() {
-        let lines = vec!["Error here".to_string(), "ok".to_string(), "error again".to_string()];
+        let lines = vec![
+            "Error here".to_string(),
+            "ok".to_string(),
+            "error again".to_string(),
+        ];
         assert_eq!(count_pattern(&lines, "error", "i"), 2);
         assert_eq!(count_pattern(&lines, "error", ""), 1);
     }

@@ -406,7 +406,8 @@ mod backend {
 
         // The classic sandbox_init takes a C string; the modern variant takes
         // a URL. We pass the profile inline via the classic entry point.
-        let profile_c = CString::new(profile.source.as_bytes()).map_err(|e| format!("CString: {e}"))?;
+        let profile_c =
+            CString::new(profile.source.as_bytes()).map_err(|e| format!("CString: {e}"))?;
 
         unsafe {
             // `sandbox_init(profile, flags, errorbuf)`:
@@ -419,7 +420,9 @@ mod backend {
                 let err = if errorbuf.is_null() {
                     "sandbox_init failed".to_string()
                 } else {
-                    let msg = std::ffi::CStr::from_ptr(errorbuf).to_string_lossy().to_string();
+                    let msg = std::ffi::CStr::from_ptr(errorbuf)
+                        .to_string_lossy()
+                        .to_string();
                     sandbox_free_error(errorbuf);
                     msg
                 };
@@ -488,10 +491,7 @@ mod backend {
         // `execve` does not search PATH, so resolve to an absolute path first.
         let resolved = resolve_binary(command).unwrap_or_else(|| command.to_string());
         let program = CString::new(resolved).unwrap_or_default();
-        let cargs: Vec<CString> = args
-            .iter()
-            .filter_map(|a| CString::new(*a).ok())
-            .collect();
+        let cargs: Vec<CString> = args.iter().filter_map(|a| CString::new(*a).ok()).collect();
         let mut arg_ptrs: Vec<*const libc::c_char> = Vec::with_capacity(cargs.len() + 2);
         arg_ptrs.push(program.as_ptr());
         for a in &cargs {

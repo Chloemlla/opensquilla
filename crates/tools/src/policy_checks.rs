@@ -314,8 +314,12 @@ impl PolicyCheck for PermissionMatrixPolicy {
         }
         let surface = channel_surface(input);
         let is_operator = ctx.channel_admin_verified;
-        if !channel_tool_allowed(input.tool_name, &surface, is_operator, ctx.allowed_tools.as_ref())
-        {
+        if !channel_tool_allowed(
+            input.tool_name,
+            &surface,
+            is_operator,
+            ctx.allowed_tools.as_ref(),
+        ) {
             return PolicyCheckDecision::deny(
                 "permission_matrix",
                 "UnsupportedSurface",

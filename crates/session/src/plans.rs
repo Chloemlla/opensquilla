@@ -819,7 +819,9 @@ impl PlanStateMachine {
             .iter()
             .filter(|s| {
                 s.status == PlanStepStatus::Approved
-                    && s.dependencies.iter().all(|d| completed.contains(d.as_str()))
+                    && s.dependencies
+                        .iter()
+                        .all(|d| completed.contains(d.as_str()))
             })
             .cloned()
             .collect();
@@ -857,10 +859,7 @@ impl PlanStateMachine {
 
     /// Validate that a step's dependencies are acyclic and refer to existing
     /// steps. Returns the set of dependency cycles found (empty when valid).
-    pub fn validate_step_dependencies(
-        &self,
-        revision_id: &Uuid,
-    ) -> CoreResult<Vec<Vec<String>>> {
+    pub fn validate_step_dependencies(&self, revision_id: &Uuid) -> CoreResult<Vec<Vec<String>>> {
         let snapshot = self.snapshot(revision_id)?;
         let graph: std::collections::HashMap<String, Vec<String>> = snapshot
             .steps
@@ -1234,7 +1233,8 @@ mod tests {
         let session_id = seeded_session(&m);
         let plan = m.create_plan_from_goal(session_id, "- step").unwrap();
         m.activate_plan(&plan.id).unwrap();
-        m.revise_plan(&plan.id, "- revised".to_string(), None).unwrap();
+        m.revise_plan(&plan.id, "- revised".to_string(), None)
+            .unwrap();
 
         let revisions = m.list_revisions(&session_id).unwrap();
         assert_eq!(revisions.len(), 2);
@@ -1270,15 +1270,27 @@ mod tests {
         m.reject_step(&plan.id, "2", "nope").unwrap();
 
         let counts = m.step_status_counts(&plan.id).unwrap();
-        assert_eq!(counts.get(&PlanStepStatus::Completed).copied().unwrap_or(0), 1);
-        assert_eq!(counts.get(&PlanStepStatus::Rejected).copied().unwrap_or(0), 1);
+        assert_eq!(
+            counts.get(&PlanStepStatus::Completed).copied().unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            counts.get(&PlanStepStatus::Rejected).copied().unwrap_or(0),
+            1
+        );
     }
 
     #[test]
     fn next_runnable_steps_requires_deps() {
         let m = machine();
         let session_id = seeded_session(&m);
-        let plan = m.create_plan(session_id, "- first\n- second\n- third".to_string(), serde_json::Value::Null).unwrap();
+        let plan = m
+            .create_plan(
+                session_id,
+                "- first\n- second\n- third".to_string(),
+                serde_json::Value::Null,
+            )
+            .unwrap();
         m.activate_plan(&plan.id).unwrap();
 
         // Approve all steps.
@@ -1304,21 +1316,35 @@ mod tests {
             .unwrap();
         m.activate_plan(&plan.id).unwrap();
 
-        m.reorder_steps(&plan.id, &["3".to_string(), "1".to_string(), "2".to_string()])
-            .unwrap();
+        m.reorder_steps(
+            &plan.id,
+            &["3".to_string(), "1".to_string(), "2".to_string()],
+        )
+        .unwrap();
         let steps = m.list_steps(&plan.id).unwrap();
         assert_eq!(steps[0].id, "3");
 
         // A non-permutation is rejected.
-        assert!(m.reorder_steps(&plan.id, &["1".to_string(), "2".to_string()]).is_err());
-        assert!(m.reorder_steps(&plan.id, &["1".to_string(), "2".to_string(), "ghost".to_string()]).is_err());
+        assert!(
+            m.reorder_steps(&plan.id, &["1".to_string(), "2".to_string()])
+                .is_err()
+        );
+        assert!(
+            m.reorder_steps(
+                &plan.id,
+                &["1".to_string(), "2".to_string(), "ghost".to_string()]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn validate_step_dependencies_detects_cycle() {
         let m = machine();
         let session_id = seeded_session(&m);
-        let plan = m.create_plan(session_id, "- a\n- b".to_string(), serde_json::Value::Null).unwrap();
+        let plan = m
+            .create_plan(session_id, "- a\n- b".to_string(), serde_json::Value::Null)
+            .unwrap();
         m.activate_plan(&plan.id).unwrap();
 
         // Build a cycle via metadata manipulation.
@@ -1355,9 +1381,7 @@ mod tests {
     fn is_complete_all_steps_done() {
         let m = machine();
         let session_id = seeded_session(&m);
-        let plan = m
-            .create_plan_from_goal(session_id, "- only step")
-            .unwrap();
+        let plan = m.create_plan_from_goal(session_id, "- only step").unwrap();
         m.activate_plan(&plan.id).unwrap();
         assert!(!m.is_complete(&plan.id).unwrap());
         m.approve_step(&plan.id, "1", None).unwrap();
@@ -1369,9 +1393,7 @@ mod tests {
     fn status_line_is_readable() {
         let m = machine();
         let session_id = seeded_session(&m);
-        let plan = m
-            .create_plan_from_goal(session_id, "- step one")
-            .unwrap();
+        let plan = m.create_plan_from_goal(session_id, "- step one").unwrap();
         m.activate_plan(&plan.id).unwrap();
         let line = m.status_line(&plan.id).unwrap();
         assert!(line.contains("progress="));

@@ -95,7 +95,9 @@ impl Tool for SubmitPlanTool {
                 HashMap::from([
                     (
                         "session_id".to_string(),
-                        ParameterDefinition::required_string("The session UUID the plan belongs to"),
+                        ParameterDefinition::required_string(
+                            "The session UUID the plan belongs to",
+                        ),
                     ),
                     (
                         "title".to_string(),
@@ -127,7 +129,10 @@ impl Tool for SubmitPlanTool {
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing required parameter 'session_id'"))?;
         let session_id = Uuid::parse_str(session_raw).map_err(|e| {
-            ToolError::invalid_args(format!("Invalid 'session_id' UUID '{}': {}", session_raw, e))
+            ToolError::invalid_args(format!(
+                "Invalid 'session_id' UUID '{}': {}",
+                session_raw, e
+            ))
         })?;
 
         let title = clean_text(
@@ -144,7 +149,9 @@ impl Tool for SubmitPlanTool {
         // Normalize steps: accept an array of strings or objects with a title.
         let steps_input = params["steps"].as_array().cloned().unwrap_or_default();
         if steps_input.is_empty() {
-            return Err(ToolError::invalid_args("steps must contain at least one item"));
+            return Err(ToolError::invalid_args(
+                "steps must contain at least one item",
+            ));
         }
         if steps_input.len() > MAX_PLAN_STEPS {
             return Err(ToolError::invalid_args(format!(
@@ -158,12 +165,9 @@ impl Tool for SubmitPlanTool {
             let step_title = if let Some(t) = s.as_str() {
                 clean_text(t, &format!("steps[{}]", i), MAX_PLAN_STEP_TITLE_CHARS)?
             } else if let Some(obj) = s.as_object() {
-                let t = obj
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        ToolError::invalid_args(format!("steps[{}].title is required", i))
-                    })?;
+                let t = obj.get("title").and_then(|v| v.as_str()).ok_or_else(|| {
+                    ToolError::invalid_args(format!("steps[{}].title is required", i))
+                })?;
                 clean_text(t, &format!("steps[{}].title", i), MAX_PLAN_STEP_TITLE_CHARS)?
             } else {
                 return Err(ToolError::invalid_args(format!(
@@ -401,8 +405,10 @@ impl Tool for RequestUserInputTool {
             },
             "questions": normalized,
         });
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
-            .with_data(data))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&data).unwrap_or_default())
+                .with_data(data),
+        )
     }
 }
 
@@ -452,18 +458,18 @@ impl Tool for PlanRunCheckpointTool {
                     ),
                     (
                         "step_status".to_string(),
-                        ParameterDefinition::string("New step status: completed, blocked, or skipped")
-                            .enum_values(vec![
-                                "completed".into(),
-                                "blocked".into(),
-                                "skipped".into(),
-                            ]),
+                        ParameterDefinition::string(
+                            "New step status: completed, blocked, or skipped",
+                        )
+                        .enum_values(vec![
+                            "completed".into(),
+                            "blocked".into(),
+                            "skipped".into(),
+                        ]),
                     ),
                     (
                         "reason".to_string(),
-                        ParameterDefinition::string(
-                            "Required explanation when blocked or skipped",
-                        ),
+                        ParameterDefinition::string("Required explanation when blocked or skipped"),
                     ),
                 ]),
             )
@@ -570,8 +576,10 @@ impl Tool for PlanRunCheckpointTool {
         .await
         .map_err(|e| ToolError::new("PLAN_ERROR", format!("Checkpoint task failed: {}", e)))??;
 
-        Ok(ToolOutput::success(serde_json::to_string_pretty(&result).unwrap_or_default())
-            .with_data(result))
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&result).unwrap_or_default())
+                .with_data(result),
+        )
     }
 }
 

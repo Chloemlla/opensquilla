@@ -66,10 +66,7 @@ pub fn restore_candidate_patch_checkpoint(checkpoint: &CandidatePatchCheckpoint)
         git_dirty_paths(&root).into_iter().collect();
     let checkpoint_paths: std::collections::BTreeSet<String> =
         checkpoint.files.keys().cloned().collect();
-    let touched_paths: Vec<String> = current_paths
-        .union(&checkpoint_paths)
-        .cloned()
-        .collect();
+    let touched_paths: Vec<String> = current_paths.union(&checkpoint_paths).cloned().collect();
     let mut restored: Vec<String> = Vec::new();
     let mut removed: Vec<String> = Vec::new();
 
@@ -173,7 +170,10 @@ fn parse_git_status_z(output: &str) -> Vec<String> {
         }
         let status = &entry[..entry.len().min(2)];
         let mut relative_path = if entry.len() > 3 { &entry[3..] } else { "" };
-        if status.as_bytes().first().is_some_and(|b| *b == b'R' || *b == b'C')
+        if status
+            .as_bytes()
+            .first()
+            .is_some_and(|b| *b == b'R' || *b == b'C')
             && index < entries.len()
         {
             relative_path = entries[index];
@@ -198,11 +198,7 @@ fn git_head(root: &Path) -> Option<String> {
         return None;
     }
     let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if head.is_empty() {
-        None
-    } else {
-        Some(head)
-    }
+    if head.is_empty() { None } else { Some(head) }
 }
 
 fn git_show_head_path(root: &Path, relative_path: &str) -> Option<Vec<u8>> {

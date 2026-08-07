@@ -353,7 +353,10 @@ impl DispatchEngine {
     /// spec is derived conservatively: every registered tool is exposed by
     /// default, mutating tools (risk level >= 2) are plan-denied, and no tool
     /// is owner-only (ownership is expressed through the allow/deny lists).
-    fn visibility_spec(tool_name: &str, def: &crate::registry::ToolDefinition) -> crate::visibility::ToolVisibilitySpec {
+    fn visibility_spec(
+        tool_name: &str,
+        def: &crate::registry::ToolDefinition,
+    ) -> crate::visibility::ToolVisibilitySpec {
         use crate::context::PlanAccess;
         let plan_access = if def.risk_level >= 2 {
             PlanAccess::Deny
@@ -388,7 +391,8 @@ impl DispatchEngine {
             let result =
                 crate::argument_normalization::canonicalize_tool_arguments(tool_name, args);
             if result.has_conflicts() {
-                let messages = crate::argument_normalization::format_alias_conflicts(&result.conflicts);
+                let messages =
+                    crate::argument_normalization::format_alias_conflicts(&result.conflicts);
                 let capped: Vec<String> = messages.into_iter().take(5).collect();
                 return Some(Self::envelope_denial_output(
                     tool_name,
@@ -468,11 +472,23 @@ impl DispatchEngine {
         // Path-like argument keys inspected for foreign-host and write-policy
         // gating.
         const PATH_KEYS: &[&str] = &[
-            "path", "file_path", "destination", "target", "source", "working_dir", "base",
+            "path",
+            "file_path",
+            "destination",
+            "target",
+            "source",
+            "working_dir",
+            "base",
         ];
         const WRITE_TOOLS: &[&str] = &[
-            "write_file", "edit_file", "apply_patch", "exec_command", "background_process",
-            "execute_code", "git_commit", "filesystem",
+            "write_file",
+            "edit_file",
+            "apply_patch",
+            "exec_command",
+            "background_process",
+            "execute_code",
+            "git_commit",
+            "filesystem",
         ];
 
         for key in PATH_KEYS {
@@ -509,16 +525,18 @@ impl DispatchEngine {
                 false,
             ) {
                 let payload = crate::write_policy::workspace_write_deny_block(
-                    tool_name,
-                    &matched,
-                    None,
-                    tool_ctx,
+                    tool_name, &matched, None, tool_ctx,
                 );
                 let message = payload["message"]
                     .as_str()
                     .unwrap_or("blocked by workspace write deny policy")
                     .to_string();
-                return Some(Self::envelope_denial_output(tool_name, "PolicyDenied", &message, false));
+                return Some(Self::envelope_denial_output(
+                    tool_name,
+                    "PolicyDenied",
+                    &message,
+                    false,
+                ));
             }
             if let Some(matched) = crate::write_policy::match_workspace_scratch_artifact(
                 path,
@@ -527,15 +545,18 @@ impl DispatchEngine {
                 tool_ctx,
             ) {
                 let payload = crate::write_policy::workspace_scratch_artifact_block(
-                    tool_name,
-                    &matched,
-                    None,
+                    tool_name, &matched, None,
                 );
                 let message = payload["message"]
                     .as_str()
                     .unwrap_or("blocked scratch artifact")
                     .to_string();
-                return Some(Self::envelope_denial_output(tool_name, "PolicyDenied", &message, true));
+                return Some(Self::envelope_denial_output(
+                    tool_name,
+                    "PolicyDenied",
+                    &message,
+                    true,
+                ));
             }
         }
 
@@ -795,11 +816,15 @@ pub fn redact_sensitive(text: &str) -> String {
 
     // OpenAI-style keys: sk- followed by 20+ alphanumeric chars.
     let sk_re = regex::Regex::new(r"(?i)\bsk-[A-Za-z0-9_-]{20,}").unwrap();
-    redacted = sk_re.replace_all(&redacted, "sk-***REDACTED***").to_string();
+    redacted = sk_re
+        .replace_all(&redacted, "sk-***REDACTED***")
+        .to_string();
 
     // Bearer tokens.
     let bearer_re = regex::Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*").unwrap();
-    redacted = bearer_re.replace_all(&redacted, "Bearer ***REDACTED***").to_string();
+    redacted = bearer_re
+        .replace_all(&redacted, "Bearer ***REDACTED***")
+        .to_string();
 
     // GitHub tokens.
     let gh_re = regex::Regex::new(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}").unwrap();
@@ -814,9 +839,13 @@ pub fn redact_sensitive(text: &str) -> String {
     redacted = hex_re.replace_all(&redacted, "***REDACTED***").to_string();
 
     // Private key blocks.
-    let key_re = regex::Regex::new(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----")
-        .unwrap();
-    redacted = key_re.replace_all(&redacted, "***PRIVATE KEY REDACTED***").to_string();
+    let key_re = regex::Regex::new(
+        r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+    )
+    .unwrap();
+    redacted = key_re
+        .replace_all(&redacted, "***PRIVATE KEY REDACTED***")
+        .to_string();
 
     redacted
 }
@@ -1116,7 +1145,8 @@ mod tests {
 
     #[test]
     fn test_redact_private_key_block() {
-        let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----";
+        let text =
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----";
         let redacted = redact_sensitive(text);
         assert!(redacted.contains("PRIVATE KEY REDACTED"));
         assert!(!redacted.contains("MIIEowIBAAKCAQEA"));
@@ -1171,7 +1201,11 @@ mod tests {
         let engine = DispatchEngine::new_with_defaults(Arc::new(ToolRegistry::new()));
         let output = ToolOutput::success("key sk-abcdefghijklmnopqrstuvwxyz123456 here");
         let processed = engine.post_process(output, "test", 10);
-        assert!(!processed.content.contains("sk-abcdefghijklmnopqrstuvwxyz123456"));
+        assert!(
+            !processed
+                .content
+                .contains("sk-abcdefghijklmnopqrstuvwxyz123456")
+        );
         assert!(processed.content.contains("REDACTED"));
     }
 
@@ -1302,7 +1336,8 @@ mod tests {
             "write_file",
             json!({"file_path": "notes.txt", "content": "hi"}),
         );
-        let dctx = DispatchContext::new("session-1").with_tool_context(crate::context::ToolContext::owner());
+        let dctx = DispatchContext::new("session-1")
+            .with_tool_context(crate::context::ToolContext::owner());
         let result = engine.dispatch(call, &dctx).await.unwrap();
         assert!(!result.is_error);
         assert!(result.content.contains("wrote notes.txt: hi"));
@@ -1319,7 +1354,8 @@ mod tests {
             "write_file",
             json!({"path": "a.txt", "file_path": "b.txt", "content": "hi"}),
         );
-        let dctx = DispatchContext::new("session-1").with_tool_context(crate::context::ToolContext::owner());
+        let dctx = DispatchContext::new("session-1")
+            .with_tool_context(crate::context::ToolContext::owner());
         let result = engine.dispatch(call, &dctx).await.unwrap();
         assert!(result.is_error);
         let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
@@ -1337,7 +1373,8 @@ mod tests {
             "write_file",
             json!({"path": "[tool_use_argument_projection]\nthe file", "content": "hi"}),
         );
-        let dctx = DispatchContext::new("session-1").with_tool_context(crate::context::ToolContext::owner());
+        let dctx = DispatchContext::new("session-1")
+            .with_tool_context(crate::context::ToolContext::owner());
         let result = engine.dispatch(call, &dctx).await.unwrap();
         assert!(result.is_error);
         let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
@@ -1362,7 +1399,12 @@ mod tests {
         assert!(result.is_error);
         let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
         assert_eq!(payload["error_class"], "PolicyDenied");
-        assert!(payload["user_message"].as_str().unwrap().contains("write deny"));
+        assert!(
+            payload["user_message"]
+                .as_str()
+                .unwrap()
+                .contains("write deny")
+        );
     }
 
     #[tokio::test]
@@ -1384,12 +1426,15 @@ mod tests {
         let call = ToolCall::new("2", "fail_tool", json!({"text": "x"}));
         let dctx = DispatchContext::new("session-1");
         let result = engine.dispatch(call, &dctx).await;
-        assert!(matches!(result, Err(DispatchError::ExecutionFailed(_, _, _))));
+        assert!(matches!(
+            result,
+            Err(DispatchError::ExecutionFailed(_, _, _))
+        ));
     }
 
     #[tokio::test]
     async fn test_scoped_context_visible_during_execution() {
-        use crate::context::{is_tool_context_active, current_tool_context};
+        use crate::context::{current_tool_context, is_tool_context_active};
 
         struct ContextAwareTool;
         #[async_trait::async_trait]
@@ -1406,7 +1451,9 @@ mod tests {
             }
             async fn execute(&self, _args: serde_json::Value) -> ToolResult {
                 let active = is_tool_context_active();
-                let agent_id = current_tool_context().map(|c| c.agent_id).unwrap_or_default();
+                let agent_id = current_tool_context()
+                    .map(|c| c.agent_id)
+                    .unwrap_or_default();
                 Ok(ToolOutput::success(format!(
                     "active={active};agent={agent_id}"
                 )))

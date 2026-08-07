@@ -47,7 +47,11 @@ fn compile(pattern: &str, flags: &str) -> Option<Regex> {
 /// `OutputMatch.message` whose pattern matches anywhere in `text` (multiline).
 pub fn apply_output_matches(rule: &Rule, text: &str) -> Option<String> {
     for entry in &rule.output_matches {
-        let OutputMatch { pattern, message, flags } = entry;
+        let OutputMatch {
+            pattern,
+            message,
+            flags,
+        } = entry;
         if let Some(re) = compile(pattern, flags.as_deref().unwrap_or("")) {
             if re.is_match(text) {
                 return Some(message.clone());
@@ -100,7 +104,11 @@ fn failure_preserve_enabled() -> bool {
 /// match count. An [`apply_output_matches`] hit short-circuits with an empty
 /// facts map, and an `on_empty` rule whose every line is filtered away returns
 /// the on-empty text with an empty facts map.
-pub fn reduce_with_rule(rule: &Rule, raw_text: &str, exit_code: i64) -> (String, BTreeMap<String, usize>) {
+pub fn reduce_with_rule(
+    rule: &Rule,
+    raw_text: &str,
+    exit_code: i64,
+) -> (String, BTreeMap<String, usize>) {
     let text = if rule.transforms.strip_ansi {
         strip_ansi(raw_text)
     } else {
@@ -163,7 +171,11 @@ pub fn reduce_with_rule(rule: &Rule, raw_text: &str, exit_code: i64) -> (String,
     };
     let mut facts: BTreeMap<String, usize> = BTreeMap::new();
     for counter in &rule.counters {
-        let Counter { name, pattern, flags } = counter;
+        let Counter {
+            name,
+            pattern,
+            flags,
+        } = counter;
         let count = count_pattern(fact_source, pattern, flags.as_deref().unwrap_or(""));
         facts.insert(name.clone(), count);
     }
@@ -190,7 +202,13 @@ pub fn format_inline(summary: &str, facts: &BTreeMap<String, usize>, exit_code: 
         parts.push(non_zero.join("; "));
     }
     parts.push(summary.to_string());
-    parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n").trim().to_string()
+    parts
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -225,7 +243,10 @@ mod tests {
     #[test]
     fn keeps_head_and_tail() {
         let rule = head_tail_rule(2, 1);
-        let content = (0..6).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let content = (0..6)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let (summary, facts) = reduce_with_rule(&rule, &content, 0);
         assert!(facts.is_empty());
         assert_eq!(summary, "line 0\nline 1\n... omitted 3 lines ...\nline 5");
@@ -279,13 +300,11 @@ mod tests {
                 head: Some(100),
                 tail: Some(100),
             },
-            counters: vec![
-                Counter {
-                    name: "error".to_string(),
-                    pattern: "error".to_string(),
-                    flags: Some("i".to_string()),
-                },
-            ],
+            counters: vec![Counter {
+                name: "error".to_string(),
+                pattern: "error".to_string(),
+                flags: Some("i".to_string()),
+            }],
             ..head_tail_rule(100, 100)
         };
         // Two "error" lines; keep-patterns keep both => post-keep count is 2.
@@ -348,7 +367,10 @@ mod tests {
             },
             ..head_tail_rule(8, 8)
         };
-        let content = (0..10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let content = (0..10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let (summary, _) = reduce_with_rule(&rule, &content, 1);
         assert_eq!(summary, "line 0\n... omitted 8 lines ...\nline 9");
     }

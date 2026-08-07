@@ -229,9 +229,7 @@ impl ToolErrorKind {
     pub fn classify(error: &str) -> Self {
         let lower = error.to_ascii_lowercase();
         if lower.contains("timeout") || lower.contains("timed out") {
-            return ToolErrorKind::Timeout {
-                timeout_ms: 60_000,
-            };
+            return ToolErrorKind::Timeout { timeout_ms: 60_000 };
         }
         if lower.contains("not found") || lower.contains("unknown tool") {
             return ToolErrorKind::UnknownTool(error.to_string());
@@ -392,7 +390,11 @@ impl ToolConcurrencyLimiter {
 
     /// Acquire a permit for execution.
     pub async fn acquire(&self) -> tokio::sync::OwnedSemaphorePermit {
-        self.semaphore.clone().acquire_owned().await.expect("semaphore closed")
+        self.semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore closed")
     }
 
     /// Try to acquire a permit without waiting.
@@ -605,58 +607,54 @@ impl ToolExecutionEngine {
 
             match result {
                 Ok(Ok(tool_result)) => {
-                // Before byte-truncating, try a structural reduction via
-                // TokenJuice (mirrors Python's `reduce_tool_result_with_tokenjuice`
-                // call site in `engine/agent.py`). When a rule matches, the
-                // reducer returns a compact head/tail + counter summary that is
-                // shorter than the original; only when no rule matches (or the
-                // `plugins` feature is off) do we fall back to byte-truncation.
-                // The reducer's own no-op guard already discards reductions that
-                // aren't shorter than the input.
-                #[cfg(feature = "plugins")]
-                let tokenjuice_reduced: Option<String> = {
-                    let arguments = Some(&call.input);
-                    let command = call
-                        .input
-                        .get("command")
-                        .and_then(|v| v.as_str());
-                    let max_inline = if config.max_output_bytes > 0 {
-                        Some(config.max_output_bytes)
-                    } else {
-                        None
-                    };
-                    match opensquilla_plugins::reduce_tool_result_with_limit(
-                        &call.name,
-                        &tool_result.content,
-                        tool_result.is_error,
-                        arguments,
-                        command,
-                        &TOKENJUICE_RULES,
-                        max_inline,
-                    ) {
-                        Some(reduction) => {
-                            debug!(
-                                tool = %call.name,
-                                call_id = %call.id,
-                                reducer = ?reduction.reducer,
-                                raw_chars = reduction.raw_chars,
-                                reduced_chars = reduction.reduced_chars,
-                                ratio = %format!("{:.2}", reduction.ratio),
-                                "tokenjuice reduced tool result"
-                            );
-                            Some(reduction.inline_text)
+                    // Before byte-truncating, try a structural reduction via
+                    // TokenJuice (mirrors Python's `reduce_tool_result_with_tokenjuice`
+                    // call site in `engine/agent.py`). When a rule matches, the
+                    // reducer returns a compact head/tail + counter summary that is
+                    // shorter than the original; only when no rule matches (or the
+                    // `plugins` feature is off) do we fall back to byte-truncation.
+                    // The reducer's own no-op guard already discards reductions that
+                    // aren't shorter than the input.
+                    #[cfg(feature = "plugins")]
+                    let tokenjuice_reduced: Option<String> = {
+                        let arguments = Some(&call.input);
+                        let command = call.input.get("command").and_then(|v| v.as_str());
+                        let max_inline = if config.max_output_bytes > 0 {
+                            Some(config.max_output_bytes)
+                        } else {
+                            None
+                        };
+                        match opensquilla_plugins::reduce_tool_result_with_limit(
+                            &call.name,
+                            &tool_result.content,
+                            tool_result.is_error,
+                            arguments,
+                            command,
+                            &TOKENJUICE_RULES,
+                            max_inline,
+                        ) {
+                            Some(reduction) => {
+                                debug!(
+                                    tool = %call.name,
+                                    call_id = %call.id,
+                                    reducer = ?reduction.reducer,
+                                    raw_chars = reduction.raw_chars,
+                                    reduced_chars = reduction.reduced_chars,
+                                    ratio = %format!("{:.2}", reduction.ratio),
+                                    "tokenjuice reduced tool result"
+                                );
+                                Some(reduction.inline_text)
+                            }
+                            None => None,
                         }
-                        None => None,
-                    }
-                };
+                    };
 
-                #[cfg(not(feature = "plugins"))]
-                let tokenjuice_reduced: Option<String> = None;
+                    #[cfg(not(feature = "plugins"))]
+                    let tokenjuice_reduced: Option<String> = None;
 
-                // Truncate output if needed: skip when TokenJuice already
-                // produced a (shorter) inline summary.
-                let (final_result, truncated) =
-                    if let Some(reduced) = tokenjuice_reduced {
+                    // Truncate output if needed: skip when TokenJuice already
+                    // produced a (shorter) inline summary.
+                    let (final_result, truncated) = if let Some(reduced) = tokenjuice_reduced {
                         (
                             ToolResult {
                                 content: reduced,
@@ -683,33 +681,33 @@ impl ToolExecutionEngine {
                         (tool_result, false)
                     };
 
-                // TODO(safety): the Python backend XML-escapes untrusted tool
-                // output via `opensquilla_safety::injection::wrap_untrusted_with_source`
-                // (signature `wrap_untrusted_with_source(content: &str, source: &str)
-                // -> String`) before it re-enters the LLM context. Python only
-                // wraps workspace-context and ensemble-candidate text today, NOT
-                // the tool-result projection path, so the gating condition for
-                // tool results is unresolved. When that policy is decided, wrap
-                // `final_result.content` here when the result is untrusted
-                // (e.g. shell/file output) and leave trusted/user-requested
-                // output unwrapped.
+                    // TODO(safety): the Python backend XML-escapes untrusted tool
+                    // output via `opensquilla_safety::injection::wrap_untrusted_with_source`
+                    // (signature `wrap_untrusted_with_source(content: &str, source: &str)
+                    // -> String`) before it re-enters the LLM context. Python only
+                    // wraps workspace-context and ensemble-candidate text today, NOT
+                    // the tool-result projection path, so the gating condition for
+                    // tool results is unresolved. When that policy is decided, wrap
+                    // `final_result.content` here when the result is untrusted
+                    // (e.g. shell/file output) and leave trusted/user-requested
+                    // output unwrapped.
 
-                // Cache the result.
-                if config.cache_result {
-                    self.cache.insert(call, &final_result).await;
+                    // Cache the result.
+                    if config.cache_result {
+                        self.cache.insert(call, &final_result).await;
+                    }
+
+                    return ToolExecutionOutcome {
+                        call: call.clone(),
+                        result: Some(final_result),
+                        error: None,
+                        error_kind: None,
+                        duration: start.elapsed(),
+                        attempts,
+                        from_cache: false,
+                        truncated,
+                    };
                 }
-
-                return ToolExecutionOutcome {
-                    call: call.clone(),
-                    result: Some(final_result),
-                    error: None,
-                    error_kind: None,
-                    duration: start.elapsed(),
-                    attempts,
-                    from_cache: false,
-                    truncated,
-                };
-            }
                 Ok(Err(e)) => {
                     let error_str = e.to_string();
                     let kind = ToolErrorKind::classify(&error_str);
@@ -810,9 +808,7 @@ impl ToolExecutionEngine {
         }
         match &outcome.error_kind {
             Some(ToolErrorKind::Timeout { .. }) | Some(ToolErrorKind::Transient(_)) => {
-                RecoveryAction::Retry {
-                    delay_ms: 500,
-                }
+                RecoveryAction::Retry { delay_ms: 500 }
             }
             Some(ToolErrorKind::PermissionDenied(_)) => RecoveryAction::Stop {
                 message: "Permission denied".to_string(),
@@ -1134,10 +1130,7 @@ pub fn validate_tool_calls(calls: &[ToolCall]) -> (Vec<ToolCall>, Vec<(ToolCall,
     for call in calls {
         match turn_control::validate_tool_calls(std::slice::from_ref(call)) {
             Ok(()) => valid.push(call.clone()),
-            Err(e) => invalid.push((
-                call.clone(),
-                ToolErrorKind::InvalidInput(format!("{e:?}")),
-            )),
+            Err(e) => invalid.push((call.clone(), ToolErrorKind::InvalidInput(format!("{e:?}")))),
         }
     }
     (valid, invalid)
@@ -1255,12 +1248,14 @@ mod tests {
             is_error: false,
             delay_ms: 100,
         });
-        let config = ToolExecutionConfig::new(Duration::from_millis(10))
-            .with_retries(false);
+        let config = ToolExecutionConfig::new(Duration::from_millis(10)).with_retries(false);
         let engine = ToolExecutionEngine::new(executor).with_default_config(config);
         let outcome = engine.execute(&call("slow_tool")).await;
         assert!(outcome.is_error());
-        assert!(matches!(outcome.error_kind, Some(ToolErrorKind::Timeout { .. })));
+        assert!(matches!(
+            outcome.error_kind,
+            Some(ToolErrorKind::Timeout { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1272,7 +1267,9 @@ mod tests {
         });
         let engine = ToolExecutionEngine::new(executor);
         let calls = vec![call("a"), call("b"), call("c")];
-        let outcomes = engine.execute_batch(&calls, &ToolExecutionConfig::default()).await;
+        let outcomes = engine
+            .execute_batch(&calls, &ToolExecutionConfig::default())
+            .await;
         assert_eq!(outcomes.len(), 3);
         for outcome in &outcomes {
             assert!(outcome.is_success());
@@ -1309,7 +1306,10 @@ mod tests {
         let call1 = ToolCall::new("c1", "read_file", json!({"path": "/a"}));
         let call2 = ToolCall::new("c2", "read_file", json!({"path": "/a"}));
         // Same name + same input = same key.
-        assert_eq!(ToolResultCache::key_for(&call1), ToolResultCache::key_for(&call2));
+        assert_eq!(
+            ToolResultCache::key_for(&call1),
+            ToolResultCache::key_for(&call2)
+        );
     }
 
     #[tokio::test]

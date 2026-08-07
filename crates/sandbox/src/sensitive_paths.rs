@@ -109,9 +109,8 @@ const WORKSPACE_PARENT_EXCEPTION_MARKERS: &[&str] = &["/root"];
 const TOKEN_EDGE_CHARS: &str = " \t\r\n'\"`$(){}[]<>;,|&";
 
 /// Matches absolute or tilde-prefixed path-like tokens in free-form text.
-static ABSOLUTE_OR_TILDE_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?:~)?/(?:[^\s'"`$(){}\[\]<>;,|&]+)"#).expect("valid regex")
-});
+static ABSOLUTE_OR_TILDE_PATH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?:~)?/(?:[^\s'"`$(){}\[\]<>;,|&]+)"#).expect("valid regex"));
 
 /// Matches literal `.env` / `.env.local` style tokens, regardless of parent
 /// directory, when surrounded by token boundaries. The leading/trailing
@@ -128,7 +127,12 @@ static DOTENV_LITERAL_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// `OPENSQUILLA_SENSITIVE_PATHS_DISABLED`.
 fn sensitive_paths_disabled() -> bool {
     std::env::var("OPENSQUILLA_SENSITIVE_PATHS_DISABLED")
-        .map(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|v| {
+            matches!(
+                v.trim().to_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -208,7 +212,8 @@ fn path_contains(path: &str, root: &str) -> bool {
     }
     let normalized_path = path.trim_end_matches('/');
     let normalized_root = root.trim_end_matches('/');
-    normalized_path == normalized_root || normalized_path.starts_with(&format!("{normalized_root}/"))
+    normalized_path == normalized_root
+        || normalized_path.starts_with(&format!("{normalized_root}/"))
 }
 
 /// Return the matched sensitive marker for an absolute/tilde path, or `None`.
@@ -482,7 +487,10 @@ pub fn linux_runtime_sensitive_deny_roots(workspace: Option<&str>) -> Vec<PathBu
         roots.push(root);
     }
     let mut seen = std::collections::HashSet::new();
-    roots.into_iter().filter(|r| seen.insert(r.clone())).collect()
+    roots
+        .into_iter()
+        .filter(|r| seen.insert(r.clone()))
+        .collect()
 }
 
 /// For a `/root` workspace parent, the credential-like children still denied.
@@ -511,29 +519,65 @@ mod tests {
 
     #[test]
     fn ssh_keys_are_sensitive() {
-        assert_eq!(is_sensitive_path("/home/u/.ssh/id_rsa"), Some("/id_rsa".to_string()));
-        assert_eq!(is_sensitive_path("/home/u/.ssh/id_ed25519"), Some("/id_ed25519".to_string()));
-        assert_eq!(is_sensitive_path("/root/.ssh/id_rsa"), Some("~/.ssh".to_string()));
-        assert_eq!(is_sensitive_path("~/.ssh/config"), Some("~/.ssh".to_string()));
+        assert_eq!(
+            is_sensitive_path("/home/u/.ssh/id_rsa"),
+            Some("/id_rsa".to_string())
+        );
+        assert_eq!(
+            is_sensitive_path("/home/u/.ssh/id_ed25519"),
+            Some("/id_ed25519".to_string())
+        );
+        assert_eq!(
+            is_sensitive_path("/root/.ssh/id_rsa"),
+            Some("~/.ssh".to_string())
+        );
+        assert_eq!(
+            is_sensitive_path("~/.ssh/config"),
+            Some("~/.ssh".to_string())
+        );
     }
 
     #[test]
     fn system_roots_are_sensitive() {
-        assert_eq!(is_sensitive_path("/etc/shadow"), Some("/etc/shadow".to_string()));
-        assert_eq!(is_sensitive_path("/etc/sudoers.d/x"), Some("/etc/sudoers.d".to_string()));
-        assert_eq!(is_sensitive_path("/var/log/syslog"), Some("/var/log".to_string()));
-        assert_eq!(is_sensitive_path("/proc/self/maps"), Some("/proc".to_string()));
+        assert_eq!(
+            is_sensitive_path("/etc/shadow"),
+            Some("/etc/shadow".to_string())
+        );
+        assert_eq!(
+            is_sensitive_path("/etc/sudoers.d/x"),
+            Some("/etc/sudoers.d".to_string())
+        );
+        assert_eq!(
+            is_sensitive_path("/var/log/syslog"),
+            Some("/var/log".to_string())
+        );
+        assert_eq!(
+            is_sensitive_path("/proc/self/maps"),
+            Some("/proc".to_string())
+        );
     }
 
     #[test]
     fn dotenv_and_credential_files_are_sensitive_anywhere() {
         assert_eq!(is_sensitive_path("/tmp/.env"), Some("/.env".to_string()));
-        assert_eq!(is_sensitive_path("/tmp/.env.production"), Some("/.env.production".to_string()));
+        assert_eq!(
+            is_sensitive_path("/tmp/.env.production"),
+            Some("/.env.production".to_string())
+        );
         // A file named `.env` in any directory matches by name.
-        assert_eq!(sensitive_path_marker("some_dir/.env", None), Some("/.env".to_string()));
-        assert_eq!(sensitive_path_marker("some_dir/.env.local", None), Some("/.env.local".to_string()));
+        assert_eq!(
+            sensitive_path_marker("some_dir/.env", None),
+            Some("/.env".to_string())
+        );
+        assert_eq!(
+            sensitive_path_marker("some_dir/.env.local", None),
+            Some("/.env.local".to_string())
+        );
         // Unknown `.env.*` variants fall back to the wildcard marker.
-        assert_eq!(sensitive_path_marker("some_dir/.env.staging", None), Some("/.env*".to_string()));
+        assert_eq!(
+            sensitive_path_marker("some_dir/.env.staging", None),
+            Some("/.env*".to_string())
+        );
     }
 
     #[test]
@@ -546,15 +590,24 @@ mod tests {
     #[test]
     fn relative_paths_resolve_to_leaf() {
         // Relative paths return leaf markers without expanding.
-        assert_eq!(sensitive_path_marker("rel/path/.env", None), Some("/.env".to_string()));
-        assert_eq!(sensitive_path_marker("rel/path/id_rsa", None), Some("/id_rsa".to_string()));
+        assert_eq!(
+            sensitive_path_marker("rel/path/.env", None),
+            Some("/.env".to_string())
+        );
+        assert_eq!(
+            sensitive_path_marker("rel/path/id_rsa", None),
+            Some("/id_rsa".to_string())
+        );
     }
 
     #[test]
     fn workspace_under_root_keeps_leaf_checks() {
         let ws = Some("/root/.opensquilla/workspace");
         // Broad /root deny is relaxed for the workspace...
-        assert_eq!(sensitive_path_marker("/root/.opensquilla/workspace/x.txt", ws), None);
+        assert_eq!(
+            sensitive_path_marker("/root/.opensquilla/workspace/x.txt", ws),
+            None
+        );
         // ...but leaf credential files stay blocked.
         assert_eq!(
             sensitive_path_marker("/root/.opensquilla/workspace/.env", ws),
@@ -592,10 +645,7 @@ mod tests {
             sensitive_target_in_command("rm /tmp/ok /etc/shadow", None, None),
             Some("/etc/shadow".to_string())
         );
-        assert_eq!(
-            sensitive_target_in_command("rm /tmp/ok", None, None),
-            None
-        );
+        assert_eq!(sensitive_target_in_command("rm /tmp/ok", None, None), None);
     }
 
     #[test]

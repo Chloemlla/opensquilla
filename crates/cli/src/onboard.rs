@@ -99,7 +99,11 @@ pub async fn run_wizard() -> Result<()> {
     if let Some(spec) = spec {
         println!("Available models for {provider_type}:");
         for m in spec.models {
-            let marker = if *m == default_model { " (default)" } else { "" };
+            let marker = if *m == default_model {
+                " (default)"
+            } else {
+                ""
+            };
             println!("  - {m}{marker}");
         }
     }
@@ -131,9 +135,7 @@ pub async fn run_wizard() -> Result<()> {
     println!("{}", "Step 6: Gateway configuration".bold());
     let host = prompt("Gateway host", Some("127.0.0.1"))?;
     let port = prompt("Gateway port", Some("8080"))?;
-    let port: u16 = port
-        .parse()
-        .context("Invalid port number")?;
+    let port: u16 = port.parse().context("Invalid port number")?;
 
     // Summary.
     println!();
@@ -143,7 +145,14 @@ pub async fn run_wizard() -> Result<()> {
         .entry("Provider type", provider_type.clone())
         .entry("Provider name", provider_name.clone())
         .entry("Model", model.clone())
-        .entry("API key", if api_key.is_some() { "(set)" } else { "(from env)" })
+        .entry(
+            "API key",
+            if api_key.is_some() {
+                "(set)"
+            } else {
+                "(from env)"
+            },
+        )
         .entry("Sandbox", sandbox_level.to_string())
         .entry("Gateway", format!("{host}:{port}"))
         .print();
@@ -204,7 +213,9 @@ pub async fn reset_config() -> Result<()> {
         return Ok(());
     }
     let config = Config::default();
-    config.save().context("Failed to save default configuration")?;
+    config
+        .save()
+        .context("Failed to save default configuration")?;
     println!("{} Configuration reset to defaults.", table::ok());
     Ok(())
 }
@@ -223,7 +234,11 @@ pub async fn check_setup() -> Result<()> {
         println!("{} No providers configured", table::fail());
         issues += 1;
     } else {
-        println!("{} {} provider(s) configured", table::ok(), config.providers.len());
+        println!(
+            "{} {} provider(s) configured",
+            table::ok(),
+            config.providers.len()
+        );
     }
 
     // Check API keys.
@@ -245,12 +260,10 @@ pub async fn check_setup() -> Result<()> {
     }
 
     // Check gateway.
-    let port_open = tokio::net::TcpStream::connect((
-        config.gateway.host.as_str(),
-        config.gateway.port,
-    ))
-    .await
-    .is_ok();
+    let port_open =
+        tokio::net::TcpStream::connect((config.gateway.host.as_str(), config.gateway.port))
+            .await
+            .is_ok();
     if port_open {
         println!(
             "{} Gateway running on {}:{}",
@@ -281,7 +294,10 @@ pub async fn check_setup() -> Result<()> {
     if mem_path.exists() {
         println!("{} Memory store exists", table::ok());
     } else {
-        println!("{} Memory store not initialized (will be created on first use)", table::info());
+        println!(
+            "{} Memory store not initialized (will be created on first use)",
+            table::info()
+        );
     }
 
     println!();
@@ -370,10 +386,7 @@ async fn run_doctor_quick(config: &Config) {
 }
 
 /// Resolve a user's provider choice (number or name).
-fn resolve_provider_choice(
-    choice: &str,
-    specs: &[opensquilla_provider::ProviderSpec],
-) -> String {
+fn resolve_provider_choice(choice: &str, specs: &[opensquilla_provider::ProviderSpec]) -> String {
     // Try as a number.
     if let Ok(n) = choice.parse::<usize>() {
         if n > 0 && n <= specs.len() {
@@ -409,14 +422,16 @@ fn apply_provider_config(
 
 /// Apply sandbox configuration.
 fn apply_sandbox_config(config: &mut Config, level: &str) {
-    let mut sandbox = config.sandbox.clone().unwrap_or_else(|| {
-        opensquilla_core::config::SandboxConfig {
-            enabled: false,
-            sandbox_type: "process".to_string(),
-            timeout_secs: 120,
-            resource_limits: opensquilla_core::config::ResourceLimits::default(),
-        }
-    });
+    let mut sandbox =
+        config
+            .sandbox
+            .clone()
+            .unwrap_or_else(|| opensquilla_core::config::SandboxConfig {
+                enabled: false,
+                sandbox_type: "process".to_string(),
+                timeout_secs: 120,
+                resource_limits: opensquilla_core::config::ResourceLimits::default(),
+            });
     sandbox.enabled = true;
     sandbox.sandbox_type = level.to_string();
     config.sandbox = Some(sandbox);
@@ -472,7 +487,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

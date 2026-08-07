@@ -73,9 +73,7 @@ pub async fn list_sessions_filtered(status: Option<String>, limit: u64) -> Resul
 
     // Apply status filter.
     if let Some(ref status_filter) = status {
-        sessions.retain(|s| {
-            status_str(&s.status).eq_ignore_ascii_case(status_filter)
-        });
+        sessions.retain(|s| status_str(&s.status).eq_ignore_ascii_case(status_filter));
     }
 
     if sessions.is_empty() {
@@ -279,7 +277,11 @@ pub async fn fork_session(id: String) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;
 
     let forked = manager
-        .fork_session(&uid, "cli".to_string(), Some(format!("Fork of {}", original.name)))
+        .fork_session(
+            &uid,
+            "cli".to_string(),
+            Some(format!("Fork of {}", original.name)),
+        )
         .map_err(|e| anyhow::anyhow!("Failed to fork session: {e}"))?;
     println!("Forked session {} -> {}", original.id, forked.id);
     println!("  Name: {}", forked.name);

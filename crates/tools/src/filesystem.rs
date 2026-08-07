@@ -27,9 +27,8 @@ async fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
     let target = target.to_path_buf();
     let link = link.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        std::os::windows::fs::symlink_file(&target, &link).or_else(|_| {
-            std::os::windows::fs::symlink_dir(&target, &link)
-        })
+        std::os::windows::fs::symlink_file(&target, &link)
+            .or_else(|_| std::os::windows::fs::symlink_dir(&target, &link))
     })
     .await
     .map_err(std::io::Error::other)?
@@ -261,49 +260,46 @@ impl FilesystemTool {
 
         let path_clone = path.to_path_buf();
         let allowed_base = self.allowed_base.clone();
-        let tree =
-            tokio::task::spawn_blocking(move || -> ToolResult<Vec<serde_json::Value>> {
-                let mut entries = Vec::new();
-                let mut stack = vec![(path_clone, 0usize)];
-                while let Some((dir, depth)) = stack.pop() {
-                    if depth > max_depth {
-                        continue;
-                    }
-                    let read_dir = std::fs::read_dir(&dir).map_err(|e| {
-                        ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e))
-                    })?;
-                    for entry in read_dir.flatten() {
-                        let metadata = entry.metadata().ok();
-                        let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-                        let rel = entry
-                            .path()
-                            .strip_prefix(&allowed_base)
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|_| {
-                                entry.file_name().to_string_lossy().to_string()
-                            });
-                        entries.push(serde_json::json!({
-                            "path": rel,
-                            "name": entry.file_name().to_string_lossy(),
-                            "is_dir": is_dir,
-                            "size": metadata.as_ref().map(|m| m.len()).unwrap_or(0),
-                            "depth": depth,
-                        }));
-                        if is_dir {
-                            stack.push((entry.path(), depth + 1));
-                        }
+        let tree = tokio::task::spawn_blocking(move || -> ToolResult<Vec<serde_json::Value>> {
+            let mut entries = Vec::new();
+            let mut stack = vec![(path_clone, 0usize)];
+            while let Some((dir, depth)) = stack.pop() {
+                if depth > max_depth {
+                    continue;
+                }
+                let read_dir = std::fs::read_dir(&dir).map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e))
+                })?;
+                for entry in read_dir.flatten() {
+                    let metadata = entry.metadata().ok();
+                    let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+                    let rel = entry
+                        .path()
+                        .strip_prefix(&allowed_base)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| entry.file_name().to_string_lossy().to_string());
+                    entries.push(serde_json::json!({
+                        "path": rel,
+                        "name": entry.file_name().to_string_lossy(),
+                        "is_dir": is_dir,
+                        "size": metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+                        "depth": depth,
+                    }));
+                    if is_dir {
+                        stack.push((entry.path(), depth + 1));
                     }
                 }
-                entries.sort_by(|a, b| {
-                    a["path"]
-                        .as_str()
-                        .unwrap_or("")
-                        .cmp(b["path"].as_str().unwrap_or(""))
-                });
-                Ok(entries)
-            })
-            .await
-            .map_err(|e| ToolError::new("IO_ERROR", format!("Tree walk task failed: {}", e)))??;
+            }
+            entries.sort_by(|a, b| {
+                a["path"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(b["path"].as_str().unwrap_or(""))
+            });
+            Ok(entries)
+        })
+        .await
+        .map_err(|e| ToolError::new("IO_ERROR", format!("Tree walk task failed: {}", e)))??;
 
         let data = serde_json::json!({
             "path": path.to_string_lossy(),
@@ -383,12 +379,12 @@ impl FilesystemTool {
         }
 
         if source.is_dir() {
-            fs::create_dir_all(dest)
-                .await
-                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
-            let mut read_dir = fs::read_dir(source)
-                .await
-                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e)))?;
+            fs::create_dir_all(dest).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+            })?;
+            let mut read_dir = fs::read_dir(source).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to read directory: {}", e))
+            })?;
             while let Some(entry) = read_dir.next_entry().await.map_err(|e| {
                 ToolError::new("IO_ERROR", format!("Failed to read directory entry: {}", e))
             })? {
@@ -398,32 +394,32 @@ impl FilesystemTool {
                 })?;
                 let dest_path = dest.join(rel);
                 if entry_path.is_dir() {
-                    fs::create_dir_all(&dest_path)
-                        .await
-                        .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+                    fs::create_dir_all(&dest_path).await.map_err(|e| {
+                        ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+                    })?;
                 } else if entry_path.is_symlink() {
                     if let Ok(target) = fs::read_link(&entry_path).await {
-                        create_symlink(&target, &dest_path)
-                            .await
-                            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
+                        create_symlink(&target, &dest_path).await.map_err(|e| {
+                            ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e))
+                        })?;
                     }
                 } else {
-                    fs::copy(&entry_path, &dest_path)
-                        .await
-                        .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to copy file: {}", e)))?;
+                    fs::copy(&entry_path, &dest_path).await.map_err(|e| {
+                        ToolError::new("IO_ERROR", format!("Failed to copy file: {}", e))
+                    })?;
                 }
             }
         } else if source.is_symlink() {
             if let Ok(target) = fs::read_link(source).await {
-                create_symlink(&target, dest)
-                    .await
-                    .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
+                create_symlink(&target, dest).await.map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e))
+                })?;
             }
         } else {
             if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+                fs::create_dir_all(parent).await.map_err(|e| {
+                    ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+                })?;
             }
             fs::copy(source, dest)
                 .await
@@ -436,14 +432,12 @@ impl FilesystemTool {
             "overwrite": overwrite,
         });
 
-        Ok(
-            ToolOutput::success(format!(
-                "Copied '{}' to '{}'",
-                source.display(),
-                dest.display()
-            ))
-            .with_data(data),
-        )
+        Ok(ToolOutput::success(format!(
+            "Copied '{}' to '{}'",
+            source.display(),
+            dest.display()
+        ))
+        .with_data(data))
     }
 
     /// Move a file or directory to a destination.
@@ -461,9 +455,9 @@ impl FilesystemTool {
         }
 
         if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e)))?;
+            fs::create_dir_all(parent).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to create directory: {}", e))
+            })?;
         }
 
         fs::rename(source, dest)
@@ -476,14 +470,12 @@ impl FilesystemTool {
             "overwrite": overwrite,
         });
 
-        Ok(
-            ToolOutput::success(format!(
-                "Moved '{}' to '{}'",
-                source.display(),
-                dest.display()
-            ))
-            .with_data(data),
-        )
+        Ok(ToolOutput::success(format!(
+            "Moved '{}' to '{}'",
+            source.display(),
+            dest.display()
+        ))
+        .with_data(data))
     }
 
     /// Delete a file or directory recursively.
@@ -499,9 +491,9 @@ impl FilesystemTool {
         }
 
         if path.is_dir() {
-            fs::remove_dir_all(path)
-                .await
-                .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to remove directory: {}", e)))?;
+            fs::remove_dir_all(path).await.map_err(|e| {
+                ToolError::new("IO_ERROR", format!("Failed to remove directory: {}", e))
+            })?;
         } else {
             fs::remove_file(path)
                 .await
@@ -534,21 +526,20 @@ impl FilesystemTool {
         #[cfg(not(windows))]
         let result = std::os::unix::fs::symlink(target, link);
 
-        result.map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
+        result
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to create symlink: {}", e)))?;
 
         let data = serde_json::json!({
             "target": target.to_string_lossy(),
             "link": link.to_string_lossy(),
         });
 
-        Ok(
-            ToolOutput::success(format!(
-                "Created symlink '{}' → '{}'",
-                link.display(),
-                target.display()
-            ))
-            .with_data(data),
-        )
+        Ok(ToolOutput::success(format!(
+            "Created symlink '{}' → '{}'",
+            link.display(),
+            target.display()
+        ))
+        .with_data(data))
     }
 
     /// Search for files matching a substring pattern within the base directory.
@@ -620,15 +611,31 @@ impl FilesystemTool {
                     let _ = tx.send(event);
                 }
             })
-            .map_err(|e| ToolError::new("WATCH_ERROR", format!("Failed to create watcher: {}", e)))?;
+            .map_err(|e| {
+                ToolError::new("WATCH_ERROR", format!("Failed to create watcher: {}", e))
+            })?;
 
         watcher
             .configure(Config::default().with_poll_interval(std::time::Duration::from_secs(1)))
-            .map_err(|e| ToolError::new("WATCH_ERROR", format!("Failed to configure watcher: {}", e)))?;
+            .map_err(|e| {
+                ToolError::new("WATCH_ERROR", format!("Failed to configure watcher: {}", e))
+            })?;
 
         watcher
-            .watch(path, if recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive })
-            .map_err(|e| ToolError::new("WATCH_ERROR", format!("Failed to watch '{}': {}", path.display(), e)))?;
+            .watch(
+                path,
+                if recursive {
+                    RecursiveMode::Recursive
+                } else {
+                    RecursiveMode::NonRecursive
+                },
+            )
+            .map_err(|e| {
+                ToolError::new(
+                    "WATCH_ERROR",
+                    format!("Failed to watch '{}': {}", path.display(), e),
+                )
+            })?;
 
         // Collect events for the requested duration.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(duration_secs);
@@ -674,11 +681,7 @@ impl FilesystemTool {
 
 /// Active platform string used by the foreign-host path policy.
 fn active_platform() -> &'static str {
-    if cfg!(windows) {
-        "nt"
-    } else {
-        "posix"
-    }
+    if cfg!(windows) { "nt" } else { "posix" }
 }
 
 /// Reject absolute paths from another host OS against the scoped context.
@@ -830,7 +833,12 @@ impl Tool for FilesystemTool {
                 let output = self.read_file(&path).await?;
                 crate::context::mutate_current_tool_context(|ctx| {
                     crate::write_tracking::record_workspace_file_read(
-                        ctx, &path, "read", None, None, Some(true),
+                        ctx,
+                        &path,
+                        "read",
+                        None,
+                        None,
+                        Some(true),
                     )
                 });
                 Ok(output)
@@ -843,9 +851,7 @@ impl Tool for FilesystemTool {
                 let created = !path.exists();
                 let output = self.write_file(&path, content).await?;
                 crate::context::mutate_current_tool_context(|ctx| {
-                    crate::write_tracking::record_workspace_file_write(
-                        ctx, &path, "write", created,
-                    )
+                    crate::write_tracking::record_workspace_file_write(ctx, &path, "write", created)
                 });
                 Ok(output)
             }
@@ -859,14 +865,15 @@ impl Tool for FilesystemTool {
                 gate_workspace_writes("edit_file", &path, path_str)?;
                 if let Some(ctx) = crate::context::current_tool_context() {
                     crate::write_tracking::require_fresh_workspace_file_read(
-                        &ctx, &path, "edit_file", path_str,
+                        &ctx,
+                        &path,
+                        "edit_file",
+                        path_str,
                     )?;
                 }
                 let output = self.edit_file(&path, old_string, new_string).await?;
                 crate::context::mutate_current_tool_context(|ctx| {
-                    crate::write_tracking::record_workspace_file_write(
-                        ctx, &path, "edit", false,
-                    )
+                    crate::write_tracking::record_workspace_file_write(ctx, &path, "edit", false)
                 });
                 Ok(output)
             }
@@ -921,7 +928,11 @@ impl Tool for FilesystemTool {
                 let pattern = params["pattern"].as_str().ok_or_else(|| {
                     ToolError::invalid_args("Missing 'pattern' for search operation")
                 })?;
-                let base = if path.is_dir() { path } else { self.allowed_base.clone() };
+                let base = if path.is_dir() {
+                    path
+                } else {
+                    self.allowed_base.clone()
+                };
                 self.search_files(pattern, &base).await
             }
             "watch" => {
@@ -1300,27 +1311,25 @@ mod tests {
             ..Default::default()
         };
 
-        let (write_count, read_count) = crate::context::run_with_tool_context(
-            Some(ctx),
-            async {
-                tool.execute(serde_json::json!({
-                    "operation": "write",
-                    "path": "tracked.txt",
-                    "content": "hello",
-                }))
-                .await
-                .unwrap();
-                tool.execute(serde_json::json!({
-                    "operation": "read",
-                    "path": "tracked.txt",
-                }))
-                .await
-                .unwrap();
-                let writes = crate::context::with_current_tool_context(|c| c.workspace_file_writes.len());
-                let reads = crate::context::with_current_tool_context(|c| c.workspace_file_reads.len());
-                (writes, reads)
-            },
-        )
+        let (write_count, read_count) = crate::context::run_with_tool_context(Some(ctx), async {
+            tool.execute(serde_json::json!({
+                "operation": "write",
+                "path": "tracked.txt",
+                "content": "hello",
+            }))
+            .await
+            .unwrap();
+            tool.execute(serde_json::json!({
+                "operation": "read",
+                "path": "tracked.txt",
+            }))
+            .await
+            .unwrap();
+            let writes =
+                crate::context::with_current_tool_context(|c| c.workspace_file_writes.len());
+            let reads = crate::context::with_current_tool_context(|c| c.workspace_file_reads.len());
+            (writes, reads)
+        })
         .await;
         assert_eq!(write_count, Some(1));
         assert_eq!(read_count, Some(1));
@@ -1379,24 +1388,21 @@ mod tests {
         assert_eq!(result.unwrap_err().code, "FRESH_READ_REQUIRED");
 
         // After a full read the edit proceeds.
-        let result = crate::context::run_with_tool_context(
-            Some(ctx),
-            async {
-                tool.execute(serde_json::json!({
-                    "operation": "read",
-                    "path": "x.txt",
-                }))
-                .await
-                .unwrap();
-                tool.execute(serde_json::json!({
-                    "operation": "edit",
-                    "path": "x.txt",
-                    "old_string": "original",
-                    "new_string": "changed",
-                }))
-                .await
-            },
-        )
+        let result = crate::context::run_with_tool_context(Some(ctx), async {
+            tool.execute(serde_json::json!({
+                "operation": "read",
+                "path": "x.txt",
+            }))
+            .await
+            .unwrap();
+            tool.execute(serde_json::json!({
+                "operation": "edit",
+                "path": "x.txt",
+                "old_string": "original",
+                "new_string": "changed",
+            }))
+            .await
+        })
         .await;
         assert!(result.is_ok());
     }

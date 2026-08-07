@@ -533,8 +533,26 @@ pub fn html_to_text(html: &str) -> String {
     let mut output = String::new();
 
     let block_selectors = [
-        "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "br", "tr", "section", "article",
-        "blockquote", "pre", "table", "ul", "ol", "footer", "header",
+        "p",
+        "div",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "br",
+        "tr",
+        "section",
+        "article",
+        "blockquote",
+        "pre",
+        "table",
+        "ul",
+        "ol",
+        "footer",
+        "header",
     ];
 
     // Elements whose content is never part of the visible page text.
@@ -615,8 +633,8 @@ pub fn readability_score(text: &str) -> f64 {
     }
 
     // Average word length.
-    let avg_word_len: f64 = words.iter().map(|w| w.chars().count() as f64).sum::<f64>()
-        / word_count as f64;
+    let avg_word_len: f64 =
+        words.iter().map(|w| w.chars().count() as f64).sum::<f64>() / word_count as f64;
 
     // Sentence count (approximate by counting sentence-ending punctuation).
     let sentence_count = text
@@ -718,11 +736,12 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
             }
             let score = readability_score(&text);
             // Prefer more specific selectors on ties.
-            let specificity_bonus = if selector_str.starts_with('.') || selector_str.starts_with('#') {
-                0.05
-            } else {
-                0.0
-            };
+            let specificity_bonus =
+                if selector_str.starts_with('.') || selector_str.starts_with('#') {
+                    0.05
+                } else {
+                    0.0
+                };
             let adjusted = score + specificity_bonus;
             if adjusted > *best_score {
                 *best_score = adjusted;
@@ -764,7 +783,12 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
     if best_content.is_empty() {
         if let Ok(body_selector) = Selector::parse("body") {
             for element in document.select(&body_selector) {
-                best_content = element.text().collect::<Vec<_>>().join(" ").trim().to_string();
+                best_content = element
+                    .text()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string();
                 best_selector = "body".to_string();
                 break;
             }
@@ -947,7 +971,11 @@ impl ResponseCache {
 
     /// Invalidate a cached URL.
     pub fn invalidate(&self, url: &str) -> bool {
-        self.entries.lock().ok().map(|mut e| e.remove(url).is_some()).unwrap_or(false)
+        self.entries
+            .lock()
+            .ok()
+            .map(|mut e| e.remove(url).is_some())
+            .unwrap_or(false)
     }
 
     /// Clear the cache.
@@ -1146,7 +1174,11 @@ impl RobotsTxt {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let cached = self.cache.lock().map(|c| c.get(&domain).cloned()).unwrap_or(None);
+        let cached = self
+            .cache
+            .lock()
+            .map(|c| c.get(&domain).cloned())
+            .unwrap_or(None);
         let robots_text = if let Some((text, ts)) = cached {
             if now.saturating_sub(ts) > self.ttl_secs as u128 * 1000 {
                 None
@@ -1167,7 +1199,11 @@ impl RobotsTxt {
                 .user_agent(&self.user_agent)
                 .build()
                 .map_err(|e| format!("Failed to build client: {}", e))?;
-            let resp = client.get(&robots_url).send().await.map_err(|e| format!("Failed to fetch robots.txt: {}", e))?;
+            let resp = client
+                .get(&robots_url)
+                .send()
+                .await
+                .map_err(|e| format!("Failed to fetch robots.txt: {}", e))?;
             let status = resp.status().as_u16();
             let text = if status == 200 {
                 resp.text().await.unwrap_or_default()
@@ -1390,9 +1426,10 @@ impl WebExtractTool {
         if let Some(cookie_header) = self.cookies.header_for(url) {
             request = request.header(reqwest::header::COOKIE, cookie_header);
         }
-        let resp = request.send().await.map_err(|e| {
-            ToolError::new("HTTP_ERROR", format!("Request failed: {}", e))
-        })?;
+        let resp = request
+            .send()
+            .await
+            .map_err(|e| ToolError::new("HTTP_ERROR", format!("Request failed: {}", e)))?;
         self.cookies.store_from_response(url, resp.headers());
         let body = resp
             .bytes()
@@ -1425,7 +1462,7 @@ impl Tool for WebExtractTool {
                     "Fetch a web page and extract its main content with readability scoring. ",
                     "Respects robots.txt, enforces per-domain rate limiting, caches responses, ",
                     "maintains cookies, and follows redirects.",
-),
+                ),
                 HashMap::from([
                     (
                         "url".to_string(),
@@ -1654,8 +1691,16 @@ mod tests {
     fn test_robots_is_path_allowed() {
         let allow = vec!["/private/public.html".to_string()];
         let disallow = vec!["/private/".to_string()];
-        assert!(!RobotsTxt::is_path_allowed("/private/secret", &allow, &disallow));
-        assert!(RobotsTxt::is_path_allowed("/private/public.html", &allow, &disallow));
+        assert!(!RobotsTxt::is_path_allowed(
+            "/private/secret",
+            &allow,
+            &disallow
+        ));
+        assert!(RobotsTxt::is_path_allowed(
+            "/private/public.html",
+            &allow,
+            &disallow
+        ));
         assert!(RobotsTxt::is_path_allowed("/public/", &allow, &disallow));
     }
 

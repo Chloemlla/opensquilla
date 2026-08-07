@@ -269,12 +269,30 @@ mod tests {
 
     #[test]
     fn normalize_aliases() {
-        assert_eq!(normalize_run_mode(Some("on"), RunMode::Full).unwrap(), RunMode::Standard);
-        assert_eq!(normalize_run_mode(Some("bypass"), RunMode::Full).unwrap(), RunMode::Full);
-        assert_eq!(normalize_run_mode(Some("trusted-sandbox"), RunMode::Full).unwrap(), RunMode::Trusted);
-        assert_eq!(normalize_run_mode(Some("FULL_HOST_ACCESS"), RunMode::Standard).unwrap(), RunMode::Full);
-        assert_eq!(normalize_run_mode(None, RunMode::Full).unwrap(), RunMode::Full);
-        assert_eq!(normalize_run_mode(Some("  "), RunMode::Trusted).unwrap(), RunMode::Trusted);
+        assert_eq!(
+            normalize_run_mode(Some("on"), RunMode::Full).unwrap(),
+            RunMode::Standard
+        );
+        assert_eq!(
+            normalize_run_mode(Some("bypass"), RunMode::Full).unwrap(),
+            RunMode::Full
+        );
+        assert_eq!(
+            normalize_run_mode(Some("trusted-sandbox"), RunMode::Full).unwrap(),
+            RunMode::Trusted
+        );
+        assert_eq!(
+            normalize_run_mode(Some("FULL_HOST_ACCESS"), RunMode::Standard).unwrap(),
+            RunMode::Full
+        );
+        assert_eq!(
+            normalize_run_mode(None, RunMode::Full).unwrap(),
+            RunMode::Full
+        );
+        assert_eq!(
+            normalize_run_mode(Some("  "), RunMode::Trusted).unwrap(),
+            RunMode::Trusted
+        );
         assert!(normalize_run_mode(Some("bogus"), RunMode::Full).is_err());
     }
 
@@ -315,11 +333,23 @@ mod tests {
             legacy_state_to_run_mode(true, true, Some("standard")),
             RunMode::Standard
         );
-        assert_eq!(legacy_state_to_run_mode(false, true, Some("on")), RunMode::Trusted);
-        assert_eq!(legacy_state_to_run_mode(true, false, Some("")), RunMode::Trusted);
+        assert_eq!(
+            legacy_state_to_run_mode(false, true, Some("on")),
+            RunMode::Trusted
+        );
+        assert_eq!(
+            legacy_state_to_run_mode(true, false, Some("")),
+            RunMode::Trusted
+        );
         // Fallback when permission mode is unrecognized.
-        assert_eq!(legacy_state_to_run_mode(false, false, Some("weird")), RunMode::Trusted);
-        assert_eq!(legacy_state_to_run_mode(true, true, Some("weird")), RunMode::Trusted);
+        assert_eq!(
+            legacy_state_to_run_mode(false, false, Some("weird")),
+            RunMode::Trusted
+        );
+        assert_eq!(
+            legacy_state_to_run_mode(true, true, Some("weird")),
+            RunMode::Trusted
+        );
     }
 
     fn input(
@@ -340,7 +370,12 @@ mod tests {
     fn config_run_mode_explicit_wins() {
         let cfg = input(Some(RunMode::Full), Some(true), Some(true), Some("off"));
         assert_eq!(config_run_mode(&cfg), RunMode::Full);
-        let cfg = input(Some(RunMode::Standard), Some(false), Some(false), Some("bypass"));
+        let cfg = input(
+            Some(RunMode::Standard),
+            Some(false),
+            Some(false),
+            Some("bypass"),
+        );
         assert_eq!(config_run_mode(&cfg), RunMode::Standard);
     }
 

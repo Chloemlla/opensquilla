@@ -136,11 +136,7 @@ impl CronJobHandler for DreamHandler {
         match engine.run_dream_if_due(&agent_id).await {
             Ok(Some(summary)) => {
                 let summary = describe_summary(&summary);
-                tracing::info!(
-                    "Dream cycle for agent {} completed: {}",
-                    agent_id,
-                    summary
-                );
+                tracing::info!("Dream cycle for agent {} completed: {}", agent_id, summary);
                 HandlerResult::success(format!(
                     "Dream cycle complete for agent {}: {}",
                     agent_id, summary
@@ -155,7 +151,10 @@ impl CronJobHandler for DreamHandler {
             }
             Err(err) => {
                 tracing::error!("Dream cycle failed for agent {}: {}", agent_id, err);
-                HandlerResult::failure(format!("Dream cycle failed for agent {}: {}", agent_id, err))
+                HandlerResult::failure(format!(
+                    "Dream cycle failed for agent {}: {}",
+                    agent_id, err
+                ))
             }
         }
     }

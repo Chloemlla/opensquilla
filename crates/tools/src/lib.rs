@@ -51,8 +51,8 @@ pub mod media;
 pub mod memory_tools;
 pub mod messaging;
 pub mod patch;
-pub mod path_policy;
 pub mod patch_classification;
+pub mod path_policy;
 pub mod plan_control;
 pub mod policy;
 pub mod policy_checks;
@@ -87,8 +87,8 @@ pub use candidate_patch_checkpoint::{
     restore_candidate_patch_checkpoint,
 };
 pub use context::{
-    CallerKind, DescriptionOverrides, InteractionMode, PlanAccess, RunMode, ToolContext,
-    TOOL_DESCRIPTION_OVERRIDES_ENV, CRON_AGENT_ALLOW, CRON_AGENT_DENY, SUBAGENT_TOOL_DENY,
+    CRON_AGENT_ALLOW, CRON_AGENT_DENY, CallerKind, DescriptionOverrides, InteractionMode,
+    PlanAccess, RunMode, SUBAGENT_TOOL_DENY, TOOL_DESCRIPTION_OVERRIDES_ENV, ToolContext,
     current_tool_context, is_tool_context_active, mutate_current_tool_context,
     resolve_tool_description_overrides, run_with_tool_context, with_current_tool_context,
 };
@@ -111,10 +111,10 @@ pub use media::{ImageTool, MediaTool, PdfTool, TranscriptionTool, TtsTool};
 pub use memory_tools::{MemoryDeleteTool, MemoryListTool, MemorySaveTool, MemorySearchTool};
 pub use messaging::SendMessageTool;
 pub use patch::{ApplyPatchTool, ResolveConflictsTool, ReversePatchTool, ThreeWayMergeTool};
-pub use path_policy::{foreign_host_path_error, is_foreign_host_path, reject_foreign_host_path};
 pub use patch_classification::{
     is_instrumentation_line, is_instrumentation_only_patch, iter_patch_line_changes,
 };
+pub use path_policy::{foreign_host_path_error, is_foreign_host_path, reject_foreign_host_path};
 pub use plan_control::{PlanRunCheckpointTool, RequestUserInputTool, SubmitPlanTool};
 pub use policy::{
     BudgetPolicy, ConfirmationPolicy, DenyPolicy, FinalizePolicy, PolicyChain, PolicyChainSet,
@@ -122,8 +122,7 @@ pub use policy::{
 };
 pub use policy_checks::{
     AllowListPolicy, DenyListPolicy, DispatchPolicyInput, OwnerOnlyPolicy, PermissionMatrixPolicy,
-    PolicyCheck, PolicyCheckDecision, PrivateMemoryScopePolicy, ProfilePolicy,
-    run_policy_chain,
+    PolicyCheck, PolicyCheckDecision, PrivateMemoryScopePolicy, ProfilePolicy, run_policy_chain,
 };
 pub use policy_config::{
     DeclarativeToolPolicy, PolicyConfigError, apply_base_policy, apply_channel_layer,
@@ -141,7 +140,7 @@ pub use projected_arguments::{
 pub use registry::{
     Tool, ToolDefinition, ToolError, ToolInput, ToolOutput, ToolRegistry, ToolResult,
 };
-pub use router_control::{RoutingHold, RoutingHoldStore, RouterControlTool, normalize_text_tier};
+pub use router_control::{RouterControlTool, RoutingHold, RoutingHoldStore, normalize_text_tier};
 pub use run_mode::{full_host_access_for_context, sandbox_disabled_full_host_fallback};
 pub use schema_validation::{SchemaValidator, validate_tool_args};
 pub use session_rpc_tools::{

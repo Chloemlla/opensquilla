@@ -229,7 +229,7 @@ impl Tool for ArtifactTool {
                     "Generate and save a file artifact in various formats. ",
                     "Supports TXT, Markdown, HTML, JSON, CSV, YAML, and XML. ",
                     "The file is written to the allowed working directory.",
-),
+                ),
                 HashMap::from([
                     (
                         "format".to_string(),

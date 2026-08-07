@@ -292,10 +292,7 @@ pub enum SessionAction {
     /// Archive a session
     Archive { id: String },
     /// Export session data
-    Export {
-        id: String,
-        output: Option<String>,
-    },
+    Export { id: String, output: Option<String> },
     /// Create a new session
     Create {
         name: Option<String>,
@@ -343,9 +340,7 @@ pub enum ModelAction {
     /// Show model details
     Show { name: String },
     /// Compare two or more models side by side
-    Compare {
-        models: Vec<String>,
-    },
+    Compare { models: Vec<String> },
 }
 
 #[derive(Subcommand, Debug)]
@@ -426,10 +421,7 @@ pub enum SkillAction {
     /// Show skill metadata and trust level
     Info { name: String },
     /// Run a skill
-    Run {
-        name: String,
-        input: Option<String>,
-    },
+    Run { name: String, input: Option<String> },
 }
 
 #[derive(Subcommand, Debug)]
@@ -470,10 +462,7 @@ pub enum ChannelAction {
     /// Disconnect a channel
     Disconnect { id: String },
     /// Send a test message to a channel
-    Send {
-        name: String,
-        message: String,
-    },
+    Send { name: String, message: String },
     /// Start all enabled channels
     Start,
     /// Stop all channels

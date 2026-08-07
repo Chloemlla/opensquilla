@@ -23,9 +23,7 @@ pub enum InitAction {
         force: bool,
     },
     /// Show what would be created without writing anything.
-    Preview {
-        directory: Option<String>,
-    },
+    Preview { directory: Option<String> },
 }
 
 /// Run an init subcommand.
@@ -94,8 +92,8 @@ pub async fn init_project(
     // Write config file.
     let config_path = opensquilla_dir.join("config.toml");
     let config = default_project_config(&project_name);
-    let config_contents = toml::to_string_pretty(&config)
-        .context("Failed to serialize default config")?;
+    let config_contents =
+        toml::to_string_pretty(&config).context("Failed to serialize default config")?;
     std::fs::write(&config_path, &config_contents)
         .with_context(|| format!("Failed to write {}", config_path.display()))?;
     println!("{} Created {}", table::ok(), config_path.display());
@@ -171,16 +169,18 @@ pub async fn preview_init(directory: Option<String>) -> Result<()> {
 /// Build a default project config.
 fn default_project_config(name: &str) -> Config {
     let mut config = Config::default();
-    config.providers.push(opensquilla_core::config::ProviderConfig {
-        name: "openai".to_string(),
-        provider_type: "openai".to_string(),
-        api_key: None,
-        base_url: None,
-        models: vec!["gpt-4o-mini".to_string()],
-        default_model: Some("gpt-4o-mini".to_string()),
-        max_retries: 3,
-        timeout_secs: 60,
-    });
+    config
+        .providers
+        .push(opensquilla_core::config::ProviderConfig {
+            name: "openai".to_string(),
+            provider_type: "openai".to_string(),
+            api_key: None,
+            base_url: None,
+            models: vec!["gpt-4o-mini".to_string()],
+            default_model: Some("gpt-4o-mini".to_string()),
+            max_retries: 3,
+            timeout_secs: 60,
+        });
     config.skills = Some(opensquilla_core::config::SkillsConfig {
         skill_dirs: vec![".opensquilla/skills".to_string()],
         enabled: true,
@@ -243,7 +243,7 @@ This is an example skill. Skills are markdown files with YAML frontmatter.
 Edit this file or add new `.md` files to the `skills/` directory to create
 your own skills.
 "#
-.to_string()
+    .to_string()
 }
 
 /// Project README content.
@@ -295,7 +295,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

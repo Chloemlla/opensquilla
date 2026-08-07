@@ -62,7 +62,10 @@ impl Drop for SessionLockHandle {
 impl SessionLockHandle {
     /// Acquire the lock this handle points to.
     pub async fn lock_owned(self) -> SessionLockGuard {
-        let inner = self.inner.clone().expect("session lock handle already consumed");
+        let inner = self
+            .inner
+            .clone()
+            .expect("session lock handle already consumed");
         let guard = inner.lock_owned().await;
         debug!(session = %self.key, "Session lock acquired");
         SessionLockGuard {
@@ -74,7 +77,10 @@ impl SessionLockHandle {
 
     /// Try to acquire the lock without waiting.
     pub fn try_lock_owned(self) -> Option<SessionLockGuard> {
-        let inner = self.inner.clone().expect("session lock handle already consumed");
+        let inner = self
+            .inner
+            .clone()
+            .expect("session lock handle already consumed");
         let guard = inner.clone().try_lock_owned().ok()?;
         debug!(session = %self.key, "Session lock acquired (try)");
         Some(SessionLockGuard {

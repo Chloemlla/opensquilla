@@ -13,9 +13,9 @@ use opensquilla_core::config::Config;
 use serde::Serialize;
 use tracing::info;
 
+use crate::rpc;
 use crate::table::{self, Color, KeyValue, Style};
 use crate::util;
-use crate::rpc;
 
 /// Diagnostics subcommands.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -58,9 +58,7 @@ pub async fn run_diagnostics(action: DiagnosticsAction) -> Result<()> {
         DiagnosticsAction::Status { json } => diagnostics_status(json).await,
         DiagnosticsAction::On { raw, json } => diagnostics_on(raw, json).await,
         DiagnosticsAction::Off { json } => diagnostics_off(json).await,
-        DiagnosticsAction::Dump { output, log_lines } => {
-            diagnostics_dump(output, log_lines).await
-        }
+        DiagnosticsAction::Dump { output, log_lines } => diagnostics_dump(output, log_lines).await,
     }
 }
 
@@ -81,14 +79,52 @@ pub async fn diagnostics_status(json: bool) -> Result<()> {
 
     println!("Diagnostics");
     println!("{:-<50}", "");
-    let enabled = payload.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let enabled = payload
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     KeyValue::new()
         .entry("enabled", enabled.to_string())
-        .entry("verbose", payload.get("verbose").and_then(|v| v.as_bool()).unwrap_or(false).to_string())
-        .entry("trace", payload.get("trace").and_then(|v| v.as_bool()).unwrap_or(false).to_string())
-        .entry("prompt_report", payload.get("prompt_report").and_then(|v| v.as_bool()).unwrap_or(false).to_string())
-        .entry("decision_log", payload.get("decision_log").and_then(|v| v.as_bool()).unwrap_or(false).to_string())
-        .entry("safe_log", payload.get("safe_log").and_then(|v| v.as_bool()).unwrap_or(true).to_string())
+        .entry(
+            "verbose",
+            payload
+                .get("verbose")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                .to_string(),
+        )
+        .entry(
+            "trace",
+            payload
+                .get("trace")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                .to_string(),
+        )
+        .entry(
+            "prompt_report",
+            payload
+                .get("prompt_report")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                .to_string(),
+        )
+        .entry(
+            "decision_log",
+            payload
+                .get("decision_log")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                .to_string(),
+        )
+        .entry(
+            "safe_log",
+            payload
+                .get("safe_log")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true)
+                .to_string(),
+        )
         .print();
     if let Some(warning) = payload.get("warning").and_then(|v| v.as_str()) {
         println!("{} {warning}", table::warn());
@@ -267,7 +303,11 @@ pub async fn diagnostics_dump(output: Option<String>, log_lines: usize) -> Resul
 
     info!("Diagnostics bundle written to {}", out_dir.display());
     println!();
-    println!("{} Bundle complete. Attach {} to your bug report.", table::ok(), out_dir.display());
+    println!(
+        "{} Bundle complete. Attach {} to your bug report.",
+        table::ok(),
+        out_dir.display()
+    );
     println!("  Review the bundle for secrets before sharing.");
     Ok(())
 }
@@ -330,7 +370,10 @@ trait BoldStr {
 
 impl BoldStr for &str {
     fn bold(&self) -> String {
-        format!("{}", Style::new().bold().fg(Color::BrightBlue).styled(*self))
+        format!(
+            "{}",
+            Style::new().bold().fg(Color::BrightBlue).styled(*self)
+        )
     }
 }
 

@@ -34,7 +34,9 @@ use std::str::FromStr;
 ///
 /// When two layers define a skill with the same `id`, the higher-priority
 /// layer wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SkillLayer {
     /// External extra directories (lowest priority)

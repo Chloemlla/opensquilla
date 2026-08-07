@@ -17,7 +17,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Duration, Utc};
 use opensquilla_core::config::Config;
-use opensquilla_provider::model_catalog::{seed_static, ModelCatalog};
+use opensquilla_provider::model_catalog::{ModelCatalog, seed_static};
 use opensquilla_session::SessionManager;
 use serde::Serialize;
 use tracing::info;
@@ -34,10 +34,7 @@ pub enum CostAction {
         end: Option<String>,
     },
     /// Show a breakdown by session, provider, or model.
-    Usage {
-        group_by: String,
-        limit: usize,
-    },
+    Usage { group_by: String, limit: usize },
     /// Generate a full report and save it.
     Report {
         output: String,
@@ -45,9 +42,7 @@ pub enum CostAction {
         end: Option<String>,
     },
     /// Show or set the monthly budget.
-    Budget {
-        amount: Option<f64>,
-    },
+    Budget { amount: Option<f64> },
     /// Show the pricing rates table.
     Rates,
 }
@@ -122,11 +117,7 @@ pub async fn run_cost(action: CostAction) -> Result<()> {
     match action {
         CostAction::Summary { start, end } => cost_summary(start, end).await,
         CostAction::Usage { group_by, limit } => cost_usage(&group_by, limit).await,
-        CostAction::Report {
-            output,
-            start,
-            end,
-        } => cost_report(output, start, end).await,
+        CostAction::Report { output, start, end } => cost_report(output, start, end).await,
         CostAction::Budget { amount } => cost_budget(amount).await,
         CostAction::Rates => cost_rates().await,
     }
@@ -191,14 +182,8 @@ pub async fn cost_summary(start: Option<String>, end: Option<String>) -> Result<
     KeyValue::new()
         .entry("Sessions", summary.total_sessions.to_string())
         .entry("Messages", summary.total_messages.to_string())
-        .entry(
-            "Input tokens",
-            summary.total_input_tokens.to_string(),
-        )
-        .entry(
-            "Output tokens",
-            summary.total_output_tokens.to_string(),
-        )
+        .entry("Input tokens", summary.total_input_tokens.to_string())
+        .entry("Output tokens", summary.total_output_tokens.to_string())
         .entry("Total tokens", summary.total_tokens.to_string())
         .entry_styled(
             "Total cost",
@@ -247,17 +232,12 @@ pub async fn cost_usage(group_by: &str, limit: usize) -> Result<()> {
         "provider" | "providers" => usage_by_provider(&sessions, &config, limit),
         "model" | "models" => usage_by_model(&sessions, &config, limit),
         "day" | "daily" => usage_by_day(&sessions, limit),
-        other => anyhow::bail!(
-            "Unknown group_by '{other}'. Use: session, provider, model, or day"
-        ),
+        other => anyhow::bail!("Unknown group_by '{other}'. Use: session, provider, model, or day"),
     }
 }
 
 /// Group usage by session.
-fn usage_by_session(
-    sessions: &[opensquilla_session::Session],
-    limit: usize,
-) -> Result<()> {
+fn usage_by_session(sessions: &[opensquilla_session::Session], limit: usize) -> Result<()> {
     let mut rows: Vec<SessionCost> = sessions
         .iter()
         .map(|s| SessionCost {
@@ -268,7 +248,11 @@ fn usage_by_session(
             cost_usd: s.total_cost_usd,
         })
         .collect();
-    rows.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     rows.truncate(limit);
 
     println!("Usage by Session (top {limit})");
@@ -332,7 +316,11 @@ fn usage_by_provider(
             0.0
         };
     }
-    rows.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     rows.truncate(limit);
 
     println!("Usage by Provider (top {limit})");
@@ -393,7 +381,11 @@ fn usage_by_model(
             0.0
         };
     }
-    rows.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     rows.truncate(limit);
 
     println!("Usage by Model (top {limit})");
@@ -453,11 +445,7 @@ fn usage_by_day(sessions: &[opensquilla_session::Session], limit: usize) -> Resu
 }
 
 /// Generate a full cost report and save it as JSON.
-pub async fn cost_report(
-    output: String,
-    start: Option<String>,
-    end: Option<String>,
-) -> Result<()> {
+pub async fn cost_report(output: String, start: Option<String>, end: Option<String>) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = util::build_session_manager(&config)?;
     let (start_dt, end_dt) = parse_range(start.as_deref(), end.as_deref())?;
@@ -498,13 +486,15 @@ pub async fn cost_report(
             .and_then(|v| v.as_str())
             .unwrap_or("default")
             .to_string();
-        let p = provider_map.entry(provider.clone()).or_insert(ProviderCost {
-            provider,
-            sessions: 0,
-            tokens: 0,
-            cost_usd: 0.0,
-            pct: 0.0,
-        });
+        let p = provider_map
+            .entry(provider.clone())
+            .or_insert(ProviderCost {
+                provider,
+                sessions: 0,
+                tokens: 0,
+                cost_usd: 0.0,
+                pct: 0.0,
+            });
         p.sessions += 1;
         p.tokens += s.total_tokens;
         p.cost_usd += s.total_cost_usd;
@@ -544,7 +534,11 @@ pub async fn cost_report(
             0.0
         };
     }
-    providers.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    providers.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut models: Vec<ModelCost> = model_map.into_values().collect();
     for m in &mut models {
@@ -554,9 +548,17 @@ pub async fn cost_report(
             0.0
         };
     }
-    models.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    models.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    session_costs.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    session_costs.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let report = CostReport {
         generated_at: Utc::now(),
@@ -635,7 +637,11 @@ pub async fn cost_budget(amount: Option<f64>) -> Result<()> {
 
                     if pct > 100.0 {
                         println!();
-                        println!("{} Budget exceeded by ${:.2}", crate::table::fail(), spent - b);
+                        println!(
+                            "{} Budget exceeded by ${:.2}",
+                            crate::table::fail(),
+                            spent - b
+                        );
                     } else if pct > 80.0 {
                         println!();
                         println!("{} Approaching budget limit", crate::table::warn());
@@ -705,7 +711,8 @@ pub async fn cost_rates() -> Result<()> {
                     .output_price_per_million
                     .map(|p| format!("${p:.2}"))
                     .unwrap_or_else(|| "—".to_string());
-                table = table.row_owned(vec![spec.id.to_string(), model.to_string(), input, output]);
+                table =
+                    table.row_owned(vec![spec.id.to_string(), model.to_string(), input, output]);
             }
         }
     }
@@ -715,10 +722,7 @@ pub async fn cost_rates() -> Result<()> {
 }
 
 /// Parse an optional date range, defaulting to the last 30 days.
-fn parse_range(
-    start: Option<&str>,
-    end: Option<&str>,
-) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+fn parse_range(start: Option<&str>, end: Option<&str>) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
     let end_dt = match end {
         Some(e) => parse_date(e)?,
         None => Utc::now(),

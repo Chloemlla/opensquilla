@@ -181,9 +181,7 @@ impl StageMetricsCollector {
 
     /// Whether any recorded stage failed for the given turn.
     pub fn turn_has_failure(&self, turn_id: &str) -> bool {
-        self.for_turn(turn_id)
-            .values()
-            .any(|m| !m.success)
+        self.for_turn(turn_id).values().any(|m| !m.success)
     }
 }
 

@@ -155,8 +155,8 @@ impl ExecCommandTool {
 
         // Request-scoped run-mode classification (mirrors run_mode.py wiring).
         // No-op fields when no tool context is scoped.
-        let run_mode = crate::run_mode::current_run_mode()
-            .map(|m| format!("{m:?}").to_ascii_lowercase());
+        let run_mode =
+            crate::run_mode::current_run_mode().map(|m| format!("{m:?}").to_ascii_lowercase());
         let full_host_access = crate::run_mode::full_host_access_active();
         let trusted_sandbox = crate::run_mode::trusted_sandbox_active();
 
@@ -214,7 +214,7 @@ impl Tool for ExecCommandTool {
                     "Execute a shell command and return its output. ",
                     "The command runs synchronously with a configurable timeout. ",
                     "Environment variables and working directory can be specified.",
-),
+                ),
                 HashMap::from([
                     (
                         "command".to_string(),
@@ -836,10 +836,7 @@ impl ProcessRegistry {
                 } else {
                     return Err(ToolError::new(
                         "UNSUPPORTED_SIGNAL",
-                        format!(
-                            "Signal {:?} is not supported on Windows",
-                            signal
-                        ),
+                        format!("Signal {:?} is not supported on Windows", signal),
                     ));
                 }
             } else if let Some(signum) = signal.unix_number() {
@@ -875,9 +872,7 @@ impl ProcessRegistry {
         let mut processes = self.processes.lock().await;
         let to_remove: Vec<String> = processes
             .iter()
-            .filter(|(_, p)| {
-                p.completed && now.saturating_sub(p.started_at) > max_age_secs
-            })
+            .filter(|(_, p)| p.completed && now.saturating_sub(p.started_at) > max_age_secs)
             .map(|(id, _)| id.clone())
             .collect();
         let count = to_remove.len();
@@ -932,7 +927,7 @@ impl Default for EnvFilter {
         Self {
             allowlist: None,
             denylist: vec![
-                "PATH".to_string(),      // PATH is inherited separately
+                "PATH".to_string(), // PATH is inherited separately
                 "PS1".to_string(),
                 "LS_COLORS".to_string(),
             ],
@@ -1042,7 +1037,8 @@ impl ProcessSupervisor {
         F: FnOnce() + Send + 'static,
     {
         type SharedKill = std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>;
-        let kill_fn: Option<Arc<SharedKill>> = Some(Arc::new(std::sync::Mutex::new(Some(Box::new(kill_fn)))));
+        let kill_fn: Option<Arc<SharedKill>> =
+            Some(Arc::new(std::sync::Mutex::new(Some(Box::new(kill_fn)))));
         let kill_for_task = kill_fn.clone();
 
         let pid = process_id.clone();
@@ -1297,9 +1293,7 @@ impl EnhancedExecTool {
         let result = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
             .await
             .map_err(|_| ToolError::timeout(timeout_secs))?
-            .map_err(|e| {
-                ToolError::new("IO_ERROR", format!("Failed to execute command: {}", e))
-            })?;
+            .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to execute command: {}", e)))?;
 
         let stdout = String::from_utf8_lossy(&result.stdout).to_string();
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
@@ -1311,12 +1305,18 @@ impl EnhancedExecTool {
         let stderr_truncated = stderr.len() as u64 > self.max_output_size;
 
         let stdout_final = if stdout_truncated {
-            stdout.chars().take(self.max_output_size as usize).collect::<String>()
+            stdout
+                .chars()
+                .take(self.max_output_size as usize)
+                .collect::<String>()
         } else {
             stdout
         };
         let stderr_final = if stderr_truncated {
-            stderr.chars().take(self.max_output_size as usize).collect::<String>()
+            stderr
+                .chars()
+                .take(self.max_output_size as usize)
+                .collect::<String>()
         } else {
             stderr
         };
@@ -1343,7 +1343,10 @@ impl EnhancedExecTool {
             }
             OutputCapture::StdoutOnly => stdout_final,
             OutputCapture::StderrOnly => stderr_final,
-            OutputCapture::Discard => format!("Command completed (exit code {}) in {}ms", exit_code, duration_ms),
+            OutputCapture::Discard => format!(
+                "Command completed (exit code {}) in {}ms",
+                exit_code, duration_ms
+            ),
         };
 
         let data = serde_json::json!({
@@ -1432,7 +1435,11 @@ impl Tool for EnhancedExecTool {
 
         let args: Vec<String> = params["args"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let env_vars: HashMap<String, String> = params["env_vars"]
@@ -1453,7 +1460,7 @@ impl Tool for EnhancedExecTool {
                 return Err(ToolError::invalid_args(format!(
                     "Unknown capture mode: '{}'",
                     other
-                )))
+                )));
             }
         };
 
@@ -1494,7 +1501,7 @@ impl Tool for StreamOutputTool {
                 concat!(
                     "Stream or tail the output of a background process. ",
                     "Returns the most recent lines of stdout and stderr.",
-),
+                ),
                 HashMap::from([
                     (
                         "process_id".to_string(),
@@ -1502,8 +1509,10 @@ impl Tool for StreamOutputTool {
                     ),
                     (
                         "lines".to_string(),
-                        ParameterDefinition::integer("Number of recent lines to return (default 50)")
-                            .default(serde_json::json!(50)),
+                        ParameterDefinition::integer(
+                            "Number of recent lines to return (default 50)",
+                        )
+                        .default(serde_json::json!(50)),
                     ),
                     (
                         "stream".to_string(),
@@ -1533,8 +1542,22 @@ impl Tool for StreamOutputTool {
         let stdout = process.stdout.lock().await.clone();
         let stderr = process.stderr.lock().await.clone();
 
-        let stdout_tail: Vec<&str> = stdout.lines().rev().take(lines).collect::<Vec<_>>().into_iter().rev().collect();
-        let stderr_tail: Vec<&str> = stderr.lines().rev().take(lines).collect::<Vec<_>>().into_iter().rev().collect();
+        let stdout_tail: Vec<&str> = stdout
+            .lines()
+            .rev()
+            .take(lines)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let stderr_tail: Vec<&str> = stderr
+            .lines()
+            .rev()
+            .take(lines)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
 
         let content = match stream {
             "stdout" => stdout_tail.join("\n"),
@@ -1552,7 +1575,12 @@ impl Tool for StreamOutputTool {
                 }
                 out
             }
-            other => return Err(ToolError::invalid_args(format!("Unknown stream: {}", other))),
+            other => {
+                return Err(ToolError::invalid_args(format!(
+                    "Unknown stream: {}",
+                    other
+                )));
+            }
         };
 
         let data = serde_json::json!({
@@ -1636,7 +1664,12 @@ impl Tool for SignalProcessTool {
             "HANGUP" => Signal::Hangup,
             "USER1" => Signal::User1,
             "USER2" => Signal::User2,
-            other => return Err(ToolError::invalid_args(format!("Unknown signal: {}", other))),
+            other => {
+                return Err(ToolError::invalid_args(format!(
+                    "Unknown signal: {}",
+                    other
+                )));
+            }
         };
 
         if !signal.is_supported() {
@@ -1690,11 +1723,10 @@ impl Tool for SignalProcessTool {
             "sent": true,
         });
 
-        Ok(ToolOutput::success(format!(
-            "Sent {} signal to process '{}'",
-            signal_str, id
-        ))
-        .with_data(data))
+        Ok(
+            ToolOutput::success(format!("Sent {} signal to process '{}'", signal_str, id))
+                .with_data(data),
+        )
     }
 }
 
@@ -1886,12 +1918,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_supervisor_cancel() {
-        let mut supervisor = ProcessSupervisor::start(
-            "test".to_string(),
-            60,
-            false,
-            || {},
-        );
+        let mut supervisor = ProcessSupervisor::start("test".to_string(), 60, false, || {});
         supervisor.cancel();
     }
 

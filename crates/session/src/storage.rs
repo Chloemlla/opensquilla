@@ -3013,12 +3013,18 @@ pub fn migrate_schema(conn: &Connection) -> CoreResult<()> {
         .map_err(|e| CoreError::Storage(e.to_string()))?;
     }
     if !sessions.contains("workspace_id") {
-        conn.execute("ALTER TABLE sessions ADD COLUMN workspace_id TEXT", params![])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN workspace_id TEXT",
+            params![],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
     }
     if !sessions.contains("derived_title") {
-        conn.execute("ALTER TABLE sessions ADD COLUMN derived_title TEXT", params![])
-            .map_err(|e| CoreError::Storage(e.to_string()))?;
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN derived_title TEXT",
+            params![],
+        )
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
     }
 
     // session_summaries: structured compaction metadata
@@ -3050,8 +3056,11 @@ pub fn migrate_schema(conn: &Connection) -> CoreResult<()> {
 
     // Defensive normalization for rows left with NULLs by a partial/legacy
     // migration (parity: storage.py:1768-1777 zeroes NULL epochs).
-    conn.execute("UPDATE sessions SET epoch = 0 WHERE epoch IS NULL", params![])
-        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    conn.execute(
+        "UPDATE sessions SET epoch = 0 WHERE epoch IS NULL",
+        params![],
+    )
+    .map_err(|e| CoreError::Storage(e.to_string()))?;
     conn.execute(
         "UPDATE session_summaries SET kept_count = 0 WHERE kept_count IS NULL",
         params![],

@@ -13,7 +13,7 @@
 //! enforcement hooks in `engine/agent.py`.
 
 use crate::agent::UsageEvent;
-use crate::pricing::{cost, PricingCache};
+use crate::pricing::{PricingCache, cost};
 use opensquilla_core::types::Usage;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -410,17 +410,12 @@ impl SessionBudgetTracker {
             .fetch_add(event.input_tokens, Ordering::SeqCst);
         self.output_tokens
             .fetch_add(event.output_tokens, Ordering::SeqCst);
-        self.total_tokens
-            .fetch_add(event.total(), Ordering::SeqCst);
+        self.total_tokens.fetch_add(event.total(), Ordering::SeqCst);
         self.turn_count.fetch_add(1, Ordering::SeqCst);
 
         // Calculate cost.
         let turn_cost = if let Some(pricing) = &self.pricing {
-            pricing.cost_for(
-                &event.model,
-                event.input_tokens,
-                event.output_tokens,
-            )
+            pricing.cost_for(&event.model, event.input_tokens, event.output_tokens)
         } else {
             // Use a default price of $1/1M input, $3/1M output.
             cost(1.0, 3.0, event.input_tokens, event.output_tokens)
@@ -825,8 +820,9 @@ impl BudgetManager {
     /// Attach a pricing cache.
     pub fn with_pricing(self, pricing: Arc<PricingCache>) -> Self {
         // Rebuild the tracker with pricing.
-        let tracker = SessionBudgetTracker::new(self.tracker.session_id(), self.tracker.config().clone())
-            .with_pricing(pricing);
+        let tracker =
+            SessionBudgetTracker::new(self.tracker.session_id(), self.tracker.config().clone())
+                .with_pricing(pricing);
         Self {
             tracker,
             rate_limiters: self.rate_limiters,
@@ -861,7 +857,10 @@ impl BudgetManager {
     /// limiter and circuit breaker.
     pub fn check_request(&self, model: &str, estimated_tokens: u64) -> RequestAdmission {
         // Check circuit breaker.
-        let breakers = self.circuit_breakers.lock().unwrap_or_else(|e| e.into_inner());
+        let breakers = self
+            .circuit_breakers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(breaker) = breakers.get(model) {
             if breaker.is_open() {
                 return RequestAdmission::CircuitOpen(model.to_string());
@@ -889,7 +888,10 @@ impl BudgetManager {
 
     /// Record a successful request.
     pub fn record_success(&self, model: &str) {
-        let breakers = self.circuit_breakers.lock().unwrap_or_else(|e| e.into_inner());
+        let breakers = self
+            .circuit_breakers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(breaker) = breakers.get(model) {
             breaker.record_success();
         }
@@ -897,7 +899,10 @@ impl BudgetManager {
 
     /// Record a failed request.
     pub fn record_failure(&self, model: &str) -> bool {
-        let breakers = self.circuit_breakers.lock().unwrap_or_else(|e| e.into_inner());
+        let breakers = self
+            .circuit_breakers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(breaker) = breakers.get(model) {
             return breaker.record_failure();
         }
@@ -1109,9 +1114,21 @@ mod tests {
     #[test]
     fn test_request_admission_reason() {
         assert_eq!(RequestAdmission::Allowed.reason(), "allowed");
-        assert!(RequestAdmission::CircuitOpen("m".to_string()).reason().contains("circuit"));
-        assert!(RequestAdmission::RateLimited("m".to_string()).reason().contains("rate"));
-        assert!(RequestAdmission::BudgetExceeded("m".to_string()).reason().contains("budget"));
+        assert!(
+            RequestAdmission::CircuitOpen("m".to_string())
+                .reason()
+                .contains("circuit")
+        );
+        assert!(
+            RequestAdmission::RateLimited("m".to_string())
+                .reason()
+                .contains("rate")
+        );
+        assert!(
+            RequestAdmission::BudgetExceeded("m".to_string())
+                .reason()
+                .contains("budget")
+        );
     }
 
     #[test]

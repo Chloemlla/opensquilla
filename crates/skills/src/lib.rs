@@ -22,14 +22,14 @@
 //!   security scanner, and the lockfile.
 //! - [`bundled`] — the built-in skill catalog compiled into the binary.
 
-pub mod loader;
-pub mod injector;
-pub mod types;
 pub mod eligibility;
-pub mod meta;
 pub mod hub;
+pub mod injector;
+pub mod loader;
 pub mod manifest;
+pub mod meta;
 pub mod template;
+pub mod types;
 
 /// Bundled built-in skills, defined as Rust data structures in code.
 #[path = "../bundled/mod.rs"]
@@ -47,15 +47,15 @@ pub use loader::{
 // --- types ----------------------------------------------------------------
 
 pub use types::{
-    SkillAuthor, SkillChange, SkillContext, SkillDependency, SkillFilter, SkillKind, SkillLicense,
-    SkillLayer, SkillMatch, SkillManifest, SkillMetadata, SkillRequires, SkillScope, SkillSpec,
+    SkillAuthor, SkillChange, SkillContext, SkillDependency, SkillFilter, SkillKind, SkillLayer,
+    SkillLicense, SkillManifest, SkillMatch, SkillMetadata, SkillRequires, SkillScope, SkillSpec,
     SkillStep, SkillVersion, SkillVisibility, StepOutput, StepType, rank_skills,
 };
 
 // --- injector -------------------------------------------------------------
 
 pub use injector::{
-    InjectorConfig, InjectionContext, SkillInjector, SkillListFormat, escape_md, escape_xml,
+    InjectionContext, InjectorConfig, SkillInjector, SkillListFormat, escape_md, escape_xml,
 };
 
 // --- eligibility ----------------------------------------------------------
@@ -91,24 +91,23 @@ pub use hub::{
 // --- manifest --------------------------------------------------------------
 
 pub use manifest::{
+    MANIFEST_SCHEMA_VERSION, ManifestError, ManifestSchema, ManifestSummary, ManifestValidator,
+    ManifestValidatorConfig, ValidationIssue, ValidationReport, collect_tags, collect_tool_names,
     extract_author, extract_layer, extract_license, extract_metadata, extract_requires,
-    extract_visibility, manifest_from_json, manifest_from_yaml, manifest_summary,
-    manifest_to_json, manifest_to_spec_public, manifest_to_yaml, merge_manifests, meta_manifest,
-    minimal_manifest, upgrade_manifest, collect_tags, collect_tool_names, ManifestError,
-    ManifestSchema, ManifestSummary, ManifestValidator, ManifestValidatorConfig, ValidationIssue,
-    ValidationReport, MANIFEST_SCHEMA_VERSION,
+    extract_visibility, manifest_from_json, manifest_from_yaml, manifest_summary, manifest_to_json,
+    manifest_to_spec_public, manifest_to_yaml, merge_manifests, meta_manifest, minimal_manifest,
+    upgrade_manifest,
 };
 
 // --- template --------------------------------------------------------------
 
 pub use template::{
-    builtin_templates, extract_variables, render_template_str, render_with_map,
-    validate_template, BilingualPrompt, PromptTemplate, TemplateError as TemplateRenderError,
-    TemplateRegistry,
+    BilingualPrompt, PromptTemplate, TemplateError as TemplateRenderError, TemplateRegistry,
+    builtin_templates, extract_variables, render_template_str, render_with_map, validate_template,
 };
 
 // --- bundled --------------------------------------------------------------
 
 pub use bundled::{
-    get_bundled_skill, load_bundled_skills, bundled_skill_count, BundledSkillDef, BUNDLED_SKILLS,
+    BUNDLED_SKILLS, BundledSkillDef, bundled_skill_count, get_bundled_skill, load_bundled_skills,
 };

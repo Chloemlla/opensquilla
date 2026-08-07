@@ -225,16 +225,8 @@ impl Tool for RouterControlTool {
             return Err(ToolError::invalid_args("session_id must not be empty"));
         }
 
-        let action = params["action"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        let evidence = params["evidence"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let action = params["action"].as_str().unwrap_or("").trim().to_string();
+        let evidence = params["evidence"].as_str().unwrap_or("").trim().to_string();
 
         if evidence.is_empty() {
             return Err(ToolError::invalid_args("evidence is required"));
@@ -280,13 +272,19 @@ impl Tool for RouterControlTool {
                     "held_at": hold.held_at.to_rfc3339(),
                 });
                 Ok(ToolOutput::success_with_data(
-                    format!("Set router hold to tier {} for session {}", tier, session_id),
+                    format!(
+                        "Set router hold to tier {} for session {}",
+                        tier, session_id
+                    ),
                     data,
                 ))
             }
             other => Err(ToolError::new(
                 "UNSUPPORTED_ACTION",
-                format!("Unsupported router_control action '{}'. Use set_hold or clear_hold.", other),
+                format!(
+                    "Unsupported router_control action '{}'. Use set_hold or clear_hold.",
+                    other
+                ),
             )),
         }
     }

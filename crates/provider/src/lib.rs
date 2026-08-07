@@ -11,8 +11,8 @@
 
 pub mod anthropic;
 pub mod audio;
-pub mod compat_policy;
 pub mod compaction;
+pub mod compat_policy;
 pub mod credentials;
 pub mod ensemble;
 pub mod failures;
@@ -64,11 +64,11 @@ pub use audio::{
     estimate_duration_seconds, estimate_stt_cost, estimate_tts_cost, pcm_to_wav,
     wav_duration_seconds,
 };
-pub use compat_policy::{CompatPolicy, CompatPolicyRegistry, policy_for};
 pub use compaction::{
     AggregateToolResult, CompactionConfig, aggregate_tool_result_compacted, compact_tool_results,
     is_provider_projection,
 };
+pub use compat_policy::{CompatPolicy, CompatPolicyRegistry, policy_for};
 pub use credentials::CredentialPool;
 pub use ensemble::{
     AggregationSpec, AggregationStrategy, AllFailedPolicy, BestOfNStrategy, DebateStrategy,

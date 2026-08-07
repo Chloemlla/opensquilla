@@ -17,10 +17,7 @@ pub const MAX_PATCH_CHARS: usize = 64_000;
 const CANDIDATE_MODES: &[&str] = &["off", "log", "warn_model"];
 
 fn candidate_mode(ctx: &ToolContext) -> &'static str {
-    let value = ctx
-        .source_diff_candidate_mode
-        .trim()
-        .to_ascii_lowercase();
+    let value = ctx.source_diff_candidate_mode.trim().to_ascii_lowercase();
     if CANDIDATE_MODES.contains(&value.as_str()) {
         match value.as_str() {
             "off" => "off",
@@ -124,8 +121,14 @@ pub fn mark_source_diff_candidates_lost(
     }
     let mut marked: Vec<Value> = Vec::new();
     for candidate in &mut ctx.source_diff_candidates {
-        if candidate.get("lost").and_then(|v| v.as_bool()).unwrap_or(false)
-            || candidate.get("restored").and_then(|v| v.as_bool()).unwrap_or(false)
+        if candidate
+            .get("lost")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+            || candidate
+                .get("restored")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
         {
             continue;
         }
@@ -183,7 +186,10 @@ pub fn recoverable_lost_source_candidate_ids(
     }
     let mut result: Vec<String> = Vec::new();
     for candidate in candidates {
-        let lost = candidate.get("lost").and_then(|v| v.as_bool()).unwrap_or(false);
+        let lost = candidate
+            .get("lost")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let restored = candidate
             .get("restored")
             .and_then(|v| v.as_bool())
@@ -226,7 +232,8 @@ mod tests {
             ..Default::default()
         };
         // Not a git repo: capture fails gracefully.
-        let candidate = capture_source_diff_candidate(&mut ctx, "src/x.rs", 1, Some("mut-1"), "edit_source");
+        let candidate =
+            capture_source_diff_candidate(&mut ctx, "src/x.rs", 1, Some("mut-1"), "edit_source");
         assert!(candidate.is_none());
         assert!(ctx.source_diff_candidates.is_empty());
     }
@@ -267,7 +274,12 @@ mod tests {
                 "restored": false,
             }),
         ];
-        let marked = mark_source_diff_candidates_lost(&mut ctx, &["src/a.rs"], "git_checkout", Some("git checkout HEAD"));
+        let marked = mark_source_diff_candidates_lost(
+            &mut ctx,
+            &["src/a.rs"],
+            "git_checkout",
+            Some("git checkout HEAD"),
+        );
         assert_eq!(marked.len(), 1);
         assert_eq!(marked[0]["candidate_id"], "srcdiff-1");
         assert!(ctx.source_diff_candidates[0]["lost"].as_bool().unwrap());

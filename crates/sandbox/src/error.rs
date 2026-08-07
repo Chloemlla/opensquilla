@@ -92,7 +92,9 @@ impl SandboxErrorKind {
             SandboxErrorKind::CommandNotFound => 404,
             SandboxErrorKind::ResourceExceeded => 429,
             SandboxErrorKind::InvalidProfile => 400,
-            SandboxErrorKind::Seccomp | SandboxErrorKind::Seatbelt | SandboxErrorKind::Cgroup => 500,
+            SandboxErrorKind::Seccomp | SandboxErrorKind::Seatbelt | SandboxErrorKind::Cgroup => {
+                500
+            }
             SandboxErrorKind::Cancelled => 499,
         }
     }

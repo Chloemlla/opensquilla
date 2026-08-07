@@ -370,11 +370,7 @@ impl TuiApp {
         }
     }
 
-    fn render_tabs(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_tabs(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         let titles: Vec<Line> = View::ALL
             .iter()
             .map(|v| {
@@ -402,26 +398,14 @@ impl TuiApp {
         frame.render_widget(tabs, area);
     }
 
-    fn render_view_footer(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-        hint: &str,
-    ) {
+    fn render_view_footer(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect, hint: &str) {
         let hint_style = Style::default().fg(Color::DarkGray);
-        let text = Text::from(Line::from(Span::styled(
-            format!(" {hint} "),
-            hint_style,
-        )));
+        let text = Text::from(Line::from(Span::styled(format!(" {hint} "), hint_style)));
         let widget = Paragraph::new(text).block(Block::default().borders(Borders::ALL));
         frame.render_widget(widget, area);
     }
 
-    fn render_input(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_input(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         let input_text = if self.input.is_empty() {
             Text::from(Line::from(Span::styled(
                 " Type a message... (or /help)",
@@ -439,18 +423,13 @@ impl TuiApp {
         frame.render_widget(input_widget, area);
 
         // Position the cursor inside the input box.
-        let cursor_x = area.x
-            + 2
-            + (self.input.chars().count() as u16).min(area.width.saturating_sub(4));
+        let cursor_x =
+            area.x + 2 + (self.input.chars().count() as u16).min(area.width.saturating_sub(4));
         let cursor_y = area.y + 1;
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 
-    fn render_messages(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_messages(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         let mut lines: Vec<Line> = Vec::new();
         for msg in &self.messages {
             let role_style = match msg.role.as_str() {
@@ -488,18 +467,16 @@ impl TuiApp {
         frame.render_widget(widget, area);
     }
 
-    fn render_help(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_help(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         let help_text = Text::from(vec![
             Line::from(" Help"),
             Line::from("  Enter       send message"),
             Line::from("  Esc / Ctrl+Q  quit"),
             Line::from("  Ctrl+C      cancel streaming"),
             Line::from("  Tab         cycle views"),
-            Line::from("  1..6        jump to view (1=Chat,2=Sessions,3=Providers,4=Channels,5=Cost,6=Logs)"),
+            Line::from(
+                "  1..6        jump to view (1=Chat,2=Sessions,3=Providers,4=Channels,5=Cost,6=Logs)",
+            ),
             Line::from("  /clear      clear the transcript"),
             Line::from("  /provider <p>  switch provider"),
             Line::from("  /model <m>     switch model"),
@@ -518,11 +495,7 @@ impl TuiApp {
     // View renderers
     // ------------------------------------------------------------------
 
-    fn render_sessions(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_sessions(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         if self.sessions.is_empty() {
             let text = Text::from(Line::from(Span::styled(
                 " No sessions found.",
@@ -605,11 +578,7 @@ impl TuiApp {
         frame.render_widget(table, area);
     }
 
-    fn render_providers(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_providers(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         if self.providers.is_empty() {
             let text = Text::from(Line::from(Span::styled(
                 " No providers configured.",
@@ -671,11 +640,7 @@ impl TuiApp {
         frame.render_widget(table, area);
     }
 
-    fn render_channels(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_channels(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         if self.channels.is_empty() {
             let text = Text::from(Line::from(Span::styled(
                 " No channels configured.",
@@ -738,11 +703,7 @@ impl TuiApp {
         frame.render_widget(table, area);
     }
 
-    fn render_cost(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_cost(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(8), Constraint::Min(1)])
@@ -753,42 +714,37 @@ impl TuiApp {
             Line::from("  Cost Summary"),
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    "  Total sessions:  ",
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled("  Total sessions:  ", Style::default().fg(Color::Cyan)),
                 Span::raw(self.cost_sessions.to_string()),
-                Span::styled(
-                    "   |   Total tokens:  ",
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled("   |   Total tokens:  ", Style::default().fg(Color::Cyan)),
                 Span::raw(self.cost_tokens.to_string()),
             ]),
             Line::from(vec![
-                Span::styled(
-                    "  Total cost (USD):  ",
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled("  Total cost (USD):  ", Style::default().fg(Color::Cyan)),
                 Span::styled(
                     format!("${:.4}", self.cost_total),
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    "   |   Avg/session:  ",
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled("   |   Avg/session:  ", Style::default().fg(Color::Cyan)),
                 Span::raw(format!("${:.4}", self.cost_avg_per_session)),
             ]),
         ]);
-        let summary_widget = Paragraph::new(summary_text)
-            .block(Block::default().borders(Borders::ALL).title("Cost Dashboard"));
+        let summary_widget = Paragraph::new(summary_text).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Cost Dashboard"),
+        );
         frame.render_widget(summary_widget, chunks[0]);
 
         // Top sessions list.
         let mut sorted: Vec<&SessionRow> = self.sessions.iter().collect();
-        sorted.sort_by(|a, b| b.cost.partial_cmp(&a.cost).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            b.cost
+                .partial_cmp(&a.cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let top: Vec<&SessionRow> = sorted.into_iter().take(10).collect();
 
         let items: Vec<ListItem> = top
@@ -808,16 +764,15 @@ impl TuiApp {
                 ]))
             })
             .collect();
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Top Sessions by Cost"));
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Top Sessions by Cost"),
+        );
         frame.render_widget(list, chunks[1]);
     }
 
-    fn render_logs(
-        &self,
-        frame: &mut Frame<'_>,
-        area: ratatui::layout::Rect,
-    ) {
+    fn render_logs(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         let lines: Vec<Line> = if self.log_lines.is_empty() {
             vec![Line::from(Span::styled(
                 " No log entries.",
@@ -858,25 +813,23 @@ impl TuiApp {
 
     async fn load_session_rows(&mut self) {
         match util::build_session_manager(&self.config) {
-            Ok(manager) => {
-                match manager.list_sessions(&util::default_agent_id(), 200, 0) {
-                    Ok(sessions) => {
-                        self.sessions = sessions
-                            .into_iter()
-                            .map(|s| SessionRow {
-                                id: s.id.to_string(),
-                                name: s.name,
-                                mode: format!("{:?}", s.mode).to_lowercase(),
-                                status: format!("{:?}", s.status).to_lowercase(),
-                                messages: s.message_count,
-                                tokens: s.total_tokens,
-                                cost: s.total_cost_usd,
-                            })
-                            .collect();
-                    }
-                    Err(_) => {}
+            Ok(manager) => match manager.list_sessions(&util::default_agent_id(), 200, 0) {
+                Ok(sessions) => {
+                    self.sessions = sessions
+                        .into_iter()
+                        .map(|s| SessionRow {
+                            id: s.id.to_string(),
+                            name: s.name,
+                            mode: format!("{:?}", s.mode).to_lowercase(),
+                            status: format!("{:?}", s.status).to_lowercase(),
+                            messages: s.message_count,
+                            tokens: s.total_tokens,
+                            cost: s.total_cost_usd,
+                        })
+                        .collect();
                 }
-            }
+                Err(_) => {}
+            },
             Err(_) => {}
         }
     }
@@ -925,21 +878,19 @@ impl TuiApp {
 
     async fn load_cost_data(&mut self) {
         match util::build_session_manager(&self.config) {
-            Ok(manager) => {
-                match manager.list_sessions(&util::default_agent_id(), 1000, 0) {
-                    Ok(sessions) => {
-                        self.cost_sessions = sessions.len() as u64;
-                        self.cost_tokens = sessions.iter().map(|s| s.total_tokens).sum();
-                        self.cost_total = sessions.iter().map(|s| s.total_cost_usd).sum();
-                        self.cost_avg_per_session = if sessions.is_empty() {
-                            0.0
-                        } else {
-                            self.cost_total / sessions.len() as f64
-                        };
-                    }
-                    Err(_) => {}
+            Ok(manager) => match manager.list_sessions(&util::default_agent_id(), 1000, 0) {
+                Ok(sessions) => {
+                    self.cost_sessions = sessions.len() as u64;
+                    self.cost_tokens = sessions.iter().map(|s| s.total_tokens).sum();
+                    self.cost_total = sessions.iter().map(|s| s.total_cost_usd).sum();
+                    self.cost_avg_per_session = if sessions.is_empty() {
+                        0.0
+                    } else {
+                        self.cost_total / sessions.len() as f64
+                    };
                 }
-            }
+                Err(_) => {}
+            },
             Err(_) => {}
         }
     }
@@ -975,9 +926,7 @@ impl TuiApp {
 
         // View switching keys apply globally, except in the chat view where
         // digits are typed into the input.
-        if !key.modifiers.contains(KeyModifiers::CONTROL)
-            && self.view != View::Chat
-        {
+        if !key.modifiers.contains(KeyModifiers::CONTROL) && self.view != View::Chat {
             match key.code {
                 KeyCode::Tab => {
                     let next = (self.view.index() + 1) % View::ALL.len();
@@ -1291,9 +1240,7 @@ fn status_color(status: &str) -> Style {
             Style::default().fg(Color::Green)
         }
         "paused" | "degraded" | "starting" => Style::default().fg(Color::Yellow),
-        "killed" | "failed" | "error" | "disabled" | "stopped" => {
-            Style::default().fg(Color::Red)
-        }
+        "killed" | "failed" | "error" | "disabled" | "stopped" => Style::default().fg(Color::Red),
         _ => Style::default().fg(Color::Gray),
     }
 }

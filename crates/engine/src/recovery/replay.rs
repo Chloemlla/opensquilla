@@ -420,10 +420,7 @@ mod tests {
     #[test]
     fn test_replay_repairs_tool_pairs() {
         let replay = TurnReplay::new("t1", 10);
-        let messages = vec![
-            user_msg("run"),
-            tool_result_msg("orphan"),
-        ];
+        let messages = vec![user_msg("run"), tool_result_msg("orphan")];
         let outcome = replay.replay(messages, &AgentState::Idle);
         assert!(outcome.dropped_messages > 0);
     }

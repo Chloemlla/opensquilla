@@ -68,10 +68,12 @@ mod tests {
         pipeline.set_metadata("resolved_model", "deepseek-r1-0528");
         step.observe(&mut pipeline);
         assert!(pipeline.get_metadata("reasoning_hint_resolved").is_some());
-        assert!(pipeline
-            .get_metadata("reasoning_hint_resolved")
-            .map(|h| h.contains("<think>"))
-            .unwrap_or(false));
+        assert!(
+            pipeline
+                .get_metadata("reasoning_hint_resolved")
+                .map(|h| h.contains("<think>"))
+                .unwrap_or(false)
+        );
     }
 
     #[test]

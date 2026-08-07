@@ -44,7 +44,13 @@ impl PromptStateSnapshot {
     /// The cache-relevant field names whose change can be reported.
     pub fn changed_fields(&self, previous: &PromptStateSnapshot) -> Vec<String> {
         let mut changed: Vec<String> = Vec::new();
-        for field_name in ["system_hash", "tools_hash", "messages_prefix_hash", "cache_control_hash", "model"] {
+        for field_name in [
+            "system_hash",
+            "tools_hash",
+            "messages_prefix_hash",
+            "cache_control_hash",
+            "model",
+        ] {
             let current = match field_name {
                 "system_hash" => &self.system_hash,
                 "tools_hash" => &self.tools_hash,
@@ -122,15 +128,24 @@ impl CacheControlSnapshot {
         );
         map.insert(
             "max_tokens".into(),
-            self.max_tokens.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null),
+            self.max_tokens
+                .map(serde_json::Value::from)
+                .unwrap_or(serde_json::Value::Null),
         );
         map.insert(
             "temperature".into(),
-            self.temperature.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null),
+            self.temperature
+                .map(serde_json::Value::from)
+                .unwrap_or(serde_json::Value::Null),
         );
         map.insert(
             "stop_sequences".into(),
-            serde_json::Value::Array(self.stop_sequences.iter().map(|s| serde_json::Value::String(s.clone())).collect()),
+            serde_json::Value::Array(
+                self.stop_sequences
+                    .iter()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .collect(),
+            ),
         );
         map.insert(
             "thinking".into(),
@@ -138,7 +153,9 @@ impl CacheControlSnapshot {
         );
         map.insert(
             "thinking_budget_tokens".into(),
-            self.thinking_budget_tokens.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null),
+            self.thinking_budget_tokens
+                .map(serde_json::Value::from)
+                .unwrap_or(serde_json::Value::Null),
         );
         map.insert(
             "thinking_level".into(),
@@ -180,18 +197,43 @@ impl CacheBreakReport {
     /// Render the report for logging.
     pub fn to_log_dict(&self) -> serde_json::Value {
         let mut payload = serde_json::Map::new();
-        payload.insert("reason".into(), serde_json::Value::String(self.reason.clone()));
+        payload.insert(
+            "reason".into(),
+            serde_json::Value::String(self.reason.clone()),
+        );
         payload.insert(
             "changed_fields".into(),
-            serde_json::Value::Array(self.changed_fields.iter().map(|s| serde_json::Value::String(s.clone())).collect()),
+            serde_json::Value::Array(
+                self.changed_fields
+                    .iter()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .collect(),
+            ),
         );
-        payload.insert("previous_cache_read_tokens".into(), serde_json::Value::from(self.previous_cache_read_tokens));
-        payload.insert("current_cache_read_tokens".into(), serde_json::Value::from(self.current_cache_read_tokens));
-        payload.insert("drop_tokens".into(), serde_json::Value::from(self.drop_tokens));
-        payload.insert("drop_ratio".into(), serde_json::Value::from(self.drop_ratio));
-        payload.insert("baseline_reset".into(), serde_json::Value::Bool(self.baseline_reset));
+        payload.insert(
+            "previous_cache_read_tokens".into(),
+            serde_json::Value::from(self.previous_cache_read_tokens),
+        );
+        payload.insert(
+            "current_cache_read_tokens".into(),
+            serde_json::Value::from(self.current_cache_read_tokens),
+        );
+        payload.insert(
+            "drop_tokens".into(),
+            serde_json::Value::from(self.drop_tokens),
+        );
+        payload.insert(
+            "drop_ratio".into(),
+            serde_json::Value::from(self.drop_ratio),
+        );
+        payload.insert(
+            "baseline_reset".into(),
+            serde_json::Value::Bool(self.baseline_reset),
+        );
         if self.break_detected {
-            if let (Some(previous), Some(current)) = (&self.previous_snapshot, &self.current_snapshot) {
+            if let (Some(previous), Some(current)) =
+                (&self.previous_snapshot, &self.current_snapshot)
+            {
                 let mut forensics = serde_json::Map::new();
                 forensics.insert("previous".into(), previous.to_forensics());
                 forensics.insert("current".into(), current.to_forensics());
@@ -250,7 +292,8 @@ impl CacheBreakMonitor {
         cache_control: &CacheControlSnapshot,
         model: &str,
     ) -> PromptStateSnapshot {
-        let prefix_messages: &[serde_json::Value] = if messages.len() >= MESSAGES_PREFIX_TAIL_COUNT {
+        let prefix_messages: &[serde_json::Value] = if messages.len() >= MESSAGES_PREFIX_TAIL_COUNT
+        {
             &messages[..messages.len() - MESSAGES_PREFIX_TAIL_COUNT]
         } else {
             &[]
@@ -265,15 +308,22 @@ impl CacheBreakMonitor {
         cache_control_field_hashes.sort_by(|a, b| a.0.cmp(&b.0));
 
         PromptStateSnapshot {
-            system_hash: stable_hash_value(&serde_json::Value::String(cache_control.system.clone())),
+            system_hash: stable_hash_value(&serde_json::Value::String(
+                cache_control.system.clone(),
+            )),
             tools_hash: stable_hash_value(&tools_value),
-            messages_prefix_hash: stable_hash_value(&serde_json::Value::Array(prefix_messages.to_vec())),
+            messages_prefix_hash: stable_hash_value(&serde_json::Value::Array(
+                prefix_messages.to_vec(),
+            )),
             cache_control_hash: stable_hash_value(&cache_control_value),
             model: model.to_string(),
             message_count: messages.len(),
             tool_count: tools.map(|t| t.len()).unwrap_or(0),
             messages_prefix_item_hashes: prefix_messages.iter().map(stable_hash_value).collect(),
-            messages_prefix_item_kinds: prefix_messages.iter().map(|m| message_prefix_item_kind(m)).collect(),
+            messages_prefix_item_kinds: prefix_messages
+                .iter()
+                .map(|m| message_prefix_item_kind(m))
+                .collect(),
             cache_control_field_hashes,
         }
     }
@@ -337,14 +387,23 @@ impl CacheBreakMonitor {
             && drop_ratio >= self.min_drop_ratio;
         CacheBreakReport {
             break_detected,
-            reason: if break_detected { "cache_read_drop" } else { "cache_read_stable" }.to_string(),
+            reason: if break_detected {
+                "cache_read_drop"
+            } else {
+                "cache_read_stable"
+            }
+            .to_string(),
             changed_fields,
             previous_cache_read_tokens: previous.cache_read_tokens,
             current_cache_read_tokens: current_tokens,
             drop_tokens,
             drop_ratio: (drop_ratio * 10_000.0).round() / 10_000.0,
             baseline_reset: false,
-            previous_snapshot: if break_detected { Some(previous.snapshot) } else { None },
+            previous_snapshot: if break_detected {
+                Some(previous.snapshot)
+            } else {
+                None
+            },
             current_snapshot: if break_detected { Some(snapshot) } else { None },
         }
     }
@@ -509,13 +568,24 @@ pub fn check_response_for_cache_break(
 /// Normalized lifecycle payload carrying the `compaction.triggered` chain.
 pub fn compaction_lifecycle_payload(compaction_id: &str) -> serde_json::Value {
     let mut map = serde_json::Map::new();
-    map.insert("compaction_id".into(), serde_json::Value::String(compaction_id.to_string()));
-    map.insert("event".into(), serde_json::Value::String(COMPACTION_TRIGGERED_EVENT.to_string()));
+    map.insert(
+        "compaction_id".into(),
+        serde_json::Value::String(compaction_id.to_string()),
+    );
+    map.insert(
+        "event".into(),
+        serde_json::Value::String(COMPACTION_TRIGGERED_EVENT.to_string()),
+    );
     map.insert(
         "event_chain".into(),
-        serde_json::Value::Array(vec![serde_json::Value::String(COMPACTION_TRIGGERED_EVENT.to_string())]),
+        serde_json::Value::Array(vec![serde_json::Value::String(
+            COMPACTION_TRIGGERED_EVENT.to_string(),
+        )]),
     );
-    map.insert("coverage_status".into(), serde_json::Value::String("unknown".to_string()));
+    map.insert(
+        "coverage_status".into(),
+        serde_json::Value::String("unknown".to_string()),
+    );
     serde_json::Value::Object(map)
 }
 
@@ -527,8 +597,13 @@ pub fn compaction_effect_payload(
 ) -> serde_json::Value {
     let normalized_status = status.trim().to_lowercase();
     let normalized_source = source.trim().to_lowercase();
-    let reason = reason.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-    let applied = matches!(normalized_status.as_str(), "completed" | "emergency_ephemeral");
+    let reason = reason
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let applied = matches!(
+        normalized_status.as_str(),
+        "completed" | "emergency_ephemeral"
+    );
     let durability = if normalized_status == "completed" {
         "durable"
     } else if normalized_status == "emergency_ephemeral" {
@@ -545,10 +620,19 @@ pub fn compaction_effect_payload(
         )
     };
     let mut map = serde_json::Map::new();
-    map.insert("status".into(), serde_json::Value::String(normalized_status));
-    map.insert("source".into(), serde_json::Value::String(normalized_source));
+    map.insert(
+        "status".into(),
+        serde_json::Value::String(normalized_status),
+    );
+    map.insert(
+        "source".into(),
+        serde_json::Value::String(normalized_source),
+    );
     map.insert("applied".into(), serde_json::Value::Bool(applied));
-    map.insert("durability".into(), serde_json::Value::String(durability.to_string()));
+    map.insert(
+        "durability".into(),
+        serde_json::Value::String(durability.to_string()),
+    );
     map.insert("user_visible".into(), serde_json::Value::Bool(user_visible));
     if let Some(reason) = reason {
         map.insert("reason".into(), serde_json::Value::String(reason));
@@ -579,10 +663,19 @@ pub fn notify_compaction(
     let status = status.trim().to_lowercase();
     let source = source.trim().to_lowercase();
     let compaction_id = compaction_id.trim().to_string();
-    event_payload.insert(String::from("status"), serde_json::Value::String(status.clone()));
-    event_payload.insert(String::from("source"), serde_json::Value::String(source.clone()));
+    event_payload.insert(
+        String::from("status"),
+        serde_json::Value::String(status.clone()),
+    );
+    event_payload.insert(
+        String::from("source"),
+        serde_json::Value::String(source.clone()),
+    );
     if !phase.trim().is_empty() {
-        event_payload.insert(String::from("phase"), serde_json::Value::String(phase.trim().to_string()));
+        event_payload.insert(
+            String::from("phase"),
+            serde_json::Value::String(phase.trim().to_string()),
+        );
     }
     for (key, value) in extra {
         event_payload.entry(key).or_insert(value);
@@ -592,7 +685,9 @@ pub fn notify_compaction(
             .entry(String::from("compaction_id"))
             .or_insert_with(|| serde_json::Value::String(compaction_id.clone()));
 
-        let mut state = compaction_lifecycle().lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = compaction_lifecycle()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if state.terminals.contains_key(&compaction_id) {
             return None;
         }
@@ -618,12 +713,16 @@ pub fn notify_compaction(
                         phase.to_string(),
                         heartbeat_interval_seconds,
                     ));
-                    state.heartbeat_tasks.insert(key.clone(), task.abort_handle());
+                    state
+                        .heartbeat_tasks
+                        .insert(key.clone(), task.abort_handle());
                 }
             }
         }
         if COMPACTION_TERMINAL_STATUSES.contains(&status.as_str()) {
-            state.terminals.insert(compaction_id.clone(), status.clone());
+            state
+                .terminals
+                .insert(compaction_id.clone(), status.clone());
             state.terminal_order.push_back(compaction_id.clone());
             while state.terminal_order.len() > COMPACTION_TERMINAL_CACHE_SIZE {
                 if let Some(expired) = state.terminal_order.pop_front() {
@@ -662,7 +761,9 @@ pub fn notify_compaction(
 /// Register a best-effort listener for compaction lifecycle events. Returns a
 /// handle that removes the listener.
 pub fn add_compaction_listener(listener: CompactionListener) -> RemoveCompactionListener {
-    let mut state = compaction_lifecycle().lock().unwrap_or_else(|e| e.into_inner());
+    let mut state = compaction_lifecycle()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     state.listeners.push(listener.clone());
     let removed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let listener_arc = listener;
@@ -671,7 +772,9 @@ pub fn add_compaction_listener(listener: CompactionListener) -> RemoveCompaction
             if removed.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 return;
             }
-            let mut state = compaction_lifecycle().lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = compaction_lifecycle()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             state.listeners.retain(|l| !Arc::ptr_eq(l, &listener_arc));
         }),
     }
@@ -711,7 +814,10 @@ async fn compaction_heartbeat_loop(
         tokio::time::sleep(interval).await;
         let elapsed_ms = started.elapsed().as_millis().max(0) as u64;
         let mut extra = serde_json::Map::new();
-        extra.insert("compaction_id".into(), serde_json::Value::String(compaction_id.clone()));
+        extra.insert(
+            "compaction_id".into(),
+            serde_json::Value::String(compaction_id.clone()),
+        );
         extra.insert("heartbeat".into(), serde_json::Value::Bool(true));
         extra.insert(
             "heartbeat_at".into(),
@@ -761,7 +867,9 @@ pub fn active_compaction_ids(session_key: &str) -> Vec<String> {
 
 /// Cancel every live owner task for one session, returning the abort handles.
 pub fn cancel_active_compactions(session_key: &str) -> Vec<tokio::task::AbortHandle> {
-    let mut state = compaction_lifecycle().lock().unwrap_or_else(|e| e.into_inner());
+    let mut state = compaction_lifecycle()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let keys: Vec<(String, String)> = state
         .active_owners
         .keys()
@@ -806,7 +914,9 @@ impl CompactionOwnerGuard {
     fn register(session_key: &str, compaction_id: &str) -> Self {
         let key = (session_key.to_string(), compaction_id.to_string());
         {
-            let mut state = compaction_lifecycle().lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = compaction_lifecycle()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             // Register an abort handle so `cancel_active_compactions` can stop
             // the owner. The owner runs inline on the caller's task; the
             // abort handle belongs to a parked proxy task so cancellation is
@@ -838,7 +948,10 @@ impl CompactionOwnerGuard {
         let reason = "terminal_missing";
         let status = "failed";
         let mut extra = serde_json::Map::new();
-        extra.insert("reason".into(), serde_json::Value::String(reason.to_string()));
+        extra.insert(
+            "reason".into(),
+            serde_json::Value::String(reason.to_string()),
+        );
         if let serde_json::Value::Object(effect) =
             compaction_effect_payload(status, Some(reason), "automatic")
         {
@@ -870,7 +983,9 @@ impl Drop for CompactionOwnerGuard {
         if !self.finished {
             Self::backstop_if_missing(&self.session_key, &self.compaction_id);
         }
-        let mut state = compaction_lifecycle().lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = compaction_lifecycle()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         state
             .active_owners
             .remove(&(self.session_key.clone(), self.compaction_id.clone()));
@@ -894,13 +1009,23 @@ mod tests {
     fn test_baseline_initialized_then_detects_change() {
         let mut monitor = CacheBreakMonitor::new(2000, 0.05);
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
-        let first = monitor.record_prompt_state(&messages, Some(&[]), &CacheControlSnapshot::default(), "model-a");
+        let first = monitor.record_prompt_state(
+            &messages,
+            Some(&[]),
+            &CacheControlSnapshot::default(),
+            "model-a",
+        );
         let report = monitor.check_response_for_cache_break("sess", first, 10_000);
         assert_eq!(report.reason, "baseline_initialized");
         assert!(!report.break_detected);
 
         // Same prompt, no cache drop: no break.
-        let second = monitor.record_prompt_state(&messages, Some(&[]), &CacheControlSnapshot::default(), "model-a");
+        let second = monitor.record_prompt_state(
+            &messages,
+            Some(&[]),
+            &CacheControlSnapshot::default(),
+            "model-a",
+        );
         let report = monitor.check_response_for_cache_break("sess", second, 10_000);
         assert_eq!(report.reason, "cache_read_stable");
         assert!(!report.break_detected);
@@ -986,7 +1111,10 @@ mod tests {
     #[test]
     fn test_canonical_json_sorts_keys() {
         let value = serde_json::json!({"b": 1, "a": 2, "c": [3, {"x": true}]});
-        assert_eq!(canonical_json(&value), r#"{"a":2,"b":1,"c":[3,{"x":true}]}"#);
+        assert_eq!(
+            canonical_json(&value),
+            r#"{"a":2,"b":1,"c":[3,{"x":true}]}"#
+        );
     }
 
     #[test]
@@ -1070,18 +1198,20 @@ mod tests {
         assert_eq!(compaction_terminal_status(id).as_deref(), Some("completed"));
 
         // Terminal claim: further events are no-ops.
-        assert!(notify_compaction(
-            "sess",
-            id,
-            "started",
-            "automatic",
-            "compaction",
-            serde_json::Map::new(),
-            0.0,
-            false,
-            true,
-        )
-        .is_none());
+        assert!(
+            notify_compaction(
+                "sess",
+                id,
+                "started",
+                "automatic",
+                "compaction",
+                serde_json::Map::new(),
+                0.0,
+                false,
+                true,
+            )
+            .is_none()
+        );
     }
 
     #[test]

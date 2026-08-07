@@ -167,7 +167,10 @@ pub async fn validate_config() -> Result<()> {
             println!("{} Configuration is valid.", crate::table::ok());
             println!();
             println!("Summary:");
-            println!("  Gateway:    {}:{}", config.gateway.host, config.gateway.port);
+            println!(
+                "  Gateway:    {}:{}",
+                config.gateway.host, config.gateway.port
+            );
             println!("  Providers:  {}", config.providers.len());
             println!("  Channels:   {}", config.channels.len());
 

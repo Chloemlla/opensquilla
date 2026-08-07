@@ -47,7 +47,7 @@ impl Tool for SendMessageTool {
                 concat!(
                     "Send a text message to a registered channel (e.g. Slack, Discord, Telegram). ",
                     "The channel must already be registered and enabled.",
-),
+                ),
                 HashMap::from([
                     (
                         "channel_id".to_string(),
@@ -100,7 +100,8 @@ impl Tool for SendMessageTool {
         // Build the outgoing message. The channel type is derived from the
         // registered handle, so the caller does not need to supply it.
         let channel_type = handle.channel_type();
-        let mut message = OutgoingMessage::new(channel_id.clone(), channel_type.clone(), text.clone());
+        let mut message =
+            OutgoingMessage::new(channel_id.clone(), channel_type.clone(), text.clone());
         message.thread_id = thread_id.clone();
 
         // Deliver through the channel's real send_message so delivery errors

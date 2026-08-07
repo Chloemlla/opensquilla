@@ -94,7 +94,9 @@ impl SeatbeltProfile {
             return Err("unterminated string in SBPL source".to_string());
         }
         if depth != 0 {
-            return Err(format!("unbalanced parentheses in SBPL source (depth={depth})"));
+            return Err(format!(
+                "unbalanced parentheses in SBPL source (depth={depth})"
+            ));
         }
         Ok(())
     }
@@ -171,7 +173,15 @@ fn compile_filesystem(sbpl: &mut String, policy: &SandboxPolicy) {
     sbpl.push_str("(allow file-read-metadata (subpath \"/\"))\n");
 
     // Read-only system directories.
-    let system_dirs = ["/usr", "/System", "/Library", "/bin", "/sbin", "/opt", "/private/var/tmp"];
+    let system_dirs = [
+        "/usr",
+        "/System",
+        "/Library",
+        "/bin",
+        "/sbin",
+        "/opt",
+        "/private/var/tmp",
+    ];
     for dir in system_dirs {
         if !policy.filesystem.blocks(dir) {
             sbpl.push_str(&format!(
@@ -311,7 +321,11 @@ mod tests {
             ..SandboxPolicy::default()
         };
         let profile = SeatbeltProfile::from_policy(&policy);
-        assert!(profile.source.contains("(deny file-read* file-write* (subpath \"/secret\"))"));
+        assert!(
+            profile
+                .source
+                .contains("(deny file-read* file-write* (subpath \"/secret\"))")
+        );
     }
 
     #[test]

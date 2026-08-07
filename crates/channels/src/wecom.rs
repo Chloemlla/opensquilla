@@ -17,8 +17,8 @@
 //!    implements both encryption and decryption without an SDK.
 
 use crate::types::{Channel, ChannelConfig, ChannelType, MessageAttachment, OutgoingMessage};
-use aes::cipher::{BlockEncrypt, KeyInit};
 use aes::Aes256;
+use aes::cipher::{BlockEncrypt, KeyInit};
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use reqwest::multipart::{Form, Part};

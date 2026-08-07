@@ -1,8 +1,8 @@
 use clap::Parser;
 use opensquilla_cli::commands::{
     AgentAction, ChannelAction, Command, ConfigAction, CostAction, DiagnosticsAction,
-    EnsembleAction, GatewayAction, InitAction, McpServerAction, MigrateAction, ModelAction,
-    MemoryAction, OnboardAction, ProviderAction, RecoveryAction, RouterAction, SandboxAction,
+    EnsembleAction, GatewayAction, InitAction, McpServerAction, MemoryAction, MigrateAction,
+    ModelAction, OnboardAction, ProviderAction, RecoveryAction, RouterAction, SandboxAction,
     SchedulerAction, SearchAction, SessionAction, SkillAction, StatusAction, ToolAction,
 };
 use opensquilla_cli::{
@@ -141,14 +141,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
                 base_url,
                 model,
             } => {
-                providers::add_provider(
-                    name,
-                    provider_type,
-                    api_key,
-                    base_url,
-                    model,
-                )
-                .await?;
+                providers::add_provider(name, provider_type, api_key, base_url, model).await?;
             }
             ProviderAction::Remove { name } => providers::remove_provider(name).await?,
             ProviderAction::Default { name } => providers::set_default_provider(name).await?,
@@ -162,9 +155,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             SessionAction::Archive { id } => sessions::archive_session(id).await?,
             SessionAction::Export { id, output } => sessions::export_session(id, output).await?,
             SessionAction::Create { name, mode } => sessions::create_session(name, mode).await?,
-            SessionAction::Messages { id, limit } => {
-                sessions::show_messages(id, limit).await?
-            }
+            SessionAction::Messages { id, limit } => sessions::show_messages(id, limit).await?,
             SessionAction::Fork { id } => sessions::fork_session(id).await?,
             SessionAction::Kill { id } => sessions::kill_session(id).await?,
             SessionAction::Pause { id } => sessions::pause_session(id).await?,
@@ -181,9 +172,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
                 vision,
             } => models::list_models_filtered(provider, tools, vision).await?,
             ModelAction::Show { name } => models::show_model(name).await?,
-            ModelAction::Compare { models: items } => {
-                models::compare_models(items).await?
-            }
+            ModelAction::Compare { models: items } => models::compare_models(items).await?,
         },
         Command::Memory { action } => match action {
             MemoryAction::List {
@@ -207,9 +196,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             } => {
                 memory::add_memory(content, kind, importance, tag).await?;
             }
-            MemoryAction::Export { output, kind } => {
-                memory::export_memory(output, kind).await?
-            }
+            MemoryAction::Export { output, kind } => memory::export_memory(output, kind).await?,
         },
         Command::Skills { action } => match action {
             SkillAction::List => skills::list_skills().await?,
@@ -244,9 +231,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             ChannelAction::Test { name } => channels::test_channel(name).await?,
             ChannelAction::Connect { kind } => channels::connect_channel(kind).await?,
             ChannelAction::Disconnect { id } => channels::disconnect_channel(id).await?,
-            ChannelAction::Send { name, message } => {
-                channels::send_message(name, message).await?
-            }
+            ChannelAction::Send { name, message } => channels::send_message(name, message).await?,
             ChannelAction::Start => channels::start_all_channels().await?,
             ChannelAction::Stop => channels::stop_all_channels().await?,
         },
@@ -259,16 +244,12 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
                 handler,
                 agent,
                 payload,
-            } => {
-                scheduler::add_task_opts(name, schedule, handler, agent, payload).await?
-            }
+            } => scheduler::add_task_opts(name, schedule, handler, agent, payload).await?,
             SchedulerAction::Cancel { id } => scheduler::cancel_task(id).await?,
             SchedulerAction::Remove { id } => scheduler::remove_task(id).await?,
             SchedulerAction::Pause { id } => scheduler::pause_task(id).await?,
             SchedulerAction::Resume { id } => scheduler::resume_task(id).await?,
-            SchedulerAction::History { id, limit } => {
-                scheduler::show_history(id, limit).await?
-            }
+            SchedulerAction::History { id, limit } => scheduler::show_history(id, limit).await?,
             SchedulerAction::Stats => scheduler::show_stats().await?,
         },
         Command::Doctor { subsystem, json } => match subsystem {
@@ -294,9 +275,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             GatewayAction::Stop => gateway::stop_gateway().await?,
             GatewayAction::Status => gateway::gateway_status().await?,
             GatewayAction::Restart => gateway::restart_gateway().await?,
-            GatewayAction::Logs { lines, follow } => {
-                gateway::show_logs(lines, follow).await?
-            }
+            GatewayAction::Logs { lines, follow } => gateway::show_logs(lines, follow).await?,
             GatewayAction::Metrics => gateway::show_metrics().await?,
             GatewayAction::Info => gateway::show_info().await?,
         },

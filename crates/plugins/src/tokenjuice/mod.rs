@@ -41,7 +41,9 @@ pub fn reduce_tool_result(
     command: Option<&str>,
     rules: &[Rule],
 ) -> Option<Reduction> {
-    reduce_tool_result_with_limit(tool_name, content, is_error, arguments, command, rules, None)
+    reduce_tool_result_with_limit(
+        tool_name, content, is_error, arguments, command, rules, None,
+    )
 }
 
 /// Like [`reduce_tool_result`] but clamps the inline text to `max_inline_chars`
@@ -61,7 +63,14 @@ pub fn reduce_tool_result_with_limit(
         .or_else(|| string_arg(arguments, &["command"]));
     let exit_code: i64 = if is_error { 1 } else { 0 };
 
-    let rule = select_rule(rules, tool_name, command.as_deref(), arguments, content, exit_code)?;
+    let rule = select_rule(
+        rules,
+        tool_name,
+        command.as_deref(),
+        arguments,
+        content,
+        exit_code,
+    )?;
     let (summary, facts) = reduce_with_rule(&rule, content, exit_code);
     if summary.is_empty() {
         return None;
@@ -153,7 +162,8 @@ mod tests {
     fn on_empty_emits_marker() {
         let rules = default_rules();
         let content = "On branch main\nnothing to commit, working tree clean";
-        let reduction = reduce_tool_result("exec", content, false, None, Some("git status"), &rules);
+        let reduction =
+            reduce_tool_result("exec", content, false, None, Some("git status"), &rules);
         let r = reduction.expect("git/status rule should apply");
         assert_eq!(r.inline_text, "working tree clean");
         assert_eq!(r.reducer.as_deref(), Some("git/status"));

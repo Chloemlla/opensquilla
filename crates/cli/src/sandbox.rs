@@ -185,8 +185,7 @@ async fn run_in_sandbox_opts(
     workdir: Option<&str>,
     policy: &SandboxPolicy,
 ) -> std::result::Result<SandboxResult, String> {
-    let env_map: std::collections::HashMap<String, String> =
-        env.iter().cloned().collect();
+    let env_map: std::collections::HashMap<String, String> = env.iter().cloned().collect();
     #[cfg(target_os = "linux")]
     {
         let mut sb = opensquilla_sandbox::linux::LinuxSandbox::new();

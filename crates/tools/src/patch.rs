@@ -376,7 +376,8 @@ impl Tool for ApplyPatchTool {
 
         // Instrumentation-only classification for the applied patch
         // (diagnostic print/log lines only, no removed lines).
-        let instrumentation_only = crate::patch_classification::is_instrumentation_only_patch(patch_text);
+        let instrumentation_only =
+            crate::patch_classification::is_instrumentation_only_patch(patch_text);
 
         let data = serde_json::json!({
             "patched_files": results,
@@ -384,10 +385,7 @@ impl Tool for ApplyPatchTool {
             "instrumentation_only": instrumentation_only,
         });
 
-        let mut message = format!(
-            "Successfully applied patch to {} file(s)",
-            results.len()
-        );
+        let mut message = format!("Successfully applied patch to {} file(s)", results.len());
         if instrumentation_only {
             message.push_str(
                 " [instrumentation-only patch: added diagnostic output; no behavior changed]",
@@ -687,26 +685,28 @@ fn build_merge_lines(base: &[String], ours: &[String], theirs: &[String]) -> Vec
     let mut result = Vec::new();
 
     // Helper closures to drain insertions that precede the current base line.
-    let mut drain_ours = |result: &mut Vec<MergeLine>, ops: &[Op], oi: &mut usize, oi_side: &mut usize| {
-        while *oi < ops.len() && ops[*oi] == Op::Insert {
-            result.push(MergeLine {
-                text: ours[*oi_side].clone(),
-                side: MergeSide::Ours,
-            });
-            *oi += 1;
-            *oi_side += 1;
-        }
-    };
-    let mut drain_theirs = |result: &mut Vec<MergeLine>, ops: &[Op], ti: &mut usize, ti_side: &mut usize| {
-        while *ti < ops.len() && ops[*ti] == Op::Insert {
-            result.push(MergeLine {
-                text: theirs[*ti_side].clone(),
-                side: MergeSide::Theirs,
-            });
-            *ti += 1;
-            *ti_side += 1;
-        }
-    };
+    let mut drain_ours =
+        |result: &mut Vec<MergeLine>, ops: &[Op], oi: &mut usize, oi_side: &mut usize| {
+            while *oi < ops.len() && ops[*oi] == Op::Insert {
+                result.push(MergeLine {
+                    text: ours[*oi_side].clone(),
+                    side: MergeSide::Ours,
+                });
+                *oi += 1;
+                *oi_side += 1;
+            }
+        };
+    let mut drain_theirs =
+        |result: &mut Vec<MergeLine>, ops: &[Op], ti: &mut usize, ti_side: &mut usize| {
+            while *ti < ops.len() && ops[*ti] == Op::Insert {
+                result.push(MergeLine {
+                    text: theirs[*ti_side].clone(),
+                    side: MergeSide::Theirs,
+                });
+                *ti += 1;
+                *ti_side += 1;
+            }
+        };
 
     while base_idx < base.len() {
         drain_ours(&mut result, &ops_ours, &mut oi, &mut oi_side);
@@ -1130,7 +1130,7 @@ impl Tool for ResolveConflictsTool {
                 concat!(
                     "Resolve conflict markers in a merged file by choosing ours, theirs, or both. ",
                     "Accepts inline text or a file path containing conflict markers.",
-),
+                ),
                 HashMap::from([
                     (
                         "content".to_string(),
@@ -1487,7 +1487,11 @@ mod tests {
     async fn test_apply_patch_classifies_instrumentation_only() {
         let dir = tempfile::tempdir().unwrap();
         let tool = ApplyPatchTool::new(dir.path().to_path_buf());
-        std::fs::write(dir.path().join("main.py"), "def run():\n    value = compute()\n").unwrap();
+        std::fs::write(
+            dir.path().join("main.py"),
+            "def run():\n    value = compute()\n",
+        )
+        .unwrap();
 
         let patch = "\
 --- a/main.py
@@ -1497,9 +1501,7 @@ mod tests {
      value = compute()
 +    print(f\"value={value}\")
 ";
-        let result = tool
-            .execute(serde_json::json!({"patch": patch}))
-            .await;
+        let result = tool.execute(serde_json::json!({"patch": patch})).await;
         // Applying a patch requires a git-less filesystem match; the tool
         // falls back gracefully when the file cannot be resolved on a given
         // platform. The classification is purely additive on success.
@@ -1523,9 +1525,7 @@ mod tests {
 -    return 1
 +    return 2
 ";
-        let result = tool
-            .execute(serde_json::json!({"patch": patch}))
-            .await;
+        let result = tool.execute(serde_json::json!({"patch": patch})).await;
         if let Ok(output) = result {
             let data = output.data.unwrap();
             assert_eq!(data["instrumentation_only"], false);

@@ -18,9 +18,7 @@ use crate::registry::{
 };
 use async_trait::async_trait;
 use opensquilla_session::SessionStorage;
-use opensquilla_session::models::{
-    Session, SessionFork, SessionStatus, TranscriptEntry,
-};
+use opensquilla_session::models::{Session, SessionFork, SessionStatus, TranscriptEntry};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -73,9 +71,8 @@ fn parse_uuid_param(params: &Value, name: &str) -> Result<Uuid, ToolError> {
     let raw = params[name]
         .as_str()
         .ok_or_else(|| ToolError::invalid_args(format!("Missing required parameter '{}'", name)))?;
-    Uuid::parse_str(raw).map_err(|e| {
-        ToolError::invalid_args(format!("Invalid '{}' UUID '{}': {}", name, raw, e))
-    })
+    Uuid::parse_str(raw)
+        .map_err(|e| ToolError::invalid_args(format!("Invalid '{}' UUID '{}': {}", name, raw, e)))
 }
 
 // ===========================================================================
@@ -131,79 +128,70 @@ impl Tool for SessionsSendTool {
 
     async fn execute(&self, params: Value) -> ToolResult {
         let session_id = parse_uuid_param(&params, "session_id")?;
-        let message = params["message"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let message = params["message"].as_str().unwrap_or("").trim().to_string();
         if message.is_empty() {
             return Err(ToolError::invalid_args("Message must not be empty"));
         }
 
         let storage = self.storage.clone();
         let message_for_task = message.clone();
-        let result = tokio::task::spawn_blocking(
-            move || -> Result<Value, ToolError> {
-                let session = storage
-                    .get_session(&session_id)
-                    .map_err(|e| map_session_error("get", e))?
-                    .ok_or_else(|| {
-                        ToolError::new(
-                            "SESSION_NOT_FOUND",
-                            format!("Session '{}' not found", session_id),
-                        )
-                    })?;
-                if is_terminal(&session.status) {
-                    return Err(ToolError::new(
-                        "SESSION_TERMINATED",
-                        format!(
-                            "Session '{}' is terminated (status={:?})",
-                            session_id, session.status
-                        ),
-                    ));
-                }
+        let result = tokio::task::spawn_blocking(move || -> Result<Value, ToolError> {
+            let session = storage
+                .get_session(&session_id)
+                .map_err(|e| map_session_error("get", e))?
+                .ok_or_else(|| {
+                    ToolError::new(
+                        "SESSION_NOT_FOUND",
+                        format!("Session '{}' not found", session_id),
+                    )
+                })?;
+            if is_terminal(&session.status) {
+                return Err(ToolError::new(
+                    "SESSION_TERMINATED",
+                    format!(
+                        "Session '{}' is terminated (status={:?})",
+                        session_id, session.status
+                    ),
+                ));
+            }
 
-                // Persist the message as a user transcript entry with
-                // inter-session provenance. The Python tool enqueues a task via
-                // TaskRuntime::send; the Rust session crate has no task-runtime
-                // so we record the message directly.
-                // TODO: enqueue on a TaskRuntime equivalent once the runtime
-                // crate exposes one; for now the message is delivered
-                // synchronously to the transcript.
-                let entry = TranscriptEntry {
-                    metadata: serde_json::json!({
-                        "kind": "inter_session",
-                        "source_tool": "sessions_send",
-                    }),
-                    ..TranscriptEntry::new(session_id, "user".to_string(), message_for_task, 0)
-                };
-                storage
-                    .insert_transcript_entry(&entry)
-                    .map_err(|e| map_session_error("insert_transcript", e))?;
+            // Persist the message as a user transcript entry with
+            // inter-session provenance. The Python tool enqueues a task via
+            // TaskRuntime::send; the Rust session crate has no task-runtime
+            // so we record the message directly.
+            // TODO: enqueue on a TaskRuntime equivalent once the runtime
+            // crate exposes one; for now the message is delivered
+            // synchronously to the transcript.
+            let entry = TranscriptEntry {
+                metadata: serde_json::json!({
+                    "kind": "inter_session",
+                    "source_tool": "sessions_send",
+                }),
+                ..TranscriptEntry::new(session_id, "user".to_string(), message_for_task, 0)
+            };
+            storage
+                .insert_transcript_entry(&entry)
+                .map_err(|e| map_session_error("insert_transcript", e))?;
 
-                // Bump the session's message_count / activity timestamps so the
-                // new message is visible to listing and compaction.
-                let mut updated = session;
-                updated.message_count += 1;
-                updated.last_active_at = chrono::Utc::now();
-                updated.updated_at = updated.last_active_at;
-                storage
-                    .update_session(&updated)
-                    .map_err(|e| map_session_error("update", e))?;
+            // Bump the session's message_count / activity timestamps so the
+            // new message is visible to listing and compaction.
+            let mut updated = session;
+            updated.message_count += 1;
+            updated.last_active_at = chrono::Utc::now();
+            updated.updated_at = updated.last_active_at;
+            storage
+                .update_session(&updated)
+                .map_err(|e| map_session_error("update", e))?;
 
-                Ok(serde_json::json!({
-                    "status": "delivered",
-                    "session_id": session_id.to_string(),
-                    "entry_id": entry.id.to_string(),
-                }))
-            },
-        )
+            Ok(serde_json::json!({
+                "status": "delivered",
+                "session_id": session_id.to_string(),
+                "entry_id": entry.id.to_string(),
+            }))
+        })
         .await
         .map_err(|e| {
-            ToolError::new(
-                "SESSION_ERROR",
-                format!("Session send task failed: {}", e),
-            )
+            ToolError::new("SESSION_ERROR", format!("Session send task failed: {}", e))
         })??;
 
         Ok(ToolOutput::success_with_data(
@@ -454,7 +442,10 @@ impl Tool for SessionsSpawnTool {
         })??;
 
         Ok(ToolOutput::success_with_data(
-            format!("Spawned subagent session {}", result["session_id"].as_str().unwrap_or("")),
+            format!(
+                "Spawned subagent session {}",
+                result["session_id"].as_str().unwrap_or("")
+            ),
             result,
         ))
     }
@@ -504,11 +495,15 @@ impl Tool for SessionsYieldTool {
                 HashMap::from([
                     (
                         "session_id".to_string(),
-                        ParameterDefinition::string("Optional child session UUID for legacy status wait"),
+                        ParameterDefinition::string(
+                            "Optional child session UUID for legacy status wait",
+                        ),
                     ),
                     (
                         "message".to_string(),
-                        ParameterDefinition::string("Optional note explaining why the current turn is yielding"),
+                        ParameterDefinition::string(
+                            "Optional note explaining why the current turn is yielding",
+                        ),
                     ),
                     (
                         "timeout_seconds".to_string(),
@@ -541,7 +536,10 @@ impl Tool for SessionsYieldTool {
         // additionally closes the parent's subagent spawn group via the
         // gateway; the Rust session crate has no spawn-group concept, so we
         // return the plain yielded payload.
-        let session_id_raw = params["session_id"].as_str().map(|s| s.trim()).filter(|s| !s.is_empty());
+        let session_id_raw = params["session_id"]
+            .as_str()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
         if session_id_raw.is_none() {
             let mut payload = serde_json::json!({
                 "status": "yielded",
@@ -589,16 +587,13 @@ impl Tool for SessionsYieldTool {
         })
         .await
         .map_err(|e| {
-            ToolError::new(
-                "SESSION_ERROR",
-                format!("Session yield task failed: {}", e),
-            )
+            ToolError::new("SESSION_ERROR", format!("Session yield task failed: {}", e))
         })??;
 
-        Ok(ToolOutput::success(
-            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&result).unwrap_or_default())
+                .with_data(result),
         )
-        .with_data(result))
     }
 }
 
@@ -707,10 +702,10 @@ impl Tool for SessionsHistoryTool {
             )
         })??;
 
-        Ok(ToolOutput::success(
-            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        Ok(
+            ToolOutput::success(serde_json::to_string_pretty(&result).unwrap_or_default())
+                .with_data(result),
         )
-        .with_data(result))
     }
 }
 
@@ -845,27 +840,19 @@ mod tests {
         let data = result.unwrap().data.unwrap();
         assert_eq!(data["status"], serde_json::json!("queued"));
         assert_eq!(data["spawn_depth"], 1);
-        let child_id: Uuid = data["session_id"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let child_id: Uuid = data["session_id"].as_str().unwrap().parse().unwrap();
 
         // The child session exists with the parent link + fork record.
         let child = storage.get_session(&child_id).unwrap().unwrap();
         assert_eq!(child.parent_session_id, Some(parent_id));
         assert_eq!(child.fork_event.as_deref(), Some("subagent"));
         assert_eq!(child.message_count, 1);
-        let forks = storage
-            .list_session_forks_by_source(&parent_id)
-            .unwrap();
+        let forks = storage.list_session_forks_by_source(&parent_id).unwrap();
         assert_eq!(forks.len(), 1);
         assert_eq!(forks[0].child_session_id, child_id);
 
         // The grounded task was appended as the first user message.
-        let entries = storage
-            .get_transcript_entries(&child_id, 100, 0)
-            .unwrap();
+        let entries = storage.get_transcript_entries(&child_id, 100, 0).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].role, "user");
         assert!(entries[0].content.contains("summarize the report"));
@@ -980,12 +967,8 @@ mod tests {
         let session_id = seed_session(&storage);
         // Seed three transcript entries directly.
         for i in 0..3 {
-            let entry = TranscriptEntry::new(
-                session_id,
-                "user".to_string(),
-                format!("msg {}", i),
-                10,
-            );
+            let entry =
+                TranscriptEntry::new(session_id, "user".to_string(), format!("msg {}", i), 10);
             storage.insert_transcript_entry(&entry).unwrap();
         }
 

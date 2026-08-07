@@ -13,7 +13,9 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 /// Entry-point caller type — used in `ToolContext` for filtering decisions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum CallerKind {
     #[default]
@@ -41,7 +43,9 @@ impl CallerKind {
 }
 
 /// Whether the entry point has a live operator available for tool approvals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum InteractionMode {
     #[default]
@@ -298,10 +302,7 @@ tokio::task_local! {
 ///
 /// `None` scopes an empty slot so tools observe "no context" and take their
 /// default (pure) paths. Always resets the slot when the future completes.
-pub async fn run_with_tool_context<T>(
-    ctx: Option<ToolContext>,
-    f: impl Future<Output = T>,
-) -> T {
+pub async fn run_with_tool_context<T>(ctx: Option<ToolContext>, f: impl Future<Output = T>) -> T {
     CURRENT_TOOL_CONTEXT.scope(RefCell::new(ctx), f).await
 }
 
@@ -437,7 +438,10 @@ fn load_override_file(path_value: &str) -> Result<serde_json::Value, String> {
     // ([tools.description_overrides]) so an arm can point the env at its
     // config.toml copy directly.
     if let Some(tools) = data.get("tools").and_then(|t| t.as_object()) {
-        if let Some(nested) = tools.get("description_overrides").and_then(|v| v.as_object()) {
+        if let Some(nested) = tools
+            .get("description_overrides")
+            .and_then(|v| v.as_object())
+        {
             return Ok(serde_json::Value::Object(nested.clone()));
         }
     }
@@ -463,7 +467,12 @@ fn normalize_overrides(
             // TOML parses an unquoted dotted key ("exec_command.command") as a
             // nested table; flatten one level back into dotted parameter keys.
             for (param_key, param_value) in nested {
-                add_override(&mut overrides, &format!("{key}.{param_key}"), param_value, source_label)?;
+                add_override(
+                    &mut overrides,
+                    &format!("{key}.{param_key}"),
+                    param_value,
+                    source_label,
+                )?;
             }
             continue;
         }
@@ -500,7 +509,10 @@ mod tests {
             CallerKind::from_str_opt("SUBAGENT"),
             Some(CallerKind::Subagent)
         );
-        assert_eq!(CallerKind::from_str_opt("channel"), Some(CallerKind::Channel));
+        assert_eq!(
+            CallerKind::from_str_opt("channel"),
+            Some(CallerKind::Channel)
+        );
         assert_eq!(CallerKind::from_str_opt("bogus"), None);
     }
 
@@ -619,7 +631,10 @@ mod tests {
             );
             // TOML-style nested dotted key is flattened.
             assert_eq!(
-                overrides.overrides.get("edit_file.old_text").map(|s| s.as_str()),
+                overrides
+                    .overrides
+                    .get("edit_file.old_text")
+                    .map(|s| s.as_str()),
                 Some("Text to replace.")
             );
         });
@@ -636,11 +651,8 @@ mod tests {
     fn description_overrides_json_file_source() {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("overrides.json");
-        std::fs::write(
-            &file,
-            r#"{"exec_command": "Run a shell command."}"#,
-        )
-        .expect("write overrides file");
+        std::fs::write(&file, r#"{"exec_command": "Run a shell command."}"#)
+            .expect("write overrides file");
         with_overrides_env(&file.to_string_lossy(), || {
             let result = resolve_tool_description_overrides(None).expect("resolve");
             let overrides = result.expect("overrides");

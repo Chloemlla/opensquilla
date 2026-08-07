@@ -323,7 +323,10 @@ mod tests {
         assert_eq!(normalize_domain("https://GitHub.com/foo"), "github.com");
         assert_eq!(normalize_domain("  EXAMPLE.COM:8080  "), "example.com");
         assert_eq!(normalize_domain("example.com:8080"), "example.com");
-        assert_eq!(normalize_domain("example.com:notaport"), "example.com:notaport");
+        assert_eq!(
+            normalize_domain("example.com:notaport"),
+            "example.com:notaport"
+        );
         assert_eq!(normalize_domain("[::1]:80"), "[::1]");
         assert_eq!(normalize_domain("http://[::1]:80/"), "");
         assert_eq!(normalize_domain(""), "");
@@ -369,10 +372,19 @@ mod tests {
         // `bad_domain` has no dot, so it is rejected as `not_fqdn` before the
         // DNS-name check runs (mirroring the Python ordering).
         assert_eq!(validate_domain_pattern("bad_domain").reason, "not_fqdn");
-        assert_eq!(validate_domain_pattern("-leading.com").reason, "invalid_domain");
-        assert_eq!(validate_domain_pattern("trailing-.com").reason, "invalid_domain");
+        assert_eq!(
+            validate_domain_pattern("-leading.com").reason,
+            "invalid_domain"
+        );
+        assert_eq!(
+            validate_domain_pattern("trailing-.com").reason,
+            "invalid_domain"
+        );
         assert_eq!(validate_domain_pattern("a..b.com").reason, "invalid_domain");
-        assert_eq!(validate_domain_pattern("under_score.com").reason, "invalid_domain");
+        assert_eq!(
+            validate_domain_pattern("under_score.com").reason,
+            "invalid_domain"
+        );
     }
 
     #[test]
@@ -393,14 +405,20 @@ mod tests {
     fn domain_matches_semantics() {
         assert!(domain_matches("github.com", "github.com"));
         assert!(!domain_matches("github.com", "evilgithub.com"));
-        assert!(domain_matches("*.pythonhosted.org", "files.pythonhosted.org"));
+        assert!(domain_matches(
+            "*.pythonhosted.org",
+            "files.pythonhosted.org"
+        ));
         // Bare suffix does not match a wildcard.
         assert!(!domain_matches("*.pythonhosted.org", "pythonhosted.org"));
         // Invalid pattern never matches.
         assert!(!domain_matches("127.0.0.1", "127.0.0.1"));
         assert!(!domain_matches("*.com", "anything.com"));
         // Port and scheme are stripped from the host.
-        assert!(domain_matches("example.com", "https://example.com:8443/path"));
+        assert!(domain_matches(
+            "example.com",
+            "https://example.com:8443/path"
+        ));
     }
 
     #[test]
