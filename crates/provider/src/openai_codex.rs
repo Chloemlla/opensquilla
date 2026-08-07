@@ -780,11 +780,9 @@ fn language_extension(language: &str) -> Result<&'static str, ProviderError> {
         "rust" | "rs" => Ok("rs"),
         "c" => Ok("c"),
         "cpp" | "c++" => Ok("cpp"),
-        _ => {
-            return Err(ProviderError::Config(format!(
-                "Unsupported code language: {language}"
-            )));
-        }
+        _ => Err(ProviderError::Config(format!(
+            "Unsupported code language: {language}"
+        ))),
     }
 }
 

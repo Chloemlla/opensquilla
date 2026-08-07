@@ -349,39 +349,39 @@ impl CompactionConfig {
         if preview && chars_len(value) <= COMPACTED_TAIL_STRING_MAX_CHARS {
             return value.to_string();
         }
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(value) {
-            if let serde_json::Value::Object(map) = parsed {
-                let mut compacted = serde_json::Map::new();
-                let mut changed = false;
-                let force_string_compaction = !preview;
-                for (key, item) in map {
-                    if let serde_json::Value::String(s) = item {
-                        // `path` is preserved verbatim in non-preview mode so
-                        // the compaction never hides the most load-bearing arg.
-                        if key == "path" && !preview {
-                            compacted.insert(key, serde_json::Value::String(s));
-                            continue;
-                        }
-                        let next_item =
-                            self.compact_argument_string(&s, preview && !force_string_compaction);
-                        changed = changed || next_item != s;
-                        compacted.insert(key, serde_json::Value::String(next_item));
-                    } else {
-                        compacted.insert(key, item);
+        if let Ok(serde_json::Value::Object(map)) =
+            serde_json::from_str::<serde_json::Value>(value)
+        {
+            let mut compacted = serde_json::Map::new();
+            let mut changed = false;
+            let force_string_compaction = !preview;
+            for (key, item) in map {
+                if let serde_json::Value::String(s) = item {
+                    // `path` is preserved verbatim in non-preview mode so
+                    // the compaction never hides the most load-bearing arg.
+                    if key == "path" && !preview {
+                        compacted.insert(key, serde_json::Value::String(s));
+                        continue;
                     }
+                    let next_item =
+                        self.compact_argument_string(&s, preview && !force_string_compaction);
+                    changed = changed || next_item != s;
+                    compacted.insert(key, serde_json::Value::String(next_item));
+                } else {
+                    compacted.insert(key, item);
                 }
-                if preview && !changed && self.never_worse {
+            }
+            if preview && !changed && self.never_worse {
+                return value.to_string();
+            }
+            if changed || !preview {
+                let compacted_json =
+                    serde_json::to_string(&serde_json::Value::Object(compacted))
+                        .unwrap_or_default();
+                if keep_original_for_never_worse(self, value, &compacted_json) {
                     return value.to_string();
                 }
-                if changed || !preview {
-                    let compacted_json =
-                        serde_json::to_string(&serde_json::Value::Object(compacted))
-                            .unwrap_or_default();
-                    if keep_original_for_never_worse(self, value, &compacted_json) {
-                        return value.to_string();
-                    }
-                    return compacted_json;
-                }
+                return compacted_json;
             }
         }
         if chars_len(value) <= self.tiny_guard_chars {

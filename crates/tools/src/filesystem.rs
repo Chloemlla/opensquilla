@@ -50,7 +50,7 @@ impl FilesystemTool {
         Self {
             allowed_base,
             max_read_size: 10 * 1024 * 1024, // 10 MB
-            max_write_size: 1 * 1024 * 1024, // 1 MB
+            max_write_size: 1024 * 1024, // 1 MB
         }
     }
 

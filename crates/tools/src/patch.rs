@@ -55,7 +55,7 @@ fn parse_diff(diff_text: &str) -> Result<Vec<ParsedDiff>, ToolError> {
     let mut current_hunk: Option<Hunk> = None;
 
     for line in diff_text.lines() {
-        if line.starts_with("--- ") {
+        if let Some(rest) = line.strip_prefix("--- ") {
             // Start of a new file diff.
             if let Some(hunk) = current_hunk.take() {
                 if let Some(ref mut diff) = current_diff {
@@ -68,13 +68,13 @@ fn parse_diff(diff_text: &str) -> Result<Vec<ParsedDiff>, ToolError> {
                 }
             }
             current_diff = Some(ParsedDiff {
-                old_path: line[4..].trim().to_string(),
+                old_path: rest.trim().to_string(),
                 new_path: String::new(),
                 hunks: Vec::new(),
             });
-        } else if line.starts_with("+++ ") {
+        } else if let Some(rest) = line.strip_prefix("+++ ") {
             if let Some(ref mut diff) = current_diff {
-                diff.new_path = line[4..].trim().to_string();
+                diff.new_path = rest.trim().to_string();
             }
         } else if line.starts_with("@@") {
             // Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
@@ -93,17 +93,17 @@ fn parse_diff(diff_text: &str) -> Result<Vec<ParsedDiff>, ToolError> {
                     lines: Vec::new(),
                 });
             }
-        } else if line.starts_with('+') {
+        } else if let Some(rest) = line.strip_prefix('+') {
             if let Some(ref mut hunk) = current_hunk {
-                hunk.lines.push(HunkLine::Addition(line[1..].to_string()));
+                hunk.lines.push(HunkLine::Addition(rest.to_string()));
             }
-        } else if line.starts_with('-') {
+        } else if let Some(rest) = line.strip_prefix('-') {
             if let Some(ref mut hunk) = current_hunk {
-                hunk.lines.push(HunkLine::Removal(line[1..].to_string()));
+                hunk.lines.push(HunkLine::Removal(rest.to_string()));
             }
-        } else if line.starts_with(' ') {
+        } else if let Some(rest) = line.strip_prefix(' ') {
             if let Some(ref mut hunk) = current_hunk {
-                hunk.lines.push(HunkLine::Context(line[1..].to_string()));
+                hunk.lines.push(HunkLine::Context(rest.to_string()));
             }
         }
         // Skip lines that don't start with known prefixes (e.g., diff --git, index lines).

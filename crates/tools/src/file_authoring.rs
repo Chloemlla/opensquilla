@@ -754,7 +754,7 @@ impl Tool for GenerateCsvTool {
 
         let headers_for_task = headers.clone();
         let csv = tokio::task::spawn_blocking(move || -> ToolResult<String> {
-            Ok(build_csv(&rows, headers_for_task.as_deref())?)
+            build_csv(&rows, headers_for_task.as_deref())
         })
         .await
         .map_err(|e| ToolError::new("CSV_ERROR", format!("CSV generation task failed: {e}")))??;

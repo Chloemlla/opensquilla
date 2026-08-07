@@ -241,7 +241,7 @@ enum ChannelSurfaceKind<'a> {
 fn channel_surface<'a>(input: &DispatchPolicyInput<'a>) -> ChannelSurfaceKind<'a> {
     if input
         .source_kind
-        .map(|s| s.trim().to_ascii_lowercase() == "webui")
+        .map(|s| s.trim().eq_ignore_ascii_case("webui"))
         .unwrap_or(false)
     {
         ChannelSurfaceKind::WebUi

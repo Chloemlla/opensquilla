@@ -459,6 +459,7 @@ impl PolicyChainSet {
     }
 
     /// Add a policy to the chain.
+    #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, policy: impl PolicyChain + 'static) -> Self {
         self.policies.push(Box::new(policy));
         self
@@ -679,7 +680,7 @@ pub struct ToolPolicy {
 }
 
 /// Rules for a single tool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ToolRule {
     /// Maximum calls per session for this tool.
     pub max_calls_per_session: Option<usize>,
@@ -687,16 +688,6 @@ pub struct ToolRule {
     pub denied_arg_values: Vec<String>,
     /// Required argument names that must be present.
     pub required_args: Vec<String>,
-}
-
-impl Default for ToolRule {
-    fn default() -> Self {
-        Self {
-            max_calls_per_session: None,
-            denied_arg_values: Vec::new(),
-            required_args: Vec::new(),
-        }
-    }
 }
 
 impl ToolRule {

@@ -165,8 +165,7 @@ impl ProcessMonitorTool {
             let name = fields[0].clone();
             let pid = fields[1].parse::<u32>().unwrap_or(0);
             let mem_str = fields[4]
-                .replace(',', "")
-                .replace('K', "")
+                .replace([',', 'K'], "")
                 .trim()
                 .to_string();
             let memory_bytes: u64 = mem_str.parse::<u64>().unwrap_or(0) * 1024;

@@ -184,7 +184,10 @@ impl WebSocketChannel {
         });
         let conns = self.connections.lock().await;
         if let Some(handle) = conns.get(&connection_id) {
-            let _ = handle.sender.send(Message::Text(welcome.to_string().into())).await;
+            let _ = handle
+                .sender
+                .send(Message::Text(welcome.to_string().into()))
+                .await;
         }
         drop(conns);
 

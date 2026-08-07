@@ -94,7 +94,7 @@ pub struct OllamaModel {
 }
 
 /// Model metadata returned in `details`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OllamaModelDetails {
     /// Parent model for a quantized/derived model.
     pub parent_model: String,
@@ -108,19 +108,6 @@ pub struct OllamaModelDetails {
     pub parameter_size: String,
     /// Quantization level (e.g. `Q4_0`).
     pub quantization_level: String,
-}
-
-impl Default for OllamaModelDetails {
-    fn default() -> Self {
-        Self {
-            parent_model: String::new(),
-            format: String::new(),
-            family: String::new(),
-            families: Vec::new(),
-            parameter_size: String::new(),
-            quantization_level: String::new(),
-        }
-    }
 }
 
 /// A single progress frame from `POST /api/pull`.
@@ -852,7 +839,7 @@ impl Stream for OllamaStream {
             let text = String::from_utf8_lossy(&this.buffer).to_string();
             if let Some(pos) = text.find('\n') {
                 let line = text[..pos].to_string();
-                this.buffer = text[pos + 1..].as_bytes().to_vec();
+                this.buffer = text.as_bytes()[pos + 1..].to_vec();
                 if let Some(events) = this.process_line(&line) {
                     this.pending.extend(events);
                 }

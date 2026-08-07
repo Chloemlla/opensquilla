@@ -138,7 +138,7 @@ pub fn mark_source_diff_candidates_lost(
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|p| normalize_relative_path(p))
+                    .map(normalize_relative_path)
                     .collect()
             })
             .unwrap_or_default();
@@ -203,7 +203,7 @@ pub fn recoverable_lost_source_candidate_ids(
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|p| normalize_relative_path(p))
+                    .map(normalize_relative_path)
                     .collect()
             })
             .unwrap_or_default();

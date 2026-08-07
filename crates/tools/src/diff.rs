@@ -16,10 +16,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// The output format for a diff.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffFormat {
     /// Standard unified diff (default).
+    #[default]
     Unified,
     /// Context diff (with 3 lines of context by default).
     Context,
@@ -27,12 +28,6 @@ pub enum DiffFormat {
     Json,
     /// A human-readable side-by-side summary.
     Summary,
-}
-
-impl Default for DiffFormat {
-    fn default() -> Self {
-        DiffFormat::Unified
-    }
 }
 
 /// A single line change in a diff.
@@ -187,8 +182,7 @@ pub fn diff_lines(old: &str, new: &str) -> Vec<LineChange> {
         }
     }
     reversed.reverse();
-    let changes = reversed;
-    changes
+    reversed
 }
 
 /// Group line changes into hunks with configurable context size.
@@ -376,7 +370,7 @@ pub fn render_summary(diff: &FileDiff) -> String {
     } else if diff.is_deleted {
         out.push_str("  Status: DELETED\n");
     } else {
-        out.push_str(&format!("  Status: MODIFIED\n"));
+        out.push_str("  Status: MODIFIED\n");
     }
     out.push_str(&format!("  +{} additions, -{} deletions\n", added, removed));
     out.push_str(&format!("  {} hunk(s)\n", diff.hunks.len()));

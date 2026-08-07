@@ -1024,6 +1024,7 @@ pub struct ProcessSupervisor {
     /// Handle to the supervisor task.
     handle: Option<JoinHandle<()>>,
     /// The kill closure, shared between the timeout task and the Drop impl.
+    #[allow(clippy::type_complexity)]
     kill_fn: Option<Arc<std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>>>,
 }
 
@@ -1126,10 +1127,11 @@ impl Drop for ProcessSupervisor {
 // ---------------------------------------------------------------------------
 
 /// How to capture command output.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputCapture {
     /// Capture stdout and stderr separately.
+    #[default]
     Separate,
     /// Merge stdout and stderr into a single stream.
     Merged,
@@ -1139,12 +1141,6 @@ pub enum OutputCapture {
     StderrOnly,
     /// Discard all output.
     Discard,
-}
-
-impl Default for OutputCapture {
-    fn default() -> Self {
-        OutputCapture::Separate
-    }
 }
 
 /// An enhanced shell execution tool with env filtering, output capture modes,

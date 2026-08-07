@@ -2374,11 +2374,9 @@ impl Provider for EnsembleProvider {
 
             EnsembleStrategy::MajorityVote => {
                 let mut texts: Vec<String> = Vec::new();
-                for result in &results {
-                    if let Ok(response) = result {
-                        for msg in &response.content {
-                            texts.push(msg.text_content());
-                        }
+                for response in results.iter().filter_map(|r| r.as_ref().ok()) {
+                    for msg in &response.content {
+                        texts.push(msg.text_content());
                     }
                 }
 
@@ -2446,14 +2444,14 @@ impl Provider for EnsembleProvider {
                         .send_message(&agg_config, &agg_messages, tools)
                         .await
                 } else {
-                    for result in results {
-                        if let Ok(response) = result {
-                            return Ok(response);
-                        }
-                    }
-                    Err(ProviderError::Internal(
-                        "No aggregator configured and all proposers failed".into(),
-                    ))
+                    results
+                        .into_iter()
+                        .find_map(Result::ok)
+                        .ok_or_else(|| {
+                            ProviderError::Internal(
+                                "No aggregator configured and all proposers failed".into(),
+                            )
+                        })
                 }
             }
         }
@@ -2472,13 +2470,11 @@ impl Provider for EnsembleProvider {
 
         let results = self.run_proposers(config, messages, tools).await;
 
-        for result in results {
-            if let Ok(response) = result {
-                return Ok(provider_response_to_stream(response));
-            }
-        }
-
-        Err(ProviderError::Internal("All proposers failed".into()))
+        results
+            .into_iter()
+            .find_map(Result::ok)
+            .map(provider_response_to_stream)
+            .ok_or_else(|| ProviderError::Internal("All proposers failed".into()))
     }
 }
 
@@ -2613,8 +2609,6 @@ fn cost_rates(model: &str) -> (f64, f64) {
         (0.4, 1.2)
     } else if m.contains("llama") || m.contains("mistral") {
         (0.3, 0.6)
-    } else if m.contains("gpt-3.5") {
-        (0.5, 1.5)
     } else {
         (0.5, 1.5)
     }

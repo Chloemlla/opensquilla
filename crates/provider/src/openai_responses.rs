@@ -79,7 +79,7 @@ impl OpenAiResponsesProvider {
     }
 
     /// Parse a provider kind from its registry id.
-    pub fn from_str(id: &str) -> Option<Self> {
+    pub fn parse(id: &str) -> Option<Self> {
         match id {
             "openai_responses" => Some(Self::OpenAiResponses),
             "volcengine_coding_plan" => Some(Self::VolcengineCodingPlan),
@@ -501,7 +501,7 @@ impl ResponsesToolType {
     }
 
     /// Parse a tool type from its wire name.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "function" => Some(Self::Function),
             "computer_use" => Some(Self::ComputerUse),
@@ -570,7 +570,7 @@ impl ResponsesTool {
     /// `web_search`, `file_search`, `code_interpreter`) it is emitted as that
     /// built-in; otherwise it is emitted as a function tool.
     pub fn from_tool_definition(tool: &ToolDefinition) -> Self {
-        if let Some(builtin) = ResponsesToolType::from_str(&tool.name) {
+        if let Some(builtin) = ResponsesToolType::parse(&tool.name) {
             if builtin.is_builtin() {
                 return Self::builtin(builtin);
             }
@@ -1095,7 +1095,7 @@ impl OpenAIResponsesProvider {
         api_key: impl Into<String>,
     ) -> Self {
         let name = name.into();
-        let provider_kind = OpenAiResponsesProvider::from_str(&name)
+        let provider_kind = OpenAiResponsesProvider::parse(&name)
             .unwrap_or(OpenAiResponsesProvider::OpenAiResponses);
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(180))
@@ -2458,18 +2458,18 @@ mod tests {
     #[test]
     fn test_provider_kind_parsing() {
         assert_eq!(
-            OpenAiResponsesProvider::from_str("openai_responses"),
+            OpenAiResponsesProvider::parse("openai_responses"),
             Some(OpenAiResponsesProvider::OpenAiResponses)
         );
         assert_eq!(
-            OpenAiResponsesProvider::from_str("volcengine_coding_plan"),
+            OpenAiResponsesProvider::parse("volcengine_coding_plan"),
             Some(OpenAiResponsesProvider::VolcengineCodingPlan)
         );
         assert_eq!(
-            OpenAiResponsesProvider::from_str("byteplus_coding_plan"),
+            OpenAiResponsesProvider::parse("byteplus_coding_plan"),
             Some(OpenAiResponsesProvider::ByteplusCodingPlan)
         );
-        assert_eq!(OpenAiResponsesProvider::from_str("nope"), None);
+        assert_eq!(OpenAiResponsesProvider::parse("nope"), None);
         assert_eq!(
             OpenAiResponsesProvider::OpenAiResponses.as_str(),
             "openai_responses"

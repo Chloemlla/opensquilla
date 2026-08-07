@@ -204,7 +204,7 @@ impl CodeExecTool {
             let temp_dir = self
                 .temp_dir
                 .clone()
-                .unwrap_or_else(|| std::env::temp_dir());
+                .unwrap_or(std::env::temp_dir());
             let file_name = format!("exec_{}.{}", uuid::Uuid::new_v4(), config.extension);
             let file_path = temp_dir.join(&file_name);
 
@@ -236,12 +236,11 @@ impl CodeExecTool {
                     let content = if output.status.success() {
                         truncate_output(&stdout, self.max_output_size)
                     } else {
-                        let error_msg = format!(
+                        format!(
                             "Exit code {}:\n{}",
                             exit_code,
                             truncate_output(&stderr, self.max_output_size)
-                        );
-                        error_msg
+                        )
                     };
 
                     let data = serde_json::json!({

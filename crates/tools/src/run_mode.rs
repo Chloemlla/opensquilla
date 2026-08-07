@@ -40,12 +40,8 @@ pub fn sandbox_disabled_full_host_fallback() -> bool {
 /// - `Some(false)` with the fallback lever off — not Full.
 /// - `None` — unknown runtime; falls back to the context alone.
 pub fn full_host_access_for_context(ctx: &ToolContext, sandbox_enabled: Option<bool>) -> bool {
-    if let Some(enabled) = sandbox_enabled {
-        if !enabled {
-            if sandbox_disabled_full_host_fallback() {
-                return true;
-            }
-        }
+    if sandbox_enabled == Some(false) && sandbox_disabled_full_host_fallback() {
+        return true;
     }
     ctx.full_host_access_active()
 }

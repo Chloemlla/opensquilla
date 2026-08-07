@@ -180,7 +180,7 @@ impl CrashRecovery {
             }
         }
 
-        result.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        result.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         result
     }
 
@@ -439,7 +439,7 @@ impl CrashRecovery {
                 && message
                     .metadata
                     .get("tool_call_id")
-                    .map_or(true, |v| v.is_empty())
+                    .is_none_or(|v| v.is_empty())
             {
                 let id = format!("repair_{i}_{}", uuid::Uuid::new_v4());
                 message.metadata.insert("tool_call_id".to_string(), id);
@@ -447,9 +447,7 @@ impl CrashRecovery {
             }
         }
 
-        session
-            .messages
-            .sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        session.messages.sort_by_key(|a| a.timestamp);
 
         Ok(fixes)
     }

@@ -10,7 +10,7 @@
 
 use crate::context::ToolContext;
 use crate::policy::{PolicyChain, PolicyContext, PolicyDecision};
-use crate::registry::{Tool, ToolError, ToolOutput, ToolRegistry, ToolResult};
+use crate::registry::{ToolError, ToolOutput, ToolRegistry};
 use opensquilla_core::ToolCall;
 use opensquilla_core::error::AppError;
 use regex::Regex;
@@ -1012,7 +1012,7 @@ impl From<DispatchError> for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::{ParameterDefinition, ToolDefinition};
+    use crate::registry::{ParameterDefinition, Tool, ToolDefinition, ToolResult};
     use serde_json::json;
 
     struct EchoTool;

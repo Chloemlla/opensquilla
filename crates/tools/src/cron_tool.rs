@@ -49,8 +49,7 @@ fn map_ops_error(err: opensquilla_scheduler::ops::OpsError) -> ToolError {
 /// Parse an optional UUID parameter.
 fn parse_opt_uuid(params: &Value, name: &str) -> Result<Option<Uuid>, ToolError> {
     match params.get(name).and_then(|v| v.as_str()) {
-        None => Ok(None),
-        Some(raw) if raw.is_empty() => Ok(None),
+        None | Some("") => Ok(None),
         Some(raw) => Uuid::parse_str(raw).map(Some).map_err(|e| {
             ToolError::invalid_args(format!("Invalid '{}' UUID '{}': {}", name, raw, e))
         }),

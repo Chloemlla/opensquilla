@@ -607,8 +607,8 @@ fn policy_from_object(value: &Value) -> Option<ToolPolicy> {
     let tools_value = get_field(value, "tools");
     let sender_value =
         get_field(value, "toolsBySender").or_else(|| get_field(value, "tools_by_sender"));
-    if tools_value.is_some() {
-        let base = policy_from_config(tools_value.unwrap()).unwrap_or_default();
+    if let Some(tools_value) = tools_value {
+        let base = policy_from_config(tools_value).unwrap_or_default();
         let wrapper_by_sender = sender_policies_from_config(sender_value);
         let mut by_sender = base.by_sender.clone();
         for (selector, policy) in wrapper_by_sender {
@@ -706,11 +706,9 @@ pub fn agent_policy_from_config(config: &Value, agent_id: &str) -> Option<ToolPo
         }
         agents
     } else {
-        get_field(&agents, "list")?
+        get_field(agents, "list")?
     };
-    let Some(list) = entries.as_array() else {
-        return None;
-    };
+    let list = entries.as_array()?;
     for entry in list {
         if get_field(entry, "id").and_then(|v| v.as_str()) == Some(agent_id) {
             return policy_from_config(get_field(entry, "tools")?);

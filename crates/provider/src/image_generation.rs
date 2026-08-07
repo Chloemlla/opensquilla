@@ -58,7 +58,7 @@ impl ImageGenProvider {
     }
 
     /// Parse a backend name back into an [`ImageGenProvider`].
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "openai" | "dall-e" | "dalle" => Some(ImageGenProvider::OpenAi),
             "stability" | "stabilityai" | "stability_ai" | "stable-diffusion" | "sd3" => {
@@ -95,10 +95,11 @@ impl ImageGenProvider {
 }
 
 /// Requested output dimensions for generated images.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageSize {
     /// 1024x1024.
+    #[default]
     Square,
     /// 1792x1024 (DALL-E 3 wide).
     Wide,
@@ -119,12 +120,6 @@ impl ImageSize {
         }
     }
 
-    /// Render as `"WxH"` (OpenAI `size` field, Stability `width`/`height`).
-    pub fn to_string(&self) -> String {
-        let (w, h) = self.dimensions();
-        format!("{w}x{h}")
-    }
-
     /// The reduced aspect ratio as `"W:H"` (OpenRouter / chat-completions
     /// image models).
     pub fn aspect_ratio(&self) -> String {
@@ -139,9 +134,10 @@ impl ImageSize {
     }
 }
 
-impl Default for ImageSize {
-    fn default() -> Self {
-        ImageSize::Square
+impl std::fmt::Display for ImageSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (w, h) = self.dimensions();
+        write!(f, "{w}x{h}")
     }
 }
 
@@ -174,10 +170,11 @@ fn gcd(mut a: u32, mut b: u32) -> u32 {
 
 /// Output quality tier. Maps to DALL-E 3 `standard`/`hd` and to
 /// gpt-image-1 `medium`/`high` depending on the model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageQuality {
     /// Standard quality.
+    #[default]
     Standard,
     /// HD / high quality.
     Hd,
@@ -193,26 +190,15 @@ impl ImageQuality {
     }
 }
 
-impl Default for ImageQuality {
-    fn default() -> Self {
-        ImageQuality::Standard
-    }
-}
-
 /// The desired response format for generated images.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageResponseFormat {
     /// Return a URL pointing to the generated image.
     Url,
     /// Return the image as a base64-encoded JSON string.
+    #[default]
     B64Json,
-}
-
-impl Default for ImageResponseFormat {
-    fn default() -> Self {
-        Self::B64Json
-    }
 }
 
 /// A request to generate one or more images (low-level form).
@@ -2255,26 +2241,26 @@ mod tests {
     #[test]
     fn provider_enum_roundtrip() {
         assert_eq!(
-            ImageGenProvider::from_str("openai"),
+            ImageGenProvider::parse("openai"),
             Some(ImageGenProvider::OpenAi)
         );
         assert_eq!(
-            ImageGenProvider::from_str("StabilityAi"),
+            ImageGenProvider::parse("StabilityAi"),
             Some(ImageGenProvider::StabilityAi)
         );
         assert_eq!(
-            ImageGenProvider::from_str("replicate"),
+            ImageGenProvider::parse("replicate"),
             Some(ImageGenProvider::Replicate)
         );
         assert_eq!(
-            ImageGenProvider::from_str("prodia"),
+            ImageGenProvider::parse("prodia"),
             Some(ImageGenProvider::Prodia)
         );
         assert_eq!(
-            ImageGenProvider::from_str("local"),
+            ImageGenProvider::parse("local"),
             Some(ImageGenProvider::Local)
         );
-        assert_eq!(ImageGenProvider::from_str("nope"), None);
+        assert_eq!(ImageGenProvider::parse("nope"), None);
         assert_eq!(ImageGenProvider::OpenAi.as_str(), "openai");
     }
 

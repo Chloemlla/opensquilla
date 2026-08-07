@@ -2237,7 +2237,7 @@ impl OpenAiCompatProvider {
                 let status = resp.status();
                 if !status.is_success() {
                     let text = resp.text().await.unwrap_or_default();
-                    return Err(map_http_error(status, &text, &this.kind.as_str()));
+                    return Err(map_http_error(status, &text, this.kind.as_str()));
                 }
 
                 let data: serde_json::Value = resp.json().await.map_err(ProviderError::Network)?;
@@ -2319,7 +2319,7 @@ impl OpenAiCompatProvider {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
-            let err = map_http_error(status, &text, &self.kind.as_str());
+            let err = map_http_error(status, &text, self.kind.as_str());
             if let Some(pool) = &self.credentials {
                 match &err {
                     ProviderError::Auth(_) => pool.mark_invalid(key_index),

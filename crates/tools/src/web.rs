@@ -161,7 +161,7 @@ impl Tool for WebSearchTool {
         let query = params["query"]
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing 'query' parameter"))?;
-        let count = params["count"].as_i64().unwrap_or(5).min(10).max(1) as u32;
+        let count = params["count"].as_i64().unwrap_or(5).clamp(1, 10) as u32;
 
         let results = self.provider.search(query, count).await?;
 
@@ -262,10 +262,9 @@ impl WebFetchTool {
 
         if content.len() < 50 {
             if let Ok(body_selector) = Selector::parse("body") {
-                for element in document.select(&body_selector) {
+                if let Some(element) = document.select(&body_selector).next() {
                     let text: String = element.text().collect::<Vec<_>>().join(" ");
                     content.push_str(text.trim());
-                    break;
                 }
             }
         }
@@ -783,7 +782,7 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
     // If nothing scored well, take the entire body text verbatim.
     if best_content.is_empty() {
         if let Ok(body_selector) = Selector::parse("body") {
-            for element in document.select(&body_selector) {
+            if let Some(element) = document.select(&body_selector).next() {
                 best_content = element
                     .text()
                     .collect::<Vec<_>>()
@@ -791,7 +790,6 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
                     .trim()
                     .to_string();
                 best_selector = "body".to_string();
-                break;
             }
         }
         best_score = readability_score(&best_content);
@@ -989,6 +987,11 @@ impl ResponseCache {
     /// Get the cache size.
     pub fn len(&self) -> usize {
         self.entries.lock().map(|e| e.len()).unwrap_or(0)
+    }
+
+    /// Whether the cache is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -1228,11 +1231,9 @@ impl RobotsTxt {
 
         for (agent, allow, disallow) in &rules {
             let matches = agent == "*" || agent.to_lowercase() == self.user_agent.to_lowercase();
-            if matches {
-                if !Self::is_path_allowed(path, allow, disallow) {
-                    allowed = false;
-                    break;
-                }
+            if matches && !Self::is_path_allowed(path, allow, disallow) {
+                allowed = false;
+                break;
             }
         }
 

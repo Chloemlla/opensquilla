@@ -111,19 +111,21 @@ pub struct McpClient {
     next_id: AtomicU64,
 }
 
+impl Default for McpClient {
+    /// Create a new client with no configuration.
+    fn default() -> Self {
+        Self {
+            processes: Arc::new(Mutex::new(HashMap::new())),
+            next_id: AtomicU64::new(1),
+        }
+    }
+}
+
 impl McpClient {
     /// Create a new client. The configuration is currently unused by the stdio
     /// client (server configs are supplied per-connection).
     pub fn new(_config: &Config) -> Self {
         Self::default()
-    }
-
-    /// Create a new client with no configuration.
-    pub fn default() -> Self {
-        Self {
-            processes: Arc::new(Mutex::new(HashMap::new())),
-            next_id: AtomicU64::new(1),
-        }
     }
 
     /// Connect to an MCP server over stdio and perform the `initialize`

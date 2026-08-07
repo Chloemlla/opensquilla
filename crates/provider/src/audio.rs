@@ -27,10 +27,11 @@ use std::time::Duration;
 use tracing::{debug, info};
 
 /// Supported audio output formats.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AudioFormat {
     /// MP3 audio.
+    #[default]
     Mp3,
     /// WAV audio (PCM in a RIFF container).
     Wav,
@@ -42,12 +43,6 @@ pub enum AudioFormat {
     Flac,
     /// Raw 16-bit PCM at 44.1kHz.
     Pcm,
-}
-
-impl Default for AudioFormat {
-    fn default() -> Self {
-        AudioFormat::Mp3
-    }
 }
 
 impl AudioFormat {
@@ -139,7 +134,7 @@ impl AudioProviderType {
     }
 
     /// Parse a backend name back into an [`AudioProviderType`].
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "elevenlabs" | "eleven" => Some(AudioProviderType::ElevenLabs),
             "openai-tts" | "openai_tts" | "openai" => Some(AudioProviderType::OpenAiTts),
@@ -1976,18 +1971,18 @@ mod tests {
     #[test]
     fn provider_type_roundtrip() {
         assert_eq!(
-            AudioProviderType::from_str("elevenlabs"),
+            AudioProviderType::parse("elevenlabs"),
             Some(AudioProviderType::ElevenLabs)
         );
         assert_eq!(
-            AudioProviderType::from_str("whisper"),
+            AudioProviderType::parse("whisper"),
             Some(AudioProviderType::OpenAiStt)
         );
         assert_eq!(
-            AudioProviderType::from_str("local"),
+            AudioProviderType::parse("local"),
             Some(AudioProviderType::Local)
         );
-        assert_eq!(AudioProviderType::from_str("bogus"), None);
+        assert_eq!(AudioProviderType::parse("bogus"), None);
         assert_eq!(AudioProviderType::OpenAiTts.as_str(), "openai-tts");
     }
 

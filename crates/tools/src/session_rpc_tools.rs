@@ -358,16 +358,18 @@ impl Tool for SessionsSpawnTool {
                 let child_agent_id = agent_id_override.unwrap_or(parent.agent_id);
 
                 let now = chrono::Utc::now();
-                let mut child = Session::default();
-                child.agent_id = child_agent_id;
-                child.name = format!("Subagent of {}", parent.name);
-                child.mode = parent.mode.clone();
-                child.system_prompt = parent.system_prompt.clone();
-                child.parent_session_id = Some(parent_session_id);
-                child.fork_event = Some("subagent".to_string());
-                child.created_at = now;
-                child.updated_at = now;
-                child.last_active_at = now;
+                let mut child = Session {
+                    agent_id: child_agent_id,
+                    name: format!("Subagent of {}", parent.name),
+                    mode: parent.mode.clone(),
+                    system_prompt: parent.system_prompt.clone(),
+                    parent_session_id: Some(parent_session_id),
+                    fork_event: Some("subagent".to_string()),
+                    created_at: now,
+                    updated_at: now,
+                    last_active_at: now,
+                    ..Session::default()
+                };
                 let mut metadata = serde_json::json!({
                     "origin": "sessions_spawn",
                     "parent_session_id": parent_session_id.to_string(),

@@ -220,9 +220,10 @@ pub fn lookup_model_window(model: &str) -> ModelWindow {
         (200_000, 100_000, true)
     } else if lower.starts_with("claude-3-5-sonnet") || lower.starts_with("claude-3.5-sonnet") {
         (200_000, 8_192, false)
-    } else if lower.starts_with("claude-3-opus") || lower.starts_with("claude-3-sonnet") {
-        (200_000, 4_096, false)
-    } else if lower.starts_with("claude-3-haiku") {
+    } else if lower.starts_with("claude-3-opus")
+        || lower.starts_with("claude-3-sonnet")
+        || lower.starts_with("claude-3-haiku")
+    {
         (200_000, 4_096, false)
     } else if lower.starts_with("claude-4")
         || lower.starts_with("claude-sonnet-4")
@@ -243,9 +244,7 @@ pub fn lookup_model_window(model: &str) -> ModelWindow {
         (8_192, 4_096, false)
     } else if lower.starts_with("mistral-large") || lower.starts_with("mistral-medium") {
         (128_000, 8_192, false)
-    } else if lower.starts_with("mistral") {
-        (32_000, 4_096, false)
-    } else if lower.starts_with("mixtral") {
+    } else if lower.starts_with("mistral") || lower.starts_with("mixtral") {
         (32_000, 4_096, false)
     } else if lower.starts_with("gemma") {
         (8_192, 4_096, false)
@@ -499,22 +498,18 @@ impl RequestProof {
             // If we removed a tool result, also drop the orphaned preceding
             // assistant tool-call to keep pairs intact.
             if removed.role == MessageRole::Tool {
-                if let Some(last) = convo.last() {
-                    if last.role == MessageRole::Assistant
+                if let Some(_removed2) = convo.pop_if(|last| {
+                    last.role == MessageRole::Assistant
                         && last
                             .tool_calls
                             .as_ref()
-                            .map(|c| !c.is_empty())
-                            .unwrap_or(false)
-                    {
-                        let removed2 = convo.pop().unwrap();
-                        convo_tokens = convo
-                            .iter()
-                            .map(|m| self.estimator.estimate_message(m))
-                            .sum();
-                        dropped += 1;
-                        let _ = removed2;
-                    }
+                            .is_some_and(|c| !c.is_empty())
+                }) {
+                    convo_tokens = convo
+                        .iter()
+                        .map(|m| self.estimator.estimate_message(m))
+                        .sum();
+                    dropped += 1;
                 }
             }
             dropped += 1;

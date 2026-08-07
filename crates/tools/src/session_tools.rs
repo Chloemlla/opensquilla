@@ -135,11 +135,13 @@ impl Tool for SessionCreateTool {
 
         // Build the Session by hand — SessionStorage::create_session persists a
         // fully-constructed Session rather than building one for us.
-        let mut session = Session::default();
-        session.agent_id = agent_id;
-        session.name = name.clone();
-        session.system_prompt = system_prompt.clone();
-        session.mode = mode.clone();
+        let session = Session {
+            agent_id,
+            name: name.clone(),
+            system_prompt,
+            mode: mode.clone(),
+            ..Session::default()
+        };
 
         let storage = self.storage.clone();
         let session_for_task = session.clone();
@@ -230,7 +232,7 @@ impl Tool for SessionListTool {
         let agent_id = Uuid::parse_str(agent_raw).map_err(|e| {
             ToolError::invalid_args(format!("Invalid 'agent_id' UUID '{}': {}", agent_raw, e))
         })?;
-        let limit = params["limit"].as_i64().unwrap_or(20).max(1).min(200) as u64;
+        let limit = params["limit"].as_i64().unwrap_or(20).clamp(1, 200) as u64;
         let offset = params["offset"].as_i64().unwrap_or(0).max(0) as u64;
 
         let storage = self.storage.clone();

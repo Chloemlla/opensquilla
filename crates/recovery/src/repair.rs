@@ -65,7 +65,7 @@ impl ConfigRepair {
             .collect();
 
         for key in &provider_keys {
-            if entries.get(key).map_or(true, |v| v.is_empty()) {
+            if entries.get(key).is_none_or(|v| v.is_empty()) {
                 let provider_name = key
                     .trim_start_matches("provider.")
                     .trim_end_matches(".api_key");
@@ -166,14 +166,15 @@ impl ConfigRepair {
     fn find_first_configured_provider(&self) -> Option<String> {
         let entries = self.config.list();
         for key in entries.keys() {
-            if key.starts_with("provider.") && key.ends_with(".api_key") {
-                if !entries.get(key).map_or(true, |v| v.is_empty()) {
-                    return Some(
-                        key.trim_start_matches("provider.")
-                            .trim_end_matches(".api_key")
-                            .to_string(),
-                    );
-                }
+            if key.starts_with("provider.")
+                && key.ends_with(".api_key")
+                && entries.get(key).is_some_and(|v| !v.is_empty())
+            {
+                return Some(
+                    key.trim_start_matches("provider.")
+                        .trim_end_matches(".api_key")
+                        .to_string(),
+                );
             }
         }
         None
@@ -266,7 +267,7 @@ impl ConfigRepair {
             }
         }
 
-        if config.get("model.default").map_or(true, |v| v.is_empty()) {
+        if config.get("model.default").is_none_or(|v| v.is_empty()) {
             config.set("model.default", "gpt-4o").ok();
             issues.push(self.issue(
                 ConfigIssue::MissingKey,
@@ -286,7 +287,7 @@ impl ConfigRepair {
         let base = format!("provider.{provider}");
 
         let key = format!("{base}.api_key");
-        if self.config.get(&key).map_or(true, |v| v.is_empty()) {
+        if self.config.get(&key).is_none_or(|v| v.is_empty()) {
             self.config.set(&key, "").ok();
             issues.push(self.issue(
                 ConfigIssue::MissingApiKey,
@@ -297,7 +298,7 @@ impl ConfigRepair {
         }
 
         let model_key = format!("{base}.model");
-        if self.config.get(&model_key).map_or(true, |v| v.is_empty()) {
+        if self.config.get(&model_key).is_none_or(|v| v.is_empty()) {
             self.config.set(&model_key, "").ok();
             issues.push(self.issue(
                 ConfigIssue::MissingKey,

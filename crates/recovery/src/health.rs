@@ -175,11 +175,11 @@ impl HealthCheck {
         let has_provider = self
             .config
             .get("provider.default")
-            .map_or(false, |v| !v.is_empty());
+            .is_some_and(|v| !v.is_empty());
         let has_model = self
             .config
             .get("model.default")
-            .map_or(false, |v| !v.is_empty());
+            .is_some_and(|v| !v.is_empty());
 
         details.insert("has_provider".to_string(), has_provider.to_string());
         details.insert("has_model".to_string(), has_model.to_string());
@@ -385,11 +385,11 @@ impl HealthVerifier {
                 let has_provider = self
                     .config
                     .get("provider.default")
-                    .map_or(false, |v| !v.is_empty());
+                    .is_some_and(|v| !v.is_empty());
                 let has_model = self
                     .config
                     .get("model.default")
-                    .map_or(false, |v| !v.is_empty());
+                    .is_some_and(|v| !v.is_empty());
                 let ok = has_provider && has_model;
                 SubsystemHealth {
                     subsystem: "config".to_string(),

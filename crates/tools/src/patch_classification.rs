@@ -35,10 +35,10 @@ pub fn iter_patch_line_changes(patch: &str) -> (Vec<String>, Vec<String>) {
         if line.starts_with("+++") || line.starts_with("---") {
             continue;
         }
-        if line.starts_with('+') {
-            added.push(line[1..].to_string());
-        } else if line.starts_with('-') {
-            removed.push(line[1..].to_string());
+        if let Some(rest) = line.strip_prefix('+') {
+            added.push(rest.to_string());
+        } else if let Some(rest) = line.strip_prefix('-') {
+            removed.push(rest.to_string());
         }
     }
     (added, removed)

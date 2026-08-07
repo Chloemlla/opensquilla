@@ -100,19 +100,14 @@ impl AnthropicProviderKind {
 }
 
 /// How the API key is presented to the upstream endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthHeaderStyle {
     /// `x-api-key: <key>` (Anthropic proper).
+    #[default]
     XApiKey,
     /// `Authorization: Bearer <key>`.
     Bearer,
-}
-
-impl Default for AuthHeaderStyle {
-    fn default() -> Self {
-        Self::XApiKey
-    }
 }
 
 /// Configuration for Anthropic extended thinking.
@@ -433,7 +428,7 @@ pub fn build_anthropic_request(
         cfg.model.clone()
     };
 
-    let mut max_tokens = cfg.max_tokens.max(1).min(DEFAULT_MAX_TOKENS_CAP);
+    let mut max_tokens = cfg.max_tokens.clamp(1, DEFAULT_MAX_TOKENS_CAP);
     let thinking = extract_thinking(cfg);
     let thinking_payload = thinking
         .as_ref()
@@ -986,14 +981,10 @@ impl AnthropicStream {
         if trimmed.is_empty() {
             return None;
         }
-        let data = if let Some(content) = trimmed.strip_prefix("data: ") {
-            content
-        } else if let Some(content) = trimmed.strip_prefix("data:") {
-            content
-        } else {
-            return None;
-        };
-        let data = data.trim();
+        let data = trimmed
+            .strip_prefix("data: ")
+            .or_else(|| trimmed.strip_prefix("data:"))?
+            .trim();
         if data.is_empty() || data == "[DONE]" {
             return None;
         }
@@ -1204,7 +1195,7 @@ impl Stream for AnthropicStream {
             let text = String::from_utf8_lossy(&this.buffer).to_string();
             if let Some(pos) = text.find('\n') {
                 let line = text[..pos].to_string();
-                this.buffer = text[pos + 1..].as_bytes().to_vec();
+                this.buffer = text.as_bytes()[pos + 1..].to_vec();
                 if let Some(events) = this.process_line(&line) {
                     this.pending.extend(events);
                 }

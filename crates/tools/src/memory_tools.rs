@@ -252,7 +252,7 @@ impl Tool for MemorySearchTool {
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing required parameter 'query'"))?
             .to_string();
-        let limit = params["limit"].as_i64().unwrap_or(10).max(1).min(100) as u64;
+        let limit = params["limit"].as_i64().unwrap_or(10).clamp(1, 100) as u64;
         let offset = params["offset"].as_i64().unwrap_or(0).max(0) as u64;
         let agent_filter = params["agent_id"]
             .as_str()
@@ -277,7 +277,7 @@ impl Tool for MemorySearchTool {
         // if one was given.
         let results: Vec<MemoryEntry> = results
             .into_iter()
-            .filter(|m| agent_filter.map_or(true, |id| m.agent_id == id))
+            .filter(|m| agent_filter.is_none_or(|id| m.agent_id == id))
             .collect();
 
         let items: Vec<Value> = results
@@ -429,7 +429,7 @@ impl Tool for MemoryListTool {
         let agent_id = parse_agent_id(&params)?;
         // Own the filter so it can be moved into the 'static blocking closure.
         let memory_type = params["memory_type"].as_str().map(String::from);
-        let limit = params["limit"].as_i64().unwrap_or(50).max(1).min(500) as u64;
+        let limit = params["limit"].as_i64().unwrap_or(50).clamp(1, 500) as u64;
         let offset = params["offset"].as_i64().unwrap_or(0).max(0) as u64;
 
         let store = self.store.clone();

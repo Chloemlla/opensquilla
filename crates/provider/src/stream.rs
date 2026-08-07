@@ -58,14 +58,9 @@ where
     }
 
     // Look for "data:" prefix (SSE format)
-    let data = if let Some(content) = trimmed.strip_prefix("data: ") {
-        content
-    } else if let Some(content) = trimmed.strip_prefix("data:") {
-        content
-    } else {
-        // Lines without "data:" prefix are ignored (e.g. event type, id)
-        return None;
-    };
+    let data = trimmed
+        .strip_prefix("data: ")
+        .or_else(|| trimmed.strip_prefix("data:"))?;
 
     let data = data.trim();
     if data.is_empty() {
@@ -200,7 +195,7 @@ impl ToolCallBuffer {
             .buffers
             .keys()
             .chain(self.names.keys())
-            .map(|k| k.clone())
+            .cloned()
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();

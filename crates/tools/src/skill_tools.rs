@@ -46,8 +46,7 @@ fn is_valid_skill_name(name: &str) -> bool {
 /// Strip characters that could inject YAML structure.
 fn sanitize_yaml_value(value: &str) -> String {
     value
-        .replace('\n', " ")
-        .replace('\r', " ")
+        .replace(['\n', '\r'], " ")
         .trim()
         .to_string()
 }

@@ -113,7 +113,7 @@ impl SessionMerge {
             MergeStrategy::Chronological => {
                 let mut all: Vec<&SessionMessage> =
                     sessions.iter().flat_map(|s| &s.messages).collect();
-                all.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+                all.sort_by_key(|a| a.timestamp);
 
                 // Deduplicate by content
                 let mut seen = std::collections::HashSet::new();
@@ -128,7 +128,7 @@ impl SessionMerge {
             }
             MergeStrategy::MostRecentFirst => {
                 let mut sessions_sorted = sessions.clone();
-                sessions_sorted.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+                sessions_sorted.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
 
                 let mut seen = std::collections::HashSet::new();
                 for session in &sessions_sorted {
@@ -155,7 +155,7 @@ impl SessionMerge {
                     }
                 }
                 // Sort by timestamp
-                all_messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+                all_messages.sort_by_key(|a| a.timestamp);
             }
             MergeStrategy::KeepPrimary => {
                 let primary_id = primary_session_id.ok_or(MergeError::PrimarySessionRequired)?;
@@ -189,7 +189,7 @@ impl SessionMerge {
         }
 
         // Sort by timestamp for final output
-        all_messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        all_messages.sort_by_key(|a| a.timestamp);
 
         let new_session_id = uuid::Uuid::new_v4().to_string();
 
@@ -327,7 +327,7 @@ impl SessionMerge {
                 all.push(message);
             }
         }
-        all.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        all.sort_by_key(|a| a.timestamp);
         all
     }
 
