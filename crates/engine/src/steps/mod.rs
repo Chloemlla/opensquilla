@@ -6,7 +6,7 @@
 //! semantics: a step that returns `Skip` or `Continue` lets the chain proceed,
 //! and a step that returns `Halt` stops the entire pipeline.
 //!
-//! The five step implementations are:
+//! The step implementations are:
 //!
 //! * [`meta_resolution::MetaResolutionStep`] — resolve meta-instruction
 //!   triggers in the user message and leave a soft hint for the skills filter.
@@ -20,13 +20,28 @@
 //!   from workspace instruction files (SOUL.md, AGENTS.md, ...).
 //! * [`attachment_loader::AttachmentLoaderStep`] — load and validate turn
 //!   attachments into the context.
+//! * [`coding_mode::CodingModeStep`] — enforce coding mode by injecting a
+//!   code-task directive when the operator toggle is ON.
+//! * [`inject_platform_hint::InjectPlatformHintStep`] — inject channel-specific
+//!   rendering hints into the system prompt suffix.
+//! * [`prompt_cache::PromptCacheStep`] — annotate the system prompt with
+//!   provider cache breakpoints and record cache metrics.
+//! * [`vision_followup_gate::VisionFollowupGateStep`] — semantic gate for
+//!   text-only follow-ups to historical images.
+//! * [`squilla_router::SquillaRouterStep`] — classify message complexity and
+//!   route to an appropriate model tier.
 
 pub mod attachment_loader;
+pub mod coding_mode;
 pub mod context_assembly;
+pub mod inject_platform_hint;
 pub mod meta_resolution;
 pub mod model_select;
+pub mod prompt_cache;
 pub mod reasoning_hint_observer;
 pub mod skills_filter;
+pub mod squilla_router;
+pub mod vision_followup_gate;
 
 use async_trait::async_trait;
 use opensquilla_core::error::Result;
@@ -153,11 +168,16 @@ where
 
 // Re-export the concrete step types at the module root.
 pub use attachment_loader::{AttachmentDescriptor, AttachmentLoaderStep};
+pub use coding_mode::{CodingModeConfig, CodingModeStep};
 pub use context_assembly::ContextAssemblyStep;
+pub use inject_platform_hint::{InjectPlatformHintConfig, InjectPlatformHintStep};
 pub use meta_resolution::{MetaResolutionConfig, MetaResolutionStep};
 pub use model_select::{ModelSelectConfig, ModelSelectStep};
+pub use prompt_cache::{PromptCacheConfig, PromptCacheStep};
 pub use reasoning_hint_observer::ReasoningHintObserverStep;
 pub use skills_filter::{SkillSpec, SkillsFilterConfig, SkillsFilterStep};
+pub use squilla_router::{SquillaRouterConfig, SquillaRouterStep, TierConfig as RouterTierConfig};
+pub use vision_followup_gate::{VisionFollowupGateConfig, VisionFollowupGateStep};
 
 #[cfg(test)]
 mod tests {
