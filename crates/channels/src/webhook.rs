@@ -169,8 +169,7 @@ pub trait WebhookHandler: Send + Sync {
     async fn handle(&self, message: IncomingMessage) -> Result<WebhookResponse, WebhookError>;
 }
 
-type ParseFn = dyn Fn(&Value, &str, &HeaderMap, Option<&str>)
-    -> Result<IncomingMessage, WebhookError>
+type ParseFn = dyn Fn(&Value, &str, &HeaderMap, Option<&str>) -> Result<IncomingMessage, WebhookError>
     + Send
     + Sync;
 type MessageCallback = dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync;

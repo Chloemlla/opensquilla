@@ -718,9 +718,7 @@ fn is_valid_slug(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-        && s.chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphanumeric())
+        && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
 }
 
 /// Whether a string looks like a 2-letter ISO-639-1 or 3-letter ISO-639-2
@@ -1072,7 +1070,9 @@ pub fn upgrade_manifest(mut manifest: SkillManifest) -> SkillManifest {
     if manifest.kind.is_none() && !manifest.steps.is_empty() {
         manifest.kind = Some(SkillKind::Meta);
     }
-    if manifest.id.is_none() && let Some(name) = &manifest.name {
+    if manifest.id.is_none()
+        && let Some(name) = &manifest.name
+    {
         manifest.id = Some(name.to_lowercase().replace(' ', "_"));
     }
     if manifest.name.is_none() && manifest.id.is_some() {

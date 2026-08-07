@@ -184,10 +184,7 @@ impl WebSocketChannel {
         });
         let conns = self.connections.lock().await;
         if let Some(handle) = conns.get(&connection_id) {
-            let _ = handle
-                .sender
-                .send(Message::Text(welcome.to_string()))
-                .await;
+            let _ = handle.sender.send(Message::Text(welcome.to_string().into())).await;
         }
         drop(conns);
 
@@ -216,7 +213,7 @@ impl WebSocketChannel {
                         }
                     }
                     _ = ping.tick() => {
-                        if ws_sender.send(Message::Ping(Vec::new())).await.is_err() {
+                        if ws_sender.send(Message::Ping(Vec::new().into())).await.is_err() {
                             break;
                         }
                     }
@@ -289,7 +286,7 @@ impl WebSocketChannel {
         match conns.get(connection_id) {
             Some(handle) => handle
                 .sender
-                .send(Message::Text(text))
+                .send(Message::Text(text.into()))
                 .await
                 .map_err(|e| format!("Send to {connection_id}: {e}")),
             None => Err(format!("Connection not found: {connection_id}")),
@@ -309,7 +306,7 @@ impl WebSocketChannel {
             if handle.info.user_id == user_id
                 && handle
                     .sender
-                    .send(Message::Text(text.clone()))
+                    .send(Message::Text(text.clone().into()))
                     .await
                     .is_ok()
             {

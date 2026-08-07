@@ -1112,11 +1112,7 @@ async fn ack_socket_envelope(
         return;
     };
     let ack = json!({ "envelope_id": envelope_id, "payload": {} });
-    if sink
-        .send(WsMessage::Text(ack.to_string()))
-        .await
-        .is_err()
-    {
+    if sink.send(WsMessage::Text(ack.to_string())).await.is_err() {
         warn!("Slack Socket Mode ack send failed");
     }
 }

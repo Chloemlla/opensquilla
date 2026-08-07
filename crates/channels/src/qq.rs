@@ -541,11 +541,7 @@ fn spawn_qq_heartbeat(
             }
             let seq = { *last_seq.lock().await };
             let payload = json!({"op": 1, "d": seq});
-            if sink
-                .send(Message::Text(payload.to_string()))
-                .await
-                .is_err()
-            {
+            if sink.send(Message::Text(payload.to_string())).await.is_err() {
                 break;
             }
         }

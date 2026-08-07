@@ -510,7 +510,7 @@ fn version_matches(version: &str, constraint: &str) -> bool {
                         .collect();
                     match (vn.first(), rn.first()) {
                         (Some(&v0), Some(&r0)) if r0 > 0 => v0 == r0,
-                        (Some(&v0), Some(&r0)) => {
+                        (Some(&v0), Some(_)) => {
                             v0 == 0
                                 && vn.get(1).copied().unwrap_or(0)
                                     == rn.get(1).copied().unwrap_or(0)
@@ -1296,8 +1296,10 @@ const EXFILTRATION_PATTERNS: &[&str] = &[
     r#"(?i)\bfetch\s*\(\s*['\"]https?://(?!localhost|127\.0\.0\.1)"#,
 ];
 
-const HIDDEN_UNICODE_PATTERNS: &[&str] =
-    &["[\u{200b}-\u{200f}\u{2028}-\u{202f}\u{2060}-\u{206f}\u{feff}]", "[\u{202a}-\u{202e}]"];
+const HIDDEN_UNICODE_PATTERNS: &[&str] = &[
+    "[\u{200b}-\u{200f}\u{2028}-\u{202f}\u{2060}-\u{206f}\u{feff}]",
+    "[\u{202a}-\u{202e}]",
+];
 
 /// Patterns that indicate a script will download and execute remote content.
 const DOWNLOAD_EXEC_PATTERNS: &[(&str, &str)] = &[
