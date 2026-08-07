@@ -1,11 +1,11 @@
 //! Shared Dream promotion data models.
 //!
-//! Parity stub mirroring `src/opensquilla/memory/dream/models.py`. These
-//! types back the *evidence-gated promotion* pipeline (quarantine → evidence →
-//! ranking → rehydrate → curated_apply → receipts), which is distinct from the
+//! Parity port of `src/opensquilla/memory/dream/models.py`. These types back
+//! the *evidence-gated promotion* pipeline (quarantine → evidence → ranking →
+//! rehydrate → curated_apply → receipts), which is distinct from the
 //! clustering/merging path implemented directly on [`crate::dream::DreamEngine`].
-//! TODO(parity): only struct definitions are stubbed so far; the persistence
-//! and pipeline logic lives in `evidence`, `runner`, `curated_apply`, etc.
+//! Struct definitions match `models.py` field-by-field; the persistence and
+//! pipeline logic lives in `evidence`, `runner`, `curated_apply`, etc.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

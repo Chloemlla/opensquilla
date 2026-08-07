@@ -40,6 +40,7 @@ use crate::types::MemoryEntry;
 // be ported incrementally. Each stub carries a `TODO(parity)` marker.
 // ---------------------------------------------------------------------------
 
+pub mod candidates;
 pub mod curated_apply;
 pub mod evidence;
 pub mod models;
@@ -293,10 +294,10 @@ impl LlmConsolidator {
         if let Some(start) = raw.find('[') {
             if let Some(end) = raw.rfind(']') {
                 let slice = &raw[start..=end];
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(slice) {
-                    if let serde_json::Value::Array(items) = v {
-                        return items;
-                    }
+                if let Ok(serde_json::Value::Array(items)) =
+                    serde_json::from_str::<serde_json::Value>(slice)
+                {
+                    return items;
                 }
             }
         }
