@@ -1,62 +1,9 @@
-# OpenSquilla Rust Clippy Configuration
+# OpenSquilla Clippy Configuration
 # See https://doc.rust-lang.org/clippy/ for all available lints
+#
+# Only configuration keys are valid here (e.g. `msrv`). Lint *levels*
+# (allow/deny/warn) live in Cargo.toml [lints] tables or on the clippy
+# command line; the rust-ci.yml clippy job carries the project's allows.
 
 # MSRV: we track stable Rust
 msrv = "1.85"
-
-# Allow specific clippy lints that clash with project conventions
-allow = [
-    "doc_markdown",           # crate names in docs trigger false positives
-    "module_name_repetitions", # opensquilla_* prefix is intentional
-    "too_many_arguments",     # sometimes necessary for configuration builders
-    "similar_names",          # many similar variable names in LLM provider code
-]
-
-# Deny pedantic lints that could cause bugs
-deny = [
-    "cast_lossless",
-    "cast_possible_truncation",
-    "cast_possible_wrap",
-    "cast_sign_loss",
-    "checked_conversions",
-    "missing_docs_in_private_items",
-    "missing_errors_doc",
-    "missing_panics_doc",
-    "panic_in_result_fn",
-    "unreachable",
-    "unwrap_used",
-    "expect_used",
-]
-
-# Warn on lints that should be fixed but aren't blockers
-warn = [
-    "cargo",
-    "cargo_common_metadata",
-    "complexity",
-    "pedantic",
-    "perf",
-    "style",
-    "suspicious",
-    "todo",
-    "unused_async",
-    "unused_self",
-]
-
-[clippy.cargo]
-# Allow crates.io metadata checks for workspace crates
-ignore = ["opensquilla-core", "opensquilla-gateway", "opensquilla-engine"]
-
-[rustfmt]
-edition = "2024"
-max_width = 120
-hard_tabs = false
-tab_spaces = 4
-newline_style = "Auto"
-use_small_heuristics = "Max"
-reorder_imports = true
-reorder_modules = true
-remove_nested_parens = true
-short_array_element_width_threshold = 10
-match_arm_leading_pipes = "Preserve"
-fn_call_width = 80
-struct_field_align_threshold = 40
