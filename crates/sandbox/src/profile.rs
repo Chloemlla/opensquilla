@@ -1,6 +1,6 @@
 //! Sandbox profile presets per security level.
 //!
-//! Each [`SandboxProfile`] bundles a [`SandboxPolicy`](crate::policy::SandboxPolicy)
+//! Each [`SandboxProfile`] bundles a [`SandboxPolicy`]
 //! with a human-readable name, description, the set of capabilities it drops,
 //! and the platform-specific notes that the backends consult when building
 //! their isolation primitives (bwrap args, SBPL text, Job Object flags).

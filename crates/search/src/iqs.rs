@@ -204,6 +204,7 @@ fn error_detail(body: &str) -> String {
 #[derive(serde::Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 struct IqsResponse {
+    #[allow(dead_code)]
     #[serde(default)]
     request_id: Option<String>,
     #[serde(default)]

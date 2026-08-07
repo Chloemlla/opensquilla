@@ -12,15 +12,14 @@ use async_trait::async_trait;
 use base64::Engine;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::path::PathBuf;
-use std::time::Instant;
 
 /// Tool for image processing operations.
 pub struct ImageTool {
     /// Allowed base directory for reading images.
     allowed_base: PathBuf,
     /// Maximum image file size in bytes.
+    #[allow(dead_code)]
     max_image_size: u64,
 }
 

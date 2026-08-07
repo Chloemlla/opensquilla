@@ -6,14 +6,14 @@
 //! indefinitely.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 /// Default lease duration for a preview URL.
@@ -329,6 +329,7 @@ impl Default for PreviewCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn temp_file(tag: &str, contents: &[u8], ext: &str) -> PathBuf {
         let dir =

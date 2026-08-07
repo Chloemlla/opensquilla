@@ -13,7 +13,6 @@
 
 use opensquilla_core::error::{AppError, AppResult};
 use opensquilla_core::types::UserId;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};

@@ -534,7 +534,8 @@ impl SandboxBuilder {
         self
     }
 
-    /// Attach sandbox settings. The settings' [`EffectiveMode`] then drives
+    /// Attach sandbox settings. The settings' [`crate::config::EffectiveMode`]
+    /// then drives
     /// backend selection, sandbox enablement and the default network posture
     /// (see [`SandboxManager`]).
     pub fn with_settings(mut self, settings: SandboxSettings) -> Self {

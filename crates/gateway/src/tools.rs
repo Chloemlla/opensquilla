@@ -330,7 +330,7 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                 // run the call through the dispatch engine (injection guard +
                 // policy chain + timeout).
                 let snapshot = {
-                    let mut tools = service.tools.write();
+                    let tools = service.tools.write();
                     let mut registry = ToolRegistry::new();
                     let names: Vec<String> = tools.tool_names();
                     for name in &names {

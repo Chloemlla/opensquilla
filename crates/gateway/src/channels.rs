@@ -9,7 +9,6 @@ use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use uuid::Uuid;
 
 use crate::rpc::{RpcRegistry, rpc_handler};
 
@@ -408,7 +407,7 @@ mod tests {
             "channel_id": "ch-1",
             "channel_type": "terminal",
         });
-        registry
+        let _ = registry
             .dispatch("channels.create", params.clone())
             .await
             .unwrap();

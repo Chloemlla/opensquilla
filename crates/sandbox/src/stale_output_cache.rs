@@ -15,9 +15,12 @@
 //! (letting a denied command's stale output leak into a later run).
 //!
 //! Two keying styles are supported:
-//! - command/input keys via [`StaleOutputCache::cache_key`] / [`get`], and
-//! - session-scoped keys via [`record_success`] / [`get_session`] / [`purge`]
-//!   / [`clear_session`], matching the no-op variant's surface.
+//! - command/input keys via [`StaleOutputCache::cache_key`] /
+//!   [`StaleOutputCache::get`], and
+//! - session-scoped keys via [`StaleOutputCache::record_success`] /
+//!   [`StaleOutputCache::get_session`] / [`StaleOutputCache::purge`] /
+//!   [`StaleOutputCache::clear_session`], matching the no-op variant's
+//!   surface.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

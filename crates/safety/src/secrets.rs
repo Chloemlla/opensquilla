@@ -1,6 +1,5 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 /// Redacts sensitive information such as API keys and tokens from strings.
 ///

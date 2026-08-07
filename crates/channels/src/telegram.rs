@@ -14,9 +14,7 @@
 //!    thread replies, and `reply_markup` inline keyboards. File messages use
 //!    multipart uploads and `getFile` / file download.
 
-use crate::types::{
-    Channel, ChannelConfig, ChannelType, IncomingMessage, OutgoingMessage,
-};
+use crate::types::{Channel, ChannelConfig, ChannelType, IncomingMessage, OutgoingMessage};
 use crate::webhook::{WebhookMethod, WebhookRoute};
 use reqwest::multipart::{Form, Part};
 use serde_json::{Value, json};

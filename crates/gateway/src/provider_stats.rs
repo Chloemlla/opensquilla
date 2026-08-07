@@ -5,7 +5,6 @@
 //! a rolling stats history, and a query API.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use parking_lot::{Mutex, RwLock};
@@ -359,7 +358,7 @@ mod tests {
             success_count: 1,
             ..Default::default()
         };
-        let mut b = ProviderStats {
+        let b = ProviderStats {
             provider: "openai".into(),
             request_count: 2,
             error_count: 1,

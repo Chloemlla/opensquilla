@@ -156,7 +156,6 @@ pub fn diff_lines(old: &str, new: &str) -> Vec<LineChange> {
     let new_lines: Vec<String> = new.lines().map(String::from).collect();
 
     let table = lcs_table(&old_lines, &new_lines);
-    let mut changes = Vec::new();
     let mut i = old_lines.len();
     let mut j = new_lines.len();
 
@@ -188,7 +187,7 @@ pub fn diff_lines(old: &str, new: &str) -> Vec<LineChange> {
         }
     }
     reversed.reverse();
-    changes = reversed;
+    let changes = reversed;
     changes
 }
 
@@ -467,7 +466,7 @@ pub fn compare_directories(old_dir: &Path, new_dir: &Path) -> ToolResult<DirDiff
         let old_size = old_files.get(path).copied();
         let new_size = new_files.get(path).copied();
         let status = match (old_size, new_size) {
-            (None, Some(new)) => {
+            (None, Some(_)) => {
                 added += 1;
                 FileStatus::Added
             }

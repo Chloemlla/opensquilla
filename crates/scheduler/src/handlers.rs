@@ -47,6 +47,12 @@ impl HeartbeatHandler {
     }
 }
 
+impl Default for HeartbeatHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl CronJobHandler for HeartbeatHandler {
     fn name(&self) -> &str {
@@ -67,6 +73,12 @@ impl AutoProposeHandler {
         Self {
             name: "auto_propose".to_string(),
         }
+    }
+}
+
+impl Default for AutoProposeHandler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -112,6 +124,12 @@ impl DreamHandler {
     /// The injected engine, if any.
     pub fn engine(&self) -> Option<&Arc<DreamEngine>> {
         self.engine.as_ref()
+    }
+}
+
+impl Default for DreamHandler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -227,6 +245,12 @@ impl HandlerRegistry {
     }
     pub fn is_empty(&self) -> bool {
         self.handlers.is_empty()
+    }
+}
+
+impl Default for HandlerRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

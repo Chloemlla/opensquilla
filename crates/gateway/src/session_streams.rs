@@ -19,7 +19,7 @@ use opensquilla_core::error::AppError;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
-use tracing::{debug, warn};
+use tracing::warn;
 
 use crate::session_events::{SessionEvent, SessionEventBroadcaster, SessionEventKind};
 

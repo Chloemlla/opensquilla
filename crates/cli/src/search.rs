@@ -180,6 +180,7 @@ pub async fn provider_status() -> Result<()> {
 }
 
 /// Bold helper for headers.
+#[allow(dead_code)]
 trait BoldStr {
     fn bold(&self) -> String;
 }

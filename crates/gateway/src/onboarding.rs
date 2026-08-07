@@ -6,7 +6,7 @@
 
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
-use opensquilla_onboarding::flow::{OnboardingError, SetupFlow, SetupState};
+use opensquilla_onboarding::flow::{OnboardingError, SetupFlow};
 use opensquilla_onboarding::providers::{ProviderSpec, discover_providers, get_provider};
 use opensquilla_onboarding::storage::ConfigStorage;
 use parking_lot::Mutex;

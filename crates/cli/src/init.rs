@@ -5,7 +5,7 @@
 //! a skills directory, a data directory for SQLite databases, and a `.gitignore`
 //! to keep runtime artifacts out of version control.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use opensquilla_core::config::Config;
@@ -167,7 +167,7 @@ pub async fn preview_init(directory: Option<String>) -> Result<()> {
 }
 
 /// Build a default project config.
-fn default_project_config(name: &str) -> Config {
+fn default_project_config(_name: &str) -> Config {
     let mut config = Config::default();
     config
         .providers

@@ -839,6 +839,7 @@ impl ChatProvider for AnthropicProvider {
 /// frame-oriented feed. For production streaming use [`AnthropicStream`],
 /// which additionally tracks tool-call identity and merges usage across
 /// `message_start` / `message_delta` frames.
+#[allow(dead_code)]
 fn parse_anthropic_sse_event(data: &str) -> Option<ProviderResult<StreamEvent>> {
     if data == "[DONE]" {
         return Some(Ok(StreamEvent::Done {

@@ -63,7 +63,7 @@ pub fn skills_dir() -> PathBuf {
 }
 
 /// Build a `SessionManager` backed by a file-backed SQLite store.
-pub fn build_session_manager(config: &Config) -> Result<opensquilla_session::SessionManager> {
+pub fn build_session_manager(_config: &Config) -> Result<opensquilla_session::SessionManager> {
     let path = session_db_path();
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).ok();
@@ -104,7 +104,7 @@ pub fn default_model(config: &Config) -> String {
 /// Resolve an API key for a provider from its config, falling back to the
 /// conventional `<TYPE>_API_KEY` environment variable.
 pub fn provider_api_key(
-    config: &Config,
+    _config: &Config,
     provider: &opensquilla_core::config::ProviderConfig,
 ) -> Option<String> {
     if let Some(key) = provider.api_key.clone() {

@@ -5,7 +5,7 @@ use tracing::{info, warn};
 
 /// A precise tick loop that fires at a configurable interval.
 ///
-/// Uses 	okio::time::interval with MissedTickBehavior::Skip to ensure
+/// Uses tokio::time::interval with MissedTickBehavior::Skip to ensure
 /// ticks are not backlogged if the handler takes longer than the interval.
 pub struct TickLoop {
     running: Arc<AtomicBool>,

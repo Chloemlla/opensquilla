@@ -302,7 +302,7 @@ mod tests {
         register_usage_handlers(&mut registry, store);
 
         for (model, session) in [("gpt-4o", "s1"), ("claude", "s1"), ("gpt-4o", "s2")] {
-            registry
+            let _ = registry
                 .dispatch(
                     "usage.record",
                     serde_json::json!({
@@ -335,7 +335,7 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_usage_handlers(&mut registry, store);
 
-        registry
+        let _ = registry
             .dispatch(
                 "usage.record",
                 serde_json::json!({

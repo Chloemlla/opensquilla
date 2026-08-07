@@ -245,14 +245,14 @@ mod tests {
         let mut registry = RpcRegistry::new();
         register_secrets_handlers(&mut registry, store);
 
-        registry
+        let _ = registry
             .dispatch(
                 "secrets.set",
                 serde_json::json!({"key": "k1", "value": "secret-value-1"}),
             )
             .await
             .unwrap();
-        registry
+        let _ = registry
             .dispatch(
                 "secrets.set",
                 serde_json::json!({"key": "k2", "value": "secret-value-2"}),
@@ -290,7 +290,7 @@ mod tests {
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["exists"], false);
 
-        registry
+        let _ = registry
             .dispatch(
                 "secrets.set",
                 serde_json::json!({"key": "present", "value": "v"}),

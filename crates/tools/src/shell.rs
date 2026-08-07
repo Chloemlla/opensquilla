@@ -330,7 +330,7 @@ impl BackgroundProcessTool {
         cmd.stderr(Stdio::piped());
 
         // Spawn without waiting for the process to finish.
-        let mut child = cmd
+        let child = cmd
             .spawn()
             .map_err(|e| ToolError::new("IO_ERROR", format!("Failed to spawn process: {}", e)))?;
 
@@ -359,8 +359,8 @@ impl BackgroundProcessTool {
         let drain_handle = tokio::spawn(async move {
             // Drain stdout and stderr concurrently so a pipe filling up on one
             // stream cannot deadlock the other.
-            let mut stdout_buf_guard = stdout_buf.clone();
-            let mut stderr_buf_guard = stderr_buf.clone();
+            let stdout_buf_guard = stdout_buf.clone();
+            let stderr_buf_guard = stderr_buf.clone();
             let out_task = tokio::spawn(async move {
                 let mut data = Vec::new();
                 if stdout.read_to_end(&mut data).await.is_ok() {

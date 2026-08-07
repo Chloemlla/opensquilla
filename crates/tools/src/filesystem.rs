@@ -1255,7 +1255,7 @@ mod tests {
     #[tokio::test]
     async fn test_watch_operation() {
         let dir = tempfile::tempdir().unwrap();
-        let tool = FilesystemTool::new(dir.path().to_path_buf());
+        let _tool = FilesystemTool::new(dir.path().to_path_buf());
 
         // Watch the directory for a short window and create a file inside it.
         let tool_clone_path = dir.path().to_path_buf();

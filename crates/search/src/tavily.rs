@@ -135,6 +135,7 @@ impl SearchProvider for TavilySearch {
 struct TavilyResponse {
     #[serde(default)]
     results: Vec<TavilyResult>,
+    #[allow(dead_code)]
     #[serde(default)]
     answer: Option<String>,
 }

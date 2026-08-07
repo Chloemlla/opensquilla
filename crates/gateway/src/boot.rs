@@ -24,8 +24,6 @@
 //!
 //! See [`BootSequenceBuilder`] for the available configuration knobs.
 
-use std::sync::Arc;
-
 use opensquilla_core::config::{Config, GatewayConfig};
 use opensquilla_core::error::AppError;
 use tokio::signal;

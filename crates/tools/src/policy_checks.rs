@@ -365,6 +365,7 @@ mod tests {
         values.iter().map(|s| s.to_string()).collect()
     }
 
+    #[allow(dead_code)]
     fn owner_spec() -> ToolVisibilitySpec {
         ToolVisibilitySpec {
             owner_only: false,

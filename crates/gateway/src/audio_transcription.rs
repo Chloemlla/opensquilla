@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Audio content types accepted by the transcription pipeline.

@@ -60,7 +60,7 @@ impl HeartbeatStatus {
 
     /// Parse a status from its string form; unknown strings map to
     /// [`HeartbeatStatus::Unknown`].
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "healthy" => HeartbeatStatus::Healthy,
             "missed" => HeartbeatStatus::Missed,
@@ -253,7 +253,7 @@ fn heartbeat_from_row(row: &rusqlite::Row) -> rusqlite::Result<Heartbeat> {
             .get::<_, String>(1)?
             .parse::<DateTime<Utc>>()
             .unwrap_or(Utc::now()),
-        status: HeartbeatStatus::from_str(&row.get::<_, String>(2)?),
+        status: HeartbeatStatus::parse(&row.get::<_, String>(2)?),
         version: row.get::<_, i64>(3)? as u32,
         missed_count: row.get::<_, i64>(4)? as u32,
         interval_secs: row.get::<_, i64>(5)? as u64,
@@ -706,7 +706,7 @@ mod tests {
             HeartbeatStatus::Recovering,
             HeartbeatStatus::Recovered,
         ] {
-            assert_eq!(HeartbeatStatus::from_str(status.as_str()), status);
+            assert_eq!(HeartbeatStatus::parse(status.as_str()), status);
         }
     }
 }

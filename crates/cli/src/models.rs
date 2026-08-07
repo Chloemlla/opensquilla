@@ -164,7 +164,7 @@ pub async fn compare_models(models: Vec<String>) -> Result<()> {
         })
         .collect();
 
-    for (i, spec) in specs.iter().enumerate() {
+    for (_i, spec) in specs.iter().enumerate() {
         seed_static(&catalog, &spec.1);
     }
 
@@ -315,6 +315,7 @@ pub async fn show_model(name: String) -> Result<()> {
     anyhow::bail!("Model '{name}' not found in any configured provider")
 }
 
+#[allow(dead_code)]
 fn print_provider_models(
     catalog: &ModelCatalog,
     provider_name: &str,

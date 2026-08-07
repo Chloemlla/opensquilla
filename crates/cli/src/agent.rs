@@ -13,7 +13,6 @@
 //! - `agent create <name>` — create a new agent profile
 //! - `agent delete <name>` — delete an agent profile
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -28,9 +27,9 @@ use opensquilla_provider::{ChatConfig, Provider, StreamEvent};
 use opensquilla_session::{SessionMode, SessionStatus};
 use ratatui::prelude::Stylize;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
-use crate::table::{self, Alignment, Color, Column, KeyValue, Style, Table};
+use crate::table::{self, Alignment, Column, KeyValue, Table};
 use crate::util;
 
 /// Agent subcommands.
@@ -368,7 +367,7 @@ pub async fn agent_run(
         TurnOutcome::Complete {
             messages,
             usage,
-            duration_ms: turn_ms,
+            duration_ms: _turn_ms,
         } => {
             // Record the assistant response.
             let response = last_assistant_text(messages);
@@ -566,7 +565,7 @@ async fn build_skill_loader(config: &Config) -> Result<opensquilla_skills::loade
     std::fs::create_dir_all(&managed).ok();
     loader.register_layer_dir(SkillLayer::Managed, managed);
     let bundled = load_bundled_skills();
-    loader.register_skills(bundled);
+    let _ = loader.register_skills(bundled);
     loader
         .scan_all()
         .await

@@ -14,7 +14,6 @@ use opensquilla_core::result::CoreResult;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // decision_log — one row per completed turn (DecisionEntry in Python)
@@ -1289,6 +1288,7 @@ fn cost_row_mapper(row: &rusqlite::Row) -> rusqlite::Result<CostLogRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     fn new_id() -> String {
         Uuid::new_v4().to_string()

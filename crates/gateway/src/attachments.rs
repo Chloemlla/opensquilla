@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 /// Maximum allowed attachment size (default 25 MiB).

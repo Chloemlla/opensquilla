@@ -217,6 +217,7 @@ struct BochaResponse {
     code: Option<serde_json::Value>,
     #[serde(default)]
     msg: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "log_id", default)]
     log_id: Option<String>,
     #[serde(default)]

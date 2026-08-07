@@ -138,6 +138,7 @@ impl SearchProvider for ExaSearch {
 struct ExaResponse {
     #[serde(default)]
     results: Vec<ExaResult>,
+    #[allow(dead_code)]
     #[serde(default)]
     autoprompt_string: Option<String>,
 }
@@ -151,6 +152,7 @@ struct ExaResult {
     score: f64,
     #[serde(default)]
     published_date: Option<String>,
+    #[allow(dead_code)]
     #[serde(default)]
     author: Option<String>,
 }

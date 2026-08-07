@@ -189,7 +189,7 @@ fn parse_ollama_tool_call(tc: &Value, index: usize) -> Option<ToolCall> {
 fn build_ollama_messages(msg: &ChatMessage, tool_names: &HashMap<String, String>) -> Vec<Value> {
     let mut text_parts: Vec<String> = Vec::new();
     let mut tool_calls: Vec<Value> = Vec::new();
-    let mut images: Vec<String> = Vec::new();
+    let images: Vec<String> = Vec::new();
     let mut tool_messages: Vec<Value> = Vec::new();
 
     for block in &msg.content {

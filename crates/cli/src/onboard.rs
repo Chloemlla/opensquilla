@@ -77,7 +77,7 @@ pub async fn run_wizard() -> Result<()> {
     println!("{}", "Step 2: API key".bold());
     let env_var = format!("{}_API_KEY", provider_type.to_uppercase());
     let env_key = std::env::var(&env_var).ok();
-    let api_key = if let Some(ref key) = env_key {
+    let api_key = if let Some(ref _key) = env_key {
         println!("Found key in ${env_var} (will use environment variable).");
         None
     } else {

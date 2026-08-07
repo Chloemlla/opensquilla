@@ -649,7 +649,7 @@ impl Tool for SessionsHistoryTool {
         if !(1..=100).contains(&limit) {
             return Err(ToolError::invalid_args("Limit must be between 1 and 100"));
         }
-        let limit_u64 = limit as u64;
+        let _limit_u64 = limit as u64;
 
         let storage = self.storage.clone();
         let result = tokio::task::spawn_blocking(move || -> Result<Value, ToolError> {

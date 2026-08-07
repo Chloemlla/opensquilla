@@ -5,7 +5,7 @@
 //! and associated types for parameter definitions and execution results.
 
 use opensquilla_core::ToolCall;
-use opensquilla_core::error::{AppError, AppResult};
+use opensquilla_core::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;

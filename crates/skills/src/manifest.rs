@@ -1266,7 +1266,7 @@ mod tests {
 
     #[test]
     fn validator_catches_tool_call_without_tool() {
-        let mut m = meta_manifest(
+        let m = meta_manifest(
             "wf",
             "Workflow",
             "desc",

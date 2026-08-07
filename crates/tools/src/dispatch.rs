@@ -10,7 +10,7 @@
 
 use crate::context::ToolContext;
 use crate::policy::{PolicyChain, PolicyContext, PolicyDecision};
-use crate::registry::{Tool, ToolError, ToolOutput, ToolRegistry, ToolResult};
+use crate::registry::{ToolError, ToolOutput, ToolRegistry};
 use opensquilla_core::ToolCall;
 use opensquilla_core::error::AppError;
 use regex::Regex;
@@ -995,9 +995,9 @@ impl From<DispatchError> for AppError {
             DispatchError::RequiresConfirmation(_) => {
                 AppError::new("REQUIRES_CONFIRMATION", err.to_string()).with_status(428)
             }
-            DispatchError::Deferred {
-                retry_after_secs, ..
-            } => AppError::new("DEFERRED", err.to_string()).with_status(429),
+            DispatchError::Deferred { .. } => {
+                AppError::new("DEFERRED", err.to_string()).with_status(429)
+            }
             DispatchError::Timeout { .. } => {
                 AppError::new("TIMEOUT", err.to_string()).with_status(408)
             }

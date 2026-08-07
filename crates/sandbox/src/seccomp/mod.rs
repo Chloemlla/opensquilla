@@ -7,11 +7,11 @@
 //!
 //! Three preset policies are provided:
 //!
-//! - [`SeccompPolicy::Standard`] — a broad allowlist suitable for general
+//! - [`SeccompPolicy::standard()`] — a broad allowlist suitable for general
 //!   programs (glibc, musl, Rust, Go runtimes).
-//! - [`SeccompPolicy::Strict`] — the standard set minus network syscalls,
+//! - [`SeccompPolicy::strict()`] — the standard set minus network syscalls,
 //!   `ptrace`, `clone` with `CLONE_NEW*` flags, and a few others.
-//! - [`SeccompPolicy::Locked`] — the strict set minus filesystem write
+//! - [`SeccompPolicy::locked()`] — the strict set minus filesystem write
 //!   syscalls and `socket`/`connect`/`bind` entirely.
 //!
 //! Custom policies can be built via [`SeccompPolicy::custom`].

@@ -7,7 +7,7 @@
 //! caller could smuggle `127.0.0.1`, `*.com` or a non-FQDN into the allowlist.
 //!
 //! The module is pure (no I/O) and is consumed by
-//! [`crate::default_allowlist`] and the network policy layer.
+//! [`crate::default_allowlist()`] and the network policy layer.
 
 /// Whether a domain pattern was accepted into the allowlist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

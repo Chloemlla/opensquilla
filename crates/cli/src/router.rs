@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use opensquilla_core::config::Config;
 use opensquilla_core::types::Message;
-use opensquilla_provider::{ChatConfig, Provider, ProviderSpecTable};
+use opensquilla_provider::{ChatConfig, ProviderSpecTable};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::info;
@@ -778,6 +778,7 @@ fn load_calibration(config: &Config) -> Result<Vec<CalibrationResult>> {
 }
 
 /// Bold helper.
+#[allow(dead_code)]
 trait BoldStr {
     fn bold(&self) -> String;
 }

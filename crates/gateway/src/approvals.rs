@@ -4,9 +4,7 @@
 //! approve, reject, list pending, and inspect the rejection ledger.
 
 use opensquilla_core::error::AppError;
-use opensquilla_sandbox::governance::{
-    ApprovalQueue, ApprovalRequest, ApprovalStatus, RejectionEntry,
-};
+use opensquilla_sandbox::governance::{ApprovalQueue, ApprovalRequest, RejectionEntry};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -365,7 +363,7 @@ mod tests {
             "command": "cp",
             "args": ["a", "b"],
         });
-        registry.dispatch("approvals.submit", params).await.unwrap();
+        let _ = registry.dispatch("approvals.submit", params).await.unwrap();
 
         let r = registry
             .dispatch("approvals.pending", serde_json::Value::Null)

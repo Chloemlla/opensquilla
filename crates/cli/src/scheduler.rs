@@ -199,7 +199,7 @@ pub async fn remove_task(id: String) -> Result<()> {
 }
 
 /// Show execution history for a task.
-pub async fn show_history(id: String, limit: usize) -> Result<()> {
+pub async fn show_history(id: String, _limit: usize) -> Result<()> {
     let engine = build_engine()?;
     let job = load_job(&engine, &id).await?;
 

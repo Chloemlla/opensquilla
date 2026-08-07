@@ -18,7 +18,6 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Duration, Utc};
 use opensquilla_core::config::Config;
 use opensquilla_provider::model_catalog::{ModelCatalog, seed_static};
-use opensquilla_session::SessionManager;
 use serde::Serialize;
 use tracing::info;
 

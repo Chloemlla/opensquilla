@@ -355,7 +355,6 @@ mod tests {
         assert_eq!(report.status, HealthStatus::Healthy);
         assert!(report.issues.is_empty());
         assert_eq!(report.components.len(), 1);
-        assert!(report.uptime_seconds >= 0);
     }
 
     #[tokio::test]

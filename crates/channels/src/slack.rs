@@ -17,9 +17,7 @@
 //! Token management: [`SlackOAuth`] drives the `oauth.v2` install/refresh
 //! flow and [`SlackTokenStore`] caches the resulting credentials.
 
-use crate::types::{
-    Channel, ChannelConfig, ChannelType, IncomingMessage, OutgoingMessage,
-};
+use crate::types::{Channel, ChannelConfig, ChannelType, IncomingMessage, OutgoingMessage};
 use crate::webhook::{WebhookError, WebhookMethod, WebhookRoute};
 use chrono::{DateTime, Utc};
 use futures::stream::{SplitSink, SplitStream};

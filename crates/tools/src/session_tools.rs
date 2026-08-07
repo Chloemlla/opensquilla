@@ -392,7 +392,7 @@ impl Tool for SessionSwitchTool {
         let agent_raw = params["agent_id"]
             .as_str()
             .ok_or_else(|| ToolError::invalid_args("Missing required parameter 'agent_id'"))?;
-        let agent_id = Uuid::parse_str(agent_raw).map_err(|e| {
+        let _agent_id = Uuid::parse_str(agent_raw).map_err(|e| {
             ToolError::invalid_args(format!("Invalid 'agent_id' UUID '{}': {}", agent_raw, e))
         })?;
         let raw = params["session_id"]

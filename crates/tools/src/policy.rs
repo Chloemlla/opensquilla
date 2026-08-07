@@ -7,11 +7,9 @@
 
 use async_trait::async_trait;
 use opensquilla_core::ToolCall;
-use opensquilla_core::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The decision resulting from a policy evaluation.
@@ -392,6 +390,7 @@ pub struct FinalizePolicy {
     /// Whether to log all tool executions.
     log_all: bool,
     /// Whether to record metrics.
+    #[allow(dead_code)]
     record_metrics: bool,
 }
 
@@ -590,7 +589,7 @@ impl RiskPolicy {
 
     /// Mark a session as an admin session (allows Confirm tools without
     /// confirmation, and AdminOnly tools).
-    pub fn with_admin_session(mut self, session_id: impl Into<String>) -> Self {
+    pub fn with_admin_session(self, session_id: impl Into<String>) -> Self {
         if let Ok(mut sessions) = self.admin_sessions.lock() {
             sessions.insert(session_id.into(), true);
         }

@@ -172,7 +172,7 @@ impl SupervisedChild {
 /// new process group is created so a timeout can kill the whole group; on
 /// Windows, a new process group is requested via creation flags. The policy's
 /// resource limits are applied in a `pre_exec` hook on Unix (see
-/// [`apply_rlimits_pre_exec`]).
+/// `apply_rlimits_pre_exec`).
 pub fn spawn_supervised(opts: &SpawnOptions<'_>) -> Result<SupervisedChild, String> {
     let mut cmd = Command::new(opts.command);
     cmd.args(opts.args)

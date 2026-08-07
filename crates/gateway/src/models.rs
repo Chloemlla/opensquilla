@@ -6,7 +6,6 @@
 use opensquilla_core::error::AppError;
 use opensquilla_core::model::{ModelInfo, ModelRegistry};
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::rpc::{RpcRegistry, rpc_handler};

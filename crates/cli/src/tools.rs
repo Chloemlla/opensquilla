@@ -10,7 +10,7 @@
 //! - `tools categories` — list tool categories
 
 use anyhow::{Context, Result};
-use opensquilla_tools::registry::{Tool, ToolRegistry};
+use opensquilla_tools::registry::ToolRegistry;
 
 use crate::table::{self, Alignment, Color, Column, KeyValue, Style, Table};
 
@@ -233,6 +233,7 @@ pub async fn list_categories() -> Result<()> {
 }
 
 /// Bold helper for headers.
+#[allow(dead_code)]
 trait BoldStr {
     fn bold(&self) -> String;
 }

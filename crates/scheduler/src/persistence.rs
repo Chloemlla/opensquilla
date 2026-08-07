@@ -137,7 +137,7 @@ impl JobStore {
             .map_err(|e| StoreError::Query(e.to_string()))?;
 
         let mut rows = stmt
-            .query_map(params![job_id.to_string()], |row| job_from_row(row))
+            .query_map(params![job_id.to_string()], job_from_row)
             .map_err(|e| StoreError::Query(e.to_string()))?;
 
         match rows.next() {
@@ -236,7 +236,7 @@ impl JobStore {
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|b| b.as_ref()).collect();
         let rows = stmt
-            .query_map(params_ref.as_slice(), |row| job_from_row(row))
+            .query_map(params_ref.as_slice(), job_from_row)
             .map_err(|e| StoreError::Query(e.to_string()))?;
         let jobs: Vec<CronJob> = rows.filter_map(|r| r.ok()).collect();
         Ok(jobs)
@@ -262,7 +262,7 @@ impl JobStore {
             .map_err(|e| StoreError::Query(e.to_string()))?;
 
         let rows = stmt
-            .query_map(params![active_str, now], |row| job_from_row(row))
+            .query_map(params![active_str, now], job_from_row)
             .map_err(|e| StoreError::Query(e.to_string()))?;
         let jobs: Vec<CronJob> = rows.filter_map(|r| r.ok()).collect();
         Ok(jobs)
@@ -348,7 +348,7 @@ impl JobStore {
         let rows = stmt
             .query_map(
                 params![job_id.to_string(), limit as i64, offset as i64],
-                |row| execution_from_row(row),
+                execution_from_row,
             )
             .map_err(|e| StoreError::Query(e.to_string()))?;
         let executions: Vec<JobExecution> = rows.filter_map(|r| r.ok()).collect();

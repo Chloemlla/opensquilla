@@ -177,6 +177,7 @@ struct BraveWebResponse {
     web: Option<BraveWebSection>,
     #[serde(default)]
     news: Option<BraveNewsSection>,
+    #[allow(dead_code)]
     #[serde(default)]
     videos: Option<BraveVideoSection>,
 }
@@ -215,13 +216,17 @@ struct BraveNewsResult {
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct BraveVideoSection {
+    #[allow(dead_code)]
     results: Vec<BraveVideoResult>,
 }
 
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct BraveVideoResult {
+    #[allow(dead_code)]
     title: String,
+    #[allow(dead_code)]
     url: String,
+    #[allow(dead_code)]
     description: String,
 }

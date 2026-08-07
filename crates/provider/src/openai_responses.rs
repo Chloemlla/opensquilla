@@ -1166,6 +1166,7 @@ impl OpenAIResponsesProvider {
     }
 
     /// The effective request model, preferring the config's model.
+    #[allow(dead_code)]
     fn effective_model<'a>(&'a self, config: &'a ChatConfig) -> &'a str {
         if config.model.is_empty() {
             &self.default_model

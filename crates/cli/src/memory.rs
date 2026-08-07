@@ -264,7 +264,7 @@ pub async fn add_memory(
         importance,
         serde_json::Value::Null,
     );
-    let mut entry = entry.with_tags(tags);
+    let entry = entry.with_tags(tags);
 
     store
         .update_memory(&entry)

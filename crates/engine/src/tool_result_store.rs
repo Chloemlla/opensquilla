@@ -737,7 +737,7 @@ mod tests {
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    fn temp_store() -> (tempdir_cleanup, ToolResultStore) {
+    fn temp_store() -> (TempdirCleanup, ToolResultStore) {
         let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
             "opensquilla_trs_test_{}_{}",
@@ -747,12 +747,12 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let store = ToolResultStore::new(&dir);
-        (tempdir_cleanup(dir), store)
+        (TempdirCleanup(dir), store)
     }
 
-    struct tempdir_cleanup(PathBuf);
+    struct TempdirCleanup(PathBuf);
 
-    impl Drop for tempdir_cleanup {
+    impl Drop for TempdirCleanup {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }

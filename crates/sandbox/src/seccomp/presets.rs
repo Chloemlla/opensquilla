@@ -5,8 +5,9 @@
 //! unshare with namespace flags) is excluded. Network syscalls are omitted
 //! from the STRICT and LOCKED presets.
 //!
-//! The presets are pure data: the [`builder::SeccompFilterBuilder`] consumes
-//! them to produce a compiled [`BpfProgram`].
+//! The presets are pure data: the
+//! [`crate::seccomp::builder::SeccompFilterBuilder`] consumes them to produce a
+//! compiled [`crate::seccomp::BpfProgram`].
 
 use crate::seccomp::AllowRule;
 

@@ -373,6 +373,7 @@ impl Tool for WebFetchTool {
 
 /// Tool for making arbitrary HTTP requests.
 pub struct HttpRequestTool {
+    #[allow(dead_code)]
     client: Client,
     ssrf: SsrfProtection,
 }
@@ -723,11 +724,11 @@ pub fn extract_readable_content(html: &str) -> ReadabilityResult {
     let mut best_score = 0.0f64;
     let mut best_selector = String::new();
 
-    let mut consider = |selector_str: &str,
-                        selector: &Selector,
-                        best_score: &mut f64,
-                        best_content: &mut String,
-                        best_selector: &mut String| {
+    let consider = |selector_str: &str,
+                    selector: &Selector,
+                    best_score: &mut f64,
+                    best_content: &mut String,
+                    best_selector: &mut String| {
         for element in document.select(selector) {
             let text: String = element.text().collect::<Vec<_>>().join(" ");
             let text = text.trim().to_string();
@@ -1260,6 +1261,7 @@ pub struct WebExtractTool {
     /// Robots.txt checker.
     robots: RobotsTxt,
     /// Maximum redirects to follow.
+    #[allow(dead_code)]
     max_redirects: usize,
     /// Maximum response size in bytes.
     max_response_size: u64,

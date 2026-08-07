@@ -5,7 +5,7 @@
 
 use opensquilla_core::error::AppError;
 use opensquilla_skills::loader::SkillLoader;
-use opensquilla_skills::types::{SkillKind, SkillLayer, SkillSpec};
+use opensquilla_skills::types::{SkillLayer, SkillSpec};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

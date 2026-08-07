@@ -45,6 +45,7 @@ use tracing::info;
 use opensquilla_cli::util;
 
 /// Main entry point for the `osq-tui` binary.
+#[allow(dead_code)]
 fn main() {
     if let Err(e) = opensquilla_observability::logging::init_logger("info") {
         eprintln!("Warning: failed to initialize logger: {e}");
@@ -186,6 +187,7 @@ pub struct TuiApp {
     rx: mpsc::Receiver<TuiEvent>,
     // Session list data.
     sessions: Vec<SessionRow>,
+    #[allow(dead_code)]
     session_scroll: u16,
     selected_session: usize,
     // Provider data.
@@ -297,6 +299,7 @@ impl TuiApp {
         Ok(())
     }
 
+    #[allow(deprecated)]
     fn render(&self, frame: &mut Frame<'_>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -495,6 +498,7 @@ impl TuiApp {
     // View renderers
     // ------------------------------------------------------------------
 
+    #[allow(deprecated)]
     fn render_sessions(&self, frame: &mut Frame<'_>, area: ratatui::layout::Rect) {
         if self.sessions.is_empty() {
             let text = Text::from(Line::from(Span::styled(

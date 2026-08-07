@@ -285,7 +285,7 @@ mod tests {
     fn test_missing_dir_created() {
         let base = temp_dir("nested");
         let dir = base.join("a").join("b");
-        let exporter = SessionExporter::new(&dir).unwrap();
+        let _exporter = SessionExporter::new(&dir).unwrap();
         assert!(dir.is_dir());
         std::fs::remove_dir_all(&base).ok();
     }

@@ -292,7 +292,7 @@ async fn build_loader(config: &Config) -> Result<SkillLoader> {
     loader.register_layer_dir(SkillLayer::Managed, managed);
 
     let bundled = load_bundled_skills();
-    loader.register_skills(bundled);
+    let _ = loader.register_skills(bundled);
 
     loader
         .scan_all()
@@ -305,7 +305,7 @@ async fn build_loader(config: &Config) -> Result<SkillLoader> {
 fn build_hub() -> Result<SkillHub> {
     let managed = util::skills_dir();
     std::fs::create_dir_all(&managed).ok();
-    let mut hub = SkillHub::new(managed)
+    let hub = SkillHub::new(managed)
         .map_err(|e| anyhow::anyhow!("Failed to initialize skill hub: {e}"))?;
 
     let github_token = std::env::var("GITHUB_TOKEN").ok();

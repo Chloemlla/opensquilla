@@ -353,7 +353,7 @@ pub async fn compact_session_cmd(id: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = util::build_session_manager(&config)?;
     let uid = parse_id(&id)?;
-    let session = manager
+    let _session = manager
         .get_session(&uid)
         .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Session '{id}' not found"))?;

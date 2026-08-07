@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use opensquilla_core::config::Config;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::channels::ChannelSetup;
 use crate::providers::ProviderSpec;

@@ -284,7 +284,7 @@ impl GeneratedImage {
     }
 
     /// Convert into a high-level [`ImageGenerationResult`].
-    pub fn into_result(self, model: String, cost: Option<f64>) -> ImageGenerationResult {
+    pub fn into_result(self, _model: String, cost: Option<f64>) -> ImageGenerationResult {
         ImageGenerationResult {
             url: self.url.unwrap_or_default(),
             b64_json: self.b64_json,

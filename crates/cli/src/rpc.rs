@@ -46,12 +46,14 @@ impl std::error::Error for RpcError {}
 /// JSON-RPC 2.0 response envelope.
 #[derive(Debug, Clone, Deserialize)]
 struct RpcResponse {
+    #[allow(dead_code)]
     #[serde(default)]
     jsonrpc: Option<String>,
     #[serde(default)]
     result: Option<Value>,
     #[serde(default)]
     error: Option<RpcError>,
+    #[allow(dead_code)]
     #[serde(default)]
     id: Option<Value>,
 }

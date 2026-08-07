@@ -4,8 +4,6 @@
 //! index stores messages keyed by session and message id; search results are
 //! ranked by a simple term-frequency score.
 
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::RwLock;

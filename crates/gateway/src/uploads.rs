@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use opensquilla_core::error::AppError;
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Default maximum upload size (100 MiB).
@@ -327,7 +327,7 @@ pub async fn handle_upload(
             .unwrap_or_else(|| "application/octet-stream".to_string());
 
         let (upload_id, staged) = manager.begin()?;
-        let mut file_handle = UploadFileHandle::create(&staged)?;
+        let file_handle = UploadFileHandle::create(&staged)?;
         // axum 0.8 `Field::chunk()` is a Future returning
         // `Result<Option<Bytes>, MultipartError>`: `Ok(None)` marks the end of
         // the field. Await it directly for each chunk.

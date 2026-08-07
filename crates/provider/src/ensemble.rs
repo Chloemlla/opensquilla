@@ -1480,7 +1480,7 @@ fn resolve_provider(
 /// Build the per-member [`ChatConfig`], layering member intent over the base
 /// request config.
 fn build_member_config(
-    config: &EnsembleConfig,
+    _config: &EnsembleConfig,
     request: &EnsembleRequest,
     spec: &ProposerSpec,
     model: &str,
@@ -2853,6 +2853,7 @@ mod tests {
     struct MockProvider {
         name: String,
         text: String,
+        #[allow(dead_code)]
         usage: Usage,
         delay: Duration,
         fail: bool,
@@ -2861,6 +2862,7 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct MockCall {
+        #[allow(dead_code)]
         model: String,
         started_at: Instant,
         tools_len: usize,

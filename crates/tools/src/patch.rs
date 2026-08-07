@@ -685,7 +685,7 @@ fn build_merge_lines(base: &[String], ours: &[String], theirs: &[String]) -> Vec
     let mut result = Vec::new();
 
     // Helper closures to drain insertions that precede the current base line.
-    let mut drain_ours =
+    let drain_ours =
         |result: &mut Vec<MergeLine>, ops: &[Op], oi: &mut usize, oi_side: &mut usize| {
             while *oi < ops.len() && ops[*oi] == Op::Insert {
                 result.push(MergeLine {
@@ -696,7 +696,7 @@ fn build_merge_lines(base: &[String], ours: &[String], theirs: &[String]) -> Vec
                 *oi_side += 1;
             }
         };
-    let mut drain_theirs =
+    let drain_theirs =
         |result: &mut Vec<MergeLine>, ops: &[Op], ti: &mut usize, ti_side: &mut usize| {
             while *ti < ops.len() && ops[*ti] == Op::Insert {
                 result.push(MergeLine {
@@ -885,6 +885,7 @@ fn three_way_merge(base: &str, ours: &str, theirs: &str) -> MergeOutcome {
 }
 
 /// Count the conflict regions in a text containing conflict markers.
+#[allow(dead_code)]
 fn count_conflicts(text: &str) -> usize {
     text.lines().filter(|l| l.starts_with("<<<<<<<")).count()
 }

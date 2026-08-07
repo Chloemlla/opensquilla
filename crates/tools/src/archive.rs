@@ -137,6 +137,7 @@ fn write_u32<W: Write>(w: &mut W, v: u32) -> std::io::Result<()> {
 }
 
 /// Read a little-endian u16.
+#[allow(dead_code)]
 fn read_u16<R: Read>(r: &mut R) -> std::io::Result<u16> {
     let mut buf = [0u8; 2];
     r.read_exact(&mut buf)?;
@@ -144,6 +145,7 @@ fn read_u16<R: Read>(r: &mut R) -> std::io::Result<u16> {
 }
 
 /// Read a little-endian u32.
+#[allow(dead_code)]
 fn read_u32<R: Read>(r: &mut R) -> std::io::Result<u32> {
     let mut buf = [0u8; 4];
     r.read_exact(&mut buf)?;
@@ -151,6 +153,7 @@ fn read_u32<R: Read>(r: &mut R) -> std::io::Result<u32> {
 }
 
 /// Read a little-endian u64.
+#[allow(dead_code)]
 fn read_u64<R: Read>(r: &mut R) -> std::io::Result<u64> {
     let mut buf = [0u8; 8];
     r.read_exact(&mut buf)?;
@@ -362,7 +365,6 @@ impl ZipReader {
             data[cursor + 2],
             data[cursor + 3],
         ]) as usize;
-        cursor += 4;
 
         let mut entries = Vec::with_capacity(total_entries as usize);
         let mut pos = central_offset;
@@ -889,7 +891,6 @@ impl ArchiveTool {
                 })?;
                 let mut writer = ZipWriter::new(file);
                 let mut total_size = 0u64;
-                let mut count = 0usize;
                 for (name, path) in &files {
                     let data = std::fs::read(path).map_err(|e| {
                         ToolError::new(
@@ -904,7 +905,6 @@ impl ArchiveTool {
                         )
                     })?;
                     total_size += data.len() as u64;
-                    count += 1;
                 }
                 writer.finish().map_err(|e| {
                     ToolError::new(

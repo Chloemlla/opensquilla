@@ -343,7 +343,7 @@ async fn build_skill_loader(config: &Config) -> Result<opensquilla_skills::loade
     std::fs::create_dir_all(&managed).ok();
     loader.register_layer_dir(SkillLayer::Managed, managed);
     let bundled = load_bundled_skills();
-    loader.register_skills(bundled);
+    let _ = loader.register_skills(bundled);
     loader
         .scan_all()
         .await

@@ -14,7 +14,6 @@ use crate::registry::{
     ParameterDefinition, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult,
 };
 use async_trait::async_trait;
-use opensquilla_channels::Channel;
 use opensquilla_channels::OutgoingMessage;
 use opensquilla_channels::manager::ChannelManager;
 use serde_json::Value;
