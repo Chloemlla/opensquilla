@@ -90,9 +90,9 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "installMode": "perMachine",
-        "languages": ["English"],
+        "languages": ["English", "SimpChinese", "Japanese"],
         "template": null,
-        "displayLanguageSelector": false
+        "displayLanguageSelector": true
       },
       "wix": null
     },
