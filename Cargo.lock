@@ -5123,6 +5123,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dashmap",
+ "dirs",
  "futures",
  "opensquilla-channels",
  "opensquilla-core",
@@ -5256,19 +5257,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "opensquilla-dist"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "opensquilla-core",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "toml 0.8.2",
- "tracing",
-]
-
-[[package]]
 name = "opensquilla-engine"
 version = "0.1.0"
 dependencies = [
@@ -5279,6 +5267,7 @@ dependencies = [
  "futures",
  "hex",
  "opensquilla-core",
+ "opensquilla-plugins",
  "opensquilla-provider",
  "opensquilla-safety",
  "opensquilla-session",
@@ -5429,6 +5418,7 @@ dependencies = [
  "chrono",
  "opensquilla-core",
  "opentelemetry",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
@@ -5473,6 +5463,7 @@ name = "opensquilla-plugins"
 version = "0.1.0"
 dependencies = [
  "opensquilla-core",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
@@ -5662,6 +5653,8 @@ dependencies = [
  "opensquilla-memory",
  "opensquilla-scheduler",
  "opensquilla-session",
+ "opensquilla-skills",
+ "parking_lot",
  "pdf-extract",
  "printpdf",
  "regex",

@@ -1,12 +1,14 @@
 use clap::Parser;
 use opensquilla_cli::commands::{
-    AgentAction, ChannelAction, Command, ConfigAction, CostAction, GatewayAction, InitAction,
-    ModelAction, MemoryAction, OnboardAction, ProviderAction, RouterAction, SandboxAction,
+    AgentAction, ChannelAction, Command, ConfigAction, CostAction, DiagnosticsAction,
+    EnsembleAction, GatewayAction, InitAction, McpServerAction, MigrateAction, ModelAction,
+    MemoryAction, OnboardAction, ProviderAction, RecoveryAction, RouterAction, SandboxAction,
     SchedulerAction, SearchAction, SessionAction, SkillAction, StatusAction, ToolAction,
 };
 use opensquilla_cli::{
-    agent, channels, chat, config, cost, doctor, gateway, init, memory, models, onboard,
-    providers, router, sandbox, scheduler, search, sessions, skills, status, tools, tui,
+    agent, channels, chat, config, cost, diagnostics, doctor, ensemble, gateway, init, mcp_server,
+    memory, migrate, models, onboard, providers, recovery, router, sandbox, scheduler, search,
+    sessions, skills, status, tools, tui,
 };
 use opensquilla_core::config::Config;
 use tracing::info;
@@ -318,6 +320,11 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
         }
         Command::Search { action } => search::run_search(action).await?,
         Command::Tools { action } => tools::run_tool(action).await?,
+        Command::Diagnostics { action } => diagnostics::run_diagnostics(action).await?,
+        Command::McpServer { action } => mcp_server::run_mcp_server(action).await?,
+        Command::Migrate { action } => migrate::run_migrate(action).await?,
+        Command::Recovery { action } => recovery::run_recovery(action).await?,
+        Command::Ensemble { action } => ensemble::run_ensemble(action).await?,
         Command::Tui => {
             info!("Dispatching TUI command");
             tui::run_tui().await?;

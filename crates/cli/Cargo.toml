@@ -43,6 +43,7 @@ dashmap = { workspace = true }
 reqwest = { workspace = true }
 crossterm = "0.28"
 rustyline = "14"
+dirs = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

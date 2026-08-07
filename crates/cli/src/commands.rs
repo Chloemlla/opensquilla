@@ -2,8 +2,13 @@ use clap::{Parser, Subcommand};
 
 pub use crate::agent::AgentAction;
 pub use crate::cost::CostAction;
+pub use crate::diagnostics::DiagnosticsAction;
+pub use crate::ensemble::EnsembleAction;
 pub use crate::init::InitAction;
+pub use crate::mcp_server::McpServerAction;
+pub use crate::migrate::MigrateAction;
 pub use crate::onboard::OnboardAction;
+pub use crate::recovery::RecoveryAction;
 pub use crate::router::RouterAction;
 pub use crate::search::SearchAction;
 pub use crate::status::StatusAction;
@@ -184,6 +189,36 @@ pub enum Command {
     Tools {
         #[command(subcommand)]
         action: ToolAction,
+    },
+
+    /// Collect diagnostics and runtime info
+    Diagnostics {
+        #[command(subcommand)]
+        action: DiagnosticsAction,
+    },
+
+    /// Run OpenSquilla as an MCP server
+    McpServer {
+        #[command(subcommand)]
+        action: McpServerAction,
+    },
+
+    /// Migrate config/sessions from OpenClaw, Hermes, or old OpenSquilla layouts
+    Migrate {
+        #[command(subcommand)]
+        action: MigrateAction,
+    },
+
+    /// Crash recovery commands
+    Recovery {
+        #[command(subcommand)]
+        action: RecoveryAction,
+    },
+
+    /// Provider ensemble management
+    Ensemble {
+        #[command(subcommand)]
+        action: EnsembleAction,
     },
 
     /// Launch terminal UI
