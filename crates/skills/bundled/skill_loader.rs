@@ -488,6 +488,742 @@ a multi-step task.
   over-engineer the format.
 "#,
     },
+    BundledSkillDef {
+        id: "github",
+        name: "GitHub Operations",
+        description: "Interact with GitHub repositories via the `gh` CLI: issues, PRs, CI runs, code review, and API queries.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &["gh"],
+        tags: &["github", "git", "ci", "issues", "pr"],
+        body: r#"# GitHub Operations
+
+Use when the user asks to interact with GitHub: list/view/create issues or PRs,
+check CI status, view run logs, or query the GitHub API.
+
+## Setup
+
+Verify authentication first: `gh auth status`. If not authenticated, tell the
+user to run `gh auth login` before proceeding.
+
+## Procedure
+
+1. **Determine the target repo.** Use `--repo owner/repo` when not in a git
+   directory, or pass a GitHub URL directly (`gh pr view https://...`).
+2. **Pick the right command for the task:**
+   - PRs: `gh pr list`, `gh pr view <N>`, `gh pr checks <N>`, `gh pr create`,
+     `gh pr merge <N> --squash`.
+   - Issues: `gh issue list`, `gh issue create`, `gh issue close <N>`.
+   - CI: `gh run list --limit 10`, `gh run view <id>`,
+     `gh run view <id> --log-failed`, `gh run rerun <id> --failed`.
+3. **Use JSON output for parsing.** Most commands support `--json` with `--jq`
+   filtering: `gh pr list --json number,title,state --jq '.[] | "\(.number):
+   \(.title)"'`.
+4. **For complex queries**, drop to `gh api` with `--jq`:
+   `gh api repos/owner/repo/pulls/55 --jq '.title, .state'`.
+
+## Constraints
+
+- Always specify `--repo owner/repo` when not inside the repo's working tree.
+- Rate limits apply; use `gh api --cache 1h` for repeated identical queries.
+- Do not create, merge, or close PRs/issues without explicit user confirmation.
+"#,
+    },
+    BundledSkillDef {
+        id: "git-diff",
+        name: "Git Diff Capture",
+        description: "Capture the current git diff (staged, working-tree, or staged file list) as text for review or workflow consumption.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &["git"],
+        tags: &["git", "diff", "vcs", "review"],
+        body: r#"# Git Diff Capture
+
+Use when the user needs the current git diff as text — for review, for feeding
+into another workflow, or to check what changed.
+
+## Procedure
+
+1. **Determine which diff to capture:**
+   - Staged changes: `git diff --cached HEAD`.
+   - Working-tree changes: `git diff HEAD`.
+   - Staged file list only: `git diff --cached --name-only`.
+   - Staged with worktree fallback (default): try `git diff --cached HEAD` first;
+     if empty, fall back to `git diff HEAD`.
+2. **Scope to a path** if the user only cares about part of the tree:
+   `git diff --cached HEAD -- src/`.
+3. **Report the output** as-is. If there are no changes, say `NO_DIFF` so
+   downstream consumers can short-circuit.
+4. **For review context**, also show the stat: `git diff --stat`.
+
+## Constraints
+
+- Prefer `--cached` (staged) over working-tree when the user asks "what will be
+  committed".
+- Do not modify any files — this skill is read-only.
+"#,
+    },
+    BundledSkillDef {
+        id: "code-task",
+        name: "Code Task",
+        description: "Solve a real-repository coding task end to end: clone, run an agent on a task branch, and independently verify with a red-green-regression test loop.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &["git"],
+        tags: &["code", "task", "verification", "testing"],
+        body: r#"# Code Task
+
+Use when the user asks to fix/add/implement/change code in a real repository
+they name by path or URL. Route through the code-task runner rather than
+hand-editing files — the runner provides isolation, a task branch, and
+runner-verified red-green-regression proof.
+
+## Procedure
+
+1. **Translate the request.** Map the user's natural-language request to:
+   ```
+   code-task solve --repo <url-or-path> (--issue N | --task "<text>" | --task-file <path>) [--yes]
+   ```
+   - A GitHub issue → `--issue N` (needs `gh`).
+   - A short request → `--task "<their request>"`.
+   - A long spec → save to a file and use `--task-file <path>`.
+2. **Two pre-flight checks:**
+   - Trusted repo: the runner executes the repo's code on the host — only run
+     against repositories the user trusts.
+   - Enough information: you must be able to state the expected behavior change.
+     If the request is too vague to write an acceptance test for, ask the user
+     to clarify before running.
+3. **Pass `--yes`** to skip the interactive trusted-host confirmation (you are
+   acting on the user's behalf), but only after the safety check.
+4. **Watch the run dir, not the source repo.** The runner clones into an
+   isolated run directory; the source repo stays empty until a run finishes and
+   verifies. Let it finish — do not kill or relaunch.
+5. **Read the result.** Key fields:
+   - `state`: `verified` (red->green, no regressions), `already_satisfied`,
+     `not_testable`, `environment_blocked`, `failed`.
+   - `acceptance`: each test with `before`->`after`.
+   - `regression`: existing-suite result and `new_failures`.
+   - `assumptions`: surface these to the user.
+   - `retry_exhausted`: the runner retries internally — do NOT relaunch on
+     `failed`; the retries are already exhausted.
+
+## Verification modes
+
+- `red-green` (default): agent writes acceptance tests, runner proves red on
+  base and green on the change, then runs regression.
+- `build`: for building an app from scratch — runner owns a fixed checklist
+  (`npm ci` -> `npm run build` -> package). `state=verified` means it builds.
+- `scratch`: for self-contained testable code with no repo — runner scaffolds
+  an empty git repo, writes code plus tests, verifies green-only.
+
+## Constraints
+
+- Runs on the gateway host — git, the toolchain, and disk all come from there.
+- v1 is host-only and always clones fresh (no `--in-place`). For untrusted
+  repositories, a Docker-isolated backend is planned but not in v1.
+- Do NOT relaunch the same task on a `failed` result — the internal retries are
+  already exhausted. Surface the failure to the user.
+"#,
+    },
+    BundledSkillDef {
+        id: "sub-agent",
+        name: "Sub-Agent Delegation",
+        description: "Delegate a self-contained task to a sub-agent (Codex, Claude Code, OpenCode, or Pi) via background process for coding, reviewing, refactoring, or any LLM-driven sub-task.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["sub-agent", "delegation", "coding", "background"],
+        body: r#"# Sub-Agent Delegation
+
+Use when you need to delegate a self-contained task to a coding agent (Codex,
+Claude Code, OpenCode, or Pi) running in a background process. The wrapped CLIs
+are coding-oriented, but this skill is the generic "spawn a sub-agent with full
+tool surface" slot used by meta-skill DAGs for any LLM-driven sub-task.
+
+## Procedure
+
+1. **Choose the agent and execution mode.** Respect the user's choice if they
+   name one. Prefer non-interactive modes:
+   - Codex/Pi/OpenCode: `codex exec "prompt"`, `pi -p "prompt"`,
+     `opencode run "prompt"`.
+   - Claude Code: `claude --permission-mode bypassPermissions --print "prompt"`.
+2. **Set the workdir.** Agent wakes up in a focused directory. For scratch
+   work, create a temp git repo first: `mktemp -d && cd $dir && git init`
+   (Codex refuses to run outside a git directory).
+3. **For long tasks, use background_process:**
+   ```
+   background_process(workdir="~/project", command="codex exec --full-auto 'Build feature X'")
+   process(action="wait", session_id="XXX")   # blocks until done
+   process(action="log", session_id="XXX")     # peek at output
+   ```
+   Prefer `wait` over polling in a loop — a looped `poll` burns a full turn +
+   tokens each time.
+4. **For PR reviews**, clone to a temp directory — never review PRs inside the
+   live runtime state/workspace directories. Use `git worktree` to keep main
+   intact.
+5. **Parallel work is OK.** Run multiple agents in parallel using git worktrees:
+   ```
+   git worktree add -b fix/issue-78 /tmp/issue-78 main
+   background_process(workdir="/tmp/issue-78", command="codex exec --full-auto 'Fix issue #78'")
+   ```
+
+## Progress updates
+
+- Send 1 short message when you start (what's running + where).
+- Update again only when something changes: a milestone completes, the agent
+  asks a question, you hit an error, or the agent finishes.
+- If you kill a session, immediately say you killed it and why.
+
+## Constraints
+
+- Use the right execution mode per agent: non-interactive command modes for
+  Codex/Pi/OpenCode; `--print --permission-mode bypassPermissions` for Claude
+  Code.
+- Do NOT hand-code patches yourself in orchestrator mode — if the agent fails or
+  hangs, respawn it or ask the user for direction; don't silently take over.
+- Be patient — don't kill sessions because they're "slow". Monitor with
+  `process(action="log")` without interfering.
+- NEVER start an agent inside the OpenSquilla state directory or live workspace
+  directories — use an explicit project worktree.
+"#,
+    },
+    BundledSkillDef {
+        id: "deep-research",
+        name: "Deep Research",
+        description: "Multi-round research with explicit methodology, evidence tracking, and citation-tagged synthesis across many sources.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["research", "investigation", "citations", "report"],
+        body: r#"# Deep Research
+
+Use when the user asks for a "research report", "literature review", "deep dive",
+or "investigate X across sources" — tasks that need multi-round investigation
+with evidence tracking and citation-tagged synthesis. Distinct from `summarize`
+(single-pass condensation of one document).
+
+## Procedure
+
+1. **Decide if this is the right tool.**
+   - One-line summary of one article → `summarize`.
+   - Multi-round investigation with citations → this skill.
+   - Quick lookup, single source → direct web search.
+2. **Stage 1 — Plan.** Scope the question into sub-questions. Choose a depth:
+   - `overview` — 3-5 sub-questions, 1 source each.
+   - `thorough` — 6-10 sub-questions, 2-3 sources each.
+   - `exhaustive` — 12-20 sub-questions, 5+ sources each.
+3. **Stage 2 — Iterate.** Each round: decide which sub-questions need
+   attention, print the fetch list for the host agent to execute via its web
+   tools, then record the evidence back. Apply a 5-axis source evaluation:
+   Authority, Recency, Evidence, Bias, Corroboration. When all sub-questions
+   reach the depth-target coverage, the iteration loop terminates.
+4. **Stage 3 — Compile.** Produce a markdown report with:
+   - Executive summary (5-8 lines).
+   - Methodology block (depth, rounds, source count).
+   - Per-sub-question section with embedded citations `[^N]`.
+   - References block listing every source with URL + fetched_at + relevance.
+   - "What this report does not cover" — explicit gaps from low-coverage
+     sub-questions.
+
+## Constraints
+
+- This skill does not fetch the web itself — it is a methodology + state
+  manager. Pair it with the host agent's web search/fetch tools.
+- The compile step never invents sources — every `[^N]` must correspond to an
+  entry recorded in stage 2.
+- It does not resolve contradictions among sources automatically; the compile
+  step notes conflicting evidence and the user decides which side wins.
+- For ongoing monitoring (daily digests, RSS-style updates) build a cron skill
+  that calls this one with a fresh question each cycle.
+"#,
+    },
+    BundledSkillDef {
+        id: "summarize",
+        name: "Summarize",
+        description: "Summarize, condense, or digest content into key points, details, and action items.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["summarize", "condense", "digest", "tldr"],
+        body: r#"# Summarize
+
+Use when the user asks to summarize, condense, digest, or get a TL;DR of
+content.
+
+## Procedure
+
+1. **Read or obtain the full content** before summarizing. Do not summarize
+   from a title or abstract alone.
+2. **Produce a structured summary:**
+   - **Key Points** — 3-5 bullet points of the most important information.
+   - **Details** — Brief expansion on each key point if needed for context.
+   - **Action Items** — Any tasks or follow-ups identified (if applicable).
+3. **Keep it concise.** Match the length to the input: a 1-page document gets
+   3-5 bullets; a 20-page document gets a fuller treatment but still focused on
+   what matters most.
+4. **Preserve numbers, names, and dates** — these are the load-bearing facts
+   that make a summary useful.
+
+## Constraints
+
+- Do not inject opinions or analysis beyond what the source says.
+- If the content is too long to read in full, say so and summarize the portion
+  you did read, noting the gap.
+- For multi-round investigation across many sources, use `deep-research`
+  instead.
+"#,
+    },
+    BundledSkillDef {
+        id: "filesystem",
+        name: "Filesystem Operations",
+        description: "Advanced filesystem operations: listing, searching, batch processing, and directory analysis with safety checks.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["filesystem", "files", "directory", "search"],
+        body: r#"# Filesystem Operations
+
+Use when the user asks to list, search, batch-process, or analyze files and
+directories. Use the host-provided filesystem tools in the current workspace.
+
+## Procedure
+
+1. **Smart listing.** List files with filtering by pattern, type, size, or
+   date. Use recursive traversal with depth control when needed. Sort by name,
+   size, date, or type as the user requests.
+2. **Content search.** Search file contents by glob pattern or regex. Show
+   matching lines with context. Combine filename and content searches with
+   include/exclude filters.
+3. **Batch operations.** Copy or move files by pattern with safety checks:
+   - Always do a dry-run first to preview what will be affected.
+   - Validate paths to prevent directory traversal.
+   - Check read/write permissions before operating.
+   - Suggest a backup before overwrites.
+4. **Directory analysis.** Generate statistics: file counts, size distribution,
+   type breakdown, largest files. Show a tree visualization with depth control
+   for structure overview.
+
+## Constraints
+
+- Respect `.gitignore` patterns when listing or searching in a git repository.
+- For destructive operations (mass delete, overwrite), show exactly what will be
+  affected and confirm with the user before proceeding.
+- Keep all paths inside the current workspace or the user-specified directory.
+"#,
+    },
+    BundledSkillDef {
+        id: "http-fetch",
+        name: "HTTP Fetch",
+        description: "Fetch a URL via HTTP/HTTPS and return the response body as text. Lightweight single-request entrypoint with no LLM loop.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["http", "fetch", "url", "network"],
+        body: r#"# HTTP Fetch
+
+Use when you need to make a single HTTP GET/POST/PUT/DELETE request and return
+the response body as text — a lightweight replacement for spawning a sub-agent
+just to fetch a URL.
+
+## Procedure
+
+1. **Determine the request parameters:**
+   - `url` (required) — absolute http(s) URL.
+   - `method` (default `GET`) — `GET` / `POST` / `PUT` / `DELETE`.
+   - `body` (optional) — request body, piped via stdin for POST/PUT.
+   - `timeout` (default 30s) — request timeout in seconds.
+   - `max_bytes` (default 2,000,000) — response body cap; larger payloads are
+     truncated.
+2. **Execute the request** and handle the result:
+   - Success (2xx): response body on stdout (UTF-8 decoded, truncated to
+     `max_bytes` if larger).
+   - Non-2xx: exit 1, stderr `HTTP <code>: <reason> <body[:200]>`; stdout still
+     carries the body for inspection.
+   - Network/DNS/timeout failure: exit 2, stderr carries the cause.
+3. **Report the result** to the user, noting the status code and any
+   truncation.
+
+## When NOT to use
+
+- Crawling multiple pages → use a sub-agent with a scraping library.
+- JS-rendered pages → use a sub-agent with browser tools.
+- OAuth dance / multi-step auth → use a sub-agent.
+- Streaming responses → not supported (we buffer + return).
+
+## Constraints
+
+- No custom-header injection — the request goes out with default headers.
+- Do not fetch URLs from untrusted sources without checking for SSRF risk
+  (internal IPs, localhost, metadata endpoints).
+"#,
+    },
+    BundledSkillDef {
+        id: "cron",
+        name: "Cron Scheduling",
+        description: "Schedule recurring tasks, one-off reminders, timers, and cron-style jobs through the OpenSquilla cron tool.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["cron", "schedule", "reminder", "timer"],
+        body: r#"# Cron Scheduling
+
+Use when the user asks to schedule something, set up a recurring task, create a
+timer, or create a reminder.
+
+## Procedure
+
+1. **Translate the natural-language request** into a structured schedule object
+   before calling the cron tool. The `schedule` argument is a structured object,
+   not a string — the tool rejects flat strings.
+2. **Choose the right schedule shape:**
+   - **cron** (calendar pattern): `{"kind": "cron", "expr": "<5-field POSIX
+     cron>", "tz": "<optional IANA timezone>"}`
+     Example: `{"kind": "cron", "expr": "0 9 * * 1-5", "tz": "Asia/Shanghai"}`
+     for weekdays at 09:00 Shanghai time.
+   - **every** (fixed interval): `{"kind": "every", "every_seconds": <int >= 1>}`
+     Example: `{"kind": "every", "every_seconds": 30}` for every 30 seconds.
+   - **at** (one-shot absolute): `{"kind": "at", "at": "<ISO-8601 with tz>"}`
+     The timestamp must include a timezone offset.
+3. **Call the cron tool:**
+   - Add: `cron(action="add", schedule={...}, task="...", job_kind="...",
+     session_target="...")`
+   - List: `cron(action="list")`
+   - Trigger now: `cron(action="run", job_id="<id>")`
+   - Cancel: `cron(action="remove", job_id="<id>")`
+4. **Cron expression format:** `minute hour day month weekday`
+   (e.g. `0 9 * * 1-5` = weekdays at 9am).
+
+## Translation examples
+
+- "every 5 minutes, remind me to drink water" ->
+  `{"kind": "cron", "expr": "*/5 * * * *"}`
+- "every 30 seconds, print once" ->
+  `{"kind": "every", "every_seconds": 30}`
+- "tomorrow morning at 9am" -> compute the absolute ISO-8601 string with
+  timezone, then `{"kind": "at", "at": "<that ISO-8601>"}`
+- "every weekday at 9am Los Angeles time" ->
+  `{"kind": "cron", "expr": "0 9 * * 1-5", "tz": "America/Los_Angeles"}`
+
+## Constraints
+
+- Do the translation in your own reasoning before calling the tool — the tool
+  will not parse free-form text.
+- Confirm destructive actions (cancelling jobs) with the user before proceeding.
+"#,
+    },
+    BundledSkillDef {
+        id: "skill-creator",
+        name: "Skill Creator",
+        description: "Create, edit, improve, or audit AgentSkills / SKILL.md files with proper frontmatter, progressive disclosure, and packaging.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["skill", "creator", "authoring", "meta"],
+        body: r#"# Skill Creator
+
+Use when creating a new skill from scratch, or when asked to improve, review,
+audit, tidy up, or clean up an existing skill or SKILL.md file. Also use when
+editing or restructuring a skill directory.
+
+## Core principles
+
+1. **Concise is key.** The context window is a shared resource. Only add
+   information the agent doesn't already have. Challenge each paragraph: "Does
+   this justify its token cost?"
+2. **Set appropriate degrees of freedom.** Match specificity to the task's
+   fragility: low freedom (specific scripts) for error-prone operations; high
+   freedom (text instructions) when multiple approaches are valid.
+3. **Progressive disclosure.** Three levels: metadata (always in context),
+   SKILL.md body (loaded on trigger), bundled resources (loaded as needed). Keep
+   SKILL.md under 500 lines; split into `references/` when approaching the limit.
+
+## Skill anatomy
+
+```
+skill-name/
+├── SKILL.md          (required: frontmatter + body)
+├── scripts/          (optional: executable code for deterministic tasks)
+├── references/       (optional: docs loaded as needed)
+└── assets/           (optional: files used in output — templates, images)
+```
+
+Do NOT include README.md, CHANGELOG.md, or other auxiliary documentation files.
+
+## Procedure
+
+1. **Understand the skill.** Gather concrete usage examples. Ask: what
+   functionality should it support? What triggers it? What would a user say?
+2. **Plan reusable contents.** For each example, identify what scripts,
+   references, or assets would help when executing repeatedly.
+3. **Initialize the skill.** Create the directory with `SKILL.md` and any
+   resource subdirectories needed.
+4. **Edit the skill.**
+   - **Frontmatter:** `name` (lowercase, hyphens, <64 chars) and `description`
+     (the primary trigger mechanism — include what it does AND when to use it).
+     Do not include other fields.
+   - **Body:** Imperative/infinitive form. Instructions for using the skill and
+     its bundled resources. Reference `references/` and `scripts/` files
+     clearly so the reader knows they exist and when to use them.
+   - **Scripts:** Test added scripts by actually running them.
+5. **Package the skill** into a `.skill` file (zip with `.skill` extension).
+   Packaging validates: frontmatter format, naming conventions, description
+   quality, file organization. Symlinks are rejected.
+6. **Iterate.** Use the skill on real tasks, notice struggles, update.
+
+## Constraints
+
+- Name skills with lowercase letters, digits, and hyphens only.
+- Keep references one level deep from SKILL.md — no deeply nested references.
+- For files longer than 100 lines, include a table of contents at the top.
+- Avoid duplication: information should live in either SKILL.md or references,
+  not both.
+"#,
+    },
+    BundledSkillDef {
+        id: "tmux",
+        name: "Tmux Session Control",
+        description: "Remote-control tmux sessions by sending keystrokes and scraping pane output for interactive CLIs and long-running processes.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["linux", "macos"],
+        requires_bins: &["tmux"],
+        tags: &["tmux", "terminal", "session", "interactive"],
+        body: r#"# Tmux Session Control
+
+Use when you need to remote-control tmux sessions: monitor interactive CLIs
+(Claude Code, Codex), send input to terminal applications, scrape output from
+long-running processes, or navigate panes/windows programmatically.
+
+## Procedure
+
+1. **List sessions** to see what's running: `tmux list-sessions` (alias `tmux
+   ls`).
+2. **Capture output** from a pane:
+   - Last N lines: `tmux capture-pane -t <session> -p | tail -20`
+   - Entire scrollback: `tmux capture-pane -t <session> -p -S -`
+   - Specific pane: `tmux capture-pane -t <session>:0.0 -p`
+3. **Send keys** to a pane:
+   - Text + Enter: `tmux send-keys -t <session> "y" Enter`
+   - Special keys: `Enter`, `Escape`, `C-c` (Ctrl+C), `C-d` (EOF), `C-z`
+   - Text without Enter: `tmux send-keys -t <session> -l -- "your text"`
+4. **For interactive TUIs** (Claude Code, Codex), split text and Enter into
+   separate sends to avoid paste/multiline edge cases:
+   ```
+   tmux send-keys -t shared -l -- "Please apply the patch in src/foo.ts"
+   sleep 0.1
+   tmux send-keys -t shared Enter
+   ```
+5. **Session management:**
+   - Create: `tmux new-session -d -s <name>`
+   - Kill: `tmux kill-session -t <name>`
+   - Rename: `tmux rename-session -t <old> <new>`
+6. **Window/pane navigation:**
+   - `tmux select-window -t <session>:0`
+   - `tmux select-pane -t <session>:0.1`
+   - `tmux list-windows -t <session>`
+
+## Checking if a session needs input
+
+Look for prompts in the last few lines:
+```
+tmux capture-pane -t worker-3 -p | tail -10 | grep -E "prompt|Yes.*No|proceed|permission"
+```
+
+## Constraints
+
+- Target format: `session:window.pane` (e.g. `shared:0.0`).
+- Use `capture-pane -p` to print to stdout (essential for scripting).
+- Sessions persist across SSH disconnects.
+- Not for one-off shell commands (use `exec_command`) or starting new background
+  processes (use `background_process`).
+"#,
+    },
+    BundledSkillDef {
+        id: "web-search",
+        name: "Web Search",
+        description: "Search the web for information, news, images, or videos and return results in text, markdown, or JSON format.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["search", "web", "research", "news"],
+        body: r#"# Web Search
+
+Use when the user needs to search the web for information, find current content,
+look up news articles, search for images or videos, or fact-check claims.
+
+## Procedure
+
+1. **Identify search intent.** What type of content (web, news, images, videos)?
+   How recent should results be? How many are needed? Any filtering requirements?
+2. **Configure search parameters:**
+   - Search type: web (default), news, images, videos.
+   - Max results (default 10).
+   - Time range: `d` (day), `w` (week), `m` (month), `y` (year).
+   - Region code (e.g. `us-en`, `uk-en`, `wt-wt` for worldwide).
+   - Safe search: `on`, `moderate` (default), `off`.
+3. **Select output format:** text (default, clean readable), markdown (with
+   headers and links), or JSON (for programmatic processing).
+4. **Execute the search** and save to file if results need to be preserved
+   (`--output <path>`).
+5. **Process results:** extract URLs or specific information, combine results
+   from multiple searches.
+
+## Image-specific filters
+
+- Size: `Small`, `Medium`, `Large`, `Wallpaper`
+- Color: `Monochrome`, `Red`, `Orange`, `Yellow`, `Green`, `Blue`, `Purple`,
+  `Pink`, `Brown`, `Black`, `Gray`, `Teal`, `White`
+- Type: `photo`, `clipart`, `gif`, `transparent`, `line`
+- Layout: `Square`, `Tall`, `Wide`
+
+## Video-specific filters
+
+- Duration: `short`, `medium`, `long`
+- Resolution: `high`, `standard`
+
+## Constraints
+
+- Be specific — clear, focused queries produce better results.
+- Apply time filters when currency matters.
+- Respect usage — don't hammer the API with rapid repeated searches.
+- If no results are found, try broader terms or remove time filters.
+- Rate limiting may occur; space out searches if making many requests.
+"#,
+    },
+    BundledSkillDef {
+        id: "security-audit",
+        name: "Security Audit",
+        description: "Audit code for security vulnerabilities: injection, auth bypass, secret leakage, path traversal, SSRF, and OWASP top 10 issues.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["security", "audit", "vulnerability", "owasp"],
+        body: r#"# Security Audit
+
+Use when the user asks to audit, scan, or review code for security
+vulnerabilities. Also use proactively before deploying a new service or exposing
+an endpoint.
+
+## Procedure
+
+1. **Scope the audit.** Identify the target: a diff, a directory, a service, or
+   a full project. Note the language, framework, and entry points (HTTP routes,
+   CLI args, file inputs, network listeners).
+2. **Run these passes in order:**
+   - **Injection:** SQL/NoSQL injection (unsanitized queries), command injection
+     (shell concatenation, `eval`, `exec` with user input), template injection,
+     LDAP/XPath injection.
+   - **Authentication & authorization:** missing auth checks, broken session
+     management, IDOR (insecure direct object references), privilege escalation,
+     JWT issues (alg=none, weak secrets, missing expiry).
+   - **Secret leakage:** hardcoded credentials/tokens/keys, secrets in logs or
+     error messages, secrets in version control, missing env-var indirection.
+   - **Path traversal & SSRF:** file path manipulation (`../`, absolute paths),
+     URL fetching without internal-IP/localhost blocking, open redirect.
+   - **Deserialization:** unsafe `pickle`/`unserialize`/`serde` of untrusted
+     input, XXE in XML parsing.
+   - **XSS & CSRF:** unescaped output, missing CSRF tokens on state-changing
+     requests, permissive CSP.
+   - **Crypto:** weak algorithms (MD5, DES, ECB mode), hardcoded IVs, custom
+     crypto, weak randomness for tokens.
+3. **Report by severity** using CVSS-like buckets:
+   - `CRITICAL` — remotely exploitable, leads to RCE or data breach.
+   - `HIGH` — exploitable with some access, serious impact.
+   - `MEDIUM` — requires specific conditions or has limited impact.
+   - `LOW` — defense-in-depth improvement, hardening.
+4. **For each finding:** cite the exact file and line, explain the attack
+   scenario, and suggest a concrete fix with a code snippet.
+
+## Constraints
+
+- Do not exploit or attempt active penetration — this is a static audit.
+- If a finding is framework-specific, verify the framework version before
+  reporting (the vulnerability may already be patched).
+- Distinguish between "this is a vulnerability" and "this is a code smell" —
+  only report confirmed or high-likelihood issues as findings.
+- For dependencies, check for known CVEs but note that transitive dependencies
+  may not be fully resolvable without a lockfile.
+"#,
+    },
+    BundledSkillDef {
+        id: "performance",
+        name: "Performance Analysis",
+        description: "Analyze code for performance issues: algorithmic complexity, memory leaks, redundant I/O, and bottleneck identification.",
+        version: "1.0.0",
+        author: "OpenSquilla",
+        kind: SkillKind::Skill,
+        requires_os: &["any"],
+        requires_bins: &[],
+        tags: &["performance", "optimization", "profiling", "complexity"],
+        body: r#"# Performance Analysis
+
+Use when the user asks to optimize, speed up, or analyze the performance of
+code, or when investigating slow operations, high memory usage, or scalability
+concerns.
+
+## Procedure
+
+1. **Establish a baseline.** Before optimizing, measure the current performance.
+   Identify the metric that matters: latency, throughput, memory, CPU, or I/O.
+   If no benchmark exists, suggest creating one.
+2. **Profile to find the bottleneck.** Do not guess — use the right tool:
+   - CPU: `perf`, `flamegraph`, language profilers (`py-spy`, `pprof`).
+   - Memory: heap profilers, allocation tracking.
+   - I/O: `strace`, `iotop`, query logs with `EXPLAIN ANALYZE`.
+   - Network: `tcpdump`, `wireshark`, latency histograms.
+3. **Focus on the hot path.** 80/20 rule: the top 1-2 bottlenecks typically
+   account for most of the cost. Optimize those first.
+4. **Common issues to check:**
+   - **Algorithmic complexity:** accidental O(n^2) or O(n!) inside a loop,
+     repeated linear scans where a hash map would do.
+   - **Redundant I/O:** N+1 queries, reading the same file repeatedly, missing
+     batch/caching.
+   - **Memory:** unbounded growth (leaking collections), large allocations in a
+     hot loop, unnecessary cloning/copying.
+   - **Concurrency:** lock contention, sequential I/O that could be parallel,
+     excessive thread spawning.
+   - **Allocation pressure:** frequent small allocations in hot paths, missing
+     object reuse/pooling.
+5. **Propose a fix.** For each bottleneck, explain the root cause and suggest a
+   concrete optimization. Prefer algorithmic improvements over micro-tricks.
+6. **Verify the improvement.** Re-run the benchmark after the change. Report
+   before/after numbers. If the gain is negligible, revert.
+
+## Constraints
+
+- Never optimize without measuring first — "premature optimization is the root
+  of all evil."
+- Do not sacrifice correctness or readability for marginal gains.
+- Prefer asymptotic improvements (O(n^2) -> O(n log n)) over constant-factor
+  tweaks.
+- Note when an optimization trades memory for speed or vice versa.
+"#,
+    },
 ];
 
 /// Load all bundled skills as full [`SkillSpec`] values.
@@ -522,7 +1258,7 @@ mod tests {
     #[test]
     fn loads_all_bundled_skills() {
         let specs = load_bundled_skills();
-        assert!(specs.len() >= 10, "expected at least 10 bundled skills");
+        assert!(specs.len() >= 20, "expected at least 20 bundled skills");
     }
 
     #[test]
