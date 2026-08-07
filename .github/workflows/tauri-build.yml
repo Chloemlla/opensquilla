@@ -116,6 +116,9 @@ jobs:
         run: tauri build ${{ matrix.args }}
 
       - name: List bundles
+        # windows-latest run: steps default to PowerShell; the bash `find`/`exit`
+        # script below must run under bash on every OS.
+        shell: bash
         run: |
           if [ -d "${{ matrix.bundle_path }}" ]; then
             find "${{ matrix.bundle_path }}" -maxdepth 3 -type f -print
