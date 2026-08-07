@@ -70,6 +70,9 @@ pub mod context_builder;
 /// Tool execution lifecycle: dispatch, timeout, result capture, retry.
 pub mod tool_executor;
 
+/// Disk-backed storage for full raw tool results omitted from provider context.
+pub mod tool_result_store;
+
 /// Token/cost budget enforcement, rate limiting, and circuit breakers.
 pub mod budget;
 
@@ -164,6 +167,14 @@ pub use tool_executor::{
     ToolConcurrencyLimiter, ToolErrorKind, ToolExecutionConfig, ToolExecutionEngine,
     ToolExecutionEngineBuilder, ToolExecutionHook, ToolExecutionOutcome, ToolExecutorRegistry,
     ToolPermission, ToolPermissionRule, ToolPolicy, ToolResultCache, ToolOutputStream,
+};
+
+// Disk-backed tool-result storage with per-result and whole-disk budgets.
+pub use tool_result_store::{
+    DEFAULT_TOOL_RESULT_DISK_BUDGET_BYTES, DEFAULT_TOOL_RESULT_MAX_BYTES,
+    DEFAULT_TOOL_RESULT_RETENTION_SECONDS, TOOL_RESULT_COMPRESSED_CONTENT_NAME,
+    TOOL_RESULT_CONTENT_NAME, TOOL_RESULT_META_NAME, TOOL_RESULT_STORE_SESSION_BUCKET,
+    ToolResultRecord, ToolResultStore, ToolResultStoreBudgetError,
 };
 
 // Budget enforcement, rate limiting, and circuit breakers.
