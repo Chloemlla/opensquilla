@@ -71,7 +71,7 @@ pub fn reduce_tool_result_with_limit(
         content,
         exit_code,
     )?;
-    let (summary, facts) = reduce_with_rule(&rule, content, exit_code);
+    let (summary, facts) = reduce_with_rule(rule, content, exit_code);
     if summary.is_empty() {
         return None;
     }

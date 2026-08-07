@@ -10,7 +10,7 @@ pub mod types;
 /// Configuration system: Config, ProviderConfig, ChannelConfig, etc. with serde support.
 pub mod config;
 
-/// Error types: Error enum with thiserror derive, and a Result<T> alias.
+/// Error types: Error enum with thiserror derive, and a `Result<T>` alias.
 pub mod error;
 
 /// Model types: ModelInfo, ModelCapabilities, ProviderSpec, ModelPricing, etc.

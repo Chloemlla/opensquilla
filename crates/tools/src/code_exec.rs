@@ -201,10 +201,7 @@ impl CodeExecTool {
 
         if config.needs_file {
             // Write code to a temporary file.
-            let temp_dir = self
-                .temp_dir
-                .clone()
-                .unwrap_or(std::env::temp_dir());
+            let temp_dir = self.temp_dir.clone().unwrap_or(std::env::temp_dir());
             let file_name = format!("exec_{}.{}", uuid::Uuid::new_v4(), config.extension);
             let file_path = temp_dir.join(&file_name);
 

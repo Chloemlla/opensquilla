@@ -500,10 +500,7 @@ impl RequestProof {
             if removed.role == MessageRole::Tool {
                 if let Some(_removed2) = convo.pop_if(|last| {
                     last.role == MessageRole::Assistant
-                        && last
-                            .tool_calls
-                            .as_ref()
-                            .is_some_and(|c| !c.is_empty())
+                        && last.tool_calls.as_ref().is_some_and(|c| !c.is_empty())
                 }) {
                     convo_tokens = convo
                         .iter()

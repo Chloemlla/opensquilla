@@ -2444,14 +2444,11 @@ impl Provider for EnsembleProvider {
                         .send_message(&agg_config, &agg_messages, tools)
                         .await
                 } else {
-                    results
-                        .into_iter()
-                        .find_map(Result::ok)
-                        .ok_or_else(|| {
-                            ProviderError::Internal(
-                                "No aggregator configured and all proposers failed".into(),
-                            )
-                        })
+                    results.into_iter().find_map(Result::ok).ok_or_else(|| {
+                        ProviderError::Internal(
+                            "No aggregator configured and all proposers failed".into(),
+                        )
+                    })
                 }
             }
         }

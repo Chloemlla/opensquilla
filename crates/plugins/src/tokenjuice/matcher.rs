@@ -125,7 +125,7 @@ fn shell_split(command: &str) -> Vec<String> {
     tokens
 }
 
-/// The basename of argv[0], stripping a single layer of surrounding quotes.
+/// The basename of `argv[0]`, stripping a single layer of surrounding quotes.
 /// Returns `None` for an empty argv.
 pub fn command_name(argv: &[String]) -> Option<String> {
     let first = argv.first()?;
@@ -400,19 +400,16 @@ pub fn select_rule<'a>(
         }
     }
 
-    for rule in rules {
-        if rule_matches(
+    rules.iter().find(|rule| {
+        rule_matches(
             rule,
             tool_name,
             command.as_deref(),
             &argv,
             content,
             exit_code,
-        ) {
-            return Some(rule);
-        }
-    }
-    None
+        )
+    })
 }
 
 #[cfg(test)]

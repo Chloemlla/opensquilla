@@ -166,7 +166,7 @@ impl ConfigStorage {
     /// Check if the storage backend is available.
     pub fn is_available(&self) -> bool {
         match &self.backend {
-            StorageBackend::File { path, .. } => path.parent().map_or(false, |p| p.exists()),
+            StorageBackend::File { path, .. } => path.parent().is_some_and(|p| p.exists()),
             StorageBackend::Environment => true,
         }
     }

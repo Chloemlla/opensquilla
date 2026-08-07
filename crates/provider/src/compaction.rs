@@ -349,8 +349,7 @@ impl CompactionConfig {
         if preview && chars_len(value) <= COMPACTED_TAIL_STRING_MAX_CHARS {
             return value.to_string();
         }
-        if let Ok(serde_json::Value::Object(map)) =
-            serde_json::from_str::<serde_json::Value>(value)
+        if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(value)
         {
             let mut compacted = serde_json::Map::new();
             let mut changed = false;
@@ -375,9 +374,8 @@ impl CompactionConfig {
                 return value.to_string();
             }
             if changed || !preview {
-                let compacted_json =
-                    serde_json::to_string(&serde_json::Value::Object(compacted))
-                        .unwrap_or_default();
+                let compacted_json = serde_json::to_string(&serde_json::Value::Object(compacted))
+                    .unwrap_or_default();
                 if keep_original_for_never_worse(self, value, &compacted_json) {
                     return value.to_string();
                 }
