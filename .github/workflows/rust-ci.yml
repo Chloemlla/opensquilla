@@ -91,7 +91,7 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run audit
-        run: cargo audit
+        run: cargo audit --config .cargo/audit.toml
 
   # Job 5: Check for unused dependencies
   udeps:

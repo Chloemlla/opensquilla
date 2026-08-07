@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_persistence_gate_enabled_proceeds_with_safe_receipt() {
-        use super::compaction_lifecycle::FlushReceipt;
+        use crate::turn_runner::compaction_lifecycle::FlushReceipt;
         let receipt = FlushReceipt {
             mode: Some("llm".to_string()),
             indexed_chunk_count: 3,
