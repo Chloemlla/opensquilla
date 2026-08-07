@@ -431,24 +431,29 @@ export function useChatSlashCommands(options: UseChatSlashCommandsOptions) {
         // Bare "/meta" is handled by the argument-completion branch above
         // (it reopens the menu with the skill choices). Here we only reach the
         // run path, with a skill name supplied (e.g. Enter on "/meta <skill>").
-        const skillName = String(args || '').trim()
-        if (!skillName) break
-        void runMetaSkill(skillName)
+        // The full args may include an inline request after the skill name.
+        const rawArgs = String(args || '').trim()
+        if (!rawArgs) break
+        void runMetaSkill(rawArgs)
         break
       }
     }
   }
 
-  async function runMetaSkill(skillName: string): Promise<void> {
-    const name = String(skillName || '').trim()
-    if (!name) return
+  async function runMetaSkill(rawArgs: string): Promise<void> {
+    const trimmed = String(rawArgs || '').trim()
+    if (!trimmed) return
+    // Split into skill name (first token) + optional inline request (remainder).
+    const [name, ...requestParts] = trimmed.split(/\s+/)
+    const request = requestParts.join(' ').trim()
     try {
       const result = await options.rpc.call<{ ok?: boolean; error?: string }>('meta.run', {
         name,
         sessionKey: options.sessionKey.value,
       })
       if (result?.ok) {
-        options.dispatchHidden('/meta ' + name, '/meta ' + name)
+        const launchText = request ? `/meta ${name} ${request}` : `/meta ${name}`
+        options.dispatchHidden(launchText, launchText)
       } else {
         options.notify(result?.error || i18n.global.t('chat.metaRuns.couldNotRunSkill', { skill: name }))
       }

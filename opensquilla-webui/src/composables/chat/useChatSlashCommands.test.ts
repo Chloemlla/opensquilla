@@ -318,3 +318,51 @@ describe('useChatSlashCommands recovery', () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('//'))
   })
 })
+
+describe('useChatSlashCommands /meta inline requests', () => {
+  const metaCommand = {
+    name: '/meta',
+    description: 'Run a meta skill.',
+    aliases: [],
+    execution: { action: 'meta.menu' },
+    argument_choices: [
+      { value: 'meta-skill-creator', description: 'Create a meta skill' },
+      { value: 'someskill', description: 'A skill' },
+    ],
+  }
+
+  it('passes only the skill name to meta.run and carries the inline request through dispatchHidden', async () => {
+    const { api, dispatchHidden, rpc } = harness(false, [metaCommand])
+    rpc.call.mockImplementation((method: string) =>
+      Promise.resolve(method === 'meta.run' ? { ok: true } : { commands: [metaCommand] }),
+    )
+
+    await api.executeSlashCommand('/meta meta-skill-creator create a competitor research meta-skill')
+    await Promise.resolve()
+
+    expect(rpc.call).toHaveBeenCalledWith('meta.run', {
+      name: 'meta-skill-creator',
+      sessionKey: 'agent:main:webchat:test',
+    })
+    expect(dispatchHidden).toHaveBeenCalledWith(
+      '/meta meta-skill-creator create a competitor research meta-skill',
+      '/meta meta-skill-creator create a competitor research meta-skill',
+    )
+  })
+
+  it('dispatches /meta <skill> with no request when only the skill name is supplied', async () => {
+    const { api, dispatchHidden, rpc } = harness(false, [metaCommand])
+    rpc.call.mockImplementation((method: string) =>
+      Promise.resolve(method === 'meta.run' ? { ok: true } : { commands: [metaCommand] }),
+    )
+
+    await api.executeSlashCommand('/meta someskill')
+    await Promise.resolve()
+
+    expect(rpc.call).toHaveBeenCalledWith('meta.run', {
+      name: 'someskill',
+      sessionKey: 'agent:main:webchat:test',
+    })
+    expect(dispatchHidden).toHaveBeenCalledWith('/meta someskill', '/meta someskill')
+  })
+})
