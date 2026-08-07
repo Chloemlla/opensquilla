@@ -23,11 +23,19 @@ use opensquilla_core::types::{ContentBlock, Message, MessageRole, ToolCall, Tool
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, info, instrument, warn};
 
 pub use crate::runtime::{NoopToolExecutor, ToolExecutor};
+
+/// The built-in TokenJuice rules, parsed once and reused across every tool
+/// call (mirrors Python's `load_rules()` caching). Only compiled with the
+/// `plugins` feature; without it the engine falls back to byte-truncation.
+#[cfg(feature = "plugins")]
+static TOKENJUICE_RULES: LazyLock<Vec<opensquilla_plugins::Rule>> =
+    LazyLock::new(opensquilla_plugins::default_rules);
 
 /// Configuration for a single tool execution.
 #[derive(Debug, Clone)]
@@ -597,41 +605,111 @@ impl ToolExecutionEngine {
 
             match result {
                 Ok(Ok(tool_result)) => {
-                    // Truncate output if needed.
-                    let (final_result, truncated) =
-                        if config.max_output_bytes > 0 && tool_result.content.len() > config.max_output_bytes {
-                            let truncated_content: String = tool_result
-                                .content
-                                .chars()
-                                .take(config.max_output_bytes)
-                                .collect();
-                            (
-                                ToolResult {
-                                    content: format!("{truncated_content}\n[...truncated]"),
-                                    ..tool_result
-                                },
-                                true,
-                            )
-                        } else {
-                            (tool_result, false)
-                        };
-
-                    // Cache the result.
-                    if config.cache_result {
-                        self.cache.insert(call, &final_result).await;
-                    }
-
-                    return ToolExecutionOutcome {
-                        call: call.clone(),
-                        result: Some(final_result),
-                        error: None,
-                        error_kind: None,
-                        duration: start.elapsed(),
-                        attempts,
-                        from_cache: false,
-                        truncated,
+                // Before byte-truncating, try a structural reduction via
+                // TokenJuice (mirrors Python's `reduce_tool_result_with_tokenjuice`
+                // call site in `engine/agent.py`). When a rule matches, the
+                // reducer returns a compact head/tail + counter summary that is
+                // shorter than the original; only when no rule matches (or the
+                // `plugins` feature is off) do we fall back to byte-truncation.
+                // The reducer's own no-op guard already discards reductions that
+                // aren't shorter than the input.
+                #[cfg(feature = "plugins")]
+                let tokenjuice_reduced: Option<String> = {
+                    let arguments = Some(&call.input);
+                    let command = call
+                        .input
+                        .get("command")
+                        .and_then(|v| v.as_str());
+                    let max_inline = if config.max_output_bytes > 0 {
+                        Some(config.max_output_bytes)
+                    } else {
+                        None
                     };
+                    match opensquilla_plugins::reduce_tool_result_with_limit(
+                        &call.name,
+                        &tool_result.content,
+                        tool_result.is_error,
+                        arguments,
+                        command,
+                        &TOKENJUICE_RULES,
+                        max_inline,
+                    ) {
+                        Some(reduction) => {
+                            debug!(
+                                tool = %call.name,
+                                call_id = %call.id,
+                                reducer = ?reduction.reducer,
+                                raw_chars = reduction.raw_chars,
+                                reduced_chars = reduction.reduced_chars,
+                                ratio = %format!("{:.2}", reduction.ratio),
+                                "tokenjuice reduced tool result"
+                            );
+                            Some(reduction.inline_text)
+                        }
+                        None => None,
+                    }
+                };
+
+                #[cfg(not(feature = "plugins"))]
+                let tokenjuice_reduced: Option<String> = None;
+
+                // Truncate output if needed: skip when TokenJuice already
+                // produced a (shorter) inline summary.
+                let (final_result, truncated) =
+                    if let Some(reduced) = tokenjuice_reduced {
+                        (
+                            ToolResult {
+                                content: reduced,
+                                ..tool_result
+                            },
+                            false,
+                        )
+                    } else if config.max_output_bytes > 0
+                        && tool_result.content.len() > config.max_output_bytes
+                    {
+                        let truncated_content: String = tool_result
+                            .content
+                            .chars()
+                            .take(config.max_output_bytes)
+                            .collect();
+                        (
+                            ToolResult {
+                                content: format!("{truncated_content}\n[...truncated]"),
+                                ..tool_result
+                            },
+                            true,
+                        )
+                    } else {
+                        (tool_result, false)
+                    };
+
+                // TODO(safety): the Python backend XML-escapes untrusted tool
+                // output via `opensquilla_safety::injection::wrap_untrusted_with_source`
+                // (signature `wrap_untrusted_with_source(content: &str, source: &str)
+                // -> String`) before it re-enters the LLM context. Python only
+                // wraps workspace-context and ensemble-candidate text today, NOT
+                // the tool-result projection path, so the gating condition for
+                // tool results is unresolved. When that policy is decided, wrap
+                // `final_result.content` here when the result is untrusted
+                // (e.g. shell/file output) and leave trusted/user-requested
+                // output unwrapped.
+
+                // Cache the result.
+                if config.cache_result {
+                    self.cache.insert(call, &final_result).await;
                 }
+
+                return ToolExecutionOutcome {
+                    call: call.clone(),
+                    result: Some(final_result),
+                    error: None,
+                    error_kind: None,
+                    duration: start.elapsed(),
+                    attempts,
+                    from_cache: false,
+                    truncated,
+                };
+            }
                 Ok(Err(e)) => {
                     let error_str = e.to_string();
                     let kind = ToolErrorKind::classify(&error_str);
