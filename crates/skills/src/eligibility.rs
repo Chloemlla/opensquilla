@@ -683,7 +683,7 @@ impl EligibilityChecker {
                 target_os = "windows"
             )),
             "tty" | "terminal" => std::io::IsTerminal::is_terminal(&std::io::stdout()),
-            "gui" => cfg!(any(target_os = "windows", target_os = "macos")) || cfg!(feature = "gui"),
+            "gui" => cfg!(any(target_os = "windows", target_os = "macos")),
             "ffmpeg" => self.is_binary_available("ffmpeg"),
             "curl" => self.is_binary_available("curl"),
             "wget" => self.is_binary_available("wget"),

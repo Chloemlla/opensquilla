@@ -61,6 +61,12 @@ impl fmt::Display for UserId {
     }
 }
 
+impl Default for UserId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A unique identifier for an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AgentId(pub Uuid);
@@ -75,6 +81,12 @@ impl AgentId {
 impl fmt::Display for AgentId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Default for AgentId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -95,6 +107,12 @@ impl fmt::Display for MessageId {
     }
 }
 
+impl Default for MessageId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A unique identifier for a memory entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MemoryId(pub Uuid);
@@ -106,6 +124,12 @@ impl MemoryId {
     }
 }
 
+impl Default for MemoryId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A unique identifier for a scheduled job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JobId(pub Uuid);
@@ -114,6 +138,12 @@ impl JobId {
     /// Create a new random job ID.
     pub fn new() -> Self {
         Self(Uuid::new_v4())
+    }
+}
+
+impl Default for JobId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

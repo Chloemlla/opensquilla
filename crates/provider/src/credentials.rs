@@ -5,7 +5,7 @@
 //! keys round-robin and cools down keys that receive HTTP 429 responses so
 //! subsequent requests avoid them until the cooldown window elapses.
 //!
-//! The pool is thread-safe via [`DashMap`](dashmap::DashMap) and an atomic
+//! The pool is thread-safe via [`DashMap`] and an atomic
 //! round-robin counter.
 
 use dashmap::DashMap;

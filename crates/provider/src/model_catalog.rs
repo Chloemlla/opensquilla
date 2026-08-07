@@ -5,8 +5,8 @@
 //! populated lazily and refreshed on a TTL basis so that lookups after the
 //! first hit are cheap in-memory map reads.
 //!
-//! The catalog is thread-safe via [`DashMap`](dashmap::DashMap) and an inner
-//! [`RwLock`](std::sync::RwLock) per provider entry.
+//! The catalog is thread-safe via [`DashMap`] and an inner
+//! [`RwLock`] per provider entry.
 
 use dashmap::DashMap;
 use std::collections::HashMap;

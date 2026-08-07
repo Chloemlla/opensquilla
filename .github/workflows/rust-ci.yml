@@ -91,7 +91,9 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run audit
-        run: cargo audit --config .cargo/audit.toml
+        # cargo-audit >= 0.20 auto-discovers `.cargo/audit.toml`; the
+        # `--config` flag was removed, so it is omitted here.
+        run: cargo audit
 
   # Job 5: Check for unused dependencies
   udeps:
@@ -221,10 +223,17 @@ jobs:
         run: |
           set -euo pipefail
           failed=()
-          for job in fmt clippy check audit doc build check-windows check-macos; do
-            status=$(gh run view ${{ github.run_id }} --job $job --json conclusion --jq .conclusion 2>/dev/null || echo "unknown")
-            if [[ "$status" != "success" ]]; then
-              failed+=("$job=$status")
+          for res in \
+            "${{ needs.fmt.result }}" \
+            "${{ needs.clippy.result }}" \
+            "${{ needs.check.result }}" \
+            "${{ needs.audit.result }}" \
+            "${{ needs.doc.result }}" \
+            "${{ needs.build.result }}" \
+            "${{ needs.check-windows.result }}" \
+            "${{ needs.check-macos.result }}"; do
+            if [[ "$res" != "success" ]]; then
+              failed+=("$res")
             fi
           done
           if [[ ${#failed[@]} -gt 0 ]]; then

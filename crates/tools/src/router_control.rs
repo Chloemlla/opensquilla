@@ -5,7 +5,7 @@
 //! `RouterControlHoldStore` and a `router_control_config` on the tool context.
 //!
 //! The tools crate cannot depend on the gateway (where the production
-//! [`RoutingStore`](opensquilla_gateway::routing::RoutingStore) lives) without
+//! `opensquilla_gateway::routing::RoutingStore` lives) without
 //! a circular dependency, so this tool carries its own lightweight
 //! [`RoutingHoldStore`] that mirrors the gateway's hold semantics. The gateway
 //! is expected to bridge its own `RoutingStore` into this tool's store at boot

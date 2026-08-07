@@ -1480,7 +1480,7 @@ impl Tool for EnhancedExecTool {
 /// processes without blocking.
 pub struct StreamOutputTool {
     /// Reference to the shared process registry (from BackgroundProcessTool).
-    /// In practice this is a separate Arc<Mutex<HashMap>> that the tool shares.
+    /// In practice this is a separate `Arc<Mutex<HashMap>>` that the tool shares.
     processes: Arc<Mutex<HashMap<String, BackgroundProcess>>>,
 }
 

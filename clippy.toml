@@ -6,4 +6,4 @@
 # command line; the rust-ci.yml clippy job carries the project's allows.
 
 # MSRV: we track stable Rust
-msrv = "1.85"
+msrv = "1.86"

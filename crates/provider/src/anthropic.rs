@@ -935,7 +935,7 @@ fn parse_anthropic_sse_event(data: &str) -> Option<ProviderResult<StreamEvent>> 
 
 /// Stateful SSE stream adapter for the Anthropic Messages protocol.
 ///
-/// Unlike the stateless [`parse_anthropic_sse_event`], this stream tracks
+/// Unlike the stateless `parse_anthropic_sse_event`, this stream tracks
 /// tool-call identity by content-block index, accumulates token usage across
 /// `message_start` and `message_delta` frames, and emits a terminal `Done`
 /// event from `message_stop`.

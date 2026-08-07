@@ -15,7 +15,7 @@
 //! - [`OpenAiConfig`] is the user-facing configuration used to construct a
 //!   runtime client ([`OpenAiCompatProvider`]).
 //! - [`OpenAiCompatProvider`] is the runtime client; it implements the crate-wide
-//!   [`Provider`] and [`ChatProvider`] traits and exposes a richer
+//!   [`Provider`] and [`ChatProvider`](crate::types::ChatProvider) traits and exposes a richer
 //!   protocol-specific surface (`complete`, `stream_request`, `list_models`).
 //! - [`build_chat_request`] / [`build_chat_request_full`] translate canonical
 //!   [`ChatMessage`] arrays into the OpenAI wire format, applying the per-provider
@@ -1889,7 +1889,7 @@ pub struct ChatResponse {
 /// Runtime OpenAI-compatible chat client.
 ///
 /// Implements both the crate-wide [`Provider`] trait and the crate-wide
-/// [`ChatProvider`] trait, plus a richer inherent API for protocol-specific
+/// [`ChatProvider`](crate::types::ChatProvider) trait, plus a richer inherent API for protocol-specific
 /// callers. Construct via [`OpenAiCompatProvider::new`] (backwards compatible
 /// with the historical three-argument constructor) or the fuller
 /// [`OpenAiCompatProvider::from_config`].

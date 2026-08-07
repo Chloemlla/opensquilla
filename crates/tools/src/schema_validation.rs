@@ -9,7 +9,7 @@
 //!
 //! ## Usage
 //!
-//! Each [`ToolDefinition`](crate::registry::ToolDefinition) can be converted to
+//! Each [`ToolDefinition`] can be converted to
 //! a JSON Schema via [`ToolDefinition::to_json_schema`]. Pass that schema to
 //! [`SchemaValidator::new`] once, then call
 //! [`SchemaValidator::validate_args`] on every incoming argument object. The

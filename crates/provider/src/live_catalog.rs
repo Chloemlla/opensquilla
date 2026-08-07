@@ -21,7 +21,7 @@ use tracing::{debug, info, warn};
 pub struct LiveProviderConfig {
     /// The provider id (must match a `CompatPolicy` / catalog key).
     pub provider: String,
-    /// The API base URL (e.g. "https://api.openai.com/v1").
+    /// The API base URL (e.g. "<https://api.openai.com/v1>").
     pub api_base: String,
     /// Optional bearer token.
     pub api_key: Option<String>,

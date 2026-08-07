@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Top-level configuration for the OpenSquilla gateway.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Gateway server configuration.
     pub gateway: GatewayConfig,
@@ -149,7 +149,7 @@ impl Config {
             }
         }
 
-        self.from_value_map(&value_map)
+        self.apply_value_map(&value_map)
     }
 
     /// Remove a flat dotted-path key from the configuration.
@@ -170,7 +170,7 @@ impl Config {
             current.remove(keys[keys.len() - 1]);
         }
 
-        let _ = self.from_value_map(&value_map);
+        let _ = self.apply_value_map(&value_map);
     }
 
     /// Save the configuration to the discovered path as TOML.
@@ -207,7 +207,7 @@ impl Config {
     }
 
     /// Rebuild the config from a serde_json object after mutation.
-    fn from_value_map(
+    fn apply_value_map(
         &mut self,
         value_map: &serde_json::Map<String, serde_json::Value>,
     ) -> crate::error::Result<()> {
@@ -249,21 +249,6 @@ fn flatten_json(value: &serde_json::Value, prefix: &str, out: &mut HashMap<Strin
             out.insert(prefix.to_string(), s.clone());
         }
         serde_json::Value::Null => {}
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            gateway: GatewayConfig::default(),
-            providers: Vec::new(),
-            channels: Vec::new(),
-            models: None,
-            sandbox: None,
-            skills: None,
-            scheduler: None,
-            observability: None,
-        }
     }
 }
 
