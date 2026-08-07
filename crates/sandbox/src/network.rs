@@ -991,7 +991,7 @@ impl DomainAllowlist {
                     return DomainCheck {
                         allowed: true,
                         domain: domain.to_string(),
-                        detail: format!("wildcard match for '{}'", &*allowed),
+                        detail: format!("wildcard match for '{}'", *allowed),
                     };
                 }
             }
@@ -1004,7 +1004,7 @@ impl DomainAllowlist {
                 return DomainCheck {
                     allowed: true,
                     domain: domain.to_string(),
-                    detail: format!("validated match for '{}'", &*allowed),
+                    detail: format!("validated match for '{}'", *allowed),
                 };
             }
         }

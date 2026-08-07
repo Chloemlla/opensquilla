@@ -120,7 +120,6 @@ impl SupervisedChild {
             }
             Ok(Err(e)) => return Err(format!("process wait: {e}")),
             Err(_) => {
-                timed_out = true;
                 debug!(
                     "supervisor: killing child after {}ms timeout",
                     self.timeout.as_millis()

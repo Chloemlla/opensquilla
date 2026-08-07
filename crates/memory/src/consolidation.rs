@@ -307,19 +307,19 @@ impl Consolidator {
             let mut cluster_members: Vec<MemoryEntry> = vec![memories[i].clone()];
             visited.insert(memories[i].id);
 
-            for j in (i + 1)..memories.len() {
-                if visited.contains(&memories[j].id) {
+            for item in memories.iter().skip(i + 1) {
+                if visited.contains(&item.id) {
                     continue;
                 }
                 // A memory joins if it is similar to ANY member (transitive
                 // clustering), but capped to keep clusters tight.
                 let max_sim = cluster_members
                     .iter()
-                    .map(|m| content_similarity(&m.content, &memories[j].content))
+                    .map(|m| content_similarity(&m.content, &item.content))
                     .fold(0.0_f64, f64::max);
                 if max_sim >= self.config.cluster_threshold {
-                    cluster_members.push(memories[j].clone());
-                    visited.insert(memories[j].id);
+                    cluster_members.push(item.clone());
+                    visited.insert(item.id);
                 }
             }
 
@@ -385,15 +385,14 @@ impl Consolidator {
         let memory_type = members[0].memory_type.clone();
         let common_terms = extract_common_terms(members);
 
-        let cluster = MemoryCluster {
+        MemoryCluster {
             agent_id: *agent_id,
             memory_ids: members.iter().map(|m| m.id).collect(),
             memory_type,
             similarity,
             common_terms,
             centroid_created: false,
-        };
-        cluster
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::policy::SandboxLevel;
 use crate::seccomp::presets;
 use crate::seccomp::syscalls::syscall_name_to_number;
-use crate::seccomp::{AllowRule, ArgComparator, BpfProgram, ComparisonOp, SeccompAction};
+use crate::seccomp::{AllowRule, ArgComparator, BpfProgram, SeccompAction};
 
 /// A seccomp policy: an allowlist plus a default deny action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,8 +315,8 @@ pub fn serialize_sock_fprog(prog: &BpfProgram) -> Vec<u8> {
 
     let mut buf = Vec::with_capacity(header_size + insns.len());
     buf.extend_from_slice(&(prog.len() as u16).to_le_bytes());
-    buf.extend(std::iter::repeat(0u8).take(filter_offset - 2));
-    buf.extend(std::iter::repeat(0u8).take(ptr_size)); // filter pointer (patched later)
+    buf.extend(std::iter::repeat_n(0u8, filter_offset - 2));
+    buf.extend(std::iter::repeat_n(0u8, ptr_size)); // filter pointer (patched later)
     buf.extend_from_slice(&insns);
     buf
 }

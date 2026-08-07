@@ -710,7 +710,7 @@ fn linux_lookup(name: &str) -> Option<i64> {
         "fchmodat2" => libc::SYS_fchmodat2,
         "mseal" => libc::SYS_mseal,
         _ => return fallback_x86_64_lookup(name),
-    } as i64)
+    })
 }
 
 /// Fallback lookup for syscalls that may not be defined in an older `libc`

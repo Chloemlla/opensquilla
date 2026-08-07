@@ -278,7 +278,6 @@ impl SandboxManager {
                     governance.approve(&id, approver).await?;
                     approval_status = Some("approved".to_string());
                 } else {
-                    approval_status = Some("pending".to_string());
                     return Err(format!(
                         "approval required; request {id} is pending (auto-approval not configured)"
                     ));
@@ -352,7 +351,7 @@ impl SandboxManager {
                     &addr.ip().to_string(),
                     addr.port(),
                 );
-                let env = run_env.get_or_insert_with(|| HashMap::new());
+                let env = run_env.get_or_insert_with(HashMap::new);
                 for (k, v) in proxy_env {
                     env.insert(k, v);
                 }
@@ -372,7 +371,7 @@ impl SandboxManager {
         };
         let duration_ms = start.elapsed().as_millis() as u64;
 
-        let result = result.map_err(|e| {
+        let result = result.inspect_err(|_| {
             if let Some(metrics) = &self.metrics {
                 let m = ExecutionMetrics::new(&execution_id, backend_name)
                     .with_duration(std::time::Duration::from_millis(duration_ms))
@@ -383,7 +382,6 @@ impl SandboxManager {
                     metrics_clone.record(m).await;
                 });
             }
-            e
         })?;
 
         // Attribute a non-zero exit to a sandbox denial (only for sandboxed

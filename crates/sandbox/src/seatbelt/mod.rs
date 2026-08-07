@@ -17,7 +17,7 @@ pub use presets::preset_profile;
 
 use serde::{Deserialize, Serialize};
 
-use crate::policy::{FilesystemPolicy, NetworkPolicy, SandboxLevel, SandboxPolicy};
+use crate::policy::{NetworkPolicy, SandboxLevel, SandboxPolicy};
 
 /// A compiled Seatbelt profile: the SBPL source text plus metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +282,7 @@ pub fn sbpl_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::FilesystemPolicy;
 
     #[test]
     fn compiles_for_each_level() {

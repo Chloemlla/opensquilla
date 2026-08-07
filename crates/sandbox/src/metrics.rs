@@ -363,11 +363,7 @@ impl AggregateMetrics {
 
     /// Average wall-clock duration in milliseconds.
     pub fn avg_duration_ms(&self) -> u64 {
-        if self.total_executions == 0 {
-            0
-        } else {
-            self.total_duration_ms / self.total_executions
-        }
+        self.total_duration_ms.checked_div(self.total_executions).unwrap_or(0)
     }
 
     /// Success rate as a fraction in [0.0, 1.0].
@@ -506,8 +502,12 @@ pub fn read_self_rusage() -> Option<Rusage> {
         if fields.len() >= 24 {
             let clk_tck = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as u64;
             if clk_tck > 0 {
-                user_ms = fields[13].parse::<u64>().ok()? * 1000 / clk_tck;
-                system_ms = fields[14].parse::<u64>().ok()? * 1000 / clk_tck;
+                user_ms = (fields[13].parse::<u64>().ok()? * 1000)
+                    .checked_div(clk_tck)
+                    .unwrap_or(0);
+                system_ms = (fields[14].parse::<u64>().ok()? * 1000)
+                    .checked_div(clk_tck)
+                    .unwrap_or(0);
             }
             vmem_bytes = fields[22].parse::<u64>().ok()?;
             let rss_pages = fields[23].parse::<u64>().ok()?;

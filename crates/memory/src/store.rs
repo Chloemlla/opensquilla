@@ -254,7 +254,7 @@ impl MemoryStore {
             .lock()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
         let tags_json =
-            serde_json::to_string(&entry.tags).map_err(|e| CoreError::Serialization(e))?;
+            serde_json::to_string(&entry.tags).map_err(CoreError::Serialization)?;
         conn.execute(
             "INSERT INTO memories (id, agent_id, content, tags, created_at, updated_at,
              accessed_at, source, memory_type, importance, importance_score, access_count,
@@ -294,7 +294,7 @@ impl MemoryStore {
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let mut rows = stmt
-            .query_map(params![memory_id.0.to_string()], |row| memory_from_row(row))
+            .query_map(params![memory_id.0.to_string()], memory_from_row)
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         match rows.next() {
@@ -310,7 +310,7 @@ impl MemoryStore {
             .lock()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
         let tags_json =
-            serde_json::to_string(&entry.tags).map_err(|e| CoreError::Serialization(e))?;
+            serde_json::to_string(&entry.tags).map_err(CoreError::Serialization)?;
         conn.execute(
             "UPDATE memories SET content = ?1, tags = ?2, updated_at = ?3, accessed_at = ?4,
              importance = ?5, importance_score = ?6, access_count = ?7, metadata = ?8
@@ -463,23 +463,20 @@ impl MemoryStore {
 
         let refs: Vec<&dyn rusqlite::ToSql> = bindings.iter().map(|b| b.as_ref()).collect();
         let rows = stmt
-            .query_map(refs.as_slice(), |row| memory_from_row(row))
+            .query_map(refs.as_slice(), memory_from_row)
             .map_err(|e| CoreError::Storage(e.to_string()))?;
 
         let mut all: Vec<MemoryEntry> = Vec::new();
-        for row in rows {
-            if let Ok(entry) = row {
-                if !filters.tags.is_empty() && !filters.tags.iter().any(|t| entry.tags.contains(t))
-                {
-                    continue;
-                }
-                if !filters.memory_types.is_empty()
-                    && !filters.memory_types.contains(&entry.memory_type)
-                {
-                    continue;
-                }
-                all.push(entry);
+        for entry in rows.flatten() {
+            if !filters.tags.is_empty() && !filters.tags.iter().any(|t| entry.tags.contains(t))
+            {
+                continue;
             }
+            if !filters.memory_types.is_empty() && !filters.memory_types.contains(&entry.memory_type)
+            {
+                continue;
+            }
+            all.push(entry);
         }
         Ok(all)
     }
@@ -993,7 +990,7 @@ impl MemoryStore {
         let mut tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
         if !tags.iter().any(|t| t == tag) {
             tags.push(tag.to_string());
-            let new_json = serde_json::to_string(&tags).map_err(|e| CoreError::Serialization(e))?;
+            let new_json = serde_json::to_string(&tags).map_err(CoreError::Serialization)?;
             conn.execute(
                 "UPDATE memories SET tags = ?1 WHERE id = ?2",
                 params![new_json, memory_id.0.to_string()],
@@ -1129,7 +1126,7 @@ impl MemoryStore {
             )
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         let rows = stmt
-            .query_map([], |row| memory_from_row(row))
+            .query_map([], memory_from_row)
             .map_err(|e| CoreError::Storage(e.to_string()))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }

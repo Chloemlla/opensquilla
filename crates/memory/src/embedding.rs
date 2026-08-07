@@ -126,7 +126,7 @@ impl EmbeddingProvider for CachedEmbeddingProvider {
         if !misses.is_empty() {
             let miss_texts: Vec<String> = misses.iter().map(|(_, t)| t.clone()).collect();
             let computed = self.inner.embed_batch(&miss_texts).await?;
-            for ((i, text), emb) in misses.into_iter().zip(computed.into_iter()) {
+            for ((i, text), emb) in misses.into_iter().zip(computed) {
                 if let Err(e) = self.store.set_cached_embedding(model, &text, &emb) {
                     warn!("failed to cache embedding: {}", e);
                 }

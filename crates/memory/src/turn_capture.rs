@@ -628,7 +628,7 @@ fn extract_preference_points(messages: &[Message]) -> Vec<KeyPoint> {
                 };
                 let rest = rest_slice.trim();
                 let end = rest
-                    .find(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
+                    .find(['.', '!', '?', '\n'])
                     .unwrap_or(rest.len().min(200));
                 let candidate = &rest[..end];
                 if !candidate.trim().is_empty() {
@@ -682,7 +682,7 @@ fn extract_fact_points(messages: &[Message]) -> Vec<KeyPoint> {
 }
 
 fn split_sentences(text: &str) -> Vec<String> {
-    text.split(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
+    text.split(['.', '!', '?', '\n'])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()

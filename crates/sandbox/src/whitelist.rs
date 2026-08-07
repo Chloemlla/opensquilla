@@ -301,7 +301,7 @@ pub fn normalise_path(path: &str) -> String {
 
     let absolute = rest.starts_with('/') || rest.starts_with('\\');
     let mut segments: Vec<&str> = Vec::new();
-    for seg in rest.split(|c| c == sep || c == alt_sep) {
+    for seg in rest.split([sep, alt_sep]) {
         if seg.is_empty() || seg == "." {
             continue;
         }

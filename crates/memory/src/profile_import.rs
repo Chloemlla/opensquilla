@@ -76,7 +76,7 @@ pub struct HeuristicExtractor;
 impl MemoryExtractor for HeuristicExtractor {
     async fn extract(&self, source: &ImportSource) -> CoreResult<Vec<ExtractedMemory>> {
         let mut memories = Vec::new();
-        collect_scalars(&source.parsed, &source.path, "", &mut memories);
+        collect_scalars(&source.parsed, "", &mut memories);
         Ok(memories)
     }
 }
@@ -339,7 +339,7 @@ impl ProfileImporter {
     /// Parse a config file into an [`ImportSource`].
     pub fn parse_file(&self, path: &str) -> CoreResult<ImportSource> {
         let content =
-            std::fs::read_to_string(path).map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
+            std::fs::read_to_string(path).map_err(opensquilla_core::error::CoreError::Io)?;
         let kind = detect_kind(path);
         let parsed = match kind.as_str() {
             "json" => serde_json::from_str(&content).map_err(|e| {
@@ -417,7 +417,7 @@ impl ProfileImporter {
         };
 
         let entries =
-            std::fs::read_dir(dir).map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
+            std::fs::read_dir(dir).map_err(opensquilla_core::error::CoreError::Io)?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -537,7 +537,7 @@ impl ProfileImporter {
         let mut paths: Vec<String> = Vec::new();
         if p.is_dir() {
             let entries =
-                std::fs::read_dir(p).map_err(|e| opensquilla_core::error::CoreError::Io(e))?;
+                std::fs::read_dir(p).map_err(opensquilla_core::error::CoreError::Io)?;
             for entry in entries.flatten() {
                 let p2 = entry.path();
                 if p2.is_file() && is_supported(&p2.to_string_lossy()) {
@@ -579,7 +579,7 @@ impl ProfileImporter {
                     ConfigType::Hermes => extract_hermes_memories(&source.parsed),
                     _ => {
                         let mut memories = Vec::new();
-                        collect_scalars(&source.parsed, &source.path, "", &mut memories);
+                        collect_scalars(&source.parsed, "", &mut memories);
                         memories
                     }
                 };
@@ -866,7 +866,6 @@ fn collect_nested_strings(
 /// Recursively collect scalar values from a parsed config into extracted memories.
 fn collect_scalars(
     value: &serde_json::Value,
-    path: &str,
     prefix: &str,
     out: &mut Vec<ExtractedMemory>,
 ) {
@@ -915,13 +914,13 @@ fn collect_scalars(
                     continue;
                 }
                 // Recurse into nested objects / arrays.
-                collect_scalars(v, path, &child_prefix, out);
+                collect_scalars(v, &child_prefix, out);
             }
         }
         serde_json::Value::Array(items) => {
             for (i, item) in items.iter().enumerate() {
                 let child_prefix = format!("{}[{}]", prefix, i);
-                collect_scalars(item, path, &child_prefix, out);
+                collect_scalars(item, &child_prefix, out);
             }
         }
         _ => {

@@ -38,7 +38,7 @@ pub struct ExecOptions<'a> {
 #[cfg(target_os = "linux")]
 mod backend {
     use super::*;
-    use crate::policy::{NetworkPolicy, SandboxLevel};
+    use crate::policy::SandboxLevel;
     use nix::sched::CloneFlags;
     use nix::sys::wait::WaitStatus;
     use nix::unistd::ForkResult;
@@ -147,13 +147,12 @@ mod backend {
             seccomp_fd: Option<RawFd>,
             working_dir: Option<&str>,
         ) -> Vec<String> {
-            let mut args = Vec::new();
-
-            // Namespace isolation.
-            args.push("--unshare-user".to_string());
-            args.push("--unshare-pid".to_string());
-            args.push("--unshare-ipc".to_string());
-            args.push("--unshare-uts".to_string());
+            let mut args = vec![
+                "--unshare-user".to_string(),
+                "--unshare-pid".to_string(),
+                "--unshare-ipc".to_string(),
+                "--unshare-uts".to_string(),
+            ];
 
             // Network isolation: NONE blocks at the namespace level; proxy and
             // host modes share the host network namespace (the proxy enforces
@@ -550,7 +549,7 @@ mod backend {
     }
 
     fn io_err(msg: String) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, msg)
+        std::io::Error::other(msg)
     }
 
     /// Write the uid/gid maps for a freshly created user namespace so the
@@ -684,13 +683,13 @@ mod backend {
         ];
         for s in syscalls {
             if let Ok(rule) = SeccompRule::new(vec![]) {
-                rules.insert(*s as i64, vec![rule]);
+                rules.insert(*s, vec![rule]);
             }
         }
 
         #[cfg(target_arch = "x86_64")]
         if let Ok(rule) = SeccompRule::new(vec![]) {
-            rules.insert(libc::SYS_arch_prctl as i64, vec![rule]);
+            rules.insert(libc::SYS_arch_prctl, vec![rule]);
         }
 
         let filter = SeccompFilter::new(
@@ -733,8 +732,8 @@ mod backend {
 
         let mut buf = Vec::with_capacity(header_size + insns.len());
         buf.extend_from_slice(&(prog.len() as u16).to_le_bytes());
-        buf.extend(std::iter::repeat(0u8).take(filter_offset - 2));
-        buf.extend(std::iter::repeat(0u8).take(ptr_size));
+        buf.extend(std::iter::repeat_n(0u8, filter_offset - 2));
+        buf.extend(std::iter::repeat_n(0u8, ptr_size));
         buf.extend_from_slice(&insns);
         buf
     }
@@ -850,10 +849,12 @@ mod backend {
     /// cgroup v2 is read from `/sys/fs/cgroup/cgroup.controllers`; if it is
     /// not present the controller reports `available() == false` and callers
     /// should fall back to `setrlimit`.
+    #[allow(dead_code)]
     pub struct CgroupV2Controller {
         path: PathBuf,
     }
 
+    #[allow(dead_code)]
     impl CgroupV2Controller {
         /// The base directory under which per-sandbox cgroups are created.
         pub fn base_dir() -> PathBuf {
@@ -1074,7 +1075,7 @@ mod backend {
                     | LANDLOCK_ACCESS_FS_MAKE_SYM
                     | LANDLOCK_ACCESS_FS_TRUNCATE;
 
-                let mut add_rule = |path: &Path, access: u64| -> Result<(), String> {
+                let add_rule = |path: &Path, access: u64| -> Result<(), String> {
                     // OsStrExt::as_ptr was removed from std; build a NUL-terminated
                     // C string from the platform-encoded bytes instead.
                     let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
@@ -1142,6 +1143,7 @@ mod backend {
 
     /// Apply cgroup limits to the current process (used by the native
     /// fallback when a cgroup controller is available).
+    #[allow(dead_code)]
     pub fn apply_cgroup_for_self(
         limits: &crate::policy::ResourceLimits,
     ) -> Option<CgroupV2Controller> {

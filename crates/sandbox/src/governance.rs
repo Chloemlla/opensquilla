@@ -78,6 +78,7 @@ pub struct GovernanceMetrics {
 struct RejectionGuardEntry {
     rejected_at: DateTime<Utc>,
     cooldown_secs: u64,
+    #[allow(dead_code)]
     reason: String,
 }
 
@@ -392,7 +393,7 @@ impl ApprovalQueue {
         let mut to_reject = Vec::new();
         {
             let mut pending = self.pending.lock().await;
-            for (id, r) in pending.iter_mut() {
+            for (_, r) in pending.iter_mut() {
                 if r.status == ApprovalStatus::Pending && now > r.expires_at {
                     r.status = ApprovalStatus::Rejected;
                     to_reject.push(r.clone());

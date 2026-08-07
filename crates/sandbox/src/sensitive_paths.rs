@@ -177,9 +177,9 @@ fn comparison_path_candidates(path: &str) -> Vec<String> {
             raw.clone()
         });
     }
-    if raw.starts_with("~/") {
+    if let Some(rest) = raw.strip_prefix("~/") {
         let home = crate::destructive_intents::home_dir().replace('\\', "/");
-        let expanded_home = format!("{}/{}", home.trim_end_matches('/'), &raw[2..]);
+        let expanded_home = format!("{}/{}", home.trim_end_matches('/'), rest);
         out.push(if is_windows_runtime() {
             expanded_home.to_lowercase()
         } else {

@@ -149,7 +149,7 @@ impl FtsIndexManager {
                 memory_count,
             })
             .collect();
-        agent_counts.sort_by(|a, b| b.memory_count.cmp(&a.memory_count));
+        agent_counts.sort_by_key(|b| std::cmp::Reverse(b.memory_count));
         stats.by_agent = agent_counts;
 
         // FTS table stats (best-effort; the table name is fixed).

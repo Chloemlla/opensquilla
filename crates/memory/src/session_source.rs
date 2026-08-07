@@ -814,13 +814,13 @@ fn normalize_content(s: &str) -> String {
 fn clean_sentence(sentence: &str) -> String {
     sentence
         .trim()
-        .trim_end_matches(|c: char| c == '.' || c == '!' || c == '?' || c == ',')
+        .trim_end_matches(['.', '!', '?', ','])
         .trim()
         .to_string()
 }
 
 fn split_sentences(text: &str) -> Vec<String> {
-    text.split(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
+    text.split(['.', '!', '?', '\n'])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
@@ -925,7 +925,7 @@ fn extract_preferences(user_texts: &[String]) -> Vec<String> {
                 let rest = &text[start..];
                 // Take up to the next sentence-ending punctuation or newline.
                 let end = rest
-                    .find(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
+                    .find(['.', '!', '?', '\n'])
                     .unwrap_or(rest.len().min(160));
                 let candidate = rest[..end].trim();
                 if !candidate.is_empty() {

@@ -289,7 +289,7 @@ impl SyncManager {
             return Ok(0);
         }
 
-        let bytes = std::fs::read(file_path).map_err(|e| CoreError::Io(e))?;
+        let bytes = std::fs::read(file_path).map_err(CoreError::Io)?;
         let content = String::from_utf8_lossy(&bytes).to_string();
         if content.trim().is_empty() {
             return Ok(0);
@@ -337,7 +337,7 @@ impl SyncManager {
     /// overlapping chunks. Returns the number of chunks created (0 when the
     /// file is unchanged since the last index).
     pub fn index_file(&self, file_path: &str) -> CoreResult<usize> {
-        let bytes = std::fs::read(file_path).map_err(|e| CoreError::Io(e))?;
+        let bytes = std::fs::read(file_path).map_err(CoreError::Io)?;
         let content = String::from_utf8_lossy(&bytes).to_string();
         if self.store.file_is_unchanged(file_path, &bytes)? {
             return Ok(0);
