@@ -544,7 +544,21 @@ impl ToolRegistry {
             session_storage.clone(),
         ))?;
         registry.register(crate::session_tools::SessionDeleteTool::from_arc(
-            session_storage,
+            session_storage.clone(),
+        ))?;
+
+        // Multi-session RPC tools share the same session storage handle.
+        registry.register(crate::session_rpc_tools::SessionsSendTool::from_arc(
+            session_storage.clone(),
+        ))?;
+        registry.register(crate::session_rpc_tools::SessionsSpawnTool::from_arc(
+            session_storage.clone(),
+        ))?;
+        registry.register(crate::session_rpc_tools::SessionsYieldTool::from_arc(
+            session_storage.clone(),
+        ))?;
+        registry.register(crate::session_rpc_tools::SessionsHistoryTool::from_arc(
+            session_storage.clone(),
         ))?;
 
         // Messaging.
@@ -555,6 +569,59 @@ impl ToolRegistry {
         registry.register(crate::cron_tool::ScheduleTaskTool::from_arc(engine.clone()))?;
         registry.register(crate::cron_tool::ListTasksTool::from_arc(engine.clone()))?;
         registry.register(crate::cron_tool::CancelTaskTool::from_arc(engine))?;
+
+        // Skill management tools share a single in-memory skill loader plus a
+        // community hub rooted at a temp managed dir. Mutation tools operate
+        // on a temp workspace dir so the registry is self-contained.
+        let skill_loader = Arc::new(opensquilla_skills::SkillLoader::new());
+        let skill_workspace_dir = std::env::temp_dir().join("opensquilla-skills-workspace");
+        let skill_hub = Arc::new(
+            opensquilla_skills::SkillHub::new(std::env::temp_dir().join("opensquilla-skills-managed"))
+                .map_err(|e| {
+                    ToolError::new(
+                        "SKILL_ERROR",
+                        format!("Failed to create skill hub: {}", e),
+                    )
+                })?,
+        );
+        registry.register(crate::skill_tools::SkillListTool::from_arc(
+            skill_loader.clone(),
+        ))?;
+        registry.register(crate::skill_tools::SkillViewTool::from_arc(
+            skill_loader.clone(),
+        ))?;
+        registry.register(crate::skill_tools::SkillSearchCommunityTool::from_arc(
+            skill_loader.clone(),
+            skill_hub.clone(),
+        ))?;
+        registry.register(crate::skill_tools::SkillInstallCommunityTool::from_arc(
+            skill_hub,
+        ))?;
+        registry.register(crate::skill_tools::InstallSkillDepsTool::from_arc(
+            skill_loader.clone(),
+        ))?;
+        registry.register(crate::skill_tools::SkillCreateTool::from_arc(
+            skill_loader.clone(),
+            skill_workspace_dir.clone(),
+        ))?;
+        registry.register(crate::skill_tools::SkillEditTool::from_arc(
+            skill_loader.clone(),
+        ))?;
+        registry.register(crate::skill_tools::SkillDeleteTool::from_arc(
+            skill_loader,
+        ))?;
+
+        // Plan-control tools share the session storage already built above.
+        registry.register(crate::plan_control::SubmitPlanTool::from_arc(
+            session_storage.clone(),
+        ))?;
+        registry.register(crate::plan_control::RequestUserInputTool::new())?;
+        registry.register(crate::plan_control::PlanRunCheckpointTool::from_arc(
+            session_storage.clone(),
+        ))?;
+
+        // Router control tool (enabled with a fresh in-memory hold store).
+        registry.register(crate::router_control::RouterControlTool::enabled())?;
 
         Ok(registry)
     }
@@ -901,10 +968,29 @@ mod tests {
             "session_switch",
             "session_export",
             "session_delete",
+            "sessions_send",
+            "sessions_spawn",
+            "sessions_yield",
+            "sessions_history",
             "send_message",
             "schedule_task",
             "list_tasks",
             "cancel_task",
+            // Skill management tools.
+            "skill_list",
+            "skill_view",
+            "skill_search_community",
+            "skill_install_community",
+            "install_skill_deps",
+            "skill_create",
+            "skill_edit",
+            "skill_delete",
+            // Plan-control tools.
+            "submit_plan",
+            "request_user_input",
+            "plan_run_checkpoint",
+            // Router control tool.
+            "router_control",
         ] {
             assert!(
                 names.contains(&expected.to_string()),

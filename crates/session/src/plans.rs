@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use opensquilla_core::error::CoreError;
 use opensquilla_core::result::CoreResult;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
 
@@ -187,11 +188,20 @@ pub enum PlanTransition {
 /// Collaborative plan state machine backed by the `plan_revisions` and
 /// `plan_runs` tables.
 pub struct PlanStateMachine {
-    storage: SessionStorage,
+    storage: Arc<SessionStorage>,
 }
 
 impl PlanStateMachine {
     pub fn new(storage: SessionStorage) -> Self {
+        Self {
+            storage: Arc::new(storage),
+        }
+    }
+
+    /// Construct a plan state machine sharing an existing `Arc<SessionStorage>`.
+    /// This lets tool layers (which already share session storage behind an
+    /// `Arc`) construct a machine without cloning the non-`Clone` storage.
+    pub fn new_with_arc(storage: Arc<SessionStorage>) -> Self {
         Self { storage }
     }
 

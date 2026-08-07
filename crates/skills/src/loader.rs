@@ -430,11 +430,16 @@ impl SkillLoader {
         if should_insert {
             self.skills.insert(id.clone(), spec.clone());
 
-            let mut layer_skills = self.layers.entry(layer).or_default();
-            if !layer_skills.contains(&id) {
-                layer_skills.push(id.clone());
+            // Update the layer index. We must not hold a write-lock guard on
+            // `self.layers` while iterating it (DashMap re-entrancy deadlocks),
+            // so we update the owning layer, drop the guard, then scan for
+            // stale entries in a separate pass.
+            {
+                let mut layer_skills = self.layers.entry(layer).or_default();
+                if !layer_skills.contains(&id) {
+                    layer_skills.push(id.clone());
+                }
             }
-            // Remove the id from any lower layers so the index stays consistent.
             let mut stale_layers: Vec<SkillLayer> = Vec::new();
             for entry in self.layers.iter() {
                 let key = *entry.key();

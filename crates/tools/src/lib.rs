@@ -30,6 +30,9 @@
 //! - `session_tools` — Session create/list/get/switch/export/delete via opensquilla-session
 //! - `messaging` — Channel messaging via opensquilla-channels
 //! - `cron_tool` — Schedule/list/cancel cron jobs via opensquilla-scheduler
+//! - `skill_tools` — Skill list/view/search/install/create/edit/delete via opensquilla-skills
+//! - `plan_control` — Plan submission, user-input requests, plan-run checkpoints via opensquilla-session
+//! - `router_control` — Runtime router tier hold/clear via an in-tool hold store
 
 pub mod archive;
 pub mod argument_normalization;
@@ -50,6 +53,7 @@ pub mod messaging;
 pub mod patch;
 pub mod path_policy;
 pub mod patch_classification;
+pub mod plan_control;
 pub mod policy;
 pub mod policy_checks;
 pub mod policy_config;
@@ -57,10 +61,13 @@ pub mod policy_runtime;
 pub mod process_monitor;
 pub mod projected_arguments;
 pub mod registry;
+pub mod router_control;
 pub mod run_mode;
 pub mod schema_validation;
+pub mod session_rpc_tools;
 pub mod session_tools;
 pub mod shell;
+pub mod skill_tools;
 pub mod source_diff_candidates;
 pub mod source_edit_contract;
 pub mod ssrf;
@@ -108,6 +115,7 @@ pub use path_policy::{foreign_host_path_error, is_foreign_host_path, reject_fore
 pub use patch_classification::{
     is_instrumentation_line, is_instrumentation_only_patch, iter_patch_line_changes,
 };
+pub use plan_control::{PlanRunCheckpointTool, RequestUserInputTool, SubmitPlanTool};
 pub use policy::{
     BudgetPolicy, ConfirmationPolicy, DenyPolicy, FinalizePolicy, PolicyChain, PolicyChainSet,
     PolicyContext, PolicyDecision, RiskLevel, RiskPolicy, ToolPolicy, ToolRule,
@@ -133,8 +141,12 @@ pub use projected_arguments::{
 pub use registry::{
     Tool, ToolDefinition, ToolError, ToolInput, ToolOutput, ToolRegistry, ToolResult,
 };
+pub use router_control::{RoutingHold, RoutingHoldStore, RouterControlTool, normalize_text_tier};
 pub use run_mode::{full_host_access_for_context, sandbox_disabled_full_host_fallback};
 pub use schema_validation::{SchemaValidator, validate_tool_args};
+pub use session_rpc_tools::{
+    SessionsHistoryTool, SessionsSendTool, SessionsSpawnTool, SessionsYieldTool,
+};
 pub use session_tools::{
     SessionCreateTool, SessionDeleteTool, SessionExportTool, SessionGetTool, SessionListTool,
     SessionSwitchTool,
@@ -142,6 +154,10 @@ pub use session_tools::{
 pub use shell::{
     BackgroundProcessTool, EnhancedExecTool, EnvFilter, ExecCommandTool, OutputCapture,
     ProcessRegistry, ProcessSupervisor, Signal, SignalProcessTool, StreamOutputTool,
+};
+pub use skill_tools::{
+    InstallSkillDepsTool, SkillCreateTool, SkillDeleteTool, SkillEditTool,
+    SkillInstallCommunityTool, SkillListTool, SkillSearchCommunityTool, SkillViewTool,
 };
 pub use source_diff_candidates::{
     MAX_CANDIDATES, MAX_PATCH_CHARS, capture_source_diff_candidate,

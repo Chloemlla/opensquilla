@@ -12,6 +12,7 @@ opensquilla-memory = { path = "../memory" }
 opensquilla-session = { path = "../session" }
 opensquilla-channels = { path = "../channels" }
 opensquilla-scheduler = { path = "../scheduler" }
+opensquilla-skills = { path = "../skills" }
 
 # Async runtime
 tokio = { workspace = true, features = ["full"] }
@@ -30,6 +31,9 @@ toml = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+
+# Concurrency
+parking_lot = { workspace = true }
 
 # Common utilities
 chrono = { workspace = true, features = ["serde"] }
