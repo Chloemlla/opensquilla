@@ -19,6 +19,7 @@ opensquilla-recovery = { path = "../recovery" }
 opensquilla-tools = { path = "../tools" }
 opensquilla-search = { path = "../search" }
 opensquilla-onboarding = { path = "../onboarding" }
+opensquilla-mcp = { path = "../mcp" }
 axum = { workspace = true, features = ["ws", "multipart"] }
 tokio = { workspace = true, features = ["full"] }
 tower = { workspace = true }
