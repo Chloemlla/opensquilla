@@ -20,7 +20,6 @@ tracing.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 regex.workspace = true
-eventsource-stream.workspace = true
 dashmap.workspace = true
 async-trait = "0.1"
 pin-project = "1"

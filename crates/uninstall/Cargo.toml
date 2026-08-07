@@ -14,7 +14,6 @@ serde_json.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 walkdir.workspace = true
-tracing.workspace = true
 
 [lib]
 path = "src/lib.rs"

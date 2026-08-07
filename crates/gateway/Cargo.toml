@@ -10,7 +10,6 @@ repository.workspace = true
 [dependencies]
 opensquilla-core = { path = "../core" }
 opensquilla-session = { path = "../session" }
-opensquilla-engine = { path = "../engine" }
 opensquilla-memory = { path = "../memory" }
 opensquilla-sandbox = { path = "../sandbox" }
 opensquilla-skills = { path = "../skills" }

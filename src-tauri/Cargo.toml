@@ -17,7 +17,6 @@ opensquilla-engine = { path = "../crates/engine" }
 opensquilla-provider = { path = "../crates/provider" }
 opensquilla-session = { path = "../crates/session" }
 opensquilla-tools = { path = "../crates/tools" }
-opensquilla-cli = { path = "../crates/cli" }
 opensquilla-recovery = { path = "../crates/recovery" }
 opensquilla-skills = { path = "../crates/skills" }
 

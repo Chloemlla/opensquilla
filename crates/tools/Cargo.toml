@@ -17,7 +17,6 @@ opensquilla-skills = { path = "../skills" }
 
 # Async runtime
 tokio = { workspace = true, features = ["full"] }
-tokio-stream = { workspace = true }
 futures = { workspace = true }
 
 # HTTP
@@ -58,7 +57,6 @@ image = { workspace = true }
 
 # PDF
 lopdf = { workspace = true }
-pdf-extract = { workspace = true }
 
 # HTML
 scraper = { workspace = true }

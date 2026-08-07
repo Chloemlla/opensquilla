@@ -9,11 +9,9 @@ repository.workspace = true
 
 [dependencies]
 opensquilla-core = { path = "../core" }
-opensquilla-provider = { path = "../provider" }
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 
