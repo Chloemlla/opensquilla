@@ -404,49 +404,39 @@ pub struct ProviderSpec {
     //
     // The fields below mirror the Python provider registry metadata. They are
     // optional / defaulted so the existing static specs keep constructing with
-    // the compact `spec()` helper; `#[serde(default)]` makes old serialized
-    // data load once the struct gains serde derives.
+    // the compact `spec()` helper. ProviderSpec is a static table and is not
+    // serialized; if serde derives are added later, `#[serde(default)]` should
+    // be restored on these fields.
     /// Provider-keyed context/prompt-cache capability profile
     /// (Python `context_profile`).
-    #[serde(default)]
     pub context_profile: Option<ContextProfile>,
     /// models.dev provider ids feeding the vendored model catalog snapshot
     /// (Python `catalog_source`).
-    #[serde(default)]
     pub catalog_source: &'static [&'static str],
     /// Capability flags, e.g. "chat", "coding_plan", "responses"
     /// (Python `capabilities`).
-    #[serde(default)]
     pub capabilities: &'static [&'static str],
     /// Failure classification family, e.g. "openai_compat", "anthropic",
     /// "ollama" (Python `failure_family`).
-    #[serde(default)]
     pub failure_family: &'static str,
     /// Auth header shape for the Anthropic backend (Python `auth_header_style`).
-    #[serde(default)]
     pub auth_header_style: AuthHeaderStyle,
     /// Reasoning wire-format shape, e.g. "none", "deepseek", "gemini", "zai"
     /// (Python `reasoning_shape`).
-    #[serde(default)]
     pub reasoning_shape: &'static str,
     /// Per-kind OpenAI-compatible dialect policy (Python `compat`).
-    #[serde(default)]
     pub compat: OpenAiCompatPolicy,
     /// Keyless public model-listing endpoint for boot-time live catalog ingest
     /// (Python `live_catalog_url`).
-    #[serde(default)]
     pub live_catalog_url: &'static str,
     /// Whether the provider's live listing is trusted for user selection
     /// (Python `selectable_model_catalog`).
-    #[serde(default)]
     pub selectable_model_catalog: SelectableModelCatalog,
     /// Sibling provider id used to discover account entitlements
     /// (Python `selectable_model_discovery_provider_id`).
-    #[serde(default)]
     pub selectable_model_discovery_provider_id: &'static str,
     /// Exact model list for transports without a trustworthy `/models`
     /// endpoint (Python `static_model_ids`).
-    #[serde(default)]
     pub static_model_ids: &'static [&'static str],
 }
 
