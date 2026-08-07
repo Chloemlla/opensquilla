@@ -117,5 +117,5 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-Write-Host "sign-windows: OK — signed '$BinaryPath'."
+Write-Host "sign-windows: OK - signed '$BinaryPath'."
 exit 0
