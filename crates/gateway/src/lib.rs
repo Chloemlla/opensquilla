@@ -80,6 +80,7 @@ pub mod cron;
 pub mod diagnostics;
 pub mod doctor;
 pub mod logs;
+pub mod mcp_bridge;
 pub mod memory;
 pub mod meta_runs;
 pub mod middleware;
@@ -93,6 +94,7 @@ pub mod protocol;
 pub mod provider_stats;
 pub mod routing;
 pub mod rpc;
+pub mod rpc_handlers;
 pub mod sandbox;
 pub mod scopes;
 pub mod secrets;
@@ -135,6 +137,7 @@ pub use protocol::{
 pub use rpc::{
     rpc_handler, rpc_handler_with_ctx, RpcContext, RpcErrorCode, RpcHandler, RpcRegistry,
 };
+pub use rpc_handlers::register_domain_handlers;
 pub use sessions::SessionStore;
 pub use chat::ChatStore;
 pub use config::ConfigStore;
@@ -152,6 +155,7 @@ pub use diagnostics::DiagnosticsService;
 pub use doctor::DoctorService;
 pub use memory::MemoryHandle;
 pub use meta_runs::MetaRunStore;
+pub use mcp_bridge::GatewayMcpBridge;
 pub use models::ModelCatalog;
 pub use onboarding::OnboardingSession;
 pub use proposals::ProposalStore;
