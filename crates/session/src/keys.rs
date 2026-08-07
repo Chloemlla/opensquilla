@@ -54,7 +54,7 @@ impl SessionKey {
         self
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match &self.suffix {
             Some(s) => format!("{}:{}:{}", self.prefix, self.session_id, s),
             None => format!("{}:{}", self.prefix, self.session_id),
@@ -87,6 +87,6 @@ impl SessionKey {
 
 impl std::fmt::Display for SessionKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_string())
     }
 }

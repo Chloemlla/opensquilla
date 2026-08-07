@@ -117,7 +117,7 @@ fn is_step_line(line: &str) -> bool {
     t.starts_with('-')
         || t.starts_with('*')
         || t.starts_with('+')
-        || t.chars().next().map_or(false, |c| c.is_ascii_digit())
+        || t.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
 fn strip_marker(line: &str) -> String {
@@ -565,13 +565,13 @@ impl PlanStateMachine {
             step.status = PlanStepStatus::InProgress;
         }
         self.save_snapshot(&snapshot)?;
-        Ok(snapshot
+        snapshot
             .steps
             .into_iter()
             .find(|s| s.id == step_id)
             .ok_or_else(|| {
                 CoreError::InvalidInput(PlanError::StepNotFound(step_id.to_string()).to_string())
-            })?)
+            })
     }
 
     /// Mark a step completed (InProgress/Approved -> Completed).
@@ -594,13 +594,13 @@ impl PlanStateMachine {
         }
         self.save_snapshot(&snapshot)?;
         info!("Completed step {} of plan {}", step_id, revision_id);
-        Ok(snapshot
+        snapshot
             .steps
             .into_iter()
             .find(|s| s.id == step_id)
             .ok_or_else(|| {
                 CoreError::InvalidInput(PlanError::StepNotFound(step_id.to_string()).to_string())
-            })?)
+            })
     }
 
     /// History of approvals recorded against a revision.

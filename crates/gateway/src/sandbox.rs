@@ -5,9 +5,7 @@
 //! operations, and previewing the policy that would apply to a given run.
 
 use opensquilla_core::error::AppError;
-use opensquilla_sandbox::policy::{
-    AuditEntry, SandboxLevel, SandboxPolicy, SandboxResult,
-};
+use opensquilla_sandbox::policy::{AuditEntry, SandboxLevel, SandboxPolicy, SandboxResult};
 use parking_lot::Mutex;
 use std::sync::Arc;
 

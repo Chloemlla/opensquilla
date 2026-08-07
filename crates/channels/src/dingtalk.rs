@@ -240,7 +240,7 @@ impl DingTalkChannel {
             interval.tick().await; // consume the immediate first tick
             loop {
                 interval.tick().await;
-                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
+                if sink.send(Message::Ping(Vec::new())).await.is_err() {
                     break;
                 }
             }

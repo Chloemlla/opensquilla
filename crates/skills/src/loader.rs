@@ -337,8 +337,10 @@ impl SkillLoader {
         .await
         .map_err(|e| SkillLoadError::Internal(format!("scan task panicked: {e}")))?;
 
-        let mut result = DirScanResult::default();
-        result.found = candidates.len();
+        let mut result = DirScanResult {
+            found: candidates.len(),
+            ..Default::default()
+        };
 
         for path in candidates {
             match self.load_skill_cached(&path, layer).await {
@@ -875,7 +877,7 @@ impl Reloader {
             Ok(spec) => {
                 let id = spec.id.clone();
                 let existing_priority = self.skills.get(&id).map(|s| s.layer.priority());
-                if existing_priority.map_or(true, |p| p <= layer.priority()) {
+                if existing_priority.is_none_or(|p| p <= layer.priority()) {
                     self.skills.insert(id.clone(), spec.clone());
                     let mut layer_skills = self.layers.entry(layer).or_default();
                     if !layer_skills.contains(&id) {

@@ -43,6 +43,9 @@ pub type StartHook =
 /// A stop hook that shuts down a channel's background event loop.
 pub type StopHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
+/// A message-handler callback registered for a channel.
+type MessageHandler = dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync;
+
 /// The lifecycle state of a [`ManagedChannel`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -151,8 +154,7 @@ impl ManagedChannel {
 pub struct ChannelManager {
     channels: DashMap<String, ChannelHandle>,
     managed: DashMap<String, ManagedChannel>,
-    message_handlers:
-        DashMap<String, Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>>,
+    message_handlers: DashMap<String, Arc<MessageHandler>>,
     outbox: Arc<std::sync::Mutex<Option<Arc<DeliveryStore>>>>,
     outbox_worker: Arc<std::sync::Mutex<Option<Arc<OutboxWorker>>>>,
     tool_channels: DashSet<String>,
@@ -466,7 +468,8 @@ impl ChannelManager {
 
     /// Stop the outbox worker (if running).
     pub async fn stop_outbox(&self) {
-        if let Some(worker) = self.outbox_worker.lock().unwrap().clone() {
+        let worker = self.outbox_worker.lock().unwrap().clone();
+        if let Some(worker) = worker {
             worker.stop().await;
         }
     }

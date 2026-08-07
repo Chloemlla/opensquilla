@@ -45,7 +45,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// Embed a single piece of text.
     async fn embed(&self, text: &str) -> CoreResult<Vec<f32>>;
 
-    /// Embed a batch of texts. Default implementation loops over [`embed`],
+    /// Embed a batch of texts. Default implementation loops over [`Embedder::embed`],
     /// but providers with a native batch endpoint should override this.
     async fn embed_batch(&self, texts: &[String]) -> CoreResult<Vec<Vec<f32>>> {
         let mut out = Vec::with_capacity(texts.len());
@@ -76,7 +76,7 @@ pub async fn detect_dimension(provider: &dyn EmbeddingProvider) -> CoreResult<us
 
 /// Wrap a provider with an embedding cache backed by a [`MemoryStore`].
 ///
-/// On every [`embed`] call, the cache is consulted first using
+/// On every [`Embedder::embed`] call, the cache is consulted first using
 /// `(model, text)` as the key; misses fall through to the inner provider and
 /// the result is stored before being returned.
 #[derive(Clone)]

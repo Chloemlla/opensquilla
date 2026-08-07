@@ -519,13 +519,13 @@ pub fn render_markdown(document: &SessionExportDocument) -> String {
     if !session.system_prompt.is_empty() {
         out.push_str("\n## System prompt\n\n");
         out.push_str(&session.system_prompt);
-        out.push_str("\n");
+        out.push('\n');
     }
 
     if let Some(summary) = &document.active_summary {
         out.push_str("\n## Active summary\n\n");
         out.push_str(&summary.summary);
-        out.push_str("\n");
+        out.push('\n');
     }
 
     if !document.tags.is_empty() {

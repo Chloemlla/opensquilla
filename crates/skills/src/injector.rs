@@ -21,20 +21,15 @@ use crate::types::{SkillMatch, SkillScope, SkillSpec, rank_skills};
 use std::collections::HashSet;
 
 /// The rendering format for the injected skills block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SkillListFormat {
     /// `<available_skills>` XML block (the default).
+    #[default]
     Xml,
     /// A compact Markdown list.
     Markdown,
     /// Plain text, one skill per line.
     Plain,
-}
-
-impl Default for SkillListFormat {
-    fn default() -> Self {
-        SkillListFormat::Xml
-    }
 }
 
 /// Tuning knobs for the injector.
@@ -382,7 +377,7 @@ To use a skill, reference it by its id in your response.
                     md.push_str(&entry);
                 }
                 if !self.config.footer_text.is_empty() {
-                    md.push_str("\n");
+                    md.push('\n');
                     md.push_str(&self.config.footer_text);
                     md.push('\n');
                 }
@@ -456,7 +451,7 @@ To use a skill, reference it by its id in your response.
         }
 
         if self.config.group_by_layer {
-            entries.sort_by(|a, b| b.0.layer.priority().cmp(&a.0.layer.priority()));
+            entries.sort_by_key(|a| std::cmp::Reverse(a.0.layer.priority()));
         }
 
         let rendered: Vec<String> = entries.into_iter().map(|(_, e)| e).collect();

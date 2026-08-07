@@ -247,7 +247,7 @@ pub fn estimate_token_count(text: &str) -> u64 {
 /// Estimate the token cost of a future summary based on the tokens it will
 /// replace. Roughly 1/10th of the source, clamped to a sane band.
 pub fn estimate_summary_tokens(compacted_tokens: u64) -> u64 {
-    ((compacted_tokens / 10).max(64)).min(512)
+    (compacted_tokens / 10).clamp(64, 512)
 }
 
 /// Build an extractive summary: the first line of each entry, truncated to
@@ -498,12 +498,12 @@ impl CompactionPlanner {
 
         for strategy in CompactionStrategy::ordered() {
             let estimate = self.estimate_for(session, entries, strategy)?;
-            if estimate.tokens_after <= target_budget {
-                if budget_fit.map_or(true, |(_, after)| estimate.tokens_after < after) {
-                    budget_fit = Some((strategy, estimate.tokens_after));
-                }
+            if estimate.tokens_after <= target_budget
+                && budget_fit.is_none_or(|(_, after)| estimate.tokens_after < after)
+            {
+                budget_fit = Some((strategy, estimate.tokens_after));
             }
-            if max_savings.map_or(true, |(_, savings)| estimate.savings > savings) {
+            if max_savings.is_none_or(|(_, savings)| estimate.savings > savings) {
                 max_savings = Some((strategy, estimate.savings));
             }
         }

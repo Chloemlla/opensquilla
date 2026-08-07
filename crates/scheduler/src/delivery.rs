@@ -179,9 +179,7 @@ pub fn validate_webhook_url(url: &str) -> Result<(), String> {
     }
 
     let rest = &url[scheme_end + 3..];
-    let hostname_end = rest
-        .find(['/', '?', '#', ':'])
-        .unwrap_or(rest.len());
+    let hostname_end = rest.find(['/', '?', '#', ':']).unwrap_or(rest.len());
     let hostname = &rest[..hostname_end];
 
     if hostname.is_empty() {

@@ -10,7 +10,7 @@
 
 use crate::context::ToolContext;
 use crate::policy::{PolicyChain, PolicyContext, PolicyDecision};
-use crate::registry::{ToolError, ToolOutput, ToolRegistry};
+use crate::registry::{Tool, ToolError, ToolOutput, ToolRegistry, ToolResult};
 use opensquilla_core::ToolCall;
 use opensquilla_core::error::AppError;
 use regex::Regex;

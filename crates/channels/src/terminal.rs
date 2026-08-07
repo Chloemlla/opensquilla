@@ -219,7 +219,7 @@ impl LineEditor {
                 self.escape_buf.push(byte);
                 EditorAction::Continue
             }
-            b if b >= 0x20 && b < 0x7f => {
+            b if (0x20..0x7f).contains(&b) => {
                 self.insert(b as char);
                 EditorAction::Continue
             }
@@ -251,10 +251,8 @@ impl LineEditor {
                 b'F' => self.cursor = self.buffer.len(),
                 b'1' => self.cursor = 0,                 // Home
                 b'4' => self.cursor = self.buffer.len(), // End
-                b'3' => {
-                    if self.cursor < self.buffer.len() {
-                        self.buffer.remove(self.cursor);
-                    }
+                b'3' if self.cursor < self.buffer.len() => {
+                    self.buffer.remove(self.cursor);
                 }
                 _ => {}
             }
@@ -406,7 +404,6 @@ impl TerminalChannel {
         });
 
         // Spawn the stdout writer.
-        let color = color;
         tokio::spawn(async move {
             let mut stdout = tokio::io::stdout();
             while let Some(text) = rx.recv().await {

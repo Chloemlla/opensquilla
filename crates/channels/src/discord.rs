@@ -412,7 +412,7 @@ impl DiscordChannel {
             .await;
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             self.rate_limiter.handle_rate_limited(resp.headers()).await;
-            return Err(format!("Discord rate limited (429)"));
+            return Err("Discord rate limited (429)".to_string());
         }
         let body: Value = resp
             .json()
@@ -674,7 +674,7 @@ async fn run_gateway_cycle(
             }
         });
         if sink
-            .send(WsMessage::Text(resume_payload.to_string().into()))
+            .send(WsMessage::Text(resume_payload.to_string()))
             .await
             .is_err()
         {
@@ -695,7 +695,7 @@ async fn run_gateway_cycle(
             }
         });
         if sink
-            .send(WsMessage::Text(identify.to_string().into()))
+            .send(WsMessage::Text(identify.to_string()))
             .await
             .is_err()
         {
@@ -821,7 +821,7 @@ fn spawn_discord_heartbeat(
             let seq = { *last_seq.lock().await };
             let payload = json!({ "op": 1, "d": seq });
             if sink
-                .send(WsMessage::Text(payload.to_string().into()))
+                .send(WsMessage::Text(payload.to_string()))
                 .await
                 .is_err()
             {

@@ -679,7 +679,7 @@ impl fmt::Display for StepType {
 }
 
 /// Output routing configuration for a step.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StepOutput {
     /// Variable name to store the output in
     #[serde(default)]
@@ -696,18 +696,6 @@ pub struct StepOutput {
     /// Output keys to extract from a JSON result object, if any.
     #[serde(default)]
     pub pick: Option<Vec<String>>,
-}
-
-impl Default for StepOutput {
-    fn default() -> Self {
-        Self {
-            var: None,
-            route_to: None,
-            route_on_error: None,
-            export: false,
-            pick: None,
-        }
-    }
 }
 
 /// A skill step in a meta-skill DAG workflow.

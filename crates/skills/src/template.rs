@@ -309,7 +309,7 @@ impl TemplateRegistry {
     pub fn register_filter(
         &self,
         name: &str,
-        filter: impl tera::Filter + Send + Sync + 'static,
+        filter: impl tera::Filter + 'static,
     ) -> Result<(), TemplateError> {
         let mut tera = self
             .tera
@@ -323,7 +323,7 @@ impl TemplateRegistry {
     pub fn register_function(
         &self,
         name: &str,
-        func: impl tera::Function + Send + Sync + 'static,
+        func: impl tera::Function + 'static,
     ) -> Result<(), TemplateError> {
         let mut tera = self
             .tera
@@ -398,7 +398,7 @@ fn filter_truncate(value: &Value, args: &HashMap<String, Value>) -> Result<Value
     if s.chars().count() <= max {
         return Ok(Value::String(s));
     }
-    let take = max.saturating_sub(ellipsis.chars().count()).max(0);
+    let take = max.saturating_sub(ellipsis.chars().count());
     let truncated: String = s.chars().take(take).collect();
     Ok(Value::String(format!("{}{}", truncated, ellipsis)))
 }

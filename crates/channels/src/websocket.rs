@@ -30,6 +30,9 @@ pub const DEFAULT_OUTBOUND_CAPACITY: usize = 1024;
 /// Default ping keepalive interval.
 pub const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(30);
 
+/// A callback invoked for each parsed incoming message.
+type MessageCallback = dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync;
+
 /// Metadata describing a connected WebSocket client.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ConnectionInfo {
@@ -66,7 +69,7 @@ pub struct WebSocketChannel {
     incoming: Arc<Mutex<VecDeque<IncomingMessage>>>,
     outbound_capacity: usize,
     ping_interval: Duration,
-    on_message: Option<Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>>,
+    on_message: Option<Arc<MessageCallback>>,
     on_connect: Option<Arc<dyn Fn(ConnectionInfo) + Send + Sync>>,
     on_disconnect: Option<Arc<dyn Fn(ConnectionInfo) + Send + Sync>>,
 }
@@ -183,7 +186,7 @@ impl WebSocketChannel {
         if let Some(handle) = conns.get(&connection_id) {
             let _ = handle
                 .sender
-                .send(Message::Text(welcome.to_string().into()))
+                .send(Message::Text(welcome.to_string()))
                 .await;
         }
         drop(conns);
@@ -213,7 +216,7 @@ impl WebSocketChannel {
                         }
                     }
                     _ = ping.tick() => {
-                        if ws_sender.send(Message::Ping(Vec::new().into())).await.is_err() {
+                        if ws_sender.send(Message::Ping(Vec::new())).await.is_err() {
                             break;
                         }
                     }
@@ -286,7 +289,7 @@ impl WebSocketChannel {
         match conns.get(connection_id) {
             Some(handle) => handle
                 .sender
-                .send(Message::Text(text.into()))
+                .send(Message::Text(text))
                 .await
                 .map_err(|e| format!("Send to {connection_id}: {e}")),
             None => Err(format!("Connection not found: {connection_id}")),
@@ -303,15 +306,14 @@ impl WebSocketChannel {
         let conns = self.connections.lock().await;
         let mut sent = 0;
         for handle in conns.values() {
-            if handle.info.user_id == user_id {
-                if handle
+            if handle.info.user_id == user_id
+                && handle
                     .sender
-                    .send(Message::Text(text.clone().into()))
+                    .send(Message::Text(text.clone()))
                     .await
                     .is_ok()
-                {
-                    sent += 1;
-                }
+            {
+                sent += 1;
             }
         }
         Ok(sent)

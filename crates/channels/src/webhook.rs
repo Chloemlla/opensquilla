@@ -24,7 +24,7 @@
 
 use crate::types::{ChannelType, IncomingMessage, MessageAttachment};
 use aes::Aes256;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockDecrypt, KeyInit};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
@@ -169,14 +169,16 @@ pub trait WebhookHandler: Send + Sync {
     async fn handle(&self, message: IncomingMessage) -> Result<WebhookResponse, WebhookError>;
 }
 
+type ParseFn = dyn Fn(&Value, &str, &HeaderMap, Option<&str>)
+    -> Result<IncomingMessage, WebhookError>
+    + Send
+    + Sync;
+type MessageCallback = dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync;
+
 /// A webhook handler backed by plain functions.
 pub struct FunctionWebhookHandler {
     channel_type: ChannelType,
-    parse: Arc<
-        dyn Fn(&Value, &str, &HeaderMap, Option<&str>) -> Result<IncomingMessage, WebhookError>
-            + Send
-            + Sync,
-    >,
+    parse: Arc<ParseFn>,
     handle: Arc<dyn Fn(IncomingMessage) -> Result<WebhookResponse, WebhookError> + Send + Sync>,
 }
 
@@ -241,7 +243,7 @@ impl WebhookRoute {
         path: impl Into<String>,
         method: WebhookMethod,
         channel_type: ChannelType,
-        handler: impl WebhookHandler + Send + Sync + 'static,
+        handler: impl WebhookHandler + 'static,
     ) -> Self {
         Self {
             path: path.into(),
@@ -611,7 +613,7 @@ pub fn verify_wecom_signature(
 ) -> bool {
     use sha1::Digest;
 
-    let mut parts = vec![
+    let mut parts = [
         token.to_string(),
         timestamp.to_string(),
         nonce.to_string(),
@@ -936,7 +938,7 @@ pub fn parse_incoming_message(
 
 /// Handler for Slack Events API webhooks.
 pub struct SlackWebhookHandler {
-    on_message: Option<Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>>,
+    on_message: Option<Arc<MessageCallback>>,
 }
 
 impl SlackWebhookHandler {
@@ -998,7 +1000,7 @@ impl WebhookHandler for SlackWebhookHandler {
 
 /// Handler for Telegram Bot API webhooks.
 pub struct TelegramWebhookHandler {
-    on_message: Option<Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>>,
+    on_message: Option<Arc<MessageCallback>>,
 }
 
 impl TelegramWebhookHandler {
@@ -1049,7 +1051,7 @@ impl WebhookHandler for TelegramWebhookHandler {
 
 /// Handler for WeCom callback webhooks (encrypted or plaintext).
 pub struct WeComWebhookHandler {
-    on_message: Option<Arc<dyn Fn(IncomingMessage) -> Result<(), String> + Send + Sync>>,
+    on_message: Option<Arc<MessageCallback>>,
 }
 
 impl WeComWebhookHandler {
@@ -1119,6 +1121,7 @@ impl WebhookHandler for WeComWebhookHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes::cipher::BlockEncrypt;
     use axum::body::Body;
     use axum::http::Request;
     use base64::Engine as _;

@@ -6,7 +6,9 @@
 
 use anyhow::{Context, Result};
 use opensquilla_channels::manager::ChannelManager;
-use opensquilla_channels::types::{ChannelConfig as CrateChannelConfig, ChannelHandle, ChannelType};
+use opensquilla_channels::types::{
+    ChannelConfig as CrateChannelConfig, ChannelHandle, ChannelType,
+};
 use opensquilla_core::config::Config;
 use tracing::info;
 

@@ -305,24 +305,22 @@ impl ManifestValidator {
             }
         }
 
-        if self.config.require_name {
-            if manifest.name.as_deref().is_none_or(|n| n.is_empty()) {
-                report.issues.push(ValidationIssue {
-                    severity: Severity::Error,
-                    field: "name".to_string(),
-                    message: "skill name is required".to_string(),
-                });
-            }
+        if self.config.require_name && manifest.name.as_deref().is_none_or(|n| n.is_empty()) {
+            report.issues.push(ValidationIssue {
+                severity: Severity::Error,
+                field: "name".to_string(),
+                message: "skill name is required".to_string(),
+            });
         }
 
-        if self.config.require_description {
-            if manifest.description.as_deref().is_none_or(|d| d.is_empty()) {
-                report.issues.push(ValidationIssue {
-                    severity: Severity::Warning,
-                    field: "description".to_string(),
-                    message: "skill description is recommended".to_string(),
-                });
-            }
+        if self.config.require_description
+            && manifest.description.as_deref().is_none_or(|d| d.is_empty())
+        {
+            report.issues.push(ValidationIssue {
+                severity: Severity::Warning,
+                field: "description".to_string(),
+                message: "skill description is recommended".to_string(),
+            });
         }
 
         if self.config.require_version {
@@ -431,8 +429,8 @@ impl ManifestValidator {
             }
             StepType::LlmChat | StepType::Agent => {
                 if step.prompt.as_deref().is_none_or(|p| p.is_empty())
-                    && step.with_args.get("task").is_none()
-                    && step.with_args.get("prompt").is_none()
+                    && !step.with_args.contains_key("task")
+                    && !step.with_args.contains_key("prompt")
                 {
                     report.issues.push(ValidationIssue {
                         severity: Severity::Warning,
@@ -446,7 +444,7 @@ impl ManifestValidator {
             }
             StepType::UserInput => {
                 // user_input steps are validated by their `with_args.fields` shape.
-                if step.with_args.get("fields").is_none() {
+                if !step.with_args.contains_key("fields") {
                     report.issues.push(ValidationIssue {
                         severity: Severity::Info,
                         field: format!("{}.with_args.fields", path),
@@ -551,21 +549,21 @@ impl ManifestValidator {
             } else {
                 seen.insert(arg.name.clone(), i);
             }
-            if !arg.enum_values.is_empty() && arg.default.is_some() {
-                if !arg
+            if !arg.enum_values.is_empty()
+                && arg.default.is_some()
+                && !arg
                     .enum_values
                     .iter()
                     .any(|v| Some(serde_json::Value::String(v.clone())) == arg.default)
-                {
-                    report.issues.push(ValidationIssue {
-                        severity: Severity::Warning,
-                        field: format!("args[{}].default", i),
-                        message: format!(
-                            "argument '{}' default is not one of its enum_values",
-                            arg.name
-                        ),
-                    });
-                }
+            {
+                report.issues.push(ValidationIssue {
+                    severity: Severity::Warning,
+                    field: format!("args[{}].default", i),
+                    message: format!(
+                        "argument '{}' default is not one of its enum_values",
+                        arg.name
+                    ),
+                });
             }
         }
     }
@@ -722,7 +720,7 @@ fn is_valid_slug(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
         && s.chars()
             .next()
-            .map_or(false, |c| c.is_ascii_alphanumeric())
+            .is_some_and(|c| c.is_ascii_alphanumeric())
 }
 
 /// Whether a string looks like a 2-letter ISO-639-1 or 3-letter ISO-639-2
@@ -1074,15 +1072,8 @@ pub fn upgrade_manifest(mut manifest: SkillManifest) -> SkillManifest {
     if manifest.kind.is_none() && !manifest.steps.is_empty() {
         manifest.kind = Some(SkillKind::Meta);
     }
-    if manifest.id.is_none() && manifest.name.is_some() {
-        manifest.id = Some(
-            manifest
-                .name
-                .as_ref()
-                .unwrap()
-                .to_lowercase()
-                .replace(' ', "_"),
-        );
+    if manifest.id.is_none() && let Some(name) = &manifest.name {
+        manifest.id = Some(name.to_lowercase().replace(' ', "_"));
     }
     if manifest.name.is_none() && manifest.id.is_some() {
         manifest.name = manifest.id.clone();
@@ -1141,7 +1132,7 @@ pub fn extract_layer(manifest: &SkillManifest) -> SkillLayer {
     manifest
         .layer
         .as_deref()
-        .and_then(|s| SkillLayer::from_str_loose(s))
+        .and_then(SkillLayer::from_str_loose)
         .unwrap_or(SkillLayer::Managed)
 }
 
@@ -1188,7 +1179,7 @@ pub fn manifest_to_spec_public(
     spec.scope = manifest
         .scope
         .as_deref()
-        .and_then(|s| crate::types::SkillScope::from_str_loose(s))
+        .and_then(crate::types::SkillScope::from_str_loose)
         .unwrap_or_default();
     Ok(spec)
 }

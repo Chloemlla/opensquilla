@@ -1334,7 +1334,7 @@ impl SessionManager {
     /// `Active`. Returns the number of sessions resumed.
     pub fn recover_interrupted_compactions(&self) -> CoreResult<usize> {
         let report = self.recover(false, chrono::Duration::days(30))?;
-        Ok(report.interrupted_compactions as usize)
+        Ok(report.interrupted_compactions)
     }
 
     // -----------------------------------------------------------------------

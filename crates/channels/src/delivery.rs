@@ -613,10 +613,8 @@ impl DeliveryStore {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })
             .map_err(|e| format!("Stats rows: {e}"))?;
-        for row in rows {
-            if let Ok((status, count)) = row {
-                counts.insert(status, serde_json::json!(count));
-            }
+        for (status, count) in rows.flatten() {
+            counts.insert(status, serde_json::json!(count));
         }
         Ok(serde_json::Value::Object(counts))
     }

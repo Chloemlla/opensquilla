@@ -134,7 +134,7 @@ impl QQChannel {
     }
 
     /// Build the `op:2` identify payload used to authenticate the Gateway
-    /// session and subscribe to [`QQChannel::intents`].
+    /// session and subscribe to the configured `intents`.
     pub fn handle_intents(&self) -> Value {
         json!({
             "op": 2,
@@ -448,7 +448,7 @@ async fn run_gateway_cycle(
             "shard": [0, 1],
         }
     });
-    if let Err(e) = sink.send(Message::Text(identify.to_string().into())).await {
+    if let Err(e) = sink.send(Message::Text(identify.to_string())).await {
         error!("QQ identify send failed: {}", e);
         return;
     }
@@ -542,7 +542,7 @@ fn spawn_qq_heartbeat(
             let seq = { *last_seq.lock().await };
             let payload = json!({"op": 1, "d": seq});
             if sink
-                .send(Message::Text(payload.to_string().into()))
+                .send(Message::Text(payload.to_string()))
                 .await
                 .is_err()
             {

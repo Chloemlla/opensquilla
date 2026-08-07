@@ -490,7 +490,7 @@ fn version_matches(version: &str, constraint: &str) -> bool {
                 .unwrap_or(false)
         } else if let Some(rest) = part.strip_prefix('^') {
             // Caret: same major (or 0.x minor semantics).
-            let prefix_ok = compare_versions(version, rest)
+            compare_versions(version, rest)
                 .map(|_| {
                     let vn: Vec<u64> = version
                         .trim_start_matches('v')
@@ -510,7 +510,7 @@ fn version_matches(version: &str, constraint: &str) -> bool {
                         .collect();
                     match (vn.first(), rn.first()) {
                         (Some(&v0), Some(&r0)) if r0 > 0 => v0 == r0,
-                        (Some(&v0), Some(&r0)) if r0 == 0 => {
+                        (Some(&v0), Some(&r0)) => {
                             v0 == 0
                                 && vn.get(1).copied().unwrap_or(0)
                                     == rn.get(1).copied().unwrap_or(0)
@@ -518,8 +518,7 @@ fn version_matches(version: &str, constraint: &str) -> bool {
                         _ => false,
                     }
                 })
-                .unwrap_or(false);
-            prefix_ok
+                .unwrap_or(false)
         } else {
             // Bare exact match.
             compare_versions(version, part)
@@ -810,8 +809,8 @@ impl SkillPackager {
             return Err(format!("{:?} has no SKILL.md", dir));
         }
         let mut files: HashMap<String, Vec<u8>> = HashMap::new();
-        let mut walker = walkdir::WalkDir::new(dir).follow_links(true).into_iter();
-        while let Some(entry) = walker.next() {
+        let walker = walkdir::WalkDir::new(dir).follow_links(true).into_iter();
+        for entry in walker {
             let entry = entry.map_err(|e| format!("walk error: {}", e))?;
             if !entry.file_type().is_file() {
                 continue;
@@ -1297,7 +1296,8 @@ const EXFILTRATION_PATTERNS: &[&str] = &[
     r#"(?i)\bfetch\s*\(\s*['\"]https?://(?!localhost|127\.0\.0\.1)"#,
 ];
 
-const HIDDEN_UNICODE_PATTERNS: &[&str] = &[r"[​-‏ - ⁠-⁯﻿]", "[\u{202a}-\u{202e}]"];
+const HIDDEN_UNICODE_PATTERNS: &[&str] =
+    &["[\u{200b}-\u{200f}\u{2028}-\u{202f}\u{2060}-\u{206f}\u{feff}]", "[\u{202a}-\u{202e}]"];
 
 /// Patterns that indicate a script will download and execute remote content.
 const DOWNLOAD_EXEC_PATTERNS: &[(&str, &str)] = &[
@@ -2570,7 +2570,7 @@ impl SkillInstaller {
         let sources: Vec<Arc<dyn SkillSource>> = {
             let map = self.sources.read().map_err(|e| e.to_string())?;
             map.iter()
-                .filter(|(id, _)| source_id.map_or(true, |f| id.as_str() == f))
+                .filter(|(id, _)| source_id.is_none_or(|f| id.as_str() == f))
                 .map(|(_, source)| source.clone())
                 .collect()
         };

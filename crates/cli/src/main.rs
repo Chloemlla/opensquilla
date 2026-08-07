@@ -1,8 +1,8 @@
 use clap::Parser;
 use opensquilla_cli::commands::{
-    AgentAction, ChannelAction, Command, ConfigAction, GatewayAction, InitAction,
-    MemoryAction, ModelAction, OnboardAction, ProviderAction, SandboxAction, SchedulerAction,
-    SessionAction, SkillAction, StatusAction,
+    AgentAction, ChannelAction, Command, ConfigAction, GatewayAction, InitAction, MemoryAction,
+    ModelAction, OnboardAction, ProviderAction, SandboxAction, SchedulerAction, SessionAction,
+    SkillAction, StatusAction,
 };
 use opensquilla_cli::{
     agent, channels, chat, config, cost, diagnostics, doctor, ensemble, gateway, init, mcp_server,

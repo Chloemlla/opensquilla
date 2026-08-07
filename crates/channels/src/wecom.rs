@@ -424,7 +424,7 @@ impl WeComChannel {
 
 /// Compute a WeCom callback SHA-1 signature.
 pub fn compute_wecom_signature(token: &str, timestamp: &str, nonce: &str, data: &str) -> String {
-    let mut parts = vec![
+    let mut parts = [
         token.to_string(),
         timestamp.to_string(),
         nonce.to_string(),

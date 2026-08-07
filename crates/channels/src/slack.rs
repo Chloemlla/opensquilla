@@ -1113,7 +1113,7 @@ async fn ack_socket_envelope(
     };
     let ack = json!({ "envelope_id": envelope_id, "payload": {} });
     if sink
-        .send(WsMessage::Text(ack.to_string().into()))
+        .send(WsMessage::Text(ack.to_string()))
         .await
         .is_err()
     {
@@ -1157,15 +1157,15 @@ pub fn to_mrkdwn(text: &str) -> String {
     for line in text.lines() {
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix("### ") {
-            out.push_str("*");
+            out.push('*');
             out.push_str(rest);
             out.push_str("*\n");
         } else if let Some(rest) = trimmed.strip_prefix("## ") {
-            out.push_str("*");
+            out.push('*');
             out.push_str(rest);
             out.push_str("*\n");
         } else if let Some(rest) = trimmed.strip_prefix("# ") {
-            out.push_str("*");
+            out.push('*');
             out.push_str(rest);
             out.push_str("*\n");
         } else {

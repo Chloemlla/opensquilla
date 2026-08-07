@@ -85,8 +85,8 @@ pub enum PlanStatus {
 }
 
 /// 3. `compacted_transcript_entries` — rows moved out of the active transcript
-/// during compaction. Mirrors `TranscriptEntry` plus provenance about the
-/// compaction event that relocated it.
+///    during compaction. Mirrors `TranscriptEntry` plus provenance about the
+///    compaction event that relocated it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactedTranscriptEntry {
     pub id: Uuid,
@@ -102,8 +102,8 @@ pub struct CompactedTranscriptEntry {
 }
 
 /// 5. `session_context_states` — snapshot of a session's context window
-/// (active summary, token budget, retained entry range) used to reconstruct
-/// state on resume.
+///    (active summary, token budget, retained entry range) used to reconstruct
+///    state on resume.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionContextState {
     pub id: Uuid,
@@ -117,7 +117,7 @@ pub struct SessionContextState {
 }
 
 /// 7. `plan_runs` — a single execution run against a plan revision, tracking
-/// runtime status and the agent task it dispatched.
+///    runtime status and the agent task it dispatched.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanRun {
     pub id: Uuid,
@@ -178,7 +178,7 @@ pub struct ProjectWorkspace {
 }
 
 /// 10. `usage_events` — a usage event groups one or more line items
-/// (see `UsageEventItem`) billed together for a single LLM call.
+///     (see `UsageEventItem`) billed together for a single LLM call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEvent {
     pub id: Uuid,
@@ -192,7 +192,7 @@ pub struct UsageEvent {
 }
 
 /// 11. `usage_event_items` — individual line items within a `UsageEvent`
-/// (e.g. input tokens, cached input, output tokens).
+///     (e.g. input tokens, cached input, output tokens).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEventItem {
     pub id: Uuid,
@@ -205,7 +205,7 @@ pub struct UsageEventItem {
 }
 
 /// 12. `usage_ledger_state` — monotonic ledger watermark per session,
-/// supporting idempotent appends and reconciliation.
+///     supporting idempotent appends and reconciliation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLedgerState {
     pub session_id: Uuid,
@@ -241,7 +241,7 @@ pub struct SessionAttachment {
 }
 
 /// 15. `session_forks` — fork event records linking a child session to its
-/// source and the triggering event.
+///     source and the triggering event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionFork {
     pub id: Uuid,
@@ -275,7 +275,7 @@ pub struct SessionMetadata {
 }
 
 /// 18. `session_tags` — session/tag association rows (tags themselves are
-/// stored as plain strings; this table is the join).
+///     stored as plain strings; this table is the join).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionTag {
     pub session_id: Uuid,

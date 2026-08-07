@@ -393,7 +393,7 @@ impl ApprovalQueue {
         let mut to_reject = Vec::new();
         {
             let mut pending = self.pending.lock().await;
-            for (_, r) in pending.iter_mut() {
+            for r in pending.values_mut() {
                 if r.status == ApprovalStatus::Pending && now > r.expires_at {
                     r.status = ApprovalStatus::Rejected;
                     to_reject.push(r.clone());

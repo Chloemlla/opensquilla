@@ -701,7 +701,7 @@ impl Channel for TelegramChannel {
             .metadata
             .get("parse_mode")
             .and_then(|v| v.as_str())
-            .or_else(|| Some(self.default_parse_mode.as_str()));
+            .or(Some(self.default_parse_mode.as_str()));
         let reply_to = message
             .thread_id
             .as_deref()
