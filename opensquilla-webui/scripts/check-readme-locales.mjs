@@ -1,17 +1,13 @@
 // README locale-parity guard — the docs analog of check-i18n.mjs.
 //
 // check-i18n.mjs keeps the webui translation CATALOGS in lockstep with the
-// language list. This keeps the root README translations in lockstep with the
-// SAME list, so the README's language coverage can never silently drift from
-// the app's.
-//
-// The canonical language list (SUPPORTED_LOCALES) and the human endonyms
-// (LOCALE_LABELS) are read from the real webui source — never duplicated here —
-// so adding/removing a webui locale immediately changes what this check
-// requires. For each locale it fails on:
+// language list. This guard keeps the root README translations consistent with
+// an explicit README_LOCALES subset of that list (the app UI may ship more
+// languages than the README is translated into). For each maintained README
+// locale it fails on:
 //   - a missing README file (README.md for the default locale, README.<code>.md otherwise)
-//   - a stale/extra translated README whose locale is not supported
-//   - a wrong/missing language-switcher entry in any README (link, href, endonym, or active marker)
+//   - a stale/extra translated README whose locale is not a supported UI locale
+//   - a wrong/missing language-switcher entry in any maintained README (link, href, endonym, or active marker)
 //   - a missing localized link in the docs/README.md footer
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -72,8 +68,27 @@ function readLocaleLabels() {
   return labels
 }
 
+// README locale coverage is an EXPLICIT subset of the UI locale list. The app
+// UI may ship more languages than the README is translated into; keeping this
+// as a hand-maintained list (rather than == SUPPORTED_LOCALES) lets us ship the
+// app with 6 UI locales while only maintaining EN/ZH root READMEs. When a new
+// README translation is added, append its code here. The default locale must
+// always be included.
+const README_LOCALES = ['en', 'zh-Hans']
+
 const { codes, defaultLocale } = readSupportedLocales()
 const labels = readLocaleLabels()
+
+// README_LOCALES must be a subset of the supported UI locales, and must contain
+// the default locale (its README is the un-suffixed README.md).
+for (const code of README_LOCALES) {
+  if (!codes.includes(code)) {
+    throw new Error(`README_LOCALES entry "${code}" is not in SUPPORTED_LOCALES (${codes.join(', ')})`)
+  }
+}
+if (!README_LOCALES.includes(defaultLocale)) {
+  throw new Error(`README_LOCALES must include the default locale "${defaultLocale}"`)
+}
 
 for (const code of codes) {
   if (!(code in labels)) fail(`LOCALE_LABELS is missing an endonym for "${code}"`)
@@ -82,8 +97,9 @@ for (const code of codes) {
 const readmeFor = (code) => (code === defaultLocale ? 'README.md' : `README.${code}.md`)
 
 // --- current source-build docs use the pinned Node minimum ---
+// Only the maintained README locales carry the Node version contract.
 const nodeContractDocs = [
-  ...codes.map(readmeFor),
+  ...README_LOCALES.map(readmeFor),
   'CONTRIBUTING.md',
   'RELEASES.md',
   'desktop/electron/README.md',
@@ -113,7 +129,7 @@ for (const file of nodeContractDocs) {
   }
 }
 
-for (const code of codes) {
+for (const code of README_LOCALES) {
   const file = readmeFor(code)
   const path = resolve(repoRoot, file)
   if (!existsSync(path)) continue
@@ -134,8 +150,8 @@ for (const code of codes) {
   }
 }
 
-// --- 1. every supported locale has a README file ---
-for (const code of codes) {
+// --- 1. every maintained README locale has a README file ---
+for (const code of README_LOCALES) {
   const file = readmeFor(code)
   if (!existsSync(resolve(repoRoot, file))) fail(`missing ${file} for locale "${code}"`)
 }
@@ -170,7 +186,7 @@ function switcherTokens(text) {
   return candidates.map(parseTokens).reduce((best, t) => (t.length > best.length ? t : best), [])
 }
 
-for (const activeCode of codes) {
+for (const activeCode of README_LOCALES) {
   const file = readmeFor(activeCode)
   const path = resolve(repoRoot, file)
   if (!existsSync(path)) continue // already reported as missing
@@ -179,13 +195,13 @@ for (const activeCode of codes) {
     fail(`${file}: no language-switcher block found`)
     continue
   }
-  const expected = codes.map((code) =>
+  const expected = README_LOCALES.map((code) =>
     code === activeCode
       ? { active: true, label: labels[code] }
       : { active: false, href: readmeFor(code), label: labels[code] },
   )
   if (tokens.length !== expected.length) {
-    fail(`${file}: switcher has ${tokens.length} entries, expected ${expected.length} (${codes.join(', ')})`)
+    fail(`${file}: switcher has ${tokens.length} entries, expected ${expected.length} (${README_LOCALES.join(', ')})`)
     continue
   }
   expected.forEach((exp, i) => {
@@ -199,11 +215,11 @@ for (const activeCode of codes) {
   })
 }
 
-// --- 4. docs/README.md footer links every non-default locale (with ../ prefix) ---
+// --- 4. docs/README.md footer links every non-default maintained locale (with ../ prefix) ---
 const docsReadmePath = resolve(repoRoot, 'docs', 'README.md')
 if (existsSync(docsReadmePath)) {
   const docs = readFileSync(docsReadmePath, 'utf8')
-  for (const code of codes) {
+  for (const code of README_LOCALES) {
     if (code === defaultLocale) continue
     const needle = `[${labels[code]}](../README.${code}.md)`
     if (!docs.includes(needle)) fail(`docs/README.md footer missing localized link: ${needle}`)
@@ -219,6 +235,7 @@ if (failures.length) {
   process.exit(1)
 }
 console.log(
-  `[check-readme-locales] OK — ${codes.length} locales (${codes.join(', ')}); ` +
-    `README files, Node ${pinnedNodeVersion} contract, switchers, and docs footer in sync`,
+  `[check-readme-locales] OK — ${codes.length} UI locales (${codes.join(', ')}); ` +
+    `README coverage for ${README_LOCALES.length} (${README_LOCALES.join(', ')}); ` +
+    `Node ${pinnedNodeVersion} contract, switchers, and docs footer in sync`,
 )
