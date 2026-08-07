@@ -101,6 +101,9 @@ pub struct FinalizerStage {
     broadcast_tx: Option<tokio::sync::broadcast::Sender<TurnEvent>>,
     /// Optional shared usage tracker.
     usage_tracker: Option<UsageTracker>,
+    /// Optional pricing cache for per-model cost computation. When absent,
+    /// [`Self::estimate_cost`] (naive flat-rate fallback) is used.
+    pricing_cache: Option<crate::pricing::PricingCache>,
 }
 
 impl fmt::Debug for FinalizerStage {
@@ -129,6 +132,7 @@ impl FinalizerStage {
             session_manager: None,
             broadcast_tx: None,
             usage_tracker: None,
+            pricing_cache: None,
         }
     }
 
@@ -159,6 +163,16 @@ impl FinalizerStage {
         self
     }
 
+    /// Attach a pricing cache for per-model cost computation.
+    ///
+    /// When attached, [`Self::report`] resolves input/output unit prices from
+    /// the cache (live OpenRouter fetch, seeded entries, or its built-in
+    /// fallback table) instead of the naive flat-rate [`Self::estimate_cost`].
+    pub fn with_pricing_cache(mut self, cache: crate::pricing::PricingCache) -> Self {
+        self.pricing_cache = Some(cache);
+        self
+    }
+
     /// Reset the duration baseline (call before each turn if reusing the stage).
     pub fn reset_timer(&mut self) {
         self.started_at = Instant::now();
@@ -166,16 +180,53 @@ impl FinalizerStage {
 
     /// Estimate the cost of a turn from a naive token->USD rate.
     ///
-    /// The engine does not own provider pricing; this is a deterministic
-    /// placeholder that callers can replace with
-    /// [`crate::pricing::PricingCache`]-backed numbers.
+    /// This is the deterministic fallback used when no
+    /// [`crate::pricing::PricingCache`] is attached. It applies the same
+    /// `$1/1M input, $3/1M output` flat rate that the pricing crate uses as its
+    /// last-resort default ([`crate::pricing::FALLBACK_INPUT_PRICE_PER_1M`] /
+    /// [`crate::pricing::FALLBACK_OUTPUT_PRICE_PER_1M`]).
     pub fn estimate_cost(usage: &Usage) -> CostRollup {
-        let input_usd = usage.input_tokens as f64 / 1_000_000.0 * 1.0; // $1 / 1M in
-        let output_usd = usage.output_tokens as f64 / 1_000_000.0 * 3.0; // $3 / 1M out
+        let input_usd = usage.input_tokens as f64 / 1_000_000.0
+            * crate::pricing::FALLBACK_INPUT_PRICE_PER_1M;
+        let output_usd = usage.output_tokens as f64 / 1_000_000.0
+            * crate::pricing::FALLBACK_OUTPUT_PRICE_PER_1M;
         CostRollup {
             estimated_input_cost_usd: input_usd,
             estimated_output_cost_usd: output_usd,
             estimated_total_cost_usd: input_usd + output_usd,
+        }
+    }
+
+    /// Compute the cost of a turn, preferring the attached pricing cache
+    /// (which resolves per-model unit prices from live data, seeded entries,
+    /// or its fallback table) and falling back to [`Self::estimate_cost`] when
+    /// no cache is attached or the model is empty.
+    fn compute_cost(&self, usage: &Usage, model: &str) -> CostRollup {
+        let Some(cache) = self.pricing_cache.as_ref() else {
+            return Self::estimate_cost(usage);
+        };
+        if model.is_empty() {
+            return Self::estimate_cost(usage);
+        }
+        let total = cache.cost_for(model, usage.input_tokens, usage.output_tokens);
+        // Split proportional to the fallback unit rates so the rollup still
+        // reflects input vs output share.
+        let in_rate = crate::pricing::FALLBACK_INPUT_PRICE_PER_1M;
+        let out_rate = crate::pricing::FALLBACK_OUTPUT_PRICE_PER_1M;
+        let denom = in_rate * usage.input_tokens as f64 + out_rate * usage.output_tokens as f64;
+        if denom <= 0.0 {
+            return CostRollup {
+                estimated_input_cost_usd: 0.0,
+                estimated_output_cost_usd: total,
+                estimated_total_cost_usd: total,
+            };
+        }
+        let input_usd = total * (in_rate * usage.input_tokens as f64) / denom;
+        let output_usd = total - input_usd;
+        CostRollup {
+            estimated_input_cost_usd: input_usd,
+            estimated_output_cost_usd: output_usd,
+            estimated_total_cost_usd: total,
         }
     }
 
@@ -188,7 +239,7 @@ impl FinalizerStage {
             .map(|m| m.text_content())
             .collect::<Vec<_>>()
             .join("");
-        let cost = Self::estimate_cost(&ctx.usage);
+        let cost = self.compute_cost(&ctx.usage, &ctx.current_model);
         FinalizeReport {
             final_text,
             usage: ctx.usage,

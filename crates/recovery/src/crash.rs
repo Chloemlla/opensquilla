@@ -185,22 +185,51 @@ impl CrashRecovery {
     }
 
     /// Attempt to recover from a crash snapshot.
+    ///
+    /// This verifies the snapshot's integrity (checksum), re-hydrates the
+    /// session id from the snapshot, and classifies the recovery outcome. It
+    /// does NOT replay the interrupted turn — turn replay is the engine's
+    /// responsibility (`crates/engine/src/recovery/replay.rs`), which has
+    /// access to the session store. Here we surface the verified snapshot so a
+    /// caller can decide whether to replay, resume, or mark the session for
+    /// manual review.
     pub async fn recover_from_snapshot(
         &self,
         snapshot: &CrashSnapshot,
     ) -> Result<RecoveryResult, RecoveryError> {
         info!("Attempting recovery from snapshot {}", snapshot.id);
 
-        // Attempt to restore session context if available
-        if let Some(ref session_id) = snapshot.session_id {
-            debug!("Attempting to restore session {session_id}");
-            // Session recovery would be handled by the session manager
+        // Re-verify integrity before trusting the snapshot.
+        let checksum_data = format!(
+            "{}{}{}{}",
+            snapshot.id, snapshot.timestamp, snapshot.error_message, snapshot.context
+        );
+        let expected = format!("{:x}", Sha256::digest(checksum_data.as_bytes()));
+        if snapshot.checksum != expected {
+            return Err(RecoveryError::IntegrityError(format!(
+                "snapshot {} checksum mismatch — refusing to recover tampered snapshot",
+                snapshot.id
+            )));
         }
+
+        let session_recovered = snapshot.session_id.is_some();
+        let message = if session_recovered {
+            format!(
+                "Snapshot {} verified; session {} captured — replay/restore must be driven by the session manager.",
+                snapshot.id,
+                snapshot.session_id.as_ref().expect("checked above")
+            )
+        } else {
+            format!(
+                "Snapshot {} verified; no active session was captured — context preserved for manual review.",
+                snapshot.id
+            )
+        };
 
         Ok(RecoveryResult {
             snapshot_id: snapshot.id.clone(),
-            recovered: true,
-            message: "Crash context captured. Session may need manual review.".to_string(),
+            recovered: session_recovered,
+            message,
             timestamp: Utc::now(),
         })
     }

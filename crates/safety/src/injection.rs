@@ -461,9 +461,40 @@ impl Default for InjectionDetector {
     }
 }
 
-/// Wrap untrusted content in a `<untrusted>` envelope.
+/// Escape the five XML special characters (`&`, `<`, `>`, `"`, `'`) into
+/// entity references, matching the Python backend's `xml_escape`.
+///
+/// `&` is escaped first so the entity references introduced by the later
+/// substitutions are not themselves double-escaped. This is the conservative
+/// escaper used when building `<untrusted>` envelopes and skill metadata.
+pub fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Wrap untrusted content in an `<untrusted>` envelope.
+///
+/// The inner content is XML-escaped via [`xml_escape`] so closing-tag
+/// injection, CDATA bypass, and attribute-escape attempts become inert
+/// entities — matching the Python `wrap_untrusted` hardening. Use
+/// [`wrap_untrusted_with_source`] when a source attribution is available.
 pub fn wrap_untrusted(text: &str) -> String {
-    format!("<untrusted>\n{}\n</untrusted>", text)
+    format!("<untrusted>\n{}\n</untrusted>", xml_escape(text))
+}
+
+/// Wrap untrusted content in an `<untrusted source='...'>` envelope, escaping
+/// both the `source` attribute value and the inner content so neither can
+/// break out of the envelope. Mirrors the Python `wrap_untrusted(content,
+/// source)`.
+pub fn wrap_untrusted_with_source(content: &str, source: &str) -> String {
+    format!(
+        "<untrusted source='{}'>{}</untrusted>",
+        xml_escape(source),
+        xml_escape(content)
+    )
 }
 
 #[cfg(test)]
