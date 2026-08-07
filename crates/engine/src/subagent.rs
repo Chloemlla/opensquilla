@@ -174,7 +174,7 @@ impl SubAgentManager {
     }
 
     /// Set the maximum spawn depth.
-    pub fn max_depth(mut self, depth: usize) -> Self {
+    pub fn with_max_depth(mut self, depth: usize) -> Self {
         self.max_depth = depth;
         self
     }
@@ -398,7 +398,7 @@ impl SubAgentManager {
     }
 
     /// Get the maximum spawn depth.
-    pub fn max_depth(&self) -> usize {
+    pub fn max_spawn_depth(&self) -> usize {
         self.max_depth
     }
 
