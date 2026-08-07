@@ -21,6 +21,9 @@ pub enum Error {
 
     #[error("Invalid scope: {0}")]
     InvalidScope(String),
+
+    #[error("Persistence I/O error: {0}")]
+    Persistence(String),
 }
 
 /// Convenience alias for agent results.
