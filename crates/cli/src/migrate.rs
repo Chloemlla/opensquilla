@@ -404,7 +404,7 @@ pub async fn migrate_openclaw(
             Some(&source_path),
             None,
             "error",
-            "OpenClaw source directory does not exist",
+            "OpenClaw source directory does not exist".to_string(),
         );
         return finish_migration(
             "openclaw",
@@ -427,7 +427,7 @@ pub async fn migrate_openclaw(
             Some(&source_path),
             None,
             "error",
-            "not a valid OpenClaw home",
+            "not a valid OpenClaw home".to_string(),
         );
     }
 
@@ -563,7 +563,7 @@ pub async fn migrate_hermes(
             Some(&source_path),
             None,
             "error",
-            "Hermes source directory does not exist",
+            "Hermes source directory does not exist".to_string(),
         );
         return finish_migration(
             "hermes",
@@ -586,7 +586,7 @@ pub async fn migrate_hermes(
             Some(&source_path),
             None,
             "error",
-            "not a valid Hermes home",
+            "not a valid Hermes home".to_string(),
         );
     }
 
@@ -1183,7 +1183,7 @@ fn finish_migration(
         let dst = item.destination.as_deref().unwrap_or("-");
         println!("  {icon} {:<18} {:<9} {dst}", item.kind, item.status);
         if item.status == "error" && !item.reason.is_empty() {
-            println!("           {} {item.reason}", table::fail());
+            println!("           {} {}", table::fail(), item.reason);
         }
     }
     if !notes.is_empty() {
