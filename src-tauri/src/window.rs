@@ -130,10 +130,14 @@ pub fn can_reveal_desktop_app(phase: ExitPhase) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Desktop preferences (the schema-v2 document)
+// Desktop preferences (the schema-v3 document)
 // ---------------------------------------------------------------------------
 
-/// The persisted desktop preferences (schema v2).
+/// The persisted desktop preferences (schema v3).
+///
+/// `sandbox_unavailable_warning_suppressed` carries `#[serde(default)]` so
+/// legacy schema-v2 files (which predate the field) deserialize cleanly;
+/// readers must treat a missing value as `false`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesktopPreferences {
     pub schema_version: u32,
@@ -141,6 +145,8 @@ pub struct DesktopPreferences {
     pub background_close_notice_shown: bool,
     pub workbench_preview_mode: WorkbenchPreviewMode,
     pub workbench_preview_notice_shown: bool,
+    #[serde(default)]
+    pub sandbox_unavailable_warning_suppressed: bool,
 }
 
 /// The workbench preview mode.
@@ -161,11 +167,12 @@ impl DesktopPreferences {
     /// The default preferences for the given platform.
     pub fn for_platform(platform: &str) -> Self {
         Self {
-            schema_version: 2,
+            schema_version: 3,
             main_window_close_behavior: MainWindowCloseBehavior::default_for_platform(platform),
             background_close_notice_shown: false,
             workbench_preview_mode: WorkbenchPreviewMode::Full,
             workbench_preview_notice_shown: false,
+            sandbox_unavailable_warning_suppressed: false,
         }
     }
 }
