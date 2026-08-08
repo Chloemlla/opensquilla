@@ -123,7 +123,7 @@ impl SquillaInference {
             tracing::warn!("missing ONNX model at {}", path.display());
             return None;
         }
-        let builder = match ort::session::Session::builder() {
+        let mut builder = match ort::session::Session::builder() {
             Ok(b) => b,
             Err(e) => {
                 tracing::warn!("failed to create ONNX session builder: {}", e);
@@ -212,7 +212,7 @@ impl SquillaInference {
         let dims: &[i64] = shape;
         let cls: Vec<f32> = match dims {
             [1, _seq, hidden] => data[..*hidden as usize].to_vec(),
-            [1, hidden] => data.to_vec(),
+            [1, _hidden] => data.to_vec(),
             other => {
                 return Err(SquillaInferenceError::Onnx(format!(
                     "unexpected BGE output shape: {other:?}"
@@ -266,7 +266,9 @@ pub fn fuse_probabilities(
             ));
         }
     }
-    let mixed = std::array::from_fn(|i| alpha[i] * p_main[i] + (1.0 - alpha[i]) * p_mlp[i]);
+    let mixed: [f64; 4] = std::array::from_fn(|i| {
+        alpha[i] * p_main[i] + (1.0 - alpha[i]) * p_mlp[i]
+    });
     let total: f64 = mixed.iter().sum();
     if total <= 0.0 {
         return Err(SquillaInferenceError::InvalidProbabilities(
