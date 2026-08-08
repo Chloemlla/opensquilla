@@ -116,6 +116,11 @@ pub mod squilla_controller;
 /// feature-gated ONNX session wrapper).
 pub mod squilla_inference;
 
+/// SquillaRouter V4 Phase 3 full-pipeline port: 390-dim feature assembly,
+/// three heads (LightGBM + ONNX MLP), alpha fusion, and the config-driven
+/// post-processing pipeline.
+pub mod squilla_router;
+
 pub use agent::{
     Agent, AgentBuilder, AgentConfig, AgentError, AgentRegistry, AgentSnapshot, AgentState,
     BackgroundProcess, BackgroundProcessManager, CommandResult, ErrorCategory, ErrorClassification,
