@@ -100,7 +100,7 @@ fn softmax_4(values: &[f64; 4]) -> [f64; 4] {
     for &x in &values[1..] {
         max = max.max(x);
     }
-    let exps = std::array::from_fn(|i| (values[i] - max).exp());
+    let exps: [f64; 4] = std::array::from_fn(|i| (values[i] - max).exp());
     let sum: f64 = exps.iter().sum();
     std::array::from_fn(|i| exps[i] / sum)
 }
@@ -179,7 +179,7 @@ impl MlpHead {
             .map_err(|e| SquillaRouterError::Onnx(e.to_string()))?;
         let dims: &[i64] = shape;
         let n: usize = match dims {
-            [1, n] | [1, _seq, n] => *n as usize,
+            [1, n] | [1, _, n] => *n as usize,
             other => {
                 return Err(SquillaRouterError::Onnx(format!(
                     "unexpected MLP output shape: {other:?}"

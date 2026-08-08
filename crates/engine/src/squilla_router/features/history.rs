@@ -160,8 +160,8 @@ pub fn extract_hist_features(history: &[PrevRouteDecision]) -> [f64; HIST_DIMS] 
         let max_count = counts.values().max().copied().unwrap_or_default();
         let dominant = counts
             .iter()
-            .filter(|(_, &c)| c == max_count)
-            .map(|(&r, _)| r)
+            .filter(|(_, c)| **c == max_count)
+            .map(|(r, _)| *r)
             .max()
             .unwrap_or(-1);
         vec[6] = dominant as f64;

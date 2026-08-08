@@ -193,7 +193,8 @@ fn apply_aux_downgrade(
     }
     let idx = route_class_idx(route).unwrap_or(0).saturating_sub(1);
     let downgraded = ROUTE_CLASSES[idx].to_string();
-    (downgraded, downgraded != route)
+    let changed = downgraded != route;
+    (downgraded, changed)
 }
 
 /// Rescue R0 to R1 when R1 is a close second in the fused probabilities.
