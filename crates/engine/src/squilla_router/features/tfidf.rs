@@ -4,7 +4,7 @@ use super::params::TfidfParams;
 use std::collections::HashMap;
 
 /// sklearn char_wb char n-grams of a text: lowercase; split on whitespace;
-/// each token padded with a space at both ends; for each n in [lo,hi] emit
+/// each token padded with a space at both ends; for each n in \[lo,hi\] emit
 /// every char n-gram of length n of the padded token (including ones spanning
 /// the padding). Returns the n-gram strings in occurrence order (duplicates ok).
 pub fn char_wb_ngrams(text: &str, ngram_range: (usize, usize)) -> Vec<String> {
@@ -26,7 +26,7 @@ pub fn char_wb_ngrams(text: &str, ngram_range: (usize, usize)) -> Vec<String> {
 
 /// Sparse TF-IDF of a text against a fitted vocabulary: for each n-gram in
 /// `char_wb_ngrams` that is in `params.vocabulary`, count tf; sublinear_tf =
-/// 1 + ln(tf); weight = sublinear_tf * idf[col]; then L2 row-normalize across
+/// 1 + ln(tf); weight = sublinear_tf * idf\[col\]; then L2 row-normalize across
 /// the matched columns. Returns (col_id, weight) pairs for cols with weight != 0.
 pub fn tfidf_transform(text: &str, params: &TfidfParams) -> Vec<(usize, f64)> {
     let mut counts: HashMap<usize, usize> = HashMap::new();

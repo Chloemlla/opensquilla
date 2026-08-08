@@ -11,7 +11,7 @@ use crate::squilla_router::SquillaRouterError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// TruncatedSVD.transform: y[k] = sum over (col,val) of val * components[k, col].
+/// TruncatedSVD.transform: y\[k\] = sum over (col,val) of val * components\[k, col\].
 /// `components` are the COO `SvdParams`. Simple O(nonzeros * n_components) loop.
 pub fn svd_project(sparse: &[(usize, f64)], params: &SvdParams) -> Vec<f64> {
     // Index the COO by feature column so each sparse entry touches only the
@@ -31,7 +31,7 @@ pub fn svd_project(sparse: &[(usize, f64)], params: &SvdParams) -> Vec<f64> {
     y
 }
 
-/// sklearn PCA.transform: y[k] = sum_j (x[j] - mean[j]) * components[k][j].
+/// sklearn PCA.transform: y\[k\] = sum_j (x\[j\] - mean\[j\]) * components\[k\]\[j\].
 /// `x` is a 512-dim BGE embedding (f32). Returns n_components dims.
 pub fn pca_project(x: &[f32], params: &BgePcaParams) -> Vec<f64> {
     params
@@ -49,7 +49,7 @@ pub fn pca_project(x: &[f32], params: &BgePcaParams) -> Vec<f64> {
         .collect()
 }
 
-/// StandardScaler.transform: z[i] = (x[i] - mean[i]) / scale[i]; a zero scale
+/// StandardScaler.transform: z\[i\] = (x\[i\] - mean\[i\]) / scale\[i\]; a zero scale
 /// yields 0.0 (stay finite).
 pub fn scaler_transform(x: &[f32], params: &ScalerParams) -> Vec<f32> {
     params

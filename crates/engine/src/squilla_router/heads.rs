@@ -186,7 +186,7 @@ impl MlpHead {
                 )));
             }
         };
-        let row: Vec<f64> = data[..n].to_vec().into_iter().map(|v| v as f64).collect();
+        let row: Vec<f64> = data[..n].iter().copied().map(|v| v as f64).collect();
         Ok(row)
     }
 }
