@@ -154,7 +154,7 @@ impl CommandDirectory {
         let commands = self.commands.lock();
         let mut result: Vec<CommandSpec> = commands
             .values()
-            .filter(|c| category.map_or(true, |cat| c.category == cat))
+            .filter(|c| category.is_none_or(|cat| c.category == cat))
             .cloned()
             .collect();
         result.sort_by(|a, b| a.name.cmp(&b.name));
@@ -259,7 +259,7 @@ pub fn register_commands_handlers(registry: &mut RpcRegistry, directory: Command
                     args_hint,
                 };
                 directory.register(cmd.clone());
-                Ok(serde_json::to_value(cmd).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(cmd).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

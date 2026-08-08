@@ -7,7 +7,7 @@
 use opensquilla_core::config::Config;
 use opensquilla_core::error::AppError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::rpc::{RpcRegistry, rpc_handler};
 
@@ -79,7 +79,7 @@ fn discover_candidates() -> Vec<DiscoveredConfig> {
     candidates
 }
 
-fn format_from_path(path: &PathBuf) -> String {
+fn format_from_path(path: &Path) -> String {
     match path.extension().and_then(|e| e.to_str()) {
         Some("toml") => "toml".to_string(),
         Some("yaml" | "yml") => "yaml".to_string(),
@@ -146,7 +146,7 @@ pub fn register_migration_handlers(registry: &mut RpcRegistry) {
                 },
             };
 
-            Ok(serde_json::to_value(preview).map_err(|e| AppError::internal(e.to_string()))?)
+            serde_json::to_value(preview).map_err(|e| AppError::internal(e.to_string()))
         }
     }));
 

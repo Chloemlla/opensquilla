@@ -125,8 +125,7 @@ pub fn register_workspaces_handlers(registry: &mut RpcRegistry, store: Workspace
                     metadata,
                 };
                 store.upsert(workspace.clone());
-                Ok(serde_json::to_value(workspace)
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(workspace).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

@@ -143,7 +143,7 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                     config,
                 };
                 service.upsert(record.clone());
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -211,7 +211,7 @@ pub fn register_channels_handlers(registry: &mut RpcRegistry, service: ChannelsS
                     record.channel_type = type_str.to_string();
                 }
                 service.upsert(record.clone());
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

@@ -265,9 +265,9 @@ impl PipelineStep for AttachmentLoaderStep {
         }
         ctx.messages.push(message);
 
-        ctx.set_metadata("attachment_count", &attachments.len().to_string());
-        ctx.set_metadata("attachment_loaded", &loaded.to_string());
-        ctx.set_metadata("attachment_unavailable", &unavailable.to_string());
+        ctx.set_metadata("attachment_count", attachments.len().to_string());
+        ctx.set_metadata("attachment_loaded", loaded.to_string());
+        ctx.set_metadata("attachment_unavailable", unavailable.to_string());
         ctx.set_metadata("attachment_loader_applied", "true");
 
         let outcome = AttachmentLoadOutcome {

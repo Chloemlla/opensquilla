@@ -133,10 +133,7 @@ impl SessionStreamBus {
     ///
     /// Returns the number of receivers that accepted the update.
     pub fn publish(&self, update: SessionStreamUpdate) -> usize {
-        match self.sender.send(update) {
-            Ok(n) => n,
-            Err(_) => 0,
-        }
+        self.sender.send(update).unwrap_or_default()
     }
 
     /// Publish a simple lifecycle event for a session.

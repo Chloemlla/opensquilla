@@ -85,8 +85,8 @@ impl ProposalStore {
         let proposals = self.proposals.lock();
         let filtered: Vec<Proposal> = proposals
             .iter()
-            .filter(|p| skill_id.map_or(true, |sid| p.skill_id == sid))
-            .filter(|p| status.map_or(true, |s| p.status == s))
+            .filter(|p| skill_id.is_none_or(|sid| p.skill_id == sid))
+            .filter(|p| status.is_none_or(|s| p.status == s))
             .cloned()
             .collect();
         filtered.into_iter().rev().take(limit).collect()
@@ -167,10 +167,7 @@ pub fn register_proposals_handlers(registry: &mut RpcRegistry, store: ProposalSt
                     metadata,
                 };
                 store.insert(proposal.clone());
-                Ok(
-                    serde_json::to_value(proposal)
-                        .map_err(|e| AppError::internal(e.to_string()))?,
-                )
+                serde_json::to_value(proposal).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

@@ -411,17 +411,17 @@ pub fn detect_complaint(message: &str, max_chars: Option<usize>) -> Vec<String> 
     let lowered = text.to_lowercase();
     COMPLAINT_TERMS
         .iter()
-        .filter(|term| lowered.contains(&**term))
+        .filter(|term| lowered.contains(**term))
         .map(|s| s.to_string())
         .collect()
 }
 
 /// Find the most recent routing-history entry within the window.
-pub fn previous_final_entry<'a>(
-    routing_history: &'a [HashMap<String, Value>],
+pub fn previous_final_entry(
+    routing_history: &[HashMap<String, Value>],
     now: f64,
     window: f64,
-) -> Option<&'a HashMap<String, Value>> {
+) -> Option<&HashMap<String, Value>> {
     if routing_history.is_empty() {
         return None;
     }
@@ -498,7 +498,7 @@ pub fn confidence_gate(
         normalize_text_tier(default_tier).unwrap_or_else(|| default_tier.to_string());
 
     // Image-only tiers bypass the gate.
-    if tiers.get(tier).map_or(false, |t| t.image_only) {
+    if tiers.get(tier).is_some_and(|t| t.image_only) {
         return ConfidenceGateResult {
             tier: tier.to_string(),
             applied: false,
@@ -707,11 +707,11 @@ pub fn capability_gate(
     }
 
     let window = caps_of(&current).context_window;
-    if material_tokens > 0 && window.map_or(false, |w| material_tokens > w) {
+    if material_tokens > 0 && window.is_some_and(|w| material_tokens > w) {
         let mut target: Option<String> = None;
         for candidate in &ordered[idx + 1..] {
             let cw = caps_of(candidate).context_window;
-            if cw.map_or(false, |w| material_tokens <= w) {
+            if cw.is_some_and(|w| material_tokens <= w) {
                 target = Some(candidate.clone());
                 break;
             }
@@ -1554,8 +1554,7 @@ impl RoutingPolicyEngine {
         let mut metadata_updates: HashMap<String, Value> = HashMap::new();
         let mut extra = inputs.extra.clone();
 
-        if inputs.history_strategy && extra.is_some() {
-            let extra_mut = extra.as_mut().unwrap();
+        if inputs.history_strategy && let Some(extra_mut) = extra.as_mut() {
             decision = self.finalize(inputs, extra_mut);
             let (tm, pp) =
                 reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
@@ -1572,8 +1571,7 @@ impl RoutingPolicyEngine {
             extra.as_mut(),
             &mut metadata_updates,
         );
-        if decision.source == "large_context_floor" && extra.is_some() {
-            let extra_mut = extra.as_mut().unwrap();
+        if decision.source == "large_context_floor" && let Some(extra_mut) = extra.as_mut() {
             let (tm, pp) =
                 reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
             thinking_mode = tm;

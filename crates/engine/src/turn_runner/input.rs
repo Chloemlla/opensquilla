@@ -313,7 +313,7 @@ impl InputStage {
     /// Sanitize and re-serialize the latest user message in place.
     ///
     /// Returns `true` when the message text was modified.
-    fn sanitize_latest_user_message(&self, messages: &mut Vec<Message>) -> bool {
+    fn sanitize_latest_user_message(&self, messages: &mut [Message]) -> bool {
         let Some(pos) = messages.iter().rposition(|m| m.role == MessageRole::User) else {
             return false;
         };

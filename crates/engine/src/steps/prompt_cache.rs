@@ -153,8 +153,8 @@ impl PipelineStep for PromptCacheStep {
 
         if !system_text.is_empty() {
             ctx.set_metadata("cache_base_prompt", &system_text);
-            ctx.set_metadata("cache_base_chars", &system_text.chars().count().to_string());
-            ctx.set_metadata("cache_base_hash", &hash16(&system_text));
+            ctx.set_metadata("cache_base_chars", system_text.chars().count().to_string());
+            ctx.set_metadata("cache_base_hash", hash16(&system_text));
         }
 
         // The Python step sets `cache_last_tool = True` when tool_defs are

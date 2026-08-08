@@ -31,7 +31,7 @@ impl PostWriteConvergenceAction {
 }
 
 /// One convergence observation fed into the tracker.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct PostWriteConvergenceObservation {
     /// The turn iteration index.
     pub iteration: i64,
@@ -49,21 +49,6 @@ pub struct PostWriteConvergenceObservation {
     pub focused_verification_success_observed: bool,
     /// Whether the model continued activity after the verification run.
     pub continued_activity_after_verification: bool,
-}
-
-impl Default for PostWriteConvergenceObservation {
-    fn default() -> Self {
-        Self {
-            iteration: 0,
-            provider_call_count: 0,
-            workspace_write_count: 0,
-            changed_receipt_count: 0,
-            diff_fingerprint: None,
-            diff_paths: Vec::new(),
-            focused_verification_success_observed: false,
-            continued_activity_after_verification: false,
-        }
-    }
 }
 
 /// A decision returned by [`PostWriteConvergenceTracker::observe`].

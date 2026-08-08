@@ -144,7 +144,7 @@ fn stage_applied(trail: &serde_json::Value, stage: &str) -> bool {
 fn flag_present(flags: &serde_json::Value, token: &str) -> bool {
     flags
         .as_array()
-        .map_or(false, |arr| arr.iter().any(|v| v.as_str() == Some(token)))
+        .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some(token)))
 }
 
 /// Extract `(gated, complained, pinned)` from one decision record.
@@ -153,13 +153,13 @@ fn record_signals(record: &serde_json::Value) -> (bool, bool, bool) {
     let flags = record.get("flags");
     let source = record.get("source").and_then(|v| v.as_str());
 
-    let gated = trail.map_or(false, |t| stage_applied(t, "confidence_gate"))
-        || flags.map_or(false, |f| flag_present(f, "confidence_gate_applied"));
-    let complained = trail.map_or(false, |t| stage_applied(t, "complaint_upgrade"))
-        || flags.map_or(false, |f| flag_present(f, "complaint_upgrade_applied"));
+    let gated = trail.is_some_and(|t| stage_applied(t, "confidence_gate"))
+        || flags.is_some_and(|f| flag_present(f, "confidence_gate_applied"));
+    let complained = trail.is_some_and(|t| stage_applied(t, "complaint_upgrade"))
+        || flags.is_some_and(|f| flag_present(f, "complaint_upgrade_applied"));
     let pinned = source == Some("router_control_hold")
-        || flags.map_or(false, |f| flag_present(f, "router_control_hold_applied"))
-        || flags.map_or(false, |f| flag_present(f, "router_control_hold"));
+        || flags.is_some_and(|f| flag_present(f, "router_control_hold_applied"))
+        || flags.is_some_and(|f| flag_present(f, "router_control_hold"));
     (gated, complained, pinned)
 }
 

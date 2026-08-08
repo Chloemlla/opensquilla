@@ -133,7 +133,7 @@ pub fn register_onboarding_handlers(registry: &mut RpcRegistry, session: Onboard
                         is_cancelled: f.is_cancelled(),
                     }
                 })?;
-                Ok(serde_json::to_value(view).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(view).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

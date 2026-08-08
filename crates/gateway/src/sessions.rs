@@ -106,7 +106,7 @@ pub struct SessionEntry {
 impl SessionEntry {
     /// Parse the lifecycle state field.
     pub fn state_enum(&self) -> Result<SessionState, AppError> {
-        SessionState::from_str(&self.state)
+        SessionState::parse(&self.state)
     }
 }
 
@@ -206,7 +206,7 @@ impl SessionStore {
     /// List all sessions, optionally filtered by lifecycle state.
     pub fn list(&self) -> Vec<SessionEntry> {
         let mut entries: Vec<SessionEntry> = self.sessions.lock().values().cloned().collect();
-        entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
         entries
     }
 
@@ -546,7 +546,7 @@ impl SessionStore {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        turns.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        turns.sort_by_key(|b| std::cmp::Reverse(b.started_at));
         turns
     }
 
@@ -799,7 +799,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                         entry = updated;
                     }
                 }
-                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -813,7 +813,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                 let state_filter = params
                     .get("state")
                     .and_then(|v| v.as_str())
-                    .map(SessionState::from_str)
+                    .map(SessionState::parse)
                     .transpose()?;
                 let sessions = store.list_by_state(state_filter.as_ref());
                 Ok(serde_json::json!({
@@ -892,7 +892,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.archive(&id)?;
-                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -905,7 +905,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.activate(&id)?;
-                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -918,7 +918,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.pause(&id)?;
-                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -931,7 +931,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.resume(&id)?;
-                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -944,7 +944,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let id = parse_session_id(&params)?;
                 let entry = store.restore(&id)?;
-                Ok(serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -1015,7 +1015,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             async move {
                 let session_id = parse_any_session_id(&params)?;
                 let record = store.reserve_turn(&session_id.to_string());
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -1036,7 +1036,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok());
                 let record = store.start_turn(&session_id.to_string(), message, turn_id);
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -1055,7 +1055,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                 let turn_id = Uuid::parse_str(turn_id)
                     .map_err(|_| AppError::bad_request("Invalid turn_id"))?;
                 let record = store.cancel_turn(&session_id.to_string(), turn_id)?;
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -1072,7 +1072,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                     .and_then(|v| v.as_str())
                     .map(String::from);
                 let record = store.trigger_compaction(&session_id.to_string(), reason);
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -1160,7 +1160,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                 };
                 let meta =
                     store_attachment(&store.attachments, &session_id.to_string(), upload, &dir)?;
-                Ok(serde_json::to_value(meta).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(meta).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -1198,7 +1198,7 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
                     .ok_or_else(|| AppError::bad_request("Missing 'query' parameter"))?;
                 let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
                 let result = store.search_transcripts(query, limit);
-                Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

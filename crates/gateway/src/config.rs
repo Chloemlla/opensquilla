@@ -291,7 +291,7 @@ impl ConfigStore {
         } else {
             rc.rules.push(rule);
         }
-        rc.rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        rc.rules.sort_by_key(|b| std::cmp::Reverse(b.priority));
         router.set_config(rc);
     }
 
@@ -702,7 +702,7 @@ pub fn register_config_handlers(registry: &mut RpcRegistry, config_store: Config
                     requested_model,
                     purpose,
                 });
-                Ok(serde_json::to_value(outcome).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(outcome).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

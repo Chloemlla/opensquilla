@@ -66,7 +66,7 @@ impl ProviderFailureKind {
     }
 
     /// Parse a wire token back into a kind (unknown tokens map to `Unknown`).
-    pub fn from_str(value: &str) -> Self {
+    pub fn parse(value: &str) -> Self {
         match value.trim().to_lowercase().as_str() {
             "rate_limited" => ProviderFailureKind::RateLimited,
             "provider_overloaded" => ProviderFailureKind::ProviderOverloaded,

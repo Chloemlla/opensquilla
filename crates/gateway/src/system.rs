@@ -72,7 +72,7 @@ impl SystemService {
         let messages = self.messages.lock();
         let filtered: Vec<SystemMessage> = messages
             .iter()
-            .filter(|m| message_type.map_or(true, |t| m.message_type == t))
+            .filter(|m| message_type.is_none_or(|t| m.message_type == t))
             .cloned()
             .collect();
         filtered.into_iter().rev().take(limit).collect()
@@ -96,7 +96,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
             let service = service.clone();
             async move {
                 let info = service.info();
-                Ok(serde_json::to_value(info).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(info).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -139,7 +139,7 @@ pub fn register_system_handlers(registry: &mut RpcRegistry, service: SystemServi
                     timestamp: Utc::now(),
                 };
                 service.record(message.clone());
-                Ok(serde_json::to_value(message).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(message).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

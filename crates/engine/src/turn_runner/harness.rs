@@ -517,7 +517,7 @@ impl TurnErrorAggregator {
         self.errors
             .iter()
             .map(|e| e.kind.clone())
-            .max_by_key(|k| severity_rank(k))
+            .max_by_key(severity_rank)
     }
 
     /// Whether any recorded error is retryable.

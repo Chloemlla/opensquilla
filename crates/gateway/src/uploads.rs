@@ -185,9 +185,8 @@ impl UploadManager {
         }
 
         // Run the virus scanner on the staged file before finalizing.
-        self.scanner.scan(&staged).map_err(|e| {
+        self.scanner.scan(&staged).inspect_err(|_| {
             let _ = self.fail(upload_id, "Virus scan rejected the upload");
-            e
         })?;
 
         let safe = sanitize_filename(final_name);
@@ -252,7 +251,7 @@ impl UploadManager {
     /// List all tracked uploads.
     pub fn list(&self) -> Vec<UploadProgress> {
         let mut list: Vec<UploadProgress> = self.progress.read().values().cloned().collect();
-        list.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        list.sort_by_key(|b| std::cmp::Reverse(b.started_at));
         list
     }
 

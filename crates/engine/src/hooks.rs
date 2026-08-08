@@ -85,13 +85,16 @@ pub trait ToolHook: Send + Sync + fmt::Debug {
 // Composite Hook Implementations
 // ---------------------------------------------------------------------------
 
+/// A hook that transforms a value of type `T`.
+type HookFn<T> = Box<dyn Fn(&T) -> T + Send + Sync>;
+
 /// A composite hook that runs multiple hooks in sequence.
 ///
 /// This allows hook chains where each hook is called in order, and the
 /// output of one hook becomes the input to the next.
 pub struct HookChain<T: fmt::Debug> {
     /// The ordered list of hooks in this chain.
-    hooks: Vec<Box<dyn Fn(&T) -> T + Send + Sync>>,
+    hooks: Vec<HookFn<T>>,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -119,7 +122,7 @@ impl<T: fmt::Debug> HookChain<T> {
     }
 
     /// Add a hook to the chain.
-    pub fn add(&mut self, hook: Box<dyn Fn(&T) -> T + Send + Sync>) {
+    pub fn add(&mut self, hook: HookFn<T>) {
         self.hooks.push(hook);
     }
 
@@ -454,7 +457,7 @@ impl HookRegistry {
 
     /// Sort the hooks by descending priority.
     fn sort(&mut self) {
-        self.hooks.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        self.hooks.sort_by_key(|b| std::cmp::Reverse(b.priority()));
     }
 
     /// Run all pre-turn hooks, threading the messages through each hook.

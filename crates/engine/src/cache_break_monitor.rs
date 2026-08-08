@@ -322,7 +322,7 @@ impl CacheBreakMonitor {
             messages_prefix_item_hashes: prefix_messages.iter().map(stable_hash_value).collect(),
             messages_prefix_item_kinds: prefix_messages
                 .iter()
-                .map(|m| message_prefix_item_kind(m))
+                .map(message_prefix_item_kind)
                 .collect(),
             cache_control_field_hashes,
         }
@@ -704,19 +704,18 @@ pub fn notify_compaction(
             if heartbeat_interval_seconds > 0.0
                 && notify_listeners
                 && tokio::runtime::Handle::try_current().is_ok()
+                && !state.heartbeat_tasks.contains_key(&key)
             {
-                if !state.heartbeat_tasks.contains_key(&key) {
-                    let task = tokio::spawn(compaction_heartbeat_loop(
-                        session_key.to_string(),
-                        compaction_id.clone(),
-                        source.clone(),
-                        phase.to_string(),
-                        heartbeat_interval_seconds,
-                    ));
-                    state
-                        .heartbeat_tasks
-                        .insert(key.clone(), task.abort_handle());
-                }
+                let task = tokio::spawn(compaction_heartbeat_loop(
+                    session_key.to_string(),
+                    compaction_id.clone(),
+                    source.clone(),
+                    phase.to_string(),
+                    heartbeat_interval_seconds,
+                ));
+                state
+                    .heartbeat_tasks
+                    .insert(key.clone(), task.abort_handle());
             }
         }
         if COMPACTION_TERMINAL_STATUSES.contains(&status.as_str()) {
@@ -812,7 +811,7 @@ async fn compaction_heartbeat_loop(
     let interval = Duration::from_secs_f64(interval.max(0.01));
     loop {
         tokio::time::sleep(interval).await;
-        let elapsed_ms = started.elapsed().as_millis().max(0) as u64;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
         let mut extra = serde_json::Map::new();
         extra.insert(
             "compaction_id".into(),

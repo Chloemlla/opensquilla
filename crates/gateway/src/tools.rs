@@ -195,10 +195,7 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                 };
 
                 let response = response.map_err(|e| AppError::internal(e.to_string()))?;
-                Ok(
-                    serde_json::to_value(response)
-                        .map_err(|e| AppError::internal(e.to_string()))?,
-                )
+                serde_json::to_value(response).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -346,7 +343,7 @@ pub fn register_tools_handlers(registry: &mut RpcRegistry, service: ToolsService
                     .with_timeout(timeout_secs)
                     .with_sandbox(sandbox);
                 let output = engine.dispatch(call, &ctx).await?;
-                Ok(serde_json::to_value(output).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(output).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

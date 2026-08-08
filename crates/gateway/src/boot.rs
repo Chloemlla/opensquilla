@@ -432,7 +432,7 @@ impl BootSequence {
 /// on Windows it lives next to the local data directory.
 fn default_pid_lock_path() -> std::path::PathBuf {
     let base = dirs::runtime_dir()
-        .or_else(|| dirs::data_local_dir())
+        .or_else(dirs::data_local_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     base.join("opensquilla-gateway.pid")
 }

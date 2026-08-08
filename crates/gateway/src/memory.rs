@@ -100,14 +100,14 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                 }
 
                 let healthy = orphans == 0;
-                Ok(serde_json::to_value(MemoryCheckResponse {
+                serde_json::to_value(MemoryCheckResponse {
                     agent_id: agent_id.to_string(),
                     total_memories: total,
                     with_embeddings,
                     orphans,
                     healthy,
                 })
-                .map_err(|e| AppError::internal(e.to_string()))?)
+                .map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -130,12 +130,12 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     .search_fts(query, limit, offset)
                     .map_err(store_err)?;
                 let count = results.len();
-                Ok(serde_json::to_value(MemorySearchResponse {
+                serde_json::to_value(MemorySearchResponse {
                     query: query.to_string(),
                     results,
                     count,
                 })
-                .map_err(|e| AppError::internal(e.to_string()))?)
+                .map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -262,7 +262,7 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
                     }
                 }
 
-                Ok(serde_json::to_value(&entry).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(&entry).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

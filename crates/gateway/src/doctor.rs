@@ -117,7 +117,7 @@ pub fn register_doctor_handlers(registry: &mut RpcRegistry, service: DoctorServi
             async move {
                 let result = service.check.run_full_check().await;
                 let report = from_result(result, service.diagnostics_enabled());
-                Ok(serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -130,7 +130,7 @@ pub fn register_doctor_handlers(registry: &mut RpcRegistry, service: DoctorServi
             async move {
                 let result = service.check.quick_check().await;
                 let report = from_result(result, service.diagnostics_enabled());
-                Ok(serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

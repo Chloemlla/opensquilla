@@ -280,7 +280,7 @@ impl ChatStore {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        turns.sort_by(|a, b| b.received_at.cmp(&a.received_at));
+        turns.sort_by_key(|b| std::cmp::Reverse(b.received_at));
         turns
     }
 
@@ -566,7 +566,7 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                 let session_id = params.get("session_id").and_then(|v| v.as_str());
                 let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
                 let result = store.search(query, session_id, limit);
-                Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -617,7 +617,7 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
                     bytes,
                 };
                 let meta = store.upload_attachment(&session_id.to_string(), upload)?;
-                Ok(serde_json::to_value(meta).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(meta).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

@@ -138,8 +138,8 @@ impl ContextAssemblyStep {
         }
 
         let total_chars = prompt.chars().count();
-        ctx.set_metadata("context_fragments", &fragment_count.to_string());
-        ctx.set_metadata("context_chars", &total_chars.to_string());
+        ctx.set_metadata("context_fragments", fragment_count.to_string());
+        ctx.set_metadata("context_chars", total_chars.to_string());
         ctx.set_metadata("context_assembly_applied", "true");
 
         debug!(

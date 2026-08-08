@@ -31,7 +31,7 @@ pub enum AuthMode {
 
 impl AuthMode {
     /// Parse an auth mode from a string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "token" => AuthMode::Token,
             "open" | "none" => AuthMode::Open,
@@ -446,10 +446,7 @@ pub fn resolve_auth(
             }
         }
     };
-    match resolver.resolve(config, auth_params, role_claim, peer_ip) {
-        Ok(principal) => Some(principal),
-        Err(_) => None,
-    }
+    resolver.resolve(config, auth_params, role_claim, peer_ip).ok()
 }
 
 // ---------------------------------------------------------------------------

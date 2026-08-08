@@ -188,7 +188,7 @@ pub fn register_models_handlers(registry: &mut RpcRegistry, catalog: ModelCatalo
                 let model: ModelInfo = serde_json::from_value(params)
                     .map_err(|e| AppError::bad_request(format!("Invalid model spec: {e}")))?;
                 catalog.register(model.clone());
-                Ok(serde_json::to_value(model).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(model).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

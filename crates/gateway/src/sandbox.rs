@@ -80,7 +80,7 @@ fn parse_level(s: &str) -> Result<SandboxLevel, AppError> {
 
 /// Serialize a policy into a JSON value.
 fn policy_to_value(policy: &SandboxPolicy) -> serde_json::Value {
-    serde_json::to_value(policy).unwrap_or_else(|_| serde_json::Value::Null)
+    serde_json::to_value(policy).unwrap_or(serde_json::Value::Null)
 }
 
 /// Register sandbox RPC handlers on the given registry.
@@ -216,7 +216,7 @@ pub fn register_sandbox_handlers(registry: &mut RpcRegistry, store: SandboxConte
                 "recommended_level": level_name(level),
                 "filesystem": serde_json::to_value(&policy.filesystem).unwrap_or(serde_json::Value::Null),
                 "network": serde_json::to_value(&policy.network).unwrap_or(serde_json::Value::Null),
-                "resource_limits": serde_json::to_value(&policy.resource_limits).unwrap_or(serde_json::Value::Null),
+                "resource_limits": serde_json::to_value(policy.resource_limits).unwrap_or(serde_json::Value::Null),
                 "audit_enabled": policy.audit_enabled,
             }))
         }

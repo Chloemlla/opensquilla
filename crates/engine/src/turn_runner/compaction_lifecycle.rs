@@ -21,7 +21,7 @@ use std::fmt;
 ///
 /// Mirrors the Python `CompactionDurability = Literal["durable",
 /// "request_scoped", "none"]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionDurability {
     /// The compaction was persisted to durable storage.
@@ -29,6 +29,7 @@ pub enum CompactionDurability {
     /// The compaction lives only for the duration of the request.
     RequestScoped,
     /// No durability guarantee.
+    #[default]
     None,
 }
 
@@ -42,12 +43,6 @@ impl fmt::Display for CompactionDurability {
     }
 }
 
-impl Default for CompactionDurability {
-    fn default() -> Self {
-        CompactionDurability::None
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Flush receipt status
 // ---------------------------------------------------------------------------
@@ -58,10 +53,11 @@ impl Default for CompactionDurability {
 /// Mirrors the return values of the Python `flush_receipt_status` function:
 /// `"not_requested"`, `"safe"`, `"noop_no_memory"`, `"archive_only"`,
 /// `"degraded_forensic"`, `"unsafe"`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlushReceiptStatus {
     /// No flush was requested (receipt is absent).
+    #[default]
     NotRequested,
     /// The receipt authorizes destructive compaction.
     Safe,
@@ -85,12 +81,6 @@ impl fmt::Display for FlushReceiptStatus {
             FlushReceiptStatus::DegradedForensic => f.write_str("degraded_forensic"),
             FlushReceiptStatus::Unsafe => f.write_str("unsafe"),
         }
-    }
-}
-
-impl Default for FlushReceiptStatus {
-    fn default() -> Self {
-        FlushReceiptStatus::NotRequested
     }
 }
 
@@ -239,31 +229,25 @@ impl FlushReceipt {
         match scope {
             "checkpoint" => {
                 status == FlushReceiptStatus::Safe
-                    && self.source_path.as_deref().map_or(false, |s| !s.is_empty())
+                    && self.source_path.as_deref().is_some_and(|s| !s.is_empty())
                     && self
                         .content_hash
                         .as_deref()
-                        .map_or(false, |s| !s.is_empty())
+                        .is_some_and(|s| !s.is_empty())
             }
             "flush" => {
-                self.target_path.as_deref().map_or(false, |s| !s.is_empty())
-                    && self
-                        .result_status
-                        .as_deref()
-                        .map_or(false, |s| s == "flush_appended")
+                self.target_path.as_deref().is_some_and(|s| !s.is_empty())
+                    && self.result_status.as_deref() == Some("flush_appended")
             }
             "preimage" => {
                 self.target_path
                     .as_deref()
-                    .map_or(false, |s| s.starts_with("memory/.raw_fallbacks/"))
+                    .is_some_and(|s| s.starts_with("memory/.raw_fallbacks/"))
                     && self
                         .content_hash
                         .as_deref()
-                        .map_or(false, |s| !s.is_empty())
-                    && self
-                        .result_status
-                        .as_deref()
-                        .map_or(false, |s| s == "preimage_saved")
+                        .is_some_and(|s| !s.is_empty())
+                    && self.result_status.as_deref() == Some("preimage_saved")
             }
             "repair" => {
                 let archived_reasons = [
@@ -274,19 +258,16 @@ impl FlushReceipt {
                 ];
                 self.target_path
                     .as_deref()
-                    .map_or(false, |s| s.starts_with("memory/.raw_fallbacks/"))
+                    .is_some_and(|s| s.starts_with("memory/.raw_fallbacks/"))
                     && self
                         .content_hash
                         .as_deref()
-                        .map_or(false, |s| !s.is_empty())
+                        .is_some_and(|s| !s.is_empty())
                     && self
                         .reason
                         .as_deref()
-                        .map_or(false, |r| archived_reasons.contains(&r))
-                    && self
-                        .result_status
-                        .as_deref()
-                        .map_or(false, |s| s == "repair_pending")
+                        .is_some_and(|r| archived_reasons.contains(&r))
+                    && self.result_status.as_deref() == Some("repair_pending")
             }
             _ => self.allows_destructive_compaction(),
         }
@@ -527,7 +508,7 @@ fn receipt_has_archive_evidence(receipt: &FlushReceipt) -> bool {
     let has_hash = receipt
         .content_hash
         .as_deref()
-        .map_or(false, |s| !s.is_empty());
+        .is_some_and(|s| !s.is_empty());
     let has_fallback_path = receipt
         .flushed_paths
         .iter()

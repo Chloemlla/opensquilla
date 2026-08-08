@@ -154,7 +154,7 @@ impl ContextBuilder {
     /// section header derived from each fragment's label.
     pub fn build_prompt(&self) -> String {
         let mut sorted = self.fragments.clone();
-        sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.priority));
 
         let mut out = String::new();
         for fragment in &sorted {
@@ -164,7 +164,7 @@ impl ContextBuilder {
             if !fragment.label.is_empty() {
                 out.push_str("# ");
                 out.push_str(&fragment.label);
-                out.push_str("\n");
+                out.push('\n');
             }
             out.push_str(&fragment.content);
         }

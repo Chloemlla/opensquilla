@@ -2526,7 +2526,7 @@ impl Agent {
     ///
     /// These wrap [`Agent::git_operation`] with the exact argument shapes the
     /// Python tools use, so the agent exposes the same surface.
-
+    ///
     /// `git status --short` in the workspace.
     pub async fn git_status(&self) -> Result<GitOpResult> {
         self.git_op(GitOperation::Status, &[]).await

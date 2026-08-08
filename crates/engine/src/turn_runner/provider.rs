@@ -499,8 +499,10 @@ impl ProviderStage {
         ctx: &StageContext,
         primary: &dyn TurnGenerator,
     ) -> Result<Vec<Message>> {
-        let mut report = ProviderCallReport::default();
-        report.served_by = Some(primary.provider_name().to_string());
+        let mut report = ProviderCallReport {
+            served_by: Some(primary.provider_name().to_string()),
+            ..Default::default()
+        };
 
         match self
             .generate_with_retries(primary, &ctx.messages, &mut report)
@@ -508,7 +510,7 @@ impl ProviderStage {
         {
             Ok(response) => {
                 *self.last_report.lock().unwrap_or_else(|e| e.into_inner()) = Some(report);
-                return Ok(response);
+                Ok(response)
             }
             Err(primary_err) => {
                 for fallback in &self.fallback_generators {

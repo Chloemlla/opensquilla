@@ -440,7 +440,7 @@ pub fn importance_signals(messages: &[Message]) -> Vec<MessageSignals> {
                 .content
                 .iter()
                 .any(|b| matches!(b, ContentBlock::ToolUse(_)))
-                || m.tool_calls.as_ref().map_or(false, |c| !c.is_empty()),
+                || m.tool_calls.as_ref().is_some_and(|c| !c.is_empty()),
             is_tool_result: matches!(m.role, MessageRole::Tool),
             index,
         })
@@ -610,7 +610,7 @@ pub fn truncate_preserving_tool_pairs(
                     .content
                     .iter()
                     .any(|b| matches!(b, ContentBlock::ToolUse(_)))
-                    || msg.tool_calls.as_ref().map_or(false, |c| !c.is_empty());
+                    || msg.tool_calls.as_ref().is_some_and(|c| !c.is_empty());
                 if !has_calls {
                     false
                 } else {
@@ -744,8 +744,7 @@ pub fn detect_compaction_boundary(
     let mut compact_through = 0usize;
     let mut safe = true;
 
-    for i in 0..limit {
-        let msg = &messages[i];
+    for (i, msg) in messages.iter().enumerate().take(limit) {
         if matches!(msg.role, MessageRole::System) {
             break;
         }
@@ -856,12 +855,14 @@ pub struct HistoryProfile {
 
 /// Profile a message history.
 pub fn profile_history(messages: &[Message], tokens_per_char: f64) -> HistoryProfile {
-    let mut profile = HistoryProfile::default();
-    profile.message_count = messages.len();
-    profile.estimated_tokens = messages
-        .iter()
-        .map(|m| estimate_tokens(m, tokens_per_char))
-        .sum();
+    let mut profile = HistoryProfile {
+        message_count: messages.len(),
+        estimated_tokens: messages
+            .iter()
+            .map(|m| estimate_tokens(m, tokens_per_char))
+            .sum(),
+        ..Default::default()
+    };
 
     let mut all_call_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for msg in messages {

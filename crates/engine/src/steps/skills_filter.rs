@@ -419,13 +419,13 @@ impl PipelineStep for SkillsFilterStep {
             ctx.set_metadata("skills_context_prompt", combined);
         }
 
-        ctx.set_metadata("skill_count", &final_len.to_string());
-        ctx.set_metadata("skills_prompt_chars", &prompt.len().to_string());
-        ctx.set_metadata("skills_rendered_count", &final_len.to_string());
+        ctx.set_metadata("skill_count", final_len.to_string());
+        ctx.set_metadata("skills_prompt_chars", prompt.len().to_string());
+        ctx.set_metadata("skills_rendered_count", final_len.to_string());
         ctx.set_metadata("skills_injection_mode", &self.config.injection_mode);
         ctx.set_metadata(
             "filtered_skill_ids",
-            &filtered
+            filtered
                 .iter()
                 .map(|s| s.id.clone())
                 .collect::<Vec<_>>()

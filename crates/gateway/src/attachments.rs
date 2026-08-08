@@ -180,7 +180,7 @@ impl AttachmentStore {
             .filter(|m| m.session_id == session_id)
             .cloned()
             .collect();
-        metas.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
+        metas.sort_by_key(|b| std::cmp::Reverse(b.uploaded_at));
         metas
     }
 

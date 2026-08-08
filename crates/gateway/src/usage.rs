@@ -103,7 +103,7 @@ impl UsageStore {
         let events = self.events.lock();
         let filtered: Vec<UsageEvent> = events
             .iter()
-            .filter(|e| session_id.map_or(true, |sid| e.session_id == sid))
+            .filter(|e| session_id.is_none_or(|sid| e.session_id == sid))
             .cloned()
             .collect();
         filtered.into_iter().rev().take(limit).collect()
@@ -190,7 +190,7 @@ pub fn register_usage_handlers(registry: &mut RpcRegistry, store: UsageStore) {
                 let usage = Usage::new(input_tokens, output_tokens);
                 let event = UsageEvent::from_usage(session_id, model, &provider, usage, cost_usd);
                 store.record(event.clone());
-                Ok(serde_json::to_value(event).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(event).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -202,7 +202,7 @@ pub fn register_usage_handlers(registry: &mut RpcRegistry, store: UsageStore) {
             let store = store.clone();
             async move {
                 let summary = store.summary();
-                Ok(serde_json::to_value(summary).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(summary).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

@@ -41,7 +41,7 @@ pub use crate::stages::{Stage, StageContext, StageError, StageOutcome, StageOutp
 /// implementations in the Python order:
 /// `meta_resolution` → `model_select` → `skills_filter` → `context_assembly`
 /// → `attachment_loader`. Each field is consumed by exactly one step.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PipelineConfig {
     /// Whether the pre-turn pipeline runs at all.
     pub enabled: bool,
@@ -58,20 +58,6 @@ pub struct PipelineConfig {
     pub available_tools: Vec<String>,
     /// Attachments loaded into the turn by the attachment loader step.
     pub attachments: Vec<crate::steps::AttachmentDescriptor>,
-}
-
-impl Default for PipelineConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            workspace_root: None,
-            default_model: String::new(),
-            default_provider: String::new(),
-            skill_catalog: Vec::new(),
-            available_tools: Vec::new(),
-            attachments: Vec::new(),
-        }
-    }
 }
 
 /// Configuration for routing-policy integration.

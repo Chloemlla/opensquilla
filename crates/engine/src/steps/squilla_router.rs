@@ -172,7 +172,7 @@ impl SquillaRouterStep {
         );
         ctx.set_metadata("rollout_phase", &self.config.rollout_phase);
         ctx.set_metadata("applied_model", &decision.model);
-        ctx.set_metadata("routing_confidence", &decision.confidence.to_string());
+        ctx.set_metadata("routing_confidence", decision.confidence.to_string());
         ctx.set_metadata("routing_source", &decision.source);
         let chain = self.text_fallback_chain(&decision.tier);
         ctx.set_metadata("router_fallback_chain", chain.join(","));
@@ -284,7 +284,7 @@ impl PipelineStep for SquillaRouterStep {
                 "confidence": decision.confidence,
                 "source": decision.source,
             });
-            ctx.set_metadata("routing_decision", &decision_json.to_string());
+            ctx.set_metadata("routing_decision", decision_json.to_string());
 
             debug!(
                 tier = %decision.tier,
@@ -370,7 +370,7 @@ impl PipelineStep for SquillaRouterStep {
             "confidence": decision.confidence,
             "source": decision.source,
         });
-        ctx.set_metadata("routing_decision", &decision_json.to_string());
+        ctx.set_metadata("routing_decision", decision_json.to_string());
 
         debug!(
             tier = %decision.tier,

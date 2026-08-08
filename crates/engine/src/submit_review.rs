@@ -53,7 +53,7 @@ impl SubmitAction {
 }
 
 /// Per-run review progress. Owned by the agent loop; mutated in place.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SubmitReviewState {
     /// 0 = unreviewed, 1 = reviewed, 2 = confirmed.
     pub stage: u8,
@@ -63,17 +63,6 @@ pub struct SubmitReviewState {
     pub nudges: usize,
     /// Whether the model executed a real (non-`submit`) tool since review.
     pub acted_since_review: bool,
-}
-
-impl Default for SubmitReviewState {
-    fn default() -> Self {
-        Self {
-            stage: 0,
-            reviewed_via: None,
-            nudges: 0,
-            acted_since_review: false,
-        }
-    }
 }
 
 impl SubmitReviewState {

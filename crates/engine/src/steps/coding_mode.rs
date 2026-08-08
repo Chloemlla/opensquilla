@@ -20,22 +20,13 @@ use tracing::{debug, info, instrument};
 const CODE_TASK_REQUIRED_TOOLS: &[&str] = &["background_process", "exec_command", "process"];
 
 /// Configuration for the coding-mode step.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CodingModeConfig {
     /// Master switch. When false the step is a complete no-op.
     pub enabled: bool,
     /// A resolved, PATH-independent code-task command prefix. When `None` the
     /// step emits the "unavailable" directive.
     pub code_task_command: Option<String>,
-}
-
-impl Default for CodingModeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            code_task_command: None,
-        }
-    }
 }
 
 /// Pre-turn pipeline step that enforces coding mode.

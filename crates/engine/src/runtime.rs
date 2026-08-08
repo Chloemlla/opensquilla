@@ -1183,9 +1183,7 @@ fn tool_result_message(call: ToolCall, result: ToolResult) -> Message {
 /// helper scans the normalized message for a known vocabulary token and uses it
 /// as the classification code; anything unmatched classifies as `failed`.
 pub fn normalized_error_outcome(message: &str) -> crate::outcome::TurnOutcome {
-    let normalized = crate::outcome::normalize_code(Some(message))
-        .replace(' ', "_")
-        .replace('-', "_");
+    let normalized = crate::outcome::normalize_code(Some(message)).replace([' ', '-'], "_");
     // Prefer the longest matching vocabulary token so a message embedding
     // `provider_output_truncated` classifies as that code rather than the
     // shorter `output_truncated` substring.
@@ -1502,12 +1500,9 @@ impl AgentRuntime {
 
         // Update the agent handle with the outcome.
         if let Some(mut handle) = self.agents.get_mut(agent_id) {
-            match &outcome {
-                TurnOutcome::Complete { usage, .. } => {
-                    handle.total_usage.accumulate(usage);
-                    handle.turn_count += 1;
-                }
-                _ => {}
+            if let TurnOutcome::Complete { usage, .. } = &outcome {
+                handle.total_usage.accumulate(usage);
+                handle.turn_count += 1;
             }
         }
 

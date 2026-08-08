@@ -555,7 +555,7 @@ impl SystemPromptAssembler {
     /// first) until the assembled prompt fits within the token budget.
     pub fn assemble(&self) -> String {
         let mut sorted: Vec<&SystemPromptSection> = self.sections.values().collect();
-        sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.priority));
 
         let required: Vec<&SystemPromptSection> =
             sorted.iter().copied().filter(|s| s.required).collect();

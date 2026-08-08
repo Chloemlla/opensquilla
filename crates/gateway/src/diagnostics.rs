@@ -100,7 +100,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 let state = service.update(Some(enabled), None, None, None, None, None);
-                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -112,7 +112,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
             let service = service.clone();
             async move {
                 let state = service.state();
-                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -138,7 +138,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     decision_log,
                     safe_log,
                 );
-                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -157,7 +157,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     Some(true),
                     Some(true),
                 );
-                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -176,7 +176,7 @@ pub fn register_diagnostics_handlers(registry: &mut RpcRegistry, service: Diagno
                     Some(false),
                     Some(false),
                 );
-                Ok(serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(state).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

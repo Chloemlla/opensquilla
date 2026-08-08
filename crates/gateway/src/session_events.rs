@@ -160,13 +160,8 @@ impl SessionEventBroadcaster {
             *guard
         };
         event.seq = seq;
-        match self.sender.send(event) {
-            Ok(n) => n,
-            Err(_) => {
-                // No subscribers currently; not an error.
-                0
-            }
-        }
+        // No subscribers currently; not an error.
+        self.sender.send(event).unwrap_or_default()
     }
 
     /// Publish a simple event (no payload/turn id) and return the receiver

@@ -129,7 +129,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                     metadata,
                 };
                 store.upsert(agent.clone());
-                Ok(serde_json::to_value(agent).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(agent).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -195,7 +195,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                 }
                 agent.updated_at = Utc::now();
                 store.upsert(agent.clone());
-                Ok(serde_json::to_value(agent).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(agent).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -269,7 +269,7 @@ pub fn register_agents_handlers(registry: &mut RpcRegistry, store: AgentStore) {
                 files: checks,
                 all_present,
             };
-            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
+            serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))
         }
     }));
 }

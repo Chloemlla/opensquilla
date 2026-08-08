@@ -84,7 +84,7 @@ impl RoutingStore {
         let decisions = self.decisions.lock();
         let filtered: Vec<RoutingDecision> = decisions
             .iter()
-            .filter(|d| session_id.map_or(true, |sid| d.session_id == sid))
+            .filter(|d| session_id.is_none_or(|sid| d.session_id == sid))
             .cloned()
             .collect();
         filtered.into_iter().rev().take(limit).collect()
@@ -133,7 +133,7 @@ pub fn register_routing_handlers(registry: &mut RpcRegistry, store: RoutingStore
                     expires_at,
                 };
                 store.set_hold(hold.clone());
-                Ok(serde_json::to_value(hold).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(hold).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -246,10 +246,7 @@ pub fn register_routing_handlers(registry: &mut RpcRegistry, store: RoutingStore
                     decided_at: Utc::now(),
                 };
                 store.record_decision(decision.clone());
-                Ok(
-                    serde_json::to_value(decision)
-                        .map_err(|e| AppError::internal(e.to_string()))?,
-                )
+                serde_json::to_value(decision).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

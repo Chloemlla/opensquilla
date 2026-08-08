@@ -79,14 +79,14 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 .map(String::from);
 
             if !path.exists() {
-                return Ok(serde_json::to_value(LogReadResult {
+                return serde_json::to_value(LogReadResult {
                     path: path.display().to_string(),
                     exists: false,
                     total_lines: 0,
                     entries: vec![],
                     truncated: false,
                 })
-                .map_err(|e| AppError::internal(e.to_string()))?);
+                .map_err(|e| AppError::internal(e.to_string()));
             }
 
             let (total, lines) = tail_lines(&path, max_lines)?;
@@ -113,7 +113,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 truncated: total > max_lines as u64,
                 entries,
             };
-            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
+            serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))
         }
     }));
 
@@ -124,14 +124,14 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
             let max_lines = params.get("lines").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
             if !path.exists() {
-                return Ok(serde_json::to_value(LogReadResult {
+                return serde_json::to_value(LogReadResult {
                     path: path.display().to_string(),
                     exists: false,
                     total_lines: 0,
                     entries: vec![],
                     truncated: false,
                 })
-                .map_err(|e| AppError::internal(e.to_string()))?);
+                .map_err(|e| AppError::internal(e.to_string()));
             }
 
             let content = std::fs::read_to_string(&path)
@@ -161,7 +161,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 truncated: total > max_lines as u64,
                 entries,
             };
-            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
+            serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))
         }
     }));
 
@@ -205,7 +205,7 @@ pub fn register_logs_handlers(registry: &mut RpcRegistry) {
                 truncated: entries.len() >= max_results,
                 entries,
             };
-            Ok(serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))?)
+            serde_json::to_value(result).map_err(|e| AppError::internal(e.to_string()))
         }
     }));
 

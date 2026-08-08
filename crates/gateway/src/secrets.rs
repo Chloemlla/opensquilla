@@ -135,7 +135,7 @@ pub fn register_secrets_handlers(registry: &mut RpcRegistry, store: SecretsStore
                 let record = store
                     .get_record(key)
                     .ok_or_else(|| AppError::internal("Failed to store secret"))?;
-                Ok(serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

@@ -32,7 +32,7 @@ impl ProgressAction {
 }
 
 /// One observation fed into the watchdog.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ProgressObservation {
     /// The turn iteration index.
     pub iteration: i64,
@@ -72,32 +72,6 @@ pub struct ProgressObservation {
     pub failure_anchor_signature: Option<String>,
     /// Human-readable summary of the failure anchor.
     pub failure_anchor_summary: Option<String>,
-}
-
-impl Default for ProgressObservation {
-    fn default() -> Self {
-        Self {
-            iteration: 0,
-            provider_call_count: 0,
-            successful_tool_result: false,
-            successful_source_context_tool_result: false,
-            successful_execution_tool_result: false,
-            source_context_signature: None,
-            user_visible_output: false,
-            artifact_completed: false,
-            workspace_change_likely_required: false,
-            workspace_write_count: 0,
-            changed_receipt_count: 0,
-            noop_receipt_count: 0,
-            partial_receipt_count: 0,
-            scratch_write_count: 0,
-            post_write_focused_verification_observed: false,
-            tool_error_signature: None,
-            provider_failure_signature: None,
-            failure_anchor_signature: None,
-            failure_anchor_summary: None,
-        }
-    }
 }
 
 /// A decision returned by [`ProgressWatchdog::observe`].

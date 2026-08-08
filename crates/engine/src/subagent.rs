@@ -260,7 +260,7 @@ impl SubAgentManager {
 
         let task = tokio::spawn(async move {
             let _permit = permit;
-            let outcome = if let Some(runner) = runner {
+            if let Some(runner) = runner {
                 agent
                     .run_turn_with_runner(vec![task_prompt], runner.as_ref())
                     .await
@@ -288,8 +288,7 @@ impl SubAgentManager {
                     }
                     Err(e) => Err(e),
                 }
-            };
-            outcome
+            }
         });
 
         Ok(SubAgentHandle {

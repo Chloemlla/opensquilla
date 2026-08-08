@@ -155,6 +155,12 @@ struct PriceCacheInner {
     fallback: HashMap<String, ModelPrice>,
 }
 
+impl Default for PricingCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PricingCache {
     /// Create a new pricing cache with a default HTTP client.
     pub fn new() -> Self {

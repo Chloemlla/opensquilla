@@ -110,7 +110,7 @@ impl MetaRunStore {
         let runs = self.runs.lock();
         let filtered: Vec<MetaRun> = runs
             .iter()
-            .filter(|r| skill_id.map_or(true, |sid| r.skill_id == sid))
+            .filter(|r| skill_id.is_none_or(|sid| r.skill_id == sid))
             .cloned()
             .collect();
         filtered.into_iter().rev().take(limit).collect()
@@ -158,7 +158,7 @@ pub fn register_meta_runs_handlers(registry: &mut RpcRegistry, store: MetaRunSto
                     .to_string();
                 let run = MetaRun::new(skill_id, &skill_name);
                 store.insert(run.clone());
-                Ok(serde_json::to_value(run).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(run).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

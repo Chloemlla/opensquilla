@@ -171,7 +171,7 @@ impl SessionArchiver {
     /// Return metadata for all archived sessions.
     pub fn list(&self) -> Vec<ArchiveMeta> {
         let mut metas: Vec<ArchiveMeta> = self.index.read().values().cloned().collect();
-        metas.sort_by(|a, b| a.archived_at.cmp(&b.archived_at));
+        metas.sort_by_key(|a| a.archived_at);
         metas
     }
 

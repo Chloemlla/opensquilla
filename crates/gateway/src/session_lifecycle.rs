@@ -55,7 +55,7 @@ impl SessionState {
     }
 
     /// Parse a state from its string identifier.
-    pub fn from_str(s: &str) -> Result<Self, AppError> {
+    pub fn parse(s: &str) -> Result<Self, AppError> {
         match s {
             "created" => Ok(SessionState::Created),
             "active" => Ok(SessionState::Active),
@@ -381,7 +381,7 @@ mod tests {
             SessionState::Archived,
             SessionState::Deleted,
         ] {
-            let parsed = SessionState::from_str(state.as_str()).unwrap();
+            let parsed = SessionState::parse(state.as_str()).unwrap();
             assert_eq!(parsed, state);
         }
     }

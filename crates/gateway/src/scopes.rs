@@ -49,13 +49,16 @@ impl Scope {
     /// imply or get implied by the others.
     pub fn grants(&self, other: Scope) -> bool {
         use Scope::*;
-        match (*self, other) {
-            (Admin, ReadOnly) | (Admin, User) | (Admin, Admin) => true,
-            (User, ReadOnly) | (User, User) => true,
-            (ReadOnly, ReadOnly) => true,
-            (System, System) => true,
-            _ => false,
-        }
+        matches!(
+            (*self, other),
+            (Admin, ReadOnly)
+                | (Admin, User)
+                | (Admin, Admin)
+                | (User, ReadOnly)
+                | (User, User)
+                | (ReadOnly, ReadOnly)
+                | (System, System)
+        )
     }
 
     /// Return the scope implied by this one in the hierarchy.

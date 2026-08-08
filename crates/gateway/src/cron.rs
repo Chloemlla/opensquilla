@@ -178,8 +178,8 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                     )
                     .await
                     .map_err(ops_err)?;
-                Ok(serde_json::to_value(CronJobView::from(&job))
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(CronJobView::from(&job))
+                    .map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -193,8 +193,8 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                 let id = parse_job_id(&params)?;
                 let engine = handle.engine.lock().await;
                 let job = engine.ops().get_job(id).await.map_err(ops_err)?;
-                Ok(serde_json::to_value(CronJobView::from(&job))
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(CronJobView::from(&job))
+                    .map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -269,8 +269,8 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
                     )
                     .await
                     .map_err(ops_err)?;
-                Ok(serde_json::to_value(CronJobView::from(&job))
-                    .map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(CronJobView::from(&job))
+                    .map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));
@@ -339,7 +339,7 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
             async move {
                 let engine = handle.engine.lock().await;
                 let stats: SchedulerStats = engine.ops().get_stats().await.map_err(ops_err)?;
-                Ok(serde_json::to_value(stats).map_err(|e| AppError::internal(e.to_string()))?)
+                serde_json::to_value(stats).map_err(|e| AppError::internal(e.to_string()))
             }
         }
     }));

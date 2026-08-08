@@ -560,7 +560,7 @@ pub fn final_diff_contract_recovery_message(observation: &FinalDiffContractObser
     message.push_str(&reason);
     message.push_str(". Current diff paths: ");
     message.push_str(&diff_text);
-    message.push_str(".");
+    message.push('.');
     if !source_text.is_empty() {
         message.push_str(&format!(" Current source diff paths: {source_text}."));
     }

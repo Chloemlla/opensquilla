@@ -280,7 +280,7 @@ impl PreviewCache {
         let now = Utc::now();
         let mut guard = self.entries.write();
         let mut removed = 0;
-        for (_, entry) in guard.iter_mut() {
+        for entry in guard.values_mut() {
             if let Some(lease) = &entry.lease {
                 if !lease.is_valid(now) {
                     entry.lease = None;
@@ -311,7 +311,7 @@ impl PreviewCache {
             .iter()
             .map(|(id, entry)| (id.clone(), entry.last_accessed))
             .collect();
-        sorted.sort_by(|a, b| a.1.cmp(&b.1));
+        sorted.sort_by_key(|a| a.1);
         let to_evict = guard.len() - self.limit + 1;
         for (id, _) in sorted.into_iter().take(to_evict) {
             guard.remove(&id);

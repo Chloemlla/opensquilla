@@ -211,7 +211,7 @@ fn build_snippet(content: &str, terms: &[String]) -> String {
     let end = (first + 120).min(content.len());
     let mut snippet = content[start..end].to_string();
     if start > 0 {
-        snippet.insert_str(0, "…");
+        snippet.insert(0, '…');
     }
     if end < content.len() {
         snippet.push('…');
