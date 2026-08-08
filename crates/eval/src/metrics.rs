@@ -276,6 +276,12 @@ impl MetricsCollector {
     }
 }
 
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Calculate accuracy from predictions and ground truth labels.
 pub fn accuracy(predictions: &[bool], ground_truth: &[bool]) -> f64 {
     if predictions.is_empty() || predictions.len() != ground_truth.len() {
