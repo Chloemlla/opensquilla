@@ -45,7 +45,10 @@ pub struct PromptHint {
     pub en: &'static str,
 }
 
-const P0_HINT: PromptHint = PromptHint { zh: P0_HINT_ZH, en: P0_HINT_EN };
+const P0_HINT: PromptHint = PromptHint {
+    zh: P0_HINT_ZH,
+    en: P0_HINT_EN,
+};
 
 /// Lookup abstraction for the Python controller's `flags: dict | object | None`.
 pub trait FlagLookup {
@@ -88,7 +91,11 @@ pub fn synthetic_one_hot_with_peak(tier: &str, dominant: f64) -> Vec<f64> {
 
 /// Weighted difficulty score of a probability vector (`compute_difficulty`).
 pub fn compute_difficulty(probs: &[f64]) -> f64 {
-    probs.iter().zip(DIFFICULTY_WEIGHTS).map(|(p, w)| w * p).sum()
+    probs
+        .iter()
+        .zip(DIFFICULTY_WEIGHTS)
+        .map(|(p, w)| w * p)
+        .sum()
 }
 
 /// Margin between the top two classes (`compute_margin`).
@@ -218,11 +225,7 @@ pub fn prompt_hint_locale(text: Option<&str>) -> &'static str {
         return "en";
     };
     let cjk_count = text.chars().filter(|ch| is_cjk(*ch)).count();
-    if cjk_count >= 2 {
-        "zh"
-    } else {
-        "en"
-    }
+    if cjk_count >= 2 { "zh" } else { "en" }
 }
 
 /// First non-empty hint, mirroring Python's `a or b or None`.
@@ -309,7 +312,10 @@ mod tests {
     fn thinking_mode_covers_all_tiers() {
         assert_eq!(derive_thinking_mode(&[0.0, 0.1, 0.2, 0.7], None), "T3");
         let deep = flags(&[("high_risk", true)]);
-        assert_eq!(derive_thinking_mode(&[0.1, 0.1, 0.7, 0.1], Some(&deep)), "T3");
+        assert_eq!(
+            derive_thinking_mode(&[0.1, 0.1, 0.7, 0.1], Some(&deep)),
+            "T3"
+        );
         assert_eq!(derive_thinking_mode(&[0.1, 0.1, 0.7, 0.1], None), "T2");
         assert_eq!(derive_thinking_mode(&[0.8, 0.2, 0.0, 0.0], None), "T0");
         assert_eq!(derive_thinking_mode(&[0.2, 0.6, 0.2, 0.0], None), "T1");
@@ -319,21 +325,42 @@ mod tests {
     #[test]
     fn prompt_policy_covers_all_classes() {
         let full = flags(&[("strict_format", true)]);
-        assert_eq!(derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&full)), "P2");
+        assert_eq!(
+            derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&full)),
+            "P2"
+        );
         assert_eq!(derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], None), "P0");
         assert_eq!(derive_prompt_policy(&[0.4, 0.6, 0.0, 0.0], None), "P1");
         let blocked = flags(&[("debug", true)]);
-        assert_eq!(derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&blocked)), "P2");
+        assert_eq!(
+            derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&blocked)),
+            "P2"
+        );
         let neutral = flags(&[("some_other", true)]);
-        assert_eq!(derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&neutral)), "P0");
+        assert_eq!(
+            derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&neutral)),
+            "P0"
+        );
     }
 
     #[test]
     fn normalize_decisions_forbids_deep_compress() {
-        assert_eq!(normalize_decisions("T2", "P0"), ("T2".to_string(), "P1".to_string()));
-        assert_eq!(normalize_decisions("T3", "P0"), ("T3".to_string(), "P1".to_string()));
-        assert_eq!(normalize_decisions("T0", "P0"), ("T0".to_string(), "P0".to_string()));
-        assert_eq!(normalize_decisions("T1", "P1"), ("T1".to_string(), "P1".to_string()));
+        assert_eq!(
+            normalize_decisions("T2", "P0"),
+            ("T2".to_string(), "P1".to_string())
+        );
+        assert_eq!(
+            normalize_decisions("T3", "P0"),
+            ("T3".to_string(), "P1".to_string())
+        );
+        assert_eq!(
+            normalize_decisions("T0", "P0"),
+            ("T0".to_string(), "P0".to_string())
+        );
+        assert_eq!(
+            normalize_decisions("T1", "P1"),
+            ("T1".to_string(), "P1".to_string())
+        );
     }
 
     #[test]
@@ -358,8 +385,14 @@ mod tests {
 
     #[test]
     fn localized_hint_selection() {
-        assert_eq!(select_localized_prompt_hint(&P0_HINT, Some("你好")), Some(P0_HINT_ZH));
-        assert_eq!(select_localized_prompt_hint(&P0_HINT, Some("hi")), Some(P0_HINT_EN));
+        assert_eq!(
+            select_localized_prompt_hint(&P0_HINT, Some("你好")),
+            Some(P0_HINT_ZH)
+        );
+        assert_eq!(
+            select_localized_prompt_hint(&P0_HINT, Some("hi")),
+            Some(P0_HINT_EN)
+        );
     }
 
     #[test]
@@ -367,7 +400,13 @@ mod tests {
         assert_eq!(get_prompt_hint(None, None), None);
         assert_eq!(get_prompt_hint(Some("P9"), None), None);
         assert_eq!(get_prompt_hint(Some("P0"), None), Some(P0_HINT_EN));
-        assert_eq!(get_prompt_hint(Some("P0"), Some("你好世界")), Some(P0_HINT_ZH));
-        assert_eq!(get_prompt_hint(Some("P0"), Some("answer directly")), Some(P0_HINT_EN));
+        assert_eq!(
+            get_prompt_hint(Some("P0"), Some("你好世界")),
+            Some(P0_HINT_ZH)
+        );
+        assert_eq!(
+            get_prompt_hint(Some("P0"), Some("answer directly")),
+            Some(P0_HINT_EN)
+        );
     }
 }

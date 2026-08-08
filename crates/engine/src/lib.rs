@@ -209,10 +209,10 @@ pub use squilla_feedback::{FeedbackEntry, FeedbackRow, FeedbackStats, RouterTrai
 
 // Squilla router post-processing controllers (pure functions).
 pub use squilla_controller::{
-    COMPRESS_BLOCK_FLAGS, DEEP_FLAGS, DIFFICULTY_WEIGHTS, FULL_PROMPT_FLAGS, P0_HINT_EN, P0_HINT_ZH,
-    SYNTHETIC_PEAK, TIER_ORDER, FlagLookup, PromptHint, compute_difficulty, compute_margin,
-    derive_prompt_policy, derive_prompt_policy_with, derive_thinking_mode,
-    derive_thinking_mode_with, get_prompt_hint, has_any_flag, normalize_decisions,
-    prompt_hint_for, prompt_hint_locale, select_localized_prompt_hint, synthetic_one_hot,
+    COMPRESS_BLOCK_FLAGS, DEEP_FLAGS, DIFFICULTY_WEIGHTS, FULL_PROMPT_FLAGS, FlagLookup,
+    P0_HINT_EN, P0_HINT_ZH, PromptHint, SYNTHETIC_PEAK, TIER_ORDER, compute_difficulty,
+    compute_margin, derive_prompt_policy, derive_prompt_policy_with, derive_thinking_mode,
+    derive_thinking_mode_with, get_prompt_hint, has_any_flag, normalize_decisions, prompt_hint_for,
+    prompt_hint_locale, select_localized_prompt_hint, synthetic_one_hot,
     synthetic_one_hot_with_peak, thinking_mode_to_level,
 };

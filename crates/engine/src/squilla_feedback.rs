@@ -145,7 +145,9 @@ pub fn router_data_root(base: &Path) -> PathBuf {
 
 /// The per-agent captured-sample directory.
 pub fn agent_data_dir(base: &Path, agent_id: &str) -> PathBuf {
-    router_data_root(base).join("data").join(safe_agent_id(agent_id))
+    router_data_root(base)
+        .join("data")
+        .join(safe_agent_id(agent_id))
 }
 
 /// Path to the per-agent feedback JSONL.

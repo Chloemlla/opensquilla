@@ -53,7 +53,9 @@ pub enum SquillaInferenceError {
     Onnx(String),
     #[error("tokenizer failure: {0}")]
     Tokenizer(String),
-    #[error("ensemble heads (lgbm_model.bin / joblib / pkl) are binary assets not yet wired into Rust: {0}")]
+    #[error(
+        "ensemble heads (lgbm_model.bin / joblib / pkl) are binary assets not yet wired into Rust: {0}"
+    )]
     HeadsMissing(String),
     #[error("invalid probability vector: {0}")]
     InvalidProbabilities(String),
@@ -115,9 +117,7 @@ impl SquillaInference {
         }
     }
 
-    fn load_session(
-        model_dir: &Path,
-    ) -> Option<Arc<std::sync::Mutex<ort::session::Session>>> {
+    fn load_session(model_dir: &Path) -> Option<Arc<std::sync::Mutex<ort::session::Session>>> {
         let path = model_dir.join("model.onnx");
         if !path.exists() {
             tracing::warn!("missing ONNX model at {}", path.display());
@@ -161,18 +161,20 @@ impl SquillaInference {
     /// used here). Returns an error when the model/tokenizer failed to load or
     /// the `onnx` feature is disabled.
     pub fn embed(&self, text: &str) -> Result<Vec<f32>, SquillaInferenceError> {
-        let tokenizer = self.tokenizer.as_ref().ok_or_else(|| {
-            SquillaInferenceError::MissingArtifact {
-                artifact: "tokenizer.json",
-                model_dir: self.model_dir.clone(),
-            }
-        })?;
-        let session = self.session.as_ref().ok_or_else(|| {
-            SquillaInferenceError::MissingArtifact {
-                artifact: "model.onnx",
-                model_dir: self.model_dir.clone(),
-            }
-        })?;
+        let tokenizer =
+            self.tokenizer
+                .as_ref()
+                .ok_or_else(|| SquillaInferenceError::MissingArtifact {
+                    artifact: "tokenizer.json",
+                    model_dir: self.model_dir.clone(),
+                })?;
+        let session =
+            self.session
+                .as_ref()
+                .ok_or_else(|| SquillaInferenceError::MissingArtifact {
+                    artifact: "model.onnx",
+                    model_dir: self.model_dir.clone(),
+                })?;
         let mut session = session
             .lock()
             .map_err(|e| SquillaInferenceError::Onnx(format!("lock ONNX session: {e}")))?;
@@ -266,9 +268,8 @@ pub fn fuse_probabilities(
             ));
         }
     }
-    let mixed: [f64; 4] = std::array::from_fn(|i| {
-        alpha[i] * p_main[i] + (1.0 - alpha[i]) * p_mlp[i]
-    });
+    let mixed: [f64; 4] =
+        std::array::from_fn(|i| alpha[i] * p_main[i] + (1.0 - alpha[i]) * p_mlp[i]);
     let total: f64 = mixed.iter().sum();
     if total <= 0.0 {
         return Err(SquillaInferenceError::InvalidProbabilities(
@@ -395,11 +396,8 @@ mod tests {
 
     #[test]
     fn apply_post_processing_rejects_non_finite_probs() {
-        let err = apply_post_processing(
-            [f64::NAN, 0.5, 0.25, 0.25],
-            RoutingFlags::default(),
-        )
-        .unwrap_err();
+        let err = apply_post_processing([f64::NAN, 0.5, 0.25, 0.25], RoutingFlags::default())
+            .unwrap_err();
         assert!(matches!(
             err,
             SquillaInferenceError::InvalidProbabilities(_)
