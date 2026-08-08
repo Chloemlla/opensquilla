@@ -3339,7 +3339,10 @@ mod tests {
     #[test]
     fn test_generate_turn_tool_execution_disabled() {
         let executor = Arc::new(MockToolExecutor::default());
-        let config = AgentConfig { allow_tool_execution: false, ..Default::default() };
+        let config = AgentConfig {
+            allow_tool_execution: false,
+            ..Default::default()
+        };
         let mut agent = Agent::with_config("a1", Box::new(MockGenerator::tool_call()), config);
         agent.initialize();
         agent.set_tool_executor(executor.clone());
@@ -3403,7 +3406,10 @@ mod tests {
     #[test]
     fn test_execute_tool_call_subprocess_gated() {
         let executor = Arc::new(MockToolExecutor::default());
-        let config = AgentConfig { allow_subprocess: false, ..Default::default() };
+        let config = AgentConfig {
+            allow_subprocess: false,
+            ..Default::default()
+        };
         let mut agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), config);
         agent.set_tool_executor(executor.clone());
 
@@ -3567,7 +3573,10 @@ mod tests {
 
     #[test]
     fn test_should_compact_threshold() {
-        let config = AgentConfig { context_window_tokens: 100, ..Default::default() };
+        let config = AgentConfig {
+            context_window_tokens: 100,
+            ..Default::default()
+        };
         let mut agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), config);
         for i in 0..10 {
             agent.add_message(Message::user(format!(
@@ -3579,7 +3588,10 @@ mod tests {
 
     #[test]
     fn test_compact_history_preserves_system() {
-        let config = AgentConfig { context_window_tokens: 200, ..Default::default() };
+        let config = AgentConfig {
+            context_window_tokens: 200,
+            ..Default::default()
+        };
         let mut agent = Agent::with_config("a1", Box::new(MockGenerator::text("hi")), config);
         agent.add_message(Message::system("instructions"));
         for i in 0..200 {

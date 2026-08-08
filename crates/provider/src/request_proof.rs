@@ -666,9 +666,7 @@ mod tests {
             lookup_model_window("claude-3-5-sonnet-20241022").context_window,
             200_000
         );
-        assert!(
-            lookup_model_window("deepseek-reasoner").reasoning_model
-        );
+        assert!(lookup_model_window("deepseek-reasoner").reasoning_model);
         assert!(lookup_model_window("unknown-model").context_window > 0);
     }
 

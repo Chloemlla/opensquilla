@@ -514,4 +514,3 @@ mod tests {
         assert!(prompt.ends_with("</available_skills>\n"));
     }
 }
-

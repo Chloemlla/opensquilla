@@ -263,7 +263,7 @@ mod tests {
         };
         let input = RecoveryInput {
             messages: std::slice::from_ref(&empty),
-            round_messages: &[empty],
+            round_messages: std::slice::from_ref(&empty),
             consecutive_empty_rounds: 1,
             max_empty_rounds: 3,
             retries_attempted: 0,
@@ -284,7 +284,7 @@ mod tests {
         };
         let input = RecoveryInput {
             messages: std::slice::from_ref(&empty),
-            round_messages: &[empty],
+            round_messages: std::slice::from_ref(&empty),
             consecutive_empty_rounds: 3,
             max_empty_rounds: 3,
             retries_attempted: 0,
