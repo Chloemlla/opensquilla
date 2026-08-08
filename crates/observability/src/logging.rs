@@ -150,7 +150,7 @@ pub fn init_logger_with_config(config: &LoggerConfig) -> Result<(), Box<dyn std:
 }
 
 /// The Logger struct for runtime log management.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Logger {
     config: LoggerConfig,
 }
@@ -197,13 +197,5 @@ impl Logger {
     /// Get the log file path if configured.
     pub fn log_file(&self) -> Option<&PathBuf> {
         self.config.log_file.as_ref()
-    }
-}
-
-impl Default for Logger {
-    fn default() -> Self {
-        Self {
-            config: LoggerConfig::default(),
-        }
     }
 }

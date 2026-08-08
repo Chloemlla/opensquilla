@@ -231,8 +231,8 @@ impl Tracer {
                 parent_span_id,
                 span_kind: opentelemetry::trace::SpanKind::Internal,
                 name: span.name.clone(),
-                start_time: span.start_time.clone(),
-                end_time: span.end_time.clone().unwrap_or_else(Utc::now),
+                start_time: span.start_time,
+                end_time: span.end_time.unwrap_or_else(Utc::now),
                 attributes,
                 events: Vec::new(), // events
                 links: Vec::new(),  // links

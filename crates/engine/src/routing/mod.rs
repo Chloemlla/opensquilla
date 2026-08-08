@@ -1554,7 +1554,9 @@ impl RoutingPolicyEngine {
         let mut metadata_updates: HashMap<String, Value> = HashMap::new();
         let mut extra = inputs.extra.clone();
 
-        if inputs.history_strategy && let Some(extra_mut) = extra.as_mut() {
+        if inputs.history_strategy
+            && let Some(extra_mut) = extra.as_mut()
+        {
             decision = self.finalize(inputs, extra_mut);
             let (tm, pp) =
                 reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
@@ -1571,7 +1573,9 @@ impl RoutingPolicyEngine {
             extra.as_mut(),
             &mut metadata_updates,
         );
-        if decision.source == "large_context_floor" && let Some(extra_mut) = extra.as_mut() {
+        if decision.source == "large_context_floor"
+            && let Some(extra_mut) = extra.as_mut()
+        {
             let (tm, pp) =
                 reconcile_controller_with_final_tier(thinking_mode, prompt_policy, extra_mut);
             thinking_mode = tm;

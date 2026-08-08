@@ -230,10 +230,7 @@ impl FlushReceipt {
             "checkpoint" => {
                 status == FlushReceiptStatus::Safe
                     && self.source_path.as_deref().is_some_and(|s| !s.is_empty())
-                    && self
-                        .content_hash
-                        .as_deref()
-                        .is_some_and(|s| !s.is_empty())
+                    && self.content_hash.as_deref().is_some_and(|s| !s.is_empty())
             }
             "flush" => {
                 self.target_path.as_deref().is_some_and(|s| !s.is_empty())
@@ -243,10 +240,7 @@ impl FlushReceipt {
                 self.target_path
                     .as_deref()
                     .is_some_and(|s| s.starts_with("memory/.raw_fallbacks/"))
-                    && self
-                        .content_hash
-                        .as_deref()
-                        .is_some_and(|s| !s.is_empty())
+                    && self.content_hash.as_deref().is_some_and(|s| !s.is_empty())
                     && self.result_status.as_deref() == Some("preimage_saved")
             }
             "repair" => {
@@ -259,10 +253,7 @@ impl FlushReceipt {
                 self.target_path
                     .as_deref()
                     .is_some_and(|s| s.starts_with("memory/.raw_fallbacks/"))
-                    && self
-                        .content_hash
-                        .as_deref()
-                        .is_some_and(|s| !s.is_empty())
+                    && self.content_hash.as_deref().is_some_and(|s| !s.is_empty())
                     && self
                         .reason
                         .as_deref()

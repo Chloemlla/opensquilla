@@ -446,7 +446,9 @@ pub fn resolve_auth(
             }
         }
     };
-    resolver.resolve(config, auth_params, role_claim, peer_ip).ok()
+    resolver
+        .resolve(config, auth_params, role_claim, peer_ip)
+        .ok()
 }
 
 // ---------------------------------------------------------------------------
