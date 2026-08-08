@@ -87,7 +87,7 @@ pub async fn start_gateway_inner(
 
     // Create the gateway instance. Gateway::new registers the default RPC
     // handlers (sessions, chat, config).
-    let gateway = Gateway::new(gateway_config);
+    let _gateway = Gateway::new(gateway_config);
 
     // Build the router and bind a TcpListener to get the actual address.
     // We need the actual port before spawning the serve task so we can store it.

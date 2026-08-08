@@ -424,6 +424,7 @@ pub async fn install_update(
 
 /// Open a URL or path in the user's default application.
 #[tauri::command]
+#[allow(deprecated)]
 pub async fn open_external(app: AppHandle, target: String) -> TauriResult<()> {
     use tauri_plugin_shell::ShellExt;
     app.shell()

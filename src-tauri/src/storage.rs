@@ -452,7 +452,6 @@ pub fn channel_secret_from_namespace(namespace: &str) -> Option<(&str, &str)> {
 /// provides confidentiality + integrity for at-rest secrets and is
 /// straightforward to audit. The wire format is:
 /// `nonce(16) || keystream_ciphertext || hmac_tag(32)`.
-
 const NONCE_LEN: usize = 16;
 const TAG_LEN: usize = 32;
 

@@ -411,7 +411,7 @@ pub fn spawn_turn_task(
     session_id: String,
     messages: Vec<Message>,
     generator: Arc<dyn TurnGenerator>,
-    turn_config: TurnConfig,
+    _turn_config: TurnConfig,
 ) -> String {
     let turn_id = Uuid::new_v4().to_string();
     let event_channel = format!("{AGENT_STREAM_EVENT_PREFIX}{session_id}");
@@ -613,7 +613,7 @@ pub async fn send_message(
 
     // Store the user's message in the chat store.
     let session_id_str = request.session_id.clone();
-    let session_id = opensquilla_core::types::SessionId::from_string(&session_id_str)
+    let _session_id = opensquilla_core::types::SessionId::from_string(&session_id_str)
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id_str}")))?;
 
     let user_message = Message::user(&request.message);
@@ -636,7 +636,7 @@ pub async fn send_message(
         request
             .history
             .iter()
-            .map(|dto| dto_to_message(dto))
+            .map(dto_to_message)
             .collect::<Result<Vec<_>, _>>()?
     };
 
@@ -705,7 +705,7 @@ pub async fn send_message_sync(
     state.ensure_runtime_running().await?;
 
     let session_id_str = request.session_id.clone();
-    let session_id = opensquilla_core::types::SessionId::from_string(&session_id_str)
+    let _session_id = opensquilla_core::types::SessionId::from_string(&session_id_str)
         .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id_str}")))?;
 
     let user_message = Message::user(&request.message);

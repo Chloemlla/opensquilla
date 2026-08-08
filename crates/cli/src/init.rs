@@ -148,7 +148,7 @@ pub async fn preview_init(directory: Option<String>) -> Result<()> {
     println!("{} would contain:", dir.display());
     println!();
 
-    let tree = crate::table::TreeNode::new(&dir.display().to_string())
+    let tree = crate::table::TreeNode::new(dir.display().to_string())
         .child(
             crate::table::TreeNode::new(".opensquilla/")
                 .leaf("config.toml")

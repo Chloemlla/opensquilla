@@ -203,7 +203,7 @@ pub async fn cost_summary(start: Option<String>, end: Option<String>) -> Result<
         println!();
         let mut table = Table::from_headers(&["Date", "Sessions", "Tokens", "Cost (USD)"])
             .border(crate::table::TableBorder::Header);
-        for (_, row) in &daily {
+        for row in daily.values() {
             table = table.row_owned(vec![
                 row.date.clone(),
                 row.sessions.to_string(),

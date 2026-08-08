@@ -218,7 +218,7 @@ pub async fn list_categories() -> Result<()> {
         .iter()
         .map(|(cat, tools)| (*cat, tools.len()))
         .collect();
-    cats.sort_by(|a, b| b.1.cmp(&a.1));
+    cats.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     println!("Tool Categories ({})", cats.len());
     let mut table = Table::new()

@@ -80,15 +80,11 @@ fn print_provider_models_filtered(
         let caps = catalog.get(backend, model);
 
         // Apply filters.
-        if tools {
-            if !caps.as_ref().is_some_and(|c| c.supports_tools) {
-                continue;
-            }
+        if tools && !caps.as_ref().is_some_and(|c| c.supports_tools) {
+            continue;
         }
-        if vision {
-            if !caps.as_ref().is_some_and(|c| c.supports_vision) {
-                continue;
-            }
+        if vision && !caps.as_ref().is_some_and(|c| c.supports_vision) {
+            continue;
         }
 
         let is_default = if *model == util::default_model(config) {
@@ -164,7 +160,7 @@ pub async fn compare_models(models: Vec<String>) -> Result<()> {
         })
         .collect();
 
-    for (_i, spec) in specs.iter().enumerate() {
+    for spec in specs.iter() {
         seed_static(&catalog, &spec.1);
     }
 

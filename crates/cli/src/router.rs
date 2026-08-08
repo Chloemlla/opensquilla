@@ -574,7 +574,7 @@ fn build_tiers(config: &Config, registry: &opensquilla_provider::ProviderRegistr
             .collect();
 
         if !all_models.is_empty() {
-            let midpoint = all_models.len() / 3.max(1);
+            let midpoint = all_models.len() / 3;
             let chunks: Vec<Vec<String>> = vec![
                 all_models[..midpoint.min(all_models.len())].to_vec(),
                 all_models[midpoint.min(all_models.len())..(midpoint * 2).min(all_models.len())]
@@ -643,13 +643,7 @@ async fn run_probe(
 ) -> CalibrationResult {
     // Find a provider that supports this model.
     let provider = registry.list().iter().find_map(|name| {
-        registry.get(name).and_then(|p| {
-            if p.supported_models().iter().any(|m| m == model) {
-                Some(p)
-            } else {
-                None
-            }
-        })
+        registry.get(name).filter(|p| p.supported_models().iter().any(|m| m == model))
     });
 
     let Some(provider) = provider else {

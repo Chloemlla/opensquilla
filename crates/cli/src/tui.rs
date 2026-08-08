@@ -816,53 +816,46 @@ impl TuiApp {
     // ------------------------------------------------------------------
 
     async fn load_session_rows(&mut self) {
-        match util::build_session_manager(&self.config) {
-            Ok(manager) => match manager.list_sessions(&util::default_agent_id(), 200, 0) {
-                Ok(sessions) => {
-                    self.sessions = sessions
-                        .into_iter()
-                        .map(|s| SessionRow {
-                            id: s.id.to_string(),
-                            name: s.name,
-                            mode: format!("{:?}", s.mode).to_lowercase(),
-                            status: format!("{:?}", s.status).to_lowercase(),
-                            messages: s.message_count,
-                            tokens: s.total_tokens,
-                            cost: s.total_cost_usd,
-                        })
-                        .collect();
-                }
-                Err(_) => {}
-            },
-            Err(_) => {}
+        if let Ok(manager) = util::build_session_manager(&self.config) {
+            if let Ok(sessions) = manager.list_sessions(&util::default_agent_id(), 200, 0) {
+                self.sessions = sessions
+                    .into_iter()
+                    .map(|s| SessionRow {
+                        id: s.id.to_string(),
+                        name: s.name,
+                        mode: format!("{:?}", s.mode).to_lowercase(),
+                        status: format!("{:?}", s.status).to_lowercase(),
+                        messages: s.message_count,
+                        tokens: s.total_tokens,
+                        cost: s.total_cost_usd,
+                    })
+                    .collect();
+            }
         }
     }
 
     fn load_provider_rows(&mut self) {
-        match util::build_provider_registry(&self.config) {
-            Ok(registry) => {
-                let default = util::default_model(&self.config);
-                self.providers = registry
-                    .list()
-                    .iter()
-                    .filter_map(|name| {
-                        registry.get(name).map(|p| {
-                            let models = p.supported_models();
-                            ProviderRow {
-                                name: name.clone(),
-                                backend: p.name().to_string(),
-                                models: models.len(),
-                                default_model: models
-                                    .first()
-                                    .cloned()
-                                    .unwrap_or_else(|| default.clone()),
-                                status: "configured",
-                            }
-                        })
+        if let Ok(registry) = util::build_provider_registry(&self.config) {
+            let default = util::default_model(&self.config);
+            self.providers = registry
+                .list()
+                .iter()
+                .filter_map(|name| {
+                    registry.get(name).map(|p| {
+                        let models = p.supported_models();
+                        ProviderRow {
+                            name: name.clone(),
+                            backend: p.name().to_string(),
+                            models: models.len(),
+                            default_model: models
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| default.clone()),
+                            status: "configured",
+                        }
                     })
-                    .collect();
-            }
-            Err(_) => {}
+                })
+                .collect();
         }
     }
 
@@ -881,21 +874,17 @@ impl TuiApp {
     }
 
     async fn load_cost_data(&mut self) {
-        match util::build_session_manager(&self.config) {
-            Ok(manager) => match manager.list_sessions(&util::default_agent_id(), 1000, 0) {
-                Ok(sessions) => {
-                    self.cost_sessions = sessions.len() as u64;
-                    self.cost_tokens = sessions.iter().map(|s| s.total_tokens).sum();
-                    self.cost_total = sessions.iter().map(|s| s.total_cost_usd).sum();
-                    self.cost_avg_per_session = if sessions.is_empty() {
-                        0.0
-                    } else {
-                        self.cost_total / sessions.len() as f64
-                    };
-                }
-                Err(_) => {}
-            },
-            Err(_) => {}
+        if let Ok(manager) = util::build_session_manager(&self.config) {
+            if let Ok(sessions) = manager.list_sessions(&util::default_agent_id(), 1000, 0) {
+                self.cost_sessions = sessions.len() as u64;
+                self.cost_tokens = sessions.iter().map(|s| s.total_tokens).sum();
+                self.cost_total = sessions.iter().map(|s| s.total_cost_usd).sum();
+                self.cost_avg_per_session = if sessions.is_empty() {
+                    0.0
+                } else {
+                    self.cost_total / sessions.len() as f64
+                };
+            }
         }
     }
 

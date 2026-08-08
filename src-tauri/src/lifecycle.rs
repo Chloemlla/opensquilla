@@ -524,7 +524,7 @@ pub fn process_start_identity(pid: u32) -> Option<String> {
     }
     #[cfg(target_os = "linux")]
     {
-        return linux_proc_stat_start_identity(pid);
+        linux_proc_stat_start_identity(pid)
     }
     #[cfg(target_os = "windows")]
     {
@@ -712,6 +712,7 @@ pub struct OwnershipVerificationCoordinator {
 #[derive(Debug, Clone)]
 struct VerificationState {
     deadline: Instant,
+    #[allow(dead_code)]
     in_flight: Option<Arc<tokio::sync::Mutex<()>>>,
 }
 

@@ -32,8 +32,8 @@ pub async fn list_skills() -> Result<()> {
     println!("Installed skills ({})", skills.len());
     println!("{:-<70}", "");
     println!(
-        "{:<28} {:<24} {:<10} {}",
-        "Name", "Layer", "Version", "Description"
+        "{:<28} {:<24} {:<10} Description",
+        "Name", "Layer", "Version"
     );
     println!("{:-<70}", "");
     for skill in &skills {
@@ -292,7 +292,7 @@ async fn build_loader(config: &Config) -> Result<SkillLoader> {
     loader.register_layer_dir(SkillLayer::Managed, managed);
 
     let bundled = load_bundled_skills();
-    let _ = loader.register_skills(bundled);
+    let _ = loader.register_skills(bundled).await;
 
     loader
         .scan_all()

@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Manager, Runtime,
+    AppHandle, Runtime,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconEvent,
 };

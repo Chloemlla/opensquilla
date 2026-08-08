@@ -20,7 +20,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use regex::Regex;
@@ -759,10 +759,13 @@ pub struct VerifiedDownloadResult {
     pub sha256: String,
 }
 
+/// Progress callback invoked as `(received_bytes, total_bytes_opt)`.
+pub type ProgressCallback = Arc<dyn Fn(u64, Option<u64>) + Send + Sync>;
+
 /// Options for a verified download.
 pub struct VerifiedDownloadOptions {
     pub max_bytes: u64,
-    pub on_progress: Option<Arc<dyn Fn(u64, Option<u64>) + Send + Sync>>,
+    pub on_progress: Option<ProgressCallback>,
 }
 
 impl std::fmt::Debug for VerifiedDownloadOptions {
@@ -797,7 +800,7 @@ pub async fn stream_response_to_verified_file(
         ));
     }
 
-    let total_bytes: Option<u64> = response.content_length().filter(|&l| l > 0).or_else(|| {
+    let total_bytes: Option<u64> = response.content_length().filter(|&l| l > 0).or({
         // No content-length → unknown total.
         None
     });
@@ -848,7 +851,7 @@ async fn write_verified_stream(
         let _ = file
             .metadata()
             .await
-            .map(|m| std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(0o600)));
+            .map(|_m| std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(0o600)));
     }
 
     let mut hasher = Sha256::new();
@@ -1156,8 +1159,8 @@ fn static_regex(pattern: &str) -> &'static Regex {
         parking_lot::Mutex<std::collections::HashMap<String, &'static Regex>>,
     > = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
     let mut cache = CACHE.lock();
-    if let Some(re) = cache.get(pattern) {
-        return *re;
+    if let Some(re) = cache.get(pattern).copied() {
+        return re;
     }
     let leaked: &'static Regex = Box::leak(Box::new(Regex::new(pattern).expect("invalid regex")));
     cache.insert(pattern.to_string(), leaked);

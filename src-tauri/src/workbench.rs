@@ -22,8 +22,7 @@ use parking_lot::Mutex as ParkingMutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 // ---------------------------------------------------------------------------
 // Constants (mirrors of the Electron contract)
@@ -40,6 +39,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub const PROTOCOL_VERSION_V2: u32 = 2;
 
 /// Default request timeout for lease broker operations.
+#[allow(dead_code)]
 const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 15_000;
 
 // ---------------------------------------------------------------------------
@@ -406,6 +406,7 @@ pub struct AdmissionToken(Arc<()>);
 
 impl AdmissionToken {
     /// Create a new unique admission token.
+    #[allow(dead_code)]
     fn new() -> Self {
         Self(Arc::new(()))
     }
@@ -483,7 +484,7 @@ impl WriterAdmission {
     /// when dropped.
     ///
     /// Returns an error if admission is closed.
-    pub fn begin(&mut self, label: &str) -> Result<WriterGuard, String> {
+    pub fn begin(&mut self, label: &str) -> Result<WriterGuard<'_>, String> {
         if self.is_closed() {
             return Err(format!(
                 "Desktop writer admission is closed; {label} was not started."
@@ -499,7 +500,7 @@ impl WriterAdmission {
     /// Try to begin an exclusive writer operation: close admission and reserve
     /// a writer slot atomically. Returns the admission token and a writer guard
     /// on success, or `None` if admission is already closed.
-    pub fn try_begin_exclusive(&mut self, label: &str) -> Option<(String, WriterGuard)> {
+    pub fn try_begin_exclusive(&mut self, label: &str) -> Option<(String, WriterGuard<'_>)> {
         if self.is_closed() {
             return None;
         }
@@ -713,7 +714,6 @@ use crate::ipc::{
     WorkbenchSurfaceCreateRequest, WorkbenchSurfaceRectRequest,
 };
 use crate::state::AppState;
-use std::time::SystemTime;
 
 /// Create a new workbench surface.
 #[tauri::command]
@@ -797,7 +797,7 @@ pub async fn navigate_workbench_surface(
     state: tauri::State<'_, AppState>,
     request: WorkbenchNavigationRequest,
 ) -> TauriResult<WorkbenchSurfaceResult> {
-    let mut workbench = state.workbench().await;
+    let workbench = state.workbench().await;
     let record = match workbench.get_surface(&request.surface_id) {
         Some(r) => r.clone(),
         None => {

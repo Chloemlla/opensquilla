@@ -15,8 +15,9 @@ use std::io::{self, IsTerminal};
 // ---------------------------------------------------------------------------
 
 /// Terminal color codes for ANSI-aware output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Color {
+    #[default]
     Default,
     Black,
     Red,
@@ -33,12 +34,6 @@ pub enum Color {
     BrightMagenta,
     BrightCyan,
     White,
-}
-
-impl Default for Color {
-    fn default() -> Self {
-        Color::Default
-    }
 }
 
 impl Color {
@@ -559,14 +554,14 @@ impl Table {
         if self.border == TableBorder::Markdown || self.border == TableBorder::Box {
             out.push_str(sep.trim_start());
         }
-        for i in 0..self.columns.len() {
+        for (i, w) in widths.iter().enumerate().take(self.columns.len()) {
             if i > 0 {
                 out.push_str(sep);
             }
             let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
-            let truncated = truncate(cell, widths[i]);
+            let truncated = truncate(cell, *w);
             let col = &self.columns[i];
-            let padded = pad(&truncated, widths[i], col.alignment);
+            let padded = pad(&truncated, *w, col.alignment);
             out.push_str(&format!("{}", StyledString::new(padded, col.style)));
         }
         if self.border == TableBorder::Markdown || self.border == TableBorder::Box {
@@ -721,7 +716,7 @@ pub fn section(title: &str) {
 
 /// Print a message inside a simple panel.
 pub fn panel(title: &str, body: &str) {
-    let width = terminal_width().min(80).max(40);
+    let width = terminal_width().clamp(40, 80);
     let inner = width.saturating_sub(4);
     println!("┌{}┐", "─".repeat(width - 2));
     if !title.is_empty() {

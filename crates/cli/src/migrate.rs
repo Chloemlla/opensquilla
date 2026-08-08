@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::rpc;
 use crate::table::{self, Color, KeyValue, Style};
@@ -319,7 +319,7 @@ pub async fn migrate_opensquilla(
     // to a Rust crate. Until then, report the planned action.
     let source_path = source
         .map(PathBuf::from)
-        .unwrap_or_else(|| default_opensquilla_home());
+        .unwrap_or_else(default_opensquilla_home);
     let mode = if apply { "apply" } else { "dry-run" };
 
     let report = serde_json::json!({
@@ -848,7 +848,7 @@ fn is_valid_openclaw_home(path: &PathBuf) -> bool {
 }
 
 /// Load the first existing OpenClaw raw config as JSON (null if none).
-fn load_openclaw_config(source: &PathBuf) -> Value {
+fn load_openclaw_config(source: &Path) -> Value {
     for name in OPENCLAW_RAW_CONFIG_FILENAMES {
         if let Ok(contents) = fs::read_to_string(source.join(name)) {
             if let Ok(value) = serde_json::from_str::<Value>(&contents) {
@@ -860,7 +860,7 @@ fn load_openclaw_config(source: &PathBuf) -> Value {
 }
 
 /// Resolve the OpenClaw workspace directory (configured path, else `<source>/workspace`).
-fn openclaw_workspace(source: &PathBuf, config: &Value) -> PathBuf {
+fn openclaw_workspace(source: &Path, config: &Value) -> PathBuf {
     for pointer in ["/projects/workspace", "/workspace"] {
         if let Some(Value::String(p)) = config.pointer(pointer) {
             if !p.is_empty() {
@@ -875,7 +875,7 @@ fn openclaw_workspace(source: &PathBuf, config: &Value) -> PathBuf {
 fn migrate_workspace_file(
     items: &mut Vec<MigrationItem>,
     apply: bool,
-    workspace_src: &PathBuf,
+    workspace_src: &Path,
     workspace_dst: &PathBuf,
     filename: &str,
     kind: &str,
@@ -956,7 +956,7 @@ fn migrate_provider_keys(
     items: &mut Vec<MigrationItem>,
     apply: bool,
     migrate_secrets: bool,
-    source: &PathBuf,
+    source: &Path,
     home: &PathBuf,
     config: &Value,
 ) {
@@ -1109,13 +1109,13 @@ fn is_valid_hermes_profile_name(name: &str) -> bool {
 
 /// True when `path` looks like a Hermes home (config.yaml / .env / SOUL.md /
 /// memories / skills).
-fn is_valid_hermes_home(path: &PathBuf) -> bool {
+fn is_valid_hermes_home(path: &Path) -> bool {
     let markers = ["config.yaml", ".env", "SOUL.md", "memories", "skills"];
     markers.iter().any(|name| path.join(name).exists())
 }
 
 /// Load a Hermes `config.yaml` as JSON (null if absent or unparsable).
-fn load_hermes_config(source: &PathBuf) -> Value {
+fn load_hermes_config(source: &Path) -> Value {
     match fs::read_to_string(source.join("config.yaml")) {
         Ok(contents) => serde_yaml::from_str::<Value>(&contents).unwrap_or(Value::Null),
         Err(_) => Value::Null,
@@ -1125,8 +1125,8 @@ fn load_hermes_config(source: &PathBuf) -> Value {
 /// Emit the final migration report (JSON or human-readable table).
 fn finish_migration(
     kind: &str,
-    source: &PathBuf,
-    home: &PathBuf,
+    source: &Path,
+    home: &Path,
     config_path: Option<PathBuf>,
     apply: bool,
     migrate_secrets: bool,

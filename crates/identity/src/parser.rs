@@ -1,5 +1,5 @@
 /// A parsed terminal command line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ParsedCommand {
     /// The raw input line.
     pub raw: String,
@@ -35,16 +35,5 @@ impl ParsedCommand {
     /// Whether this command is empty (blank line).
     pub fn is_empty(&self) -> bool {
         self.command.is_empty()
-    }
-}
-
-impl Default for ParsedCommand {
-    fn default() -> Self {
-        Self {
-            raw: String::new(),
-            command: String::new(),
-            args: Vec::new(),
-            is_slash: false,
-        }
     }
 }

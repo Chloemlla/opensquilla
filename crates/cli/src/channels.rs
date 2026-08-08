@@ -26,8 +26,8 @@ pub async fn list_channels() -> Result<()> {
     println!("Channels:");
     println!("{:-<70}", "");
     println!(
-        "{:<20} {:<18} {:<10} {}",
-        "Name", "Type", "Enabled", "Runtime"
+        "{:<20} {:<18} {:<10} Runtime",
+        "Name", "Type", "Enabled"
     );
     println!("{:-<70}", "");
     for cfg in &config.channels {

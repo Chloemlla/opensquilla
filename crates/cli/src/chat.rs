@@ -336,11 +336,8 @@ async fn interactive_loop(
     println!("Using provider: {}, model: {}", provider_name, model_name);
     println!();
 
-    loop {
-        let input = match rl.readline(&format!("[{}] >> ", active_session.name)) {
-            Ok(line) => line,
-            Err(_) => break,
-        };
+    while let Ok(line) = rl.readline(&format!("[{}] >> ", active_session.name)) {
+        let input = line;
         rl.add_history_entry(&input).ok();
         let trimmed = input.trim();
         if trimmed.is_empty() {
