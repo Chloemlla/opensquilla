@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(outcome.kind, TurnOutcomeKind::Completed);
         assert_eq!(outcome.reason, "done");
         assert_eq!(outcome.error_class, None);
-        assert_eq!(outcome.retryable, false);
+        assert!(!outcome.retryable);
     }
 
     #[test]

@@ -455,6 +455,20 @@ impl PipelineStep for SkillsFilterStep {
     }
 }
 
+impl SkillSpec {
+    /// Builder: add a required tool.
+    pub fn with_requires(mut self, tools: impl Into<Vec<String>>) -> Self {
+        self.requires_tools = tools.into();
+        self
+    }
+
+    /// Builder: mark as a meta skill.
+    pub fn meta(mut self) -> Self {
+        self.kind = "meta".to_string();
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,16 +515,3 @@ mod tests {
     }
 }
 
-impl SkillSpec {
-    /// Builder: add a required tool.
-    pub fn with_requires(mut self, tools: impl Into<Vec<String>>) -> Self {
-        self.requires_tools = tools.into();
-        self
-    }
-
-    /// Builder: mark as a meta skill.
-    pub fn meta(mut self) -> Self {
-        self.kind = "meta".to_string();
-        self
-    }
-}

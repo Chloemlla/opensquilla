@@ -1033,8 +1033,10 @@ mod tests {
     #[test]
     fn test_cache_drop_attributed_to_changed_fields() {
         let mut monitor = CacheBreakMonitor::new(2000, 0.05);
-        let mut cache_control = CacheControlSnapshot::default();
-        cache_control.system = "system-v1".to_string();
+        let mut cache_control = CacheControlSnapshot {
+            system: "system-v1".to_string(),
+            ..Default::default()
+        };
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
         let first = monitor.record_prompt_state(&messages, Some(&[]), &cache_control, "model-a");
         monitor.check_response_for_cache_break("sess", first, 10_000);
@@ -1055,8 +1057,10 @@ mod tests {
     #[test]
     fn test_drop_below_threshold_not_detected() {
         let mut monitor = CacheBreakMonitor::new(2000, 0.05);
-        let mut cache_control = CacheControlSnapshot::default();
-        cache_control.system = "v1".to_string();
+        let mut cache_control = CacheControlSnapshot {
+            system: "v1".to_string(),
+            ..Default::default()
+        };
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
         let first = monitor.record_prompt_state(&messages, Some(&[]), &cache_control, "m");
         monitor.check_response_for_cache_break("s", first, 10_000);
@@ -1070,8 +1074,10 @@ mod tests {
     #[test]
     fn test_compaction_resets_baseline() {
         let mut monitor = CacheBreakMonitor::new(2000, 0.05);
-        let mut cache_control = CacheControlSnapshot::default();
-        cache_control.system = "v1".to_string();
+        let cache_control = CacheControlSnapshot {
+            system: "v1".to_string(),
+            ..Default::default()
+        };
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
         let first = monitor.record_prompt_state(&messages, Some(&[]), &cache_control, "m");
         monitor.check_response_for_cache_break("s", first, 10_000);
@@ -1119,8 +1125,10 @@ mod tests {
     #[test]
     fn test_to_log_dict() {
         let mut monitor = CacheBreakMonitor::new(2000, 0.05);
-        let mut cache_control = CacheControlSnapshot::default();
-        cache_control.system = "v1".to_string();
+        let mut cache_control = CacheControlSnapshot {
+            system: "v1".to_string(),
+            ..Default::default()
+        };
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
         let first = monitor.record_prompt_state(&messages, Some(&[]), &cache_control, "m");
         monitor.check_response_for_cache_break("s", first, 10_000);
@@ -1217,8 +1225,10 @@ mod tests {
     fn test_notify_compaction_completed_resets_default_monitor() {
         let session = "sess_default_monitor";
         // Establish a baseline through the default monitor helpers.
-        let mut cache_control = CacheControlSnapshot::default();
-        cache_control.system = "v1".to_string();
+        let mut cache_control = CacheControlSnapshot {
+            system: "v1".to_string(),
+            ..Default::default()
+        };
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
         let first = record_prompt_state(&messages, Some(&[]), &cache_control, "m");
         check_response_for_cache_break(session, first, 10_000);

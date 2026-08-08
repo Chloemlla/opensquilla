@@ -257,23 +257,25 @@ mod tests {
 
     #[test]
     fn mark_lost_and_latest_recoverable() {
-        let mut ctx = ToolContext::default();
-        ctx.source_diff_candidates = vec![
-            json!({
-                "candidate_id": "srcdiff-1",
-                "paths": ["src/a.rs"],
-                "patch": "diff --git a/src/a.rs b/src/a.rs",
-                "lost": false,
-                "restored": false,
-            }),
-            json!({
-                "candidate_id": "srcdiff-2",
-                "paths": ["src/b.rs"],
-                "patch": "diff --git a/src/b.rs b/src/b.rs",
-                "lost": false,
-                "restored": false,
-            }),
-        ];
+        let mut ctx = ToolContext {
+            source_diff_candidates: vec![
+                json!({
+                    "candidate_id": "srcdiff-1",
+                    "paths": ["src/a.rs"],
+                    "patch": "diff --git a/src/a.rs b/src/a.rs",
+                    "lost": false,
+                    "restored": false,
+                }),
+                json!({
+                    "candidate_id": "srcdiff-2",
+                    "paths": ["src/b.rs"],
+                    "patch": "diff --git a/src/b.rs b/src/b.rs",
+                    "lost": false,
+                    "restored": false,
+                }),
+            ],
+            ..Default::default()
+        };
         let marked = mark_source_diff_candidates_lost(
             &mut ctx,
             &["src/a.rs"],

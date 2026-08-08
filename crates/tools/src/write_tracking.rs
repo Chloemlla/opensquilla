@@ -741,7 +741,7 @@ mod tests {
         assert_eq!(parsed.get("src/a.rs").map(|s| s.as_str()), Some(" M"));
         assert_eq!(parsed.get("new_file.py").map(|s| s.as_str()), Some("??"));
         assert_eq!(parsed.get("new.rs").map(|s| s.as_str()), Some("R "));
-        assert!(parsed.get("old.rs").is_none());
+        assert!(!parsed.contains_key("old.rs"));
     }
 
     #[test]

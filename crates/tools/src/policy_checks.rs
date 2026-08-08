@@ -492,7 +492,7 @@ mod tests {
         let input = DispatchPolicyInput {
             tool_name: "admin_tool",
             ctx: Some(&ctx),
-            spec: spec,
+            spec,
             channel_kind: None,
             source_kind: None,
         };

@@ -136,7 +136,7 @@ mod tests {
         assert!(is_foreign_host_path("/Users/me/file.txt", "nt"));
         assert!(is_foreign_host_path("/home/me/file.txt", "nt"));
         assert!(is_foreign_host_path("/etc/hosts", "nt"));
-        assert!(is_foreign_host_path("\\\\server\\share", "nt") == false);
+        assert!(!is_foreign_host_path("\\\\server\\share", "nt"));
         assert!(!is_foreign_host_path("C:/Users/me/file.txt", "nt"));
         assert!(!is_foreign_host_path("relative/path.txt", "nt"));
         assert!(!is_foreign_host_path("/workspace/file.txt", "nt"));

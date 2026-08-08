@@ -1420,7 +1420,7 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_str(&result.content).unwrap();
         assert_eq!(payload["status"], "error");
         assert_eq!(payload["tool"], "fail_tool");
-        assert!(payload["error_class"].as_str().unwrap().len() > 0);
+        assert!(!payload["error_class"].as_str().unwrap().is_empty());
 
         // Without the flag the legacy Err path is preserved.
         let call = ToolCall::new("2", "fail_tool", json!({"text": "x"}));

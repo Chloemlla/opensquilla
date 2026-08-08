@@ -584,7 +584,7 @@ mod tests {
             (is_tool_context_active(), current_tool_context())
         })
         .await;
-        assert_eq!(result.0, false);
+        assert!(!result.0);
         assert!(result.1.is_none());
     }
 

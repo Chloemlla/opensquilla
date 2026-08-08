@@ -700,13 +700,17 @@ mod tests {
     #[test]
     fn test_progress_resets_tool_error_count() {
         let mut watchdog = ProgressWatchdog::new(3, 2, 3, 8, 12, 8, 8, 3, true);
-        let mut observation = ProgressObservation::default();
-        observation.tool_error_signature = Some("boom".to_string());
+        let observation = ProgressObservation {
+            tool_error_signature: Some("boom".to_string()),
+            ..Default::default()
+        };
         // Two failures, then progress.
         watchdog.observe(&observation);
         watchdog.observe(&observation);
-        let mut progressing = ProgressObservation::default();
-        progressing.successful_tool_result = true;
+        let progressing = ProgressObservation {
+            successful_tool_result: true,
+            ..Default::default()
+        };
         let decision = watchdog.observe(&progressing);
         assert_eq!(decision.reason, "progress");
         assert_eq!(decision.action, ProgressAction::Observe);
@@ -718,8 +722,10 @@ mod tests {
     #[test]
     fn test_repeated_tool_error_fires_at_threshold() {
         let mut watchdog = ProgressWatchdog::default();
-        let mut observation = ProgressObservation::default();
-        observation.tool_error_signature = Some("boom".to_string());
+        let observation = ProgressObservation {
+            tool_error_signature: Some("boom".to_string()),
+            ..Default::default()
+        };
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
@@ -731,8 +737,10 @@ mod tests {
     #[test]
     fn test_block_mode_when_not_observe_only() {
         let mut watchdog = ProgressWatchdog::new(3, 2, 3, 8, 12, 8, 8, 3, false);
-        let mut observation = ProgressObservation::default();
-        observation.tool_error_signature = Some("boom".to_string());
+        let observation = ProgressObservation {
+            tool_error_signature: Some("boom".to_string()),
+            ..Default::default()
+        };
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
@@ -742,8 +750,10 @@ mod tests {
     #[test]
     fn test_repeated_provider_failure_fires() {
         let mut watchdog = ProgressWatchdog::default();
-        let mut observation = ProgressObservation::default();
-        observation.provider_failure_signature = Some("429".to_string());
+        let observation = ProgressObservation {
+            provider_failure_signature: Some("429".to_string()),
+            ..Default::default()
+        };
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
         assert_eq!(decision.reason, "repeated_provider_failure");
@@ -752,9 +762,11 @@ mod tests {
     #[test]
     fn test_source_context_without_write() {
         let mut watchdog = ProgressWatchdog::new(3, 2, 3, 3, 12, 8, 8, 3, true);
-        let mut observation = ProgressObservation::default();
-        observation.successful_source_context_tool_result = true;
-        observation.source_context_signature = Some("grep.rs".to_string());
+        let observation = ProgressObservation {
+            successful_source_context_tool_result: true,
+            source_context_signature: Some("grep.rs".to_string()),
+            ..Default::default()
+        };
         for _ in 0..2 {
             watchdog.observe(&observation);
         }
@@ -765,9 +777,11 @@ mod tests {
     #[test]
     fn test_workspace_write_resets_source_context_count() {
         let mut watchdog = ProgressWatchdog::new(3, 2, 3, 3, 12, 8, 8, 3, true);
-        let mut observation = ProgressObservation::default();
-        observation.successful_source_context_tool_result = true;
-        observation.source_context_signature = Some("grep.rs".to_string());
+        let mut observation = ProgressObservation {
+            successful_source_context_tool_result: true,
+            source_context_signature: Some("grep.rs".to_string()),
+            ..Default::default()
+        };
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         observation.workspace_write_count = 1;
@@ -788,8 +802,10 @@ mod tests {
     #[test]
     fn test_repeated_failure_anchor() {
         let mut watchdog = ProgressWatchdog::new(3, 2, 3, 8, 12, 8, 8, 3, true);
-        let mut observation = ProgressObservation::default();
-        observation.failure_anchor_signature = Some("anchor-x".to_string());
+        let observation = ProgressObservation {
+            failure_anchor_signature: Some("anchor-x".to_string()),
+            ..Default::default()
+        };
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
@@ -803,11 +819,13 @@ mod tests {
     #[test]
     fn test_verified_post_write_activity() {
         let mut watchdog = ProgressWatchdog::new(3, 2, 3, 8, 12, 8, 8, 3, true);
-        let mut observation = ProgressObservation::default();
-        observation.workspace_write_count = 2;
-        observation.post_write_focused_verification_observed = true;
-        observation.successful_tool_result = true;
-        observation.successful_execution_tool_result = true;
+        let observation = ProgressObservation {
+            workspace_write_count: 2,
+            post_write_focused_verification_observed: true,
+            successful_tool_result: true,
+            successful_execution_tool_result: true,
+            ..Default::default()
+        };
         watchdog.observe(&observation);
         watchdog.observe(&observation);
         let decision = watchdog.observe(&observation);
@@ -819,10 +837,12 @@ mod tests {
 
     #[test]
     fn test_workspace_progress_count_uses_receipts_when_present() {
-        let mut observation = ProgressObservation::default();
-        observation.changed_receipt_count = 4;
-        observation.noop_receipt_count = 1;
-        observation.workspace_write_count = 0;
+        let mut observation = ProgressObservation {
+            changed_receipt_count: 4,
+            noop_receipt_count: 1,
+            workspace_write_count: 0,
+            ..Default::default()
+        };
         assert_eq!(workspace_progress_count(&observation), 4);
 
         // Receipts exist, so the write count does not override the receipts.

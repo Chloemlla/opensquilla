@@ -527,7 +527,7 @@ mod tests {
             tool_calls: None,
             tool_result: None,
         };
-        let text = stage.collect_text(&[msg.clone()]);
+        let text = stage.collect_text(std::slice::from_ref(&msg));
         assert_eq!(text, vec!["answer".to_string()]);
         let reasoning = extract_reasoning_from_messages(&[msg]);
         assert_eq!(reasoning, vec!["thinking".to_string()]);

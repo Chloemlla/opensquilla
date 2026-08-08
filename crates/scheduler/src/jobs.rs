@@ -254,9 +254,9 @@ mod tests {
     #[test]
     fn test_backoff() {
         let d = compute_backoff(0, 10);
-        assert!(d >= 10 && d <= 15);
+        assert!((10..=15).contains(&d));
         let d = compute_backoff(1, 10);
-        assert!(d >= 20 && d <= 25);
+        assert!((20..=25).contains(&d));
         let d = compute_backoff(10, 10);
         assert!(d <= 3605);
     }

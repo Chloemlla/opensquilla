@@ -1572,9 +1572,10 @@ mod tests {
     }
 
     fn config_with_system() -> TurnRunnerConfig {
-        let mut config = TurnRunnerConfig::default();
-        config.default_system_prompt = "You are a test agent.".to_string();
-        config
+        TurnRunnerConfig {
+            default_system_prompt: "You are a test agent.".to_string(),
+            ..Default::default()
+        }
     }
 
     #[tokio::test]
@@ -1703,7 +1704,7 @@ mod tests {
         assert_eq!(plan.tier, "c1");
         assert_eq!(plan.model, "deepseek-chat");
         assert_eq!(plan.plan_id, "t1");
-        assert_eq!(plan.routing_applied, true);
+        assert!(plan.routing_applied);
     }
 
     #[test]
@@ -1766,9 +1767,11 @@ mod tests {
 
     #[test]
     fn test_turn_loop_guards_config_build() {
-        let mut config = TurnRunnerConfig::default();
-        config.progress_watchdog_mode = "log".to_string();
-        config.post_write_convergence_enabled = true;
+        let config = TurnRunnerConfig {
+            progress_watchdog_mode: "log".to_string(),
+            post_write_convergence_enabled: true,
+            ..Default::default()
+        };
         let guards = TurnLoopGuardsConfig::from_turn_config(&config).build();
         assert!(guards.progress_watchdog.is_some());
         assert!(guards.post_write_convergence.is_some());
