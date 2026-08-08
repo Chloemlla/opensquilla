@@ -674,7 +674,7 @@ mod crash_expansion_tests {
         assert!(fixes.iter().any(|f| f.contains("tool_call_id")));
         // The tool message now carries a synthesized id.
         let tool = session.messages.iter().find(|m| m.role == "tool").unwrap();
-        assert!(tool.metadata.get("tool_call_id").is_some());
+        assert!(tool.metadata.contains_key("tool_call_id"));
     }
 
     #[tokio::test]
