@@ -1246,17 +1246,6 @@ impl Channel for SlackChannel {
 mod tests {
     use super::*;
 
-    fn channel() -> SlackChannel {
-        SlackChannel::new(ChannelConfig {
-            channel_type: ChannelType::Slack,
-            channel_id: "C123".to_string(),
-            name: "test".to_string(),
-            enabled: true,
-            config: json!({ "bot_token": "xoxb-test" }),
-        })
-        .unwrap()
-    }
-
     #[test]
     fn test_mrkdwn_bold_and_links() {
         assert_eq!(to_mrkdwn("**bold** here"), "*bold* here");
@@ -1313,9 +1302,11 @@ mod tests {
 
     #[test]
     fn test_expired_token_rejected() {
-        let mut tokens = SlackOAuthTokens::default();
-        tokens.bot_token = Some("xoxb".to_string());
-        tokens.expires_at = Some(Utc::now() - chrono::Duration::seconds(10));
+        let tokens = SlackOAuthTokens {
+            bot_token: Some("xoxb".to_string()),
+            expires_at: Some(Utc::now() - chrono::Duration::seconds(10)),
+            ..Default::default()
+        };
         assert!(tokens.is_expired());
         let store = SlackTokenStore::new(tokens);
         let runtime = tokio::runtime::Runtime::new().unwrap();

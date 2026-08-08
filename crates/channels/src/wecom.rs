@@ -705,7 +705,7 @@ mod tests {
         let nonce = "1372623149";
         let encrypt = "9jq3f4x...";
         let sig = compute_wecom_signature(token, timestamp, nonce, encrypt);
-        let mut parts = vec![
+        let mut parts = [
             token.to_string(),
             timestamp.to_string(),
             nonce.to_string(),

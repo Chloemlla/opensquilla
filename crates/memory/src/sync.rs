@@ -672,9 +672,11 @@ mod tests {
     #[test]
     fn test_handle_ttl_expiry() {
         let store = MemoryStore::in_memory().unwrap();
-        let mut config = SyncConfig::default();
-        config.ttl_seconds = 0;
-        config.min_importance = 1.0;
+        let config = SyncConfig {
+            ttl_seconds: 0,
+            min_importance: 1.0,
+            ..Default::default()
+        };
         let manager = SyncManager::new(store.clone()).with_config(config);
         let agent = uuid::Uuid::new_v4();
         let entry = crate::types::MemoryEntry::new(

@@ -472,7 +472,7 @@ mod tests {
         let json = serde_json::to_value(&settings).unwrap();
         let back: SandboxSettings = serde_json::from_value(json).unwrap();
         assert_eq!(back.permissions_default_mode, None);
-        assert_eq!(back.sandbox, true);
+        assert!(back.sandbox);
 
         let settings = SandboxSettings {
             permissions_default_mode: Some("bypass".to_string()),

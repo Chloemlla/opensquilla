@@ -1229,7 +1229,7 @@ mod tests {
         let encrypt = "9jq3f...";
         let signature = {
             use sha1::Digest;
-            let mut parts = vec![
+            let mut parts = [
                 token.to_string(),
                 timestamp.to_string(),
                 nonce.to_string(),

@@ -1034,17 +1034,6 @@ impl Channel for DiscordChannel {
 mod tests {
     use super::*;
 
-    fn channel() -> DiscordChannel {
-        DiscordChannel::new(ChannelConfig {
-            channel_type: ChannelType::Discord,
-            channel_id: "guild".to_string(),
-            name: "test".to_string(),
-            enabled: true,
-            config: json!({ "bot_token": "token" }),
-        })
-        .unwrap()
-    }
-
     #[test]
     fn test_default_intents() {
         let i = DiscordChannel::default_intents();

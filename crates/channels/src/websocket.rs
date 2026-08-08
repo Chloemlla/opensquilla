@@ -444,18 +444,6 @@ impl Channel for WebSocketChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    fn channel() -> WebSocketChannel {
-        WebSocketChannel::new(ChannelConfig {
-            channel_type: ChannelType::WebSocket,
-            channel_id: "ws1".to_string(),
-            name: "test".to_string(),
-            enabled: true,
-            config: json!({}),
-        })
-        .unwrap()
-    }
 
     #[test]
     fn test_parse_plain_text() {

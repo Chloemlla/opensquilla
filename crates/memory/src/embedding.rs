@@ -571,13 +571,17 @@ mod tests {
 
     #[test]
     fn test_build_provider_selects() {
-        let mut c = EmbeddingConfig::default();
-        c.provider = "ollama".to_string();
+        let c = EmbeddingConfig {
+            provider: "ollama".to_string(),
+            ..Default::default()
+        };
         let p = build_provider(c);
         assert_eq!(p.name(), "ollama");
 
-        let mut c = EmbeddingConfig::default();
-        c.provider = "onnx".to_string();
+        let c = EmbeddingConfig {
+            provider: "onnx".to_string(),
+            ..Default::default()
+        };
         let p = build_provider(c);
         assert_eq!(p.name(), "onnx");
     }

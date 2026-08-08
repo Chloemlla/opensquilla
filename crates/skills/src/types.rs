@@ -1556,8 +1556,10 @@ mod tests {
     #[test]
     fn requires_is_empty() {
         assert!(SkillRequires::default().is_empty());
-        let mut r = SkillRequires::default();
-        r.os = Some(vec!["linux".to_string()]);
+        let r = SkillRequires {
+            os: Some(vec!["linux".to_string()]),
+            ..Default::default()
+        };
         assert!(!r.is_empty());
     }
 
@@ -1588,7 +1590,7 @@ steps:
         assert_eq!(manifest.kind, Some(SkillKind::Meta));
         assert_eq!(manifest.steps.len(), 2);
         assert_eq!(manifest.steps[1].step_type, StepType::ToolCall);
-        assert_eq!(manifest.metadata.as_ref().unwrap().always, true);
+        assert!(manifest.metadata.as_ref().unwrap().always);
     }
 
     #[test]

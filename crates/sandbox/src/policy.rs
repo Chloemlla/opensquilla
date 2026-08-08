@@ -1203,8 +1203,10 @@ mod tests {
 
     #[test]
     fn effective_timeout_falls_back_to_cpu() {
-        let mut l = ResourceLimits::default();
-        l.wall_time_secs = None;
+        let l = ResourceLimits {
+            wall_time_secs: None,
+            ..Default::default()
+        };
         assert_eq!(l.effective_timeout_secs(), l.cpu_time_secs.unwrap());
     }
 

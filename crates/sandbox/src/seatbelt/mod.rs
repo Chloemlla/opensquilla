@@ -301,16 +301,20 @@ mod tests {
 
     #[test]
     fn network_none_denies() {
-        let mut policy = SandboxPolicy::default();
-        policy.network = NetworkPolicy::None;
+        let policy = SandboxPolicy {
+            network: NetworkPolicy::None,
+            ..Default::default()
+        };
         let profile = SeatbeltProfile::from_policy(&policy);
         assert!(profile.source.contains("(deny network*)"));
     }
 
     #[test]
     fn allowlist_emits_remote_name() {
-        let mut policy = SandboxPolicy::default();
-        policy.network = NetworkPolicy::ProxyAllowlist(vec!["example.com".to_string()]);
+        let policy = SandboxPolicy {
+            network: NetworkPolicy::ProxyAllowlist(vec!["example.com".to_string()]),
+            ..Default::default()
+        };
         let profile = SeatbeltProfile::from_policy(&policy);
         assert!(profile.source.contains("remote name \"example.com\""));
     }
