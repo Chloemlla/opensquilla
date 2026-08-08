@@ -934,7 +934,7 @@ pub fn reconcile_controller_with_final_tier(
 
     let (thinking_mode, prompt_policy) = match (thinking_mode, prompt_policy) {
         (Some(tm), Some(pp)) => {
-            let (tm, pp) = normalize_decisions(&tm, &pp);
+            let (tm, pp) = crate::squilla_controller::normalize_decisions(&tm, &pp);
             (Some(tm), Some(pp))
         }
         other => other,
@@ -957,15 +957,6 @@ pub fn reconcile_controller_with_final_tier(
     }
 
     (thinking_mode, prompt_policy)
-}
-
-/// Constraint pass over thinking mode / prompt policy, mirroring the
-/// squilla-router controller's `normalize_decisions`.
-fn normalize_decisions(thinking_mode: &str, prompt_policy: &str) -> (String, String) {
-    match thinking_mode {
-        "T0" => (thinking_mode.to_string(), "P0".to_string()),
-        _ => (thinking_mode.to_string(), prompt_policy.to_string()),
-    }
 }
 
 /// The minimum tier a turn with this much material context may run on.

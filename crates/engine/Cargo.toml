@@ -32,8 +32,13 @@ regex.workspace = true
 sha2.workspace = true
 hex.workspace = true
 
+# Local BGE ONNX model-routing inference (feature-gated; default off).
+ort = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
+
 [features]
 default = []
+onnx = ["dep:ort", "dep:tokenizers"]
 # Enable the LLM provider abstraction for sub-agent provider cloning.
 provider = ["dep:opensquilla-provider"]
 # Enable integration with the built-in tool system.

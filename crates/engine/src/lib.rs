@@ -103,6 +103,19 @@ pub mod cache_break_monitor;
 /// Immutable logical routing plan and execution-leg telemetry (`engine/route_plan.py`).
 pub mod route_plan;
 
+/// Squilla router self-learning: feedback capture and dataset export
+/// (`squilla_router/self_learning/feedback.py` + `store.py`).
+pub mod squilla_feedback;
+
+/// Squilla router post-processing controllers: thinking mode / prompt policy
+/// derivation, prompt hints, and decision normalization
+/// (`squilla_router/controller.py`).
+pub mod squilla_controller;
+
+/// Squilla Phase 3 BGE ONNX model-routing inference (portable subset +
+/// feature-gated ONNX session wrapper).
+pub mod squilla_inference;
+
 pub use agent::{
     Agent, AgentBuilder, AgentConfig, AgentError, AgentRegistry, AgentSnapshot, AgentState,
     BackgroundProcess, BackgroundProcessManager, CommandResult, ErrorCategory, ErrorClassification,
@@ -189,4 +202,17 @@ pub use recovery::{
     ReplayCheckpoint, ReplayDecision, ReplayOutcome, StateReconstructor, TransactionOutcome,
     TransactionStatus, TransactionalUpdate, TurnReplay,
     transactional::{TransactionJournal, TransactionJournalEntry},
+};
+
+// Squilla router self-learning feedback capture and dataset export.
+pub use squilla_feedback::{FeedbackEntry, FeedbackRow, FeedbackStats, RouterTrainSample};
+
+// Squilla router post-processing controllers (pure functions).
+pub use squilla_controller::{
+    COMPRESS_BLOCK_FLAGS, DEEP_FLAGS, DIFFICULTY_WEIGHTS, FULL_PROMPT_FLAGS, P0_HINT_EN, P0_HINT_ZH,
+    SYNTHETIC_PEAK, TIER_ORDER, FlagLookup, PromptHint, compute_difficulty, compute_margin,
+    derive_prompt_policy, derive_prompt_policy_with, derive_thinking_mode,
+    derive_thinking_mode_with, get_prompt_hint, has_any_flag, normalize_decisions,
+    prompt_hint_for, prompt_hint_locale, select_localized_prompt_hint, synthetic_one_hot,
+    synthetic_one_hot_with_peak, thinking_mode_to_level,
 };
