@@ -534,7 +534,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        let ids = seed_messages(&mgr, &parent.id, 5);
+        let ids = seed_messages(mgr, &parent.id, 5);
 
         let child = brancher
             .branch_from(&parent.id, &ids[2], &BranchConfig::default())
@@ -558,7 +558,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        seed_messages(&mgr, &parent.id, 3);
+        seed_messages(mgr, &parent.id, 3);
 
         let child = brancher
             .branch_from_start(&parent.id, &BranchConfig::default())
@@ -579,7 +579,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        seed_messages(&mgr, &parent.id, 4);
+        seed_messages(mgr, &parent.id, 4);
 
         let child = brancher
             .branch_from_latest(&parent.id, &BranchConfig::default())
@@ -600,7 +600,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        let ids = seed_messages(&mgr, &parent.id, 3);
+        let ids = seed_messages(mgr, &parent.id, 3);
 
         let child = brancher
             .branch_from(&parent.id, &ids[1], &BranchConfig::default())
@@ -632,7 +632,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        let ids = seed_messages(&mgr, &parent.id, 2);
+        let ids = seed_messages(mgr, &parent.id, 2);
 
         let child = brancher
             .branch_from(&parent.id, &ids[1], &BranchConfig::default())
@@ -660,7 +660,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        let ids = seed_messages(&mgr, &parent.id, 2);
+        let ids = seed_messages(mgr, &parent.id, 2);
 
         let child = brancher
             .branch_from(&parent.id, &ids[1], &BranchConfig::default())
@@ -693,7 +693,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        let ids = seed_messages(&mgr, &parent.id, 2);
+        let ids = seed_messages(mgr, &parent.id, 2);
 
         let child = brancher
             .branch_from(&parent.id, &ids[1], &BranchConfig::default())
@@ -716,7 +716,7 @@ mod tests {
                     .with_mode(SessionMode::Chat),
             )
             .unwrap();
-        let ids = seed_messages(&mgr, &parent.id, 3);
+        let ids = seed_messages(mgr, &parent.id, 3);
 
         brancher
             .branch_from(&parent.id, &ids[0], &BranchConfig::default())

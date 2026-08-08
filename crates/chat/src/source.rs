@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Where a conversation/chat session came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SessionSource {
     /// Interactive terminal.
     Terminal,
@@ -12,6 +12,7 @@ pub enum SessionSource {
     /// Messaging channel (Slack, Telegram, etc.).
     Channel,
     /// Programmatic API call.
+    #[default]
     Api,
 }
 
@@ -31,11 +32,5 @@ impl SessionSource {
 impl std::fmt::Display for SessionSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
-    }
-}
-
-impl Default for SessionSource {
-    fn default() -> Self {
-        SessionSource::Api
     }
 }
