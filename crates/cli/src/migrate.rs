@@ -834,7 +834,7 @@ fn selected_options(preset: &str) -> Vec<&'static str> {
 
 /// True when `path` looks like an OpenClaw home: a raw config file or a
 /// workspace containing a marker file.
-fn is_valid_openclaw_home(path: &PathBuf) -> bool {
+fn is_valid_openclaw_home(path: &Path) -> bool {
     let has_raw_config = OPENCLAW_RAW_CONFIG_FILENAMES
         .iter()
         .any(|name| path.join(name).is_file());

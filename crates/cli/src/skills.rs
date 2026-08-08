@@ -31,10 +31,7 @@ pub async fn list_skills() -> Result<()> {
 
     println!("Installed skills ({})", skills.len());
     println!("{:-<70}", "");
-    println!(
-        "{:<28} {:<24} {:<10} Description",
-        "Name", "Layer", "Version"
-    );
+    println!("{:<28} {:<24} {:<10} Description", "Name", "Layer", "Version");
     println!("{:-<70}", "");
     for skill in &skills {
         let version = skill.version.as_deref().unwrap_or("—");

@@ -643,7 +643,9 @@ async fn run_probe(
 ) -> CalibrationResult {
     // Find a provider that supports this model.
     let provider = registry.list().iter().find_map(|name| {
-        registry.get(name).filter(|p| p.supported_models().iter().any(|m| m == model))
+        registry
+            .get(name)
+            .filter(|p| p.supported_models().iter().any(|m| m == model))
     });
 
     let Some(provider) = provider else {
