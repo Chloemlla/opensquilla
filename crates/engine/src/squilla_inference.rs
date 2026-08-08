@@ -11,10 +11,10 @@
 //! logic, which is always compiled.
 //!
 //! With the `onnx` feature disabled construction succeeds but every embed
-//! returns [`SquillaInferenceError::FeatureDisabled`]; the pure functions are
+//! returns `SquillaInferenceError::FeatureDisabled`; the pure functions are
 //! unaffected.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// The four Phase 3 route classes, in index order (R0 = easiest, R3 = hardest).
@@ -116,7 +116,7 @@ impl SquillaInference {
     }
 
     fn load_session(
-        model_dir: &PathBuf,
+        model_dir: &Path,
     ) -> Option<Arc<std::sync::Mutex<ort::session::Session>>> {
         let path = model_dir.join("model.onnx");
         if !path.exists() {
@@ -139,7 +139,7 @@ impl SquillaInference {
         }
     }
 
-    fn load_tokenizer(model_dir: &PathBuf) -> Option<Arc<tokenizers::Tokenizer>> {
+    fn load_tokenizer(model_dir: &Path) -> Option<Arc<tokenizers::Tokenizer>> {
         let path = model_dir.join("tokenizer.json");
         if !path.exists() {
             tracing::warn!("missing tokenizer at {}", path.display());
