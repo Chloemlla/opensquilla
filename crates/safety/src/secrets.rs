@@ -452,7 +452,7 @@ mod sanitizer_tests {
     fn test_detect_secrets_token() {
         let sanitizer = SecretSanitizer::new();
         let matches = sanitizer.detect_secrets("token=ghp_abcdefghijklmnopqrstuvwxyz123456789");
-        assert!(matches.len() >= 1);
+        assert!(!matches.is_empty());
         assert_eq!(matches[0].secret_type, SecretType::Token);
     }
 
