@@ -6,13 +6,14 @@
 //! construction.
 
 use axum::{Extension, Router, routing::get};
-use opensquilla_core::config::GatewayConfig;
+use opensquilla_core::config::{Config, GatewayConfig};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+use crate::agents::AgentStore;
 use crate::approvals::ApprovalsService;
 use crate::artifact_preview::PreviewCache;
 use crate::attachments::AttachmentStore;
@@ -22,18 +23,27 @@ use crate::channels::ChannelsService;
 use crate::chat::{ChatStore, register_chat_handlers};
 use crate::config::{ConfigStore, register_config_handlers};
 use crate::cron::SchedulerHandle;
+use crate::doctor::DoctorService;
 use crate::http_api::{ExtraRpcServices, HttpApiState, register_extra_rpc};
+use crate::memory::MemoryHandle;
+use crate::meta_runs::MetaRunStore;
 use crate::middleware::{
     RateLimiter, SlidingWindowRateLimiter, catch_panic_middleware, cors_layer,
     request_logging_middleware, security_headers_middleware, sliding_window_rate_limit_middleware,
     token_auth_middleware, unsafe_origin_guard_middleware,
 };
+use crate::models::ModelCatalog;
+use crate::proposals::ProposalStore;
+use crate::routing::RoutingStore;
 use crate::rpc::{RpcHandler, RpcRegistry};
+use crate::sandbox::SandboxContextStore;
 use crate::sessions::{SessionStore, register_session_handlers};
+use crate::skills::SkillsService;
 use crate::system::SystemService;
 use crate::uploads::UploadManager;
 use crate::usage::UsageStore;
 use crate::websocket::{ConnectionRegistry, SubscriptionManager, ws_handler};
+use crate::workspaces::WorkspaceStore;
 
 /// The OpenSquilla gateway server.
 ///
@@ -115,6 +125,26 @@ impl Gateway {
         crate::channels::register_channels_handlers(&mut rpc_registry, channels_service.clone());
         crate::usage::register_usage_handlers(&mut rpc_registry, usage_store.clone());
         crate::approvals::register_approvals_handlers(&mut rpc_registry, approvals_service.clone());
+
+        // Part-2 handler modules (agents, workspaces, sandbox, skills, proposals,
+        // migration, routing, meta-runs, models, doctor, memory).
+        crate::agents::register_agents_handlers(&mut rpc_registry, AgentStore::new());
+        crate::workspaces::register_workspaces_handlers(&mut rpc_registry, WorkspaceStore::new());
+        crate::sandbox::register_sandbox_handlers(&mut rpc_registry, SandboxContextStore::new());
+        crate::skills::register_skills_handlers(&mut rpc_registry, SkillsService::new());
+        crate::proposals::register_proposals_handlers(&mut rpc_registry, ProposalStore::new());
+        crate::migration::register_migration_handlers(&mut rpc_registry);
+        crate::routing::register_routing_handlers(&mut rpc_registry, RoutingStore::new());
+        crate::meta_runs::register_meta_runs_handlers(&mut rpc_registry, MetaRunStore::new());
+        crate::models::register_models_handlers(&mut rpc_registry, ModelCatalog::with_defaults());
+        crate::doctor::register_doctor_handlers(
+            &mut rpc_registry,
+            DoctorService::new(&Config::default()),
+        );
+        crate::memory::register_memory_handlers(
+            &mut rpc_registry,
+            MemoryHandle::in_memory().expect("failed to open in-memory memory store"),
+        );
 
         // Extra REST RPC methods (channels.status/logout/pairings, usage.status/cost,
         // exec.approvals.*, system.shutdown).
