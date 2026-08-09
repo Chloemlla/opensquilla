@@ -9,7 +9,7 @@ use crate::workbench::WorkbenchManager;
 use opensquilla_core::config::Config;
 use opensquilla_engine::AgentRuntime;
 use opensquilla_gateway::Gateway;
-use opensquilla_session::SessionStorage;
+use opensquilla_session::{SessionManager, SessionStorage};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
@@ -29,9 +29,10 @@ pub struct AppState {
     pub gateway: Arc<RwLock<Option<Arc<Gateway>>>>,
     /// The application configuration, loaded from disk at startup.
     pub config: Arc<RwLock<Config>>,
-    /// The session storage backend (SQLite). Wrapped in a Mutex because
-    /// rusqlite's `Connection` is not `Send + Sync` by default.
-    pub session_storage: Arc<Mutex<SessionStorage>>,
+    /// The SQLite-backed session manager (lifecycle, forks, compaction).
+    /// Wrapped in a Mutex because rusqlite's `Connection` is not
+    /// `Send + Sync` by default.
+    pub session_manager: Arc<Mutex<SessionManager>>,
     /// The gateway's in-memory session store used for the WebSocket RPC API.
     pub session_store: Arc<opensquilla_gateway::SessionStore>,
     /// The gateway's in-memory chat store.
@@ -50,7 +51,7 @@ impl std::fmt::Debug for AppState {
             .field("runtime", &"AgentRuntime")
             .field("gateway", &self.gateway.try_read().map(|g| g.is_some()))
             .field("config", &"Config")
-            .field("session_storage", &"SessionStorage")
+            .field("session_manager", &"SessionManager")
             .field("workbench", &"WorkbenchManager")
             .field("gateway_url", &self.gateway_url)
             .finish()
@@ -70,7 +71,7 @@ impl AppState {
             runtime,
             gateway: Arc::new(RwLock::new(None)),
             config: Arc::new(RwLock::new(config)),
-            session_storage: Arc::new(Mutex::new(session_storage)),
+            session_manager: Arc::new(Mutex::new(SessionManager::new(session_storage))),
             session_store: Arc::new(opensquilla_gateway::SessionStore::new()),
             chat_store: Arc::new(opensquilla_gateway::ChatStore::new()),
             config_store: Arc::new(opensquilla_gateway::ConfigStore::new()),
@@ -94,9 +95,9 @@ impl AppState {
         self.config.write().await
     }
 
-    /// Get the session storage lock guard.
-    pub async fn session_storage(&self) -> tokio::sync::MutexGuard<'_, SessionStorage> {
-        self.session_storage.lock().await
+    /// Get the session manager lock guard.
+    pub async fn session_manager(&self) -> tokio::sync::MutexGuard<'_, SessionManager> {
+        self.session_manager.lock().await
     }
 
     /// Check whether the gateway is currently running.

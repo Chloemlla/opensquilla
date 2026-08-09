@@ -4,127 +4,131 @@
  * The existing frontend reaches desktop-native concerns through the Electron
  * preload bridge exposed on `window` (see `src/platform/desktop.ts`)
  * and through gateway RPCs for health/locale. Under Tauri these collapse into
- * `invoke('check_health')`, `invoke('get_locale')`, etc., plus the Tauri
- * shell plugin for `open_external` / window zoom.
+ * `invoke('health_check')`, `invoke('get_locale')`, etc.
  *
- * The Rust `tauri::command` names targeted here are:
+ * The Rust `tauri::command` names targeted here are (see
+ * `src-tauri/src/agent_bridge.rs` + `src-tauri/src/commands.rs`):
  *
- *   invoke('check_health',  { })               → HealthReport
- *   invoke('get_locale',    { })               → string
- *   invoke('set_locale',    { locale })        → void
- *   invoke('check_updates', { })               → UpdateState
- *   invoke('open_external', { url })           → void
- *   invoke('pick_directory',{ initialPath? })  → { path: string } | null
- *   invoke('zoom_in' | 'zoom_out' | 'zoom_reset', { }) → void
- *
- * These mirror the P1 "桌面原生功能" surface in
- * `docs/tauri-migration-analysis.md`: window/tray/deep-link/secure-storage/
- * auto-update, exposed to WebUI via `tauri::command`.
+ *   invoke('health_check',    { })                       → HealthReport
+ *   invoke('get_locale',      { })                       → LocaleInfo
+ *   invoke('set_locale',      { input: { locale } })     → { locale, saved }
+ *   invoke('check_updates',   { })                       → UpdateInfo
+ *   invoke('install_update',  { })                       → JsonValue
+ *   invoke('open_external',   { target })                → void
+ *   invoke('pick_directory',  { initialPath? })          → string | null
+ *   invoke('zoom_in' | 'zoom_out' | 'zoom_reset', { })   → f64
  */
 
 import { invoke } from './invoke'
 
-/** Health report mirroring Rust `HealthReport` (subset of the doctor output). */
+/** One component's health status. Mirrors Rust `HealthComponent`. */
+export interface HealthComponent {
+  name: string
+  status: 'healthy' | 'degraded' | 'unhealthy' | (string & {})
+  description: string
+  latencyMs: number
+  details: Record<string, string>
+}
+
+/** A health issue found during the check. Mirrors Rust `HealthIssue`. */
+export interface HealthIssue {
+  component: string
+  severity: string
+  message: string
+  suggestion?: string | null
+}
+
+/** Health report mirroring Rust `HealthReport` (agent_bridge.rs). */
 export interface HealthReport {
   /** Overall status. */
   status: 'healthy' | 'degraded' | 'unhealthy' | (string & {})
-  /** Per-subsystem checks. */
-  checks?: Array<{
-    name: string
-    status: 'ok' | 'warn' | 'fail' | (string & {})
-    message?: string
-    detail?: unknown
-  }>
-  /** Gateway/database/provider availability. */
-  gateway?: { reachable?: boolean; latencyMs?: number }
-  database?: { reachable?: boolean; migrationsApplied?: boolean }
-  providers?: { configured?: number; reachable?: number }
+  /** Seconds the runtime has been up. */
+  uptimeSeconds: number
   /** ISO timestamp of the check. */
-  checkedAt?: string
-  checked_at?: string
+  timestamp: string
+  /** Per-subsystem component results. */
+  components: HealthComponent[]
+  /** Issues found during the check. */
+  issues: HealthIssue[]
+  /** Whether the in-process gateway is running. */
+  gatewayRunning: boolean
+  gatewayUrl?: string | null
   [key: string]: unknown
 }
 
-/** Update state mirroring Rust `UpdateState`. Reuses the desktop platform shape. */
-export interface UpdateState {
-  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error' | 'applying' | (string & {})
-  currentVersion: string
-  current_version?: string
-  latestVersion: string | null
-  latest_version?: string | null
-  progress: number | null
-  checkedAt: string | null
-  checked_at?: string | null
-  error: string | null
-  errorCode?: string | null
-  error_code?: string | null
+/** Locale info returned by `get_locale`. Mirrors Rust `LocaleInfo` (commands.rs). */
+export interface LocaleInfo {
+  /** Effective locale (override or OS-detected), e.g. `en-US`, `zh-Hans`. */
+  locale: string
+  /** OS-detected locale (BCP-47). */
+  detected: string
+  /** Whether the user has persisted a locale override. */
+  overridden: boolean
+  /** Locales bundled with the app. */
+  bundled: string[]
+}
+
+/** Update info returned by `check_updates`. Mirrors Rust `UpdateInfo`. */
+export interface UpdateInfo {
+  available: boolean
+  version?: string | null
   releaseUrl?: string | null
-  release_url?: string | null
-  canCheck?: boolean
-  can_check?: boolean
-  canNativeInstall?: boolean
-  can_native_install?: boolean
-  [key: string]: unknown
+  body?: string | null
 }
 
 /**
- * Check system health. Mirrors the `doctor` / health RPC.
- * Rust: `check_health() -> Result<HealthReport, IpcError>`.
+ * Check system health. Rust: `health_check() -> Result<HealthReport, TauriError>`.
  */
 export async function checkHealth(): Promise<HealthReport> {
-  return invoke<HealthReport>('check_health')
+  return invoke<HealthReport>('health_check', {})
 }
 
 /**
- * Get the host OS locale (BCP-47), e.g. `en-US`, `zh-CN`. Used to seed the
- * initial UI language on first run. Mirrors the Electron
- * `getOsLocale()` bridge. Rust: `get_locale() -> Result<String, IpcError>`.
+ * Get the effective locale (override or OS-detected) plus the bundled set.
+ * Rust: `get_locale() -> Result<LocaleInfo, TauriError>`.
  */
-export async function getLocale(): Promise<string> {
-  return invoke<string>('get_locale')
+export async function getLocale(): Promise<LocaleInfo> {
+  return invoke<LocaleInfo>('get_locale', {})
 }
 
 /**
- * Persist the UI locale choice. The Rust side stores it in the app config and
- * the frontend applies it reactively through vue-i18n.
- * Rust: `set_locale(locale: String) -> Result<(), IpcError>`.
+ * Persist a user locale override. Rust:
+ * `set_locale(input: SetLocaleInput) -> Result<JsonValue, TauriError>` —
+ * the input is wrapped in `{ input: { locale } }`.
  */
-export async function setLocale(locale: string): Promise<void> {
-  return invoke<void>('set_locale', { locale })
+export async function setLocale(
+  locale: string,
+): Promise<{ locale: string; saved: boolean }> {
+  return invoke<{ locale: string; saved: boolean }>('set_locale', {
+    input: { locale },
+  })
 }
 
 /**
- * Check for app updates. Mirrors the Electron `checkForUpdates()` bridge.
- * Rust: `check_updates() -> Result<UpdateState, IpcError>`.
+ * Check for app updates. Rust: `check_updates() -> Result<UpdateInfo, TauriError>`.
  */
-export async function checkUpdates(): Promise<UpdateState> {
-  return invoke<UpdateState>('check_updates')
+export async function checkUpdates(): Promise<UpdateInfo> {
+  return invoke<UpdateInfo>('check_updates', {})
 }
 
 /**
- * Download the available update, if any. Mirrors `downloadUpdate()`.
- * Rust: `download_update() -> Result<UpdateState, IpcError>`.
+ * Download and install a pending update, then restart the app. Rust:
+ * `install_update() -> Result<JsonValue, TauriError>`.
  */
-export async function downloadUpdate(): Promise<UpdateState> {
-  return invoke<UpdateState>('download_update')
+export async function installUpdate(): Promise<{
+  installed: boolean
+  reason?: string
+}> {
+  return invoke<{ installed: boolean; reason?: string }>('install_update', {})
 }
 
 /**
- * Relaunch the app to apply a downloaded update. Mirrors `relaunchToUpdate()`.
- * Rust: `relaunch_to_update() -> Result<UpdateState, IpcError>`.
+ * Open a URL or path in the user's default external application. Rust:
+ * `open_external(target: String) -> Result<(), TauriError>` — the argument
+ * key is `target`.
  */
-export async function relaunchToUpdate(): Promise<UpdateState> {
-  return invoke<UpdateState>('relaunch_to_update')
-}
-
-/**
- * Open a URL in the user's default external application (browser, mail, etc.).
- * Mirrors the Tauri shell `open` plugin, wrapped as a command so the renderer
- * doesn't depend on `@tauri-apps/plugin-shell` directly.
- * Rust: `open_external(url: String) -> Result<(), IpcError>`.
- */
-export async function openExternal(url: string): Promise<void> {
-  return invoke<void>('open_external', { url })
+export async function openExternal(target: string): Promise<void> {
+  return invoke<void>('open_external', { target })
 }
 
 /** Result of a native directory picker invocation. */
@@ -134,9 +138,8 @@ export interface DirectoryPickResult {
 
 /**
  * Open the native directory picker and return the chosen path, or `null` if
- * the user cancelled. Mirrors the Electron `chooseProjectDirectory()` bridge
- * (see `src/platform/desktop.ts`).
- * Rust: `pick_directory(initial_path: Option<String>) -> Result<Option<String>, IpcError>`.
+ * the user cancelled. Rust:
+ * `pick_directory(initial_path: Option<String>) -> Result<Option<String>, TauriError>`.
  */
 export async function pickDirectory(
   initialPath?: string,
@@ -148,25 +151,22 @@ export async function pickDirectory(
 }
 
 /**
- * Zoom the main window in by one step. Mirrors the Electron zoom hotkeys.
- * Rust: `zoom_in() -> Result<(), IpcError>`.
+ * Zoom the main window in by one step. Rust: `zoom_in() -> Result<f64, TauriError>`.
  */
-export async function zoomIn(): Promise<void> {
-  return invoke<void>('zoom_in')
+export async function zoomIn(): Promise<number> {
+  return invoke<number>('zoom_in', {})
 }
 
 /**
- * Zoom the main window out by one step.
- * Rust: `zoom_out() -> Result<(), IpcError>`.
+ * Zoom the main window out by one step. Rust: `zoom_out() -> Result<f64, TauriError>`.
  */
-export async function zoomOut(): Promise<void> {
-  return invoke<void>('zoom_out')
+export async function zoomOut(): Promise<number> {
+  return invoke<number>('zoom_out', {})
 }
 
 /**
- * Reset the main window zoom to 100%.
- * Rust: `zoom_reset() -> Result<(), IpcError>`.
+ * Reset the main window zoom to 100%. Rust: `zoom_reset() -> Result<f64, TauriError>`.
  */
-export async function zoomReset(): Promise<void> {
-  return invoke<void>('zoom_reset')
+export async function zoomReset(): Promise<number> {
+  return invoke<number>('zoom_reset', {})
 }

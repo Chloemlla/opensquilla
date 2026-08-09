@@ -41,12 +41,14 @@ pub async fn export_session(
 ) -> TauriResult<serde_json::Value> {
     let id = Uuid::parse_str(&session_id)
         .map_err(|e| TauriError::bad_request(format!("invalid session id: {e}")))?;
-    let storage = state.session_storage().await;
+    let storage = state.session_manager().await;
     let session = storage
+        .storage()
         .get_session(&id)
         .map_err(|e| TauriError::internal(e.to_string()))?
         .ok_or_else(|| TauriError::not_found(format!("session {session_id} not found")))?;
     let transcript = storage
+        .storage()
         .get_transcript_entries(&id, 10_000, 0)
         .map_err(|e| TauriError::internal(e.to_string()))?;
     Ok(serde_json::json!({
@@ -68,8 +70,9 @@ pub async fn import_session(
             .ok_or_else(|| TauriError::bad_request("missing session field"))?,
     )
     .map_err(|e| TauriError::bad_request(format!("invalid session payload: {e}")))?;
-    let storage = state.session_storage().await;
+    let storage = state.session_manager().await;
     storage
+        .storage()
         .create_session(&session)
         .map_err(|e| TauriError::internal(e.to_string()))?;
     Ok(SessionInfo {

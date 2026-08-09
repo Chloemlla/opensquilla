@@ -6,6 +6,25 @@
  * Tauri the same events are emitted from Rust via `app_handle.emit(event, payload)`
  * and consumed in JS with `listen(event, handler)` from `@tauri-apps/api/event`.
  *
+ * The Rust runtime emits these channels:
+ *
+ *   - `agent:stream:{sessionId}` — per-session turn/stream/tool events. The
+ *     payload is `MessageStreamEvent` (see `src-tauri/src/ipc.rs`), a serde
+ *     internally-tagged enum (`#[serde(tag="type", content="data")]`) whose
+ *     `type` discriminator is one of `turn_start | generation_start |
+ *     stream_event | tool_call_start | tool_call_complete | turn_complete |
+ *     turn_error | compaction`. The `stream_event` data is itself an
+ *     internally-tagged enum (`#[serde(tag="event", content="data")]`) whose
+ *     `event` discriminator is `content_block_start | content_block_delta |
+ *     content_block_stop | message_delta | message_stop | error | ping`.
+ *     Field names inside `data` are snake_case (these enums are NOT
+ *     `rename_all = "camelCase"`), while nested shared structs that are
+ *     camelCase-renamed (e.g. `UsagePayload`) keep their camelCase fields.
+ *   - `sessions:list-changed` — session list refresh (payload null).
+ *   - `gateway:status` — gateway lifecycle changes (`{ running, url?, port?, error? }`).
+ *   - `locale://changed` — locale override persisted (`{ locale }`).
+ *   - `update://state` — updater state snapshot.
+ *
  * This module provides:
  *  - {@link TauriEventListener} / {@link UnlistenFn}: transport-agnostic types.
  *  - {@link listen}: a low-level listener that talks to `window.__TAURI__.event`
@@ -14,15 +33,10 @@
  *  - {@link useTauriEvent}: a Vue composable that binds a listener to the
  *    component lifecycle and auto-cleans up on unmount, mirroring
  *    `useRpcEvent` in `src/composables/useRpc.ts`.
- *  - {@link TauriEventMap}: event-name → payload type map mirroring the Rust
- *    IPC event enums. The streaming event names (`turn-event`, `stream-event`,
- *    `tool-event`) are the three top-level Tauri event channels the Rust
- *    runtime emits; their payloads are the discriminated unions below, which
- *    subsume the granular `session.event.*` names from `RpcEventMap`.
- *
- * The payload interfaces deliberately mirror the Rust serde structs
- * (`TurnEvent`, `StreamEvent`, `ToolEvent`) documented in
- * `docs/tauri-migration-analysis.md` P1.
+ *  - {@link useTauriStreamEvents}: a Vue composable that subscribes to the
+ *    per-session `agent:stream:{sessionId}` channel and dispatches each
+ *    `MessageStreamEvent` to the turn / stream / tool handler groups by its
+ *    `type` tag.
  */
 
 import { onUnmounted } from 'vue'
@@ -50,181 +64,146 @@ export interface TauriEventGlobal {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Event payload types. These mirror the Rust IPC enums emitted by the runtime.
- * The three top-level channels consolidate the granular session.event.* names
- * used over WebSocket into broader discriminated unions, because the Rust
- * runtime groups them by transport concern (turn lifecycle / token stream /
- * tool execution). Each payload carries the original `event` discriminator so
- * the renderer can branch exactly as it did with RpcEventMap.
+ * Wire payload types. These mirror the serde enums/structs in
+ * `src-tauri/src/ipc.rs` exactly. `MessageStreamEvent` and `StreamEventPayload`
+ * are internally tagged (`type` / `event`) with `data` content; their fields
+ * are snake_case because those enums have no `rename_all`.
  * ────────────────────────────────────────────────────────────────────────── */
 
-/** Common envelope embedded in every event payload. Mirrors Rust `EventEnvelope`. */
-export interface TauriEventEnvelope {
-  /** Session key this event belongs to (snake_case mirror of Rust field). */
-  session_key?: string
-  sessionKey?: string
-  /** Epoch counter, bumped on compaction. */
-  epoch?: number
-  /** Monotonic per-stream sequence number. */
-  stream_seq?: number
-  /** Task id of the running turn. */
-  task_id?: string
-  taskId?: string
-  /** Turn id of the running turn. */
-  turn_id?: string
-  turnId?: string
+/** `ContentBlockDto` — a single content block inside a `MessageDto`. */
+export interface ContentBlockDto {
+  type: 'text' | 'tool_use' | 'tool_result' | 'reasoning' | (string & {})
+  /** text blocks */
+  text?: string
+  /** tool_use blocks */
+  id?: string
+  name?: string
+  input?: unknown
+  /** tool_result blocks */
+  tool_use_id?: string
+  content?: string
+  is_error?: boolean
+  /** reasoning blocks */
+  reasoning?: string
+}
+
+/** `MessageDto` — a message in a chat history or turn_complete payload. */
+export interface MessageDto {
+  role: string
+  content: ContentBlockDto[]
+  name?: string
+  tool_call_id?: string
+}
+
+/** `UsagePayload` — camelCase-renamed token usage. */
+export interface UsagePayload {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
+/** `StreamDeltaPayload` — internally tagged stream delta. */
+export type StreamDeltaPayload =
+  | { type: 'text_delta'; text: string }
+  | { type: 'reasoning_delta'; reasoning: string }
+  | { type: 'input_json_delta'; partial_json: string }
+
+/**
+ * `StreamEventPayload` — the inner payload carried by a `stream_event`
+ * `MessageStreamEvent`. Internally tagged with `event` and `data`.
+ */
+export type StreamEventPayload =
+  | { event: 'content_block_start'; data: { index: number; block: ContentBlockDto } }
+  | { event: 'content_block_delta'; data: { index: number; delta: StreamDeltaPayload } }
+  | { event: 'content_block_stop'; data: { index: number } }
+  | {
+      event: 'message_delta'
+      data: { stop_reason?: string | null; usage?: UsagePayload | null }
+    }
+  | { event: 'message_stop'; data: { content: ContentBlockDto[]; usage?: UsagePayload | null } }
+  | { event: 'error'; data: { message: string; code?: string | null } }
+  | { event: 'ping'; data?: null }
+
+/**
+ * `MessageStreamEvent` — the payload emitted on `agent:stream:{sessionId}`.
+ * Internally tagged with `type` and `data`.
+ */
+export type MessageStreamEvent =
+  | { type: 'turn_start'; data: { turn_id: string; session_id: string; timestamp: string } }
+  | { type: 'generation_start'; data: { model: string; provider: string } }
+  | { type: 'stream_event'; data: StreamEventPayload }
+  | {
+      type: 'tool_call_start'
+      data: { tool_call_id: string; name: string; input: unknown }
+    }
+  | {
+      type: 'tool_call_complete'
+      data: {
+        tool_call_id: string
+        name: string
+        content: string
+        is_error: boolean
+        duration_ms: number
+      }
+    }
+  | {
+      type: 'turn_complete'
+      data: {
+        turn_id: string
+        session_id: string
+        messages: MessageDto[]
+        usage: UsagePayload
+        duration_ms: number
+      }
+    }
+  | {
+      type: 'turn_error'
+      data: { turn_id: string; session_id: string; message: string; code?: string | null }
+    }
+  | { type: 'compaction'; data: { before_count: number; after_count: number; success: boolean } }
+
+/** The full channel name for a session's streaming events. */
+export function agentStreamChannel(sessionId: string): string {
+  return `agent:stream:${sessionId}`
+}
+
+/** `GatewayStatusEvent` — payload of the `gateway:status` channel. */
+export interface GatewayStatusEvent {
+  running: boolean
+  url?: string | null
+  port?: number | null
+  error?: string | null
+}
+
+/** Payload of the `locale://changed` channel. */
+export interface LocaleChangedEvent {
+  locale: string
+}
+
+/** Payload of the `update://state` channel. */
+export interface UpdateStateEvent {
+  status: string
+  available?: boolean
+  version?: string | null
+  release_url?: string | null
+  error?: string | null
+  downloading?: boolean
+  downloaded?: boolean
+  applying?: boolean
   [key: string]: unknown
 }
 
 /**
- * `turn-event` — turn-lifecycle events (state changes, compaction, heartbeat,
- * warnings, meta-skill progress, task-group transitions). Mirrors Rust
- * `TurnEvent` enum; the `event` field carries the original discriminator
- * (`session.event.state_change`, `session.event.compaction`, etc.) so the
- * renderer can reuse its existing per-event handlers.
- */
-export interface TurnEventPayload extends TauriEventEnvelope {
-  /** Original discriminator, e.g. `session.event.state_change`. */
-  event: string
-  /** Terminal/intermediate status (e.g. `running`, `completed`, `failed`). */
-  status?: string
-  /** Run status alias some gateway events use. */
-  run_status?: string
-  runStatus?: string
-  /** Human-readable reason for a terminal transition. */
-  reason?: string
-  /** Terminal message text. */
-  terminal_message?: string
-  terminalMessage?: string
-  /** Machine-readable terminal reason code. */
-  terminal_reason?: string
-  terminalReason?: string
-  /** Warning/error code. */
-  code?: string
-  /** Free-form message. */
-  message?: string
-  /** Compaction status (only for compaction events). */
-  compaction_status?: string
-  compactionStatus?: string
-  /** Active task descriptor. */
-  active_task?: unknown
-  activeTask?: unknown
-  /** Last task descriptor. */
-  last_task?: unknown
-  lastTask?: unknown
-  /** Target turn id for input disposition events. */
-  target_turn_id?: string
-  targetTurnId?: string
-  /** Client request id correlation. */
-  client_request_id?: string
-  clientRequestId?: string
-  /** Client message id correlation. */
-  client_message_id?: string
-  clientMessageId?: string
-  payload?: unknown
-}
-
-/**
- * `stream-event` — token-stream events (text deltas, reasoning, artifacts,
- * router decisions, ensemble progress). Mirrors Rust `StreamEvent` enum.
- */
-export interface StreamEventPayload extends TauriEventEnvelope {
-  /** Original discriminator, e.g. `session.event.text_delta`. */
-  event: string
-  /** Incremental text fragment (text_delta). */
-  text?: string
-  /** Gateway-owned semantic role for a text span. */
-  presentation?: 'intermediate' | 'answer'
-  /** Artifact payload (artifact events). */
-  artifact?: unknown
-  /** Router decision payload (router_decision events). */
-  router_decision?: unknown
-  routerDecision?: unknown
-  /** Ensemble progress payload (ensemble_progress events). */
-  ensemble_progress?: unknown
-  ensembleProgress?: unknown
-  /** Routed model label. */
-  model?: string
-  /** Routing tier. */
-  tier?: string
-  payload?: unknown
-}
-
-/**
- * `tool-event` — tool-call lifecycle events (start, delta, result). Mirrors
- * Rust `ToolEvent` enum.
- */
-export interface ToolEventPayload extends TauriEventEnvelope {
-  /** Original discriminator: `session.event.tool_use_start|delta|result`. */
-  event: string
-  /** Stable tool-use id. */
-  id?: string
-  tool_use_id?: string
-  toolUseId?: string
-  /** Tool name. */
-  name?: string
-  tool_name?: string
-  toolName?: string
-  /** Parsed tool input (start/result). */
-  input?: unknown
-  /** Incremental input fragment (delta). */
-  input_delta?: string
-  inputDelta?: string
-  /** Raw JSON fragment (delta). */
-  json_fragment?: string
-  jsonFragment?: string
-  /** Alias some backends use for input_delta. */
-  fragment?: string
-  /** Tool result payload (result events). */
-  result?: unknown
-  content?: unknown
-  output?: unknown
-  error?: unknown
-  is_error?: boolean
-  isError?: boolean
-  /** Server wall-clock tool start time (epoch ms). */
-  started_at?: number
-  /** Execution status object. */
-  execution_status?: { status?: string }
-  executionStatus?: { status?: string }
-}
-
-/** Other top-level Tauri event channels emitted outside a turn. */
-export interface SessionsChangedPayload extends TauriEventEnvelope {
-  event: 'sessions.changed'
-}
-
-export interface TaskQueuePayload extends TauriEventEnvelope {
-  event: 'task.queued'
-}
-
-export interface TaskRunningPayload extends TauriEventEnvelope {
-  event: 'task.running'
-}
-
-export interface EpochChangedPayload extends TauriEventEnvelope {
-  event: 'session.epoch_changed'
-}
-
-export interface CronRunFinishedPayload extends TauriEventEnvelope {
-  event: 'cron.run.finished'
-}
-
-/**
- * Mapping of the top-level Tauri event names to their payload types. The three
- * streaming channels (`turn-event`, `stream-event`, `tool-event`) are the
- * primary transport for chat updates; the remainder are session/task lifecycle
- * notifications emitted directly by the runtime.
+ * Mapping of the top-level Tauri event channel names to their payload types.
+ * The streaming channel `agent:stream:{sessionId}` is session-scoped, so it is
+ * not listed here (use {@link agentStreamChannel} + {@link listen} or
+ * {@link useTauriStreamEvents}).
  */
 export interface TauriEventMap {
-  'turn-event': TurnEventPayload
-  'stream-event': StreamEventPayload
-  'tool-event': ToolEventPayload
-  'sessions.changed': SessionsChangedPayload
-  'task.queued': TaskQueuePayload
-  'task.running': TaskRunningPayload
-  'session.epoch_changed': EpochChangedPayload
-  'cron.run.finished': CronRunFinishedPayload
+  'sessions:list-changed': null
+  'gateway:status': GatewayStatusEvent
+  'locale://changed': LocaleChangedEvent
+  'update://state': UpdateStateEvent
 }
 
 /** Union of all top-level Tauri event names. */
@@ -296,8 +275,8 @@ export function listen<T = unknown>(
  * Must be called from `setup()` (relies on `onUnmounted`).
  *
  * @example
- *   useTauriEvent('stream-event', (p: StreamEventPayload) => {
- *     if (p.event === 'session.event.text_delta') appendText(p.text)
+ *   useTauriEvent('gateway:status', (p: GatewayStatusEvent) => {
+ *     if (p.running) setGatewayUrl(p.url)
  *   })
  */
 export function useTauriEvent<E extends TauriEventName>(
@@ -322,33 +301,51 @@ export function useTauriEvent<T = unknown>(
 }
 
 /**
- * Subscribe to all three streaming channels at once and dispatch to typed
- * handlers. Returns a single unlisten that tears down all three. Used by the
- * gateway adapter's session subscription to mirror the granular
- * `rpc.on('session.event.*')` registrations in
- * `src/composables/chat/useChatRpcSubscriptions.ts`.
+ * Handler groups for the per-session streaming channel. Each `MessageStreamEvent`
+ * is routed by its `type` tag:
+ *
+ *   turn_start | generation_start | turn_complete | turn_error | compaction → onTurnEvent
+ *   stream_event                                                          → onStreamEvent
+ *   tool_call_start | tool_call_complete                                  → onToolEvent
  */
 export interface StreamHandlers {
-  onTurnEvent?: TauriEventListener<TurnEventPayload>
+  onTurnEvent?: TauriEventListener<MessageStreamEvent>
   onStreamEvent?: TauriEventListener<StreamEventPayload>
-  onToolEvent?: TauriEventListener<ToolEventPayload>
+  onToolEvent?: TauriEventListener<MessageStreamEvent>
 }
 
-export function useTauriStreamEvents(handlers: StreamHandlers): { unlisten: UnlistenFn } {
-  const unlisteners: UnlistenFn[] = []
-  if (handlers.onTurnEvent) {
-    unlisteners.push(listen<TurnEventPayload>('turn-event', handlers.onTurnEvent))
-  }
-  if (handlers.onStreamEvent) {
-    unlisteners.push(listen<StreamEventPayload>('stream-event', handlers.onStreamEvent))
-  }
-  if (handlers.onToolEvent) {
-    unlisteners.push(listen<ToolEventPayload>('tool-event', handlers.onToolEvent))
-  }
-  const unlisten: UnlistenFn = () => {
-    for (const u of unlisteners) u()
-    unlisteners.length = 0
-  }
+/**
+ * Subscribe to a session's `agent:stream:{sessionId}` channel and dispatch to
+ * the turn / stream / tool handler groups by the `MessageStreamEvent.type` tag.
+ * Returns a single unlisten that tears down the underlying Tauri listener.
+ *
+ * Must be called from `setup()` (relies on `onUnmounted`). The listen should be
+ * attached BEFORE `send_message` is invoked so no early turn events are missed.
+ */
+export function useTauriStreamEvents(
+  sessionId: string,
+  handlers: StreamHandlers,
+): { unlisten: UnlistenFn } {
+  const unlisten = listen<MessageStreamEvent>(agentStreamChannel(sessionId), (payload) => {
+    if (!payload || typeof payload.type !== 'string') return
+    switch (payload.type) {
+      case 'stream_event':
+        handlers.onStreamEvent?.(payload.data)
+        break
+      case 'tool_call_start':
+      case 'tool_call_complete':
+        handlers.onToolEvent?.(payload)
+        break
+      case 'turn_start':
+      case 'generation_start':
+      case 'turn_complete':
+      case 'turn_error':
+      case 'compaction':
+      default:
+        handlers.onTurnEvent?.(payload)
+        break
+    }
+  })
   onUnmounted(unlisten)
   return { unlisten }
 }

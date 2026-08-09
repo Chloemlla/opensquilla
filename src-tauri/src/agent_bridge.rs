@@ -53,6 +53,7 @@ use opensquilla_engine::{
     AgentHandle, AgentRuntime, AgentState, TurnGenerator, TurnOutcome, TurnRunnerBuilder,
 };
 use opensquilla_provider::{ChatConfig, Provider, ProviderResponse};
+use opensquilla_session::ForkConfig;
 use std::fmt;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -806,12 +807,49 @@ pub async fn send_message_sync(
 
 /// Cancel an in-progress turn.
 ///
-/// Currently a placeholder — the engine does not yet support cancellation.
-/// When implemented, this would send a cancellation signal to the turn task.
+/// Best-effort: the engine runtime does not retain a handle to the spawned
+/// turn task (the `JoinHandle` is discarded after `tokio::spawn`), so this
+/// marks the registered agent as stopped. It does not abort the underlying
+/// provider request or the spawned tokio task.
 #[tauri::command]
-pub async fn cancel_turn(_state: State<'_, AppState>, session_id: String) -> TauriResult<bool> {
-    info!(session_id = %session_id, "Cancel turn requested (not yet implemented)");
-    Ok(false)
+pub async fn cancel_turn(state: State<'_, AppState>, session_id: String) -> TauriResult<bool> {
+    let runtime = state.runtime();
+    if let Some(mut handle) = runtime.get_agent(&session_id) {
+        let active = matches!(
+            handle.state,
+            AgentState::Processing
+                | AgentState::Thinking
+                | AgentState::WaitingForTool
+                | AgentState::Compacting
+        );
+        handle.state = AgentState::Stopped;
+        runtime.register_agent(session_id.clone(), handle);
+        if active {
+            info!(
+                session_id = %session_id,
+                "Cancel turn: marked agent stopped (best-effort; engine has no turn abort handle)"
+            );
+            Ok(true)
+        } else {
+            info!(
+                session_id = %session_id,
+                "Cancel turn requested but agent is not actively running a turn"
+            );
+            Ok(false)
+        }
+    } else {
+        info!(
+            session_id = %session_id,
+            "Cancel turn requested but no registered agent found"
+        );
+        Ok(false)
+    }
+}
+
+/// Abort a session's running turn. Same best-effort semantics as [`cancel_turn`].
+#[tauri::command]
+pub async fn abort_session(state: State<'_, AppState>, session_id: String) -> TauriResult<bool> {
+    cancel_turn(state, session_id).await
 }
 
 /// Get the chat history for a session.
@@ -1198,6 +1236,233 @@ pub async fn list_config(state: State<'_, AppState>) -> TauriResult<serde_json::
         map.insert(k, value);
     }
     Ok(serde_json::Value::Object(map))
+}
+
+// ---------------------------------------------------------------------------
+// Session fork / compaction commands
+// ---------------------------------------------------------------------------
+
+/// Fork an existing session into a new one via the SQLite session manager.
+#[tauri::command]
+pub async fn fork_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    fork_event: Option<String>,
+    title: Option<String>,
+) -> TauriResult<SessionResponse> {
+    let source_id = opensquilla_core::types::SessionId::from_string(&session_id)
+        .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id}")))?;
+
+    let config = ForkConfig {
+        name: title,
+        fork_event: fork_event.unwrap_or_else(|| "fork".to_string()),
+        ..Default::default()
+    };
+
+    let manager = state.session_manager().await;
+    let session = manager.fork(&source_id.0, config)?;
+
+    let info = SessionInfo {
+        id: session.id.to_string(),
+        title: session.name,
+        model: String::new(),
+        agent_id: session.agent_id.to_string(),
+        created_at: session.created_at.to_rfc3339(),
+        updated_at: session.updated_at.to_rfc3339(),
+        state: "active".to_string(),
+        mode: "chat".to_string(),
+        message_count: session.message_count,
+        system_prompt: if session.system_prompt.is_empty() {
+            None
+        } else {
+            Some(session.system_prompt)
+        },
+        total_tokens: session.total_tokens,
+    };
+
+    Ok(SessionResponse { session: info })
+}
+
+/// Trigger context compaction for a session via the SQLite session manager.
+#[tauri::command]
+pub async fn compact_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> TauriResult<OperationResult> {
+    let sid = opensquilla_core::types::SessionId::from_string(&session_id)
+        .ok_or_else(|| TauriError::bad_request(format!("Invalid session_id: {session_id}")))?;
+
+    let manager = state.session_manager().await;
+    let report = manager.compact(&sid.0)?;
+
+    Ok(OperationResult {
+        ok: true,
+        message: Some(format!(
+            "Compacted session {} (strategy {}, {} entries, {} -> {} tokens)",
+            report.session_id,
+            report.strategy.label(),
+            report.entries_compacted,
+            report.tokens_before,
+            report.tokens_after,
+        )),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Provider status commands
+// ---------------------------------------------------------------------------
+
+/// Build a status object for a single provider configuration.
+fn provider_status_json(provider: &opensquilla_core::config::ProviderConfig) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "name".to_string(),
+        serde_json::Value::String(provider.name.clone()),
+    );
+    map.insert(
+        "providerType".to_string(),
+        serde_json::Value::String(provider.provider_type.clone()),
+    );
+    map.insert(
+        "configured".to_string(),
+        serde_json::Value::Bool(provider.api_key.is_some()),
+    );
+    map.insert(
+        "defaultModel".to_string(),
+        match &provider.default_model {
+            Some(m) => serde_json::Value::String(m.clone()),
+            None => serde_json::Value::Null,
+        },
+    );
+    map.insert(
+        "models".to_string(),
+        serde_json::Value::Array(
+            provider
+                .models
+                .iter()
+                .map(|m| serde_json::Value::String(m.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "baseUrl".to_string(),
+        match &provider.base_url {
+            Some(b) => serde_json::Value::String(b.clone()),
+            None => serde_json::Value::Null,
+        },
+    );
+    serde_json::Value::Object(map)
+}
+
+/// Get the status of a single provider (by id, or the first/default provider).
+#[tauri::command]
+pub async fn get_provider_status(
+    state: State<'_, AppState>,
+    provider_id: Option<String>,
+) -> TauriResult<serde_json::Value> {
+    let config = state.config().await;
+    let provider = match provider_id {
+        Some(id) => config.find_provider(&id).ok_or_else(|| {
+            TauriError::not_found(format!("Provider '{id}' not found in config"))
+        })?,
+        None => config
+            .providers
+            .first()
+            .ok_or_else(|| TauriError::not_found("No providers configured".to_string()))?,
+    };
+    Ok(provider_status_json(provider))
+}
+
+/// Get the status of all configured providers.
+#[tauri::command]
+pub async fn get_all_provider_statuses(
+    state: State<'_, AppState>,
+) -> TauriResult<serde_json::Value> {
+    let config = state.config().await;
+    let statuses: Vec<serde_json::Value> = config
+        .providers
+        .iter()
+        .map(provider_status_json)
+        .collect();
+    let default_provider = config.providers.first().map(|p| p.name.clone());
+    Ok(serde_json::json!({
+        "providers": statuses,
+        "defaultProvider": default_provider,
+        "count": statuses.len(),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Config patch / reset / effective commands
+// ---------------------------------------------------------------------------
+
+/// Get the effective configuration (structured config + gateway overlay).
+#[tauri::command]
+pub async fn get_config_effective(state: State<'_, AppState>) -> TauriResult<ConfigGetResponse> {
+    let config = state.config().await;
+    let mut json = serde_json::to_value(config.deref()).map_err(TauriError::from)?;
+    if let Some(obj) = json.as_object_mut() {
+        for (k, v) in state.config_store.overrides() {
+            obj.insert(k, v);
+        }
+    }
+    Ok(ConfigGetResponse { config: json })
+}
+
+/// Apply a batch of key/value patches to the configuration.
+#[tauri::command]
+pub async fn patch_config(
+    state: State<'_, AppState>,
+    patches: Vec<ConfigPatch>,
+    safe: Option<bool>,
+) -> TauriResult<ConfigSetResponse> {
+    let mut values = serde_json::Map::new();
+    for patch in &patches {
+        values.insert(patch.key.clone(), patch.value.clone());
+    }
+
+    if safe.unwrap_or(false) {
+        let issues = state.config_store.validate();
+        if !issues.is_empty() {
+            return Err(TauriError::bad_request(format!(
+                "Patched configuration is invalid: {}",
+                issues.join("; ")
+            )));
+        }
+    }
+
+    let applied = state.config_store.patch(&values);
+    let first_key = patches.first().map(|p| p.key.clone()).unwrap_or_default();
+
+    Ok(ConfigSetResponse {
+        key: first_key,
+        value: serde_json::json!({ "applied": applied }),
+        status: "patched".to_string(),
+    })
+}
+
+/// Reset a configuration key (or the whole configuration) to defaults.
+#[tauri::command]
+pub async fn reset_config(
+    state: State<'_, AppState>,
+    key: Option<String>,
+) -> TauriResult<OperationResult> {
+    match key {
+        Some(k) => {
+            let removed = state.config_store.delete(&k);
+            Ok(OperationResult {
+                ok: true,
+                message: Some(format!("Reset config key '{k}' (removed: {removed})")),
+            })
+        }
+        None => {
+            state.config_store.reset();
+            Ok(OperationResult {
+                ok: true,
+                message: Some("Configuration reset to defaults".to_string()),
+            })
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

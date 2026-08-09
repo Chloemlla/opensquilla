@@ -680,6 +680,14 @@ pub struct ConfigSetResponse {
     pub status: String,
 }
 
+/// A single key/value patch for the configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigPatch {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
 /// Gateway status response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

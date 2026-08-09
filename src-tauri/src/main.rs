@@ -153,6 +153,7 @@ fn main() {
             agent_bridge::send_message,
             agent_bridge::send_message_sync,
             agent_bridge::cancel_turn,
+            agent_bridge::abort_session,
             agent_bridge::get_chat_history,
             agent_bridge::clear_chat_history,
             // Session commands
@@ -161,14 +162,21 @@ fn main() {
             agent_bridge::get_session,
             agent_bridge::delete_session,
             agent_bridge::archive_session,
+            agent_bridge::fork_session,
+            agent_bridge::compact_session,
             // Provider / Model / Skill commands
             agent_bridge::list_providers,
             agent_bridge::list_models,
             agent_bridge::list_skills,
+            agent_bridge::get_provider_status,
+            agent_bridge::get_all_provider_statuses,
             // Health / Config commands
             agent_bridge::health_check,
             agent_bridge::get_config,
+            agent_bridge::get_config_effective,
             agent_bridge::set_config,
+            agent_bridge::patch_config,
+            agent_bridge::reset_config,
             agent_bridge::get_config_value,
             agent_bridge::list_config,
             // Workbench commands

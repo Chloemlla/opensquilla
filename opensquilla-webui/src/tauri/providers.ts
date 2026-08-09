@@ -8,92 +8,62 @@
  * runtime exposes dedicated commands for provider/model enumeration and
  * status.
  *
- * The Rust `tauri::command` names targeted here are:
+ * The Rust `tauri::command` names targeted here are (see
+ * `src-tauri/src/agent_bridge.rs` + the in-parallel new-command set):
  *
- *   invoke('list_providers',  { })                       → ProviderInfo[]
- *   invoke('list_models',     { providerId? })           → ModelInfo[]
- *   invoke('get_provider_status', { id })                → ProviderStatus
+ *   invoke('list_providers',   { })                  → { providers, defaultProvider?, count }
+ *   invoke('list_models',      { })                  → { models, defaultModel?, count }
+ *   invoke('get_provider_status', { providerId? })   → JsonValue
+ *   invoke('get_all_provider_statuses', { })         → JsonValue
  *
- * These mirror the Rust `registry::ProviderSpec` (50+ declarative providers)
- * and `model_catalog` types documented in
- * `docs/tauri-migration-analysis.md` §2.2. snake_case fields are kept
- * alongside camelCase aliases because the Rust serde structs emit snake_case
- * by default while the renderer was written against the gateway's mixed
- * conventions.
+ * `ProviderInfo` / `ModelInfo` mirror the camelCase serde structs
+ * (`ProviderInfo`, `ModelInfoDto` in `src-tauri/src/ipc.rs`).
  */
 
 import { invoke } from './invoke'
 
-/** A registered LLM provider. Mirrors Rust `ProviderSpec` (subset). */
+/** A registered LLM provider. Mirrors Rust `ProviderInfo` (ipc.rs). */
 export interface ProviderInfo {
-  /** Stable provider id, e.g. `openai`, `deepseek`, `anthropic`. */
-  id: string
-  providerId?: string
-  provider_id?: string
-  /** Display label. */
-  label?: string
-  name?: string
-  /** Backend class: openai_compat / anthropic / openai_responses / ollama / ensemble. */
-  backend?: string
-  kind?: string
+  /** Provider id, e.g. `openai`, `deepseek`, `anthropic`. */
+  name: string
+  /** Backend class: openai_compat / anthropic / ollama / ... */
+  providerType: string
+  provider_type?: string
   /** Default base URL. */
-  baseUrl?: string
-  base_url?: string
-  /** Whether an API key is required. */
-  requiresApiKey?: boolean
-  requires_api_key?: boolean
-  /** Env var holding the API key, when applicable. */
-  apiKeyEnv?: string
-  api_key_env?: string
-  /** Whether the operator has configured credentials for this provider. */
-  apiKeyConfigured?: boolean
-  api_key_configured?: boolean
+  baseUrl?: string | null
+  base_url?: string | null
+  /** Model ids offered by this provider. */
+  models: string[]
   /** Default model id for this provider. */
-  model?: string
-  defaultModel?: string
-  default_model?: string
-  /** Note shown in the setup UI. */
-  note?: string
+  defaultModel?: string | null
+  default_model?: string | null
+  maxRetries: number
+  timeoutSecs: number
   [key: string]: unknown
 }
 
-/** A model offered by a provider. Mirrors Rust `ModelInfo`. */
+/** A model offered by a provider. Mirrors Rust `ModelInfoDto` (ipc.rs). */
 export interface ModelInfo {
   /** Model id, e.g. `gpt-4o`, `deepseek-chat`. */
   id: string
-  modelId?: string
-  model_id?: string
+  name: string
   /** Owning provider id. */
-  providerId?: string
-  provider_id?: string
-  /** Display label. */
-  label?: string
-  name?: string
+  provider: string
   /** Context window size in tokens. */
-  contextWindow?: number
+  contextWindow: number
   context_window?: number
   /** Max output tokens. */
-  maxOutput?: number
-  max_output?: number
-  /** Input price per 1M tokens (USD). */
-  inputPricePerMillion?: number
-  input_price_per_million?: number
-  /** Output price per 1M tokens (USD). */
-  outputPricePerMillion?: number
-  output_price_per_million?: number
-  /** Whether the model supports tool/function calling. */
-  supportsTools?: boolean
-  supports_tools?: boolean
-  /** Whether the model supports vision/image input. */
-  supportsVision?: boolean
-  supports_vision?: boolean
-  /** Whether the model emits reasoning tokens. */
-  supportsReasoning?: boolean
-  supports_reasoning?: boolean
+  maxOutputTokens: number
+  max_output_tokens?: number
+  /** Model capabilities. */
+  capabilities?: unknown
+  /** Optional display label. */
+  displayName?: string | null
+  display_name?: string | null
   [key: string]: unknown
 }
 
-/** Live status of a provider's connectivity. Mirrors Rust `ProviderStatus`. */
+/** Live status of a provider's connectivity (Rust returns JsonValue). */
 export interface ProviderStatus {
   /** Provider id this status describes. */
   id: string
@@ -117,40 +87,40 @@ export interface ProviderStatus {
 }
 
 /**
- * List all registered providers. Mirrors the provider portion of
- * `onboarding.catalog`. Rust: `list_providers() -> Result<Vec<ProviderInfo>, IpcError>`.
+ * List all registered providers. Rust: `list_providers() -> Result<ProviderListResponse, TauriError>` —
+ * unwraps the `{ providers }` field.
  */
 export async function listProviders(): Promise<ProviderInfo[]> {
-  return invoke<ProviderInfo[]>('list_providers')
+  const result = await invoke<{ providers: ProviderInfo[] }>('list_providers', {})
+  return result.providers
 }
 
 /**
- * List models for a provider (or all providers when `providerId` is omitted).
- * Rust: `list_models(provider_id: Option<String>) -> Result<Vec<ModelInfo>, IpcError>`.
+ * List available models. Rust: `list_models() -> Result<ModelListResponse, TauriError>` —
+ * unwraps the `{ models }` field. `providerId` is accepted for surface parity
+ * but the current command enumerates all providers.
  */
-export async function listModels(
+export async function listModels(_providerId?: string): Promise<ModelInfo[]> {
+  const result = await invoke<{ models: ModelInfo[] }>('list_models', {})
+  return result.models
+}
+
+/**
+ * Get the live status of a provider. Mirrors the `providers.status` RPC.
+ * Rust: `get_provider_status(provider_id: Option<String>) -> Result<JsonValue, TauriError>`.
+ */
+export async function getProviderStatus(
   providerId?: string,
-): Promise<ModelInfo[]> {
-  return invoke<ModelInfo[]>('list_models', {
+): Promise<ProviderStatus> {
+  return invoke<ProviderStatus>('get_provider_status', {
     providerId,
   })
 }
 
 /**
- * Get the live status of a provider. Mirrors the `providers.status` RPC.
- * Rust: `get_provider_status(id: String) -> Result<ProviderStatus, IpcError>`.
- */
-export async function getProviderStatus(
-  id: string,
-): Promise<ProviderStatus> {
-  return invoke<ProviderStatus>('get_provider_status', { id })
-}
-
-/**
- * Get the live status of all providers. Convenience over `list_providers` +
- * `get_provider_status`; the Rust runtime exposes a batched command for this.
- * Rust: `get_all_provider_statuses() -> Result<Vec<ProviderStatus>, IpcError>`.
+ * Get the live status of all providers. Rust:
+ * `get_all_provider_statuses() -> Result<JsonValue, TauriError>`.
  */
 export async function getAllProviderStatuses(): Promise<ProviderStatus[]> {
-  return invoke<ProviderStatus[]>('get_all_provider_statuses')
+  return invoke<ProviderStatus[]>('get_all_provider_statuses', {})
 }

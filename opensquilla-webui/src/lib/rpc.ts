@@ -12,11 +12,9 @@
 
 import { invoke, TauriInvokeError } from '@/tauri/invoke'
 import {
+  agentStreamChannel,
   listen,
-  type StreamEventPayload,
-  type TauriEventEnvelope,
-  type ToolEventPayload,
-  type TurnEventPayload,
+  type MessageStreamEvent,
   type UnlistenFn,
 } from '@/tauri/events'
 
@@ -683,16 +681,16 @@ export class RpcClient implements RpcClientLike {
  *
  * A drop-in replacement for {@link RpcClient} that runs entirely inside the
  * Tauri process. Requests are routed through `invoke()` (see
- * `src/tauri/invoke.ts`) and streaming events arrive on the Tauri event
- * channels defined in `src/tauri/events.ts` (`turn-event`, `stream-event`,
- * `tool-event` plus the top-level lifecycle channels).
+ * `src/tauri/invoke.ts`) and streaming events arrive on the per-session Tauri
+ * channel `agent:stream:{sessionId}` (plus the top-level lifecycle channels
+ * like `sessions:list-changed`), defined in `src/tauri/events.ts`.
  *
  * The WebSocket RPC gateway addressed methods by dotted names
  * (`chat.send`, `config.patch.safe`, …) and streamed granular events
  * (`session.event.text_delta`, …). Under Tauri, commands are snake_case and
- * events are consolidated onto a few channels carrying the original `event`
- * discriminator. {@link TAURI_METHOD_REGISTRY} is the living map between the
- * two worlds; extend it as the Rust command surface grows.
+ * events are routed by the `MessageStreamEvent.type` tag onto the granular
+ * `session.event.*` names. {@link TAURI_METHOD_REGISTRY} is the living map
+ * between the two worlds; extend it as the Rust command surface grows.
  *
  * The store creates this class only when {@link isTauri} is true, so the
  * WebSocket `RpcClient` above remains the browser/dev fallback.
@@ -743,36 +741,27 @@ function firstParam(
   return undefined;
 }
 
-/** Copy `params` without the given keys. */
-function dropKeys(
-  params: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(params)) {
-    if (!keys.includes(key)) out[key] = value;
-  }
-  return out;
-}
-
 /**
  * Normalize the `config.patch` payload. The legacy gateway accepted either an
  * array of `{ path, value }` patches or a flat `{ 'dotted.path': value }` map
  * (the map form is what the locale sync + feature-toggle call sites use); the
- * Rust `patch_config` command takes the array form.
+ * Rust `patch_config` command takes the `{ key, value }` array form.
  */
 function normalizeConfigPatches(
   raw: unknown,
-): Array<{ path: string; value: unknown }> {
+): Array<{ key: string; value: unknown }> {
   if (Array.isArray(raw)) {
-    return raw as Array<{ path: string; value: unknown }>;
+    return (raw as Array<{ key?: string; path?: string; value?: unknown }>).map((p) => ({
+      key: p.key ?? p.path ?? '',
+      value: p.value,
+    }))
   }
   if (raw && typeof raw === 'object') {
     return Object.entries(raw as Record<string, unknown>).map(
-      ([path, value]) => ({ path, value }),
-    );
+      ([key, value]) => ({ key, value }),
+    )
   }
-  return [];
+  return []
 }
 
 /** Batch `sessions.delete` executor — mirrors the gateway's `keys: string[]` form. */
@@ -785,31 +774,85 @@ async function runSessionsDelete(
     : [];
   if (keys.length > 0) {
     const results = await Promise.all(
-      keys.map((id) => invoke('delete_session', { id })),
+      keys.map((id) => invoke<boolean>('delete_session', { sessionId: id })),
     );
     const deleted: string[] = [];
     const errors: string[] = [];
     keys.forEach((key, index) => {
-      const result = results[index] as
-        | { ok?: boolean; errors?: Array<{ error?: string } | string> }
-        | undefined;
-      const errs = result ? result.errors : undefined;
-      if (Array.isArray(errs) && errs.length > 0) {
-        for (const entry of errs) {
-          errors.push(
-            typeof entry === 'string' ? entry : (entry?.error ?? 'delete failed'),
-          );
-        }
-      } else if (result?.ok === false) {
-        errors.push('delete failed');
-      } else {
+      if (results[index] === true) {
         deleted.push(key);
+      } else {
+        errors.push('delete failed');
       }
     });
     return { deleted, errors };
   }
   const id = firstParam(params, 'id', 'key', 'sessionKey', 'session_key');
-  return invoke('delete_session', { id });
+  if (typeof id === 'string' && id) {
+    const ok = await invoke<boolean>('delete_session', { sessionId: id });
+    return ok
+      ? { deleted: [id], errors: [] }
+      : { deleted: [], errors: ['delete failed'] };
+  }
+  return { deleted: [], errors: [] };
+}
+
+/**
+ * `chat.send` executor. Attaches the per-session `agent:stream:{sessionId}`
+ * listener BEFORE invoking `send_message` (the caller is expected to have
+ * registered `session.event.*` handlers via `rpc.on` first), then wraps the
+ * params into the `MessageSendRequest` envelope. Returns the turn id string.
+ */
+/**
+ * Adapt a Rust `MessageDto` (role + typed content blocks) into the partial
+ * `ChatHistoryMessage` shape the chat composables map. The Rust skeleton does
+ * not yet persist turn_context/usage/timestamps, so only role, text and tool
+ * calls survive the bridge; reconciliation falls back to role:ts:text keys.
+ */
+function adaptHistoryMessages(raw: unknown[]): Array<Record<string, unknown>> {
+  return (raw ?? []).map((m) => {
+    const msg = (m ?? {}) as Record<string, unknown>;
+    const blocks = Array.isArray(msg.content)
+      ? (msg.content as Array<Record<string, unknown>>)
+      : [];
+    const text = blocks
+      .filter((b) => b.type === 'text')
+      .map((b) => (typeof b.text === 'string' ? b.text : ''))
+      .join('');
+    const toolCalls = blocks
+      .filter((b) => b.type === 'tool_use')
+      .map((b) => ({ id: b.id, name: b.name, input: b.input }));
+    return {
+      role: msg.role,
+      text,
+      tool_calls: toolCalls,
+    };
+  });
+}
+
+async function runChatSend(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const sessionId = firstParam(params, 'sessionKey', 'session_key', 'sessionId', 'session_id');
+  const request: Record<string, unknown> = {
+    sessionId,
+    message: params.message ?? params.content,
+  };
+  if (Array.isArray(params.history)) request.history = params.history;
+  if (params.model !== undefined) request.model = params.model;
+  if (params.provider !== undefined) request.provider = params.provider;
+  if (params.stream !== undefined) request.stream = params.stream;
+  const turnId = await invoke<string>('send_message', { request });
+  // `send_message` resolves with the bare turn id; the chat composables expect
+  // the gateway's ChatSendResponse envelope, so wrap it to keep the Tauri path
+  // equivalent to the WebSocket path.
+  return {
+    sessionKey: sessionId,
+    task_id: turnId,
+    taskId: turnId,
+    task_status: 'running',
+    taskStatus: 'running',
+  };
 }
 
 /**
@@ -821,73 +864,88 @@ async function runSessionsDelete(
 export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
   // ── chat ────────────────────────────────────────────────────────────────
   'chat.send': {
-    command: 'send_message',
-    transform: (p) => ({
-      sessionId: p.sessionKey,
-      content: p.message,
-      ...dropKeys(p, ['sessionKey', 'message', '_source']),
-    }),
+    // runChatSend attaches the `agent:stream:{sessionId}` listener before
+    // invoking `send_message` and wraps the request envelope.
+    run: runChatSend,
   },
   'chat.abort': {
     command: 'abort_session',
-    transform: (p) => ({ id: firstParam(p, 'sessionKey', 'session_key', 'id', 'key') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'sessionKey', 'session_key', 'id', 'key') }),
   },
   'chat.cancel': {
     command: 'cancel_turn',
-    transform: (p) => ({
-      session_id: firstParam(p, 'sessionKey', 'session_key', 'sessionId', 'session_id', 'id'),
-    }),
+    transform: (p) => ({ sessionId: firstParam(p, 'sessionKey', 'session_key', 'sessionId', 'session_id', 'id') }),
   },
   'chat.history': {
-    command: 'chat_history',
-    transform: (p) => ({
-      sessionKey: firstParam(p, 'sessionKey', 'session_key', 'key'),
-      before: p.before,
-      limit: p.limit,
-      includeCompaction: p.includeCompaction ?? p.include_compaction,
-    }),
+    command: 'get_chat_history',
+    transform: (p) => ({ sessionId: firstParam(p, 'sessionKey', 'session_key', 'key', 'id') }),
+    // The Rust command returns a bare `MessageDto[]`; the composables expect
+    // `{ messages }`, so wrap and adapt the shape.
+    run: (p) =>
+      invoke<unknown[]>('get_chat_history', {
+        sessionId: firstParam(p, 'sessionKey', 'session_key', 'key', 'id'),
+      }).then((r) => ({ messages: adaptHistoryMessages(r) })),
   },
   'chat.clear': {
     command: 'clear_chat_history',
-    transform: (p) => ({
-      session_id: firstParam(p, 'sessionKey', 'session_key', 'sessionId', 'session_id', 'id'),
-    }),
+    transform: (p) => ({ sessionId: firstParam(p, 'sessionKey', 'session_key', 'sessionId', 'session_id', 'id') }),
   },
 
   // ── sessions ────────────────────────────────────────────────────────────
   'sessions.list': {
     command: 'list_sessions',
-    transform: (p) => ({ limit: p.limit, view: p.view }),
+    transform: () => ({}),
   },
-  'sessions.create': { command: 'create_session' },
+  'sessions.create': {
+    command: 'create_session',
+    transform: (p) => ({
+      request: {
+        title: p.title,
+        model: p.model,
+        agentId: p.agentId ?? p.agent_id,
+        systemPrompt: p.systemPrompt ?? p.system_prompt,
+        mode: p.mode,
+      },
+    }),
+  },
   'sessions.get': {
     command: 'get_session',
-    transform: (p) => ({ id: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
   },
   'sessions.preview': {
     command: 'get_session',
-    transform: (p) => ({ id: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
   },
   'sessions.delete': {
     command: 'delete_session',
-    transform: (p) => ({ id: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
     run: runSessionsDelete,
   },
   'sessions.archive': {
     command: 'archive_session',
-    transform: (p) => ({ id: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
   },
   'sessions.fork': {
     command: 'fork_session',
-    transform: (p) => ({ key: firstParam(p, 'key', 'sessionKey', 'session_key') }),
+    // `fork_session` resolves `{ session: SessionInfo }`; ChatView reads the
+    // child session key via `res.key`, so unwrap to that shape.
+    run: async (p) => {
+      const args: Record<string, unknown> = {
+        sessionId: firstParam(p, 'key', 'sessionKey', 'session_key', 'id'),
+      };
+      if (p.forkEvent !== undefined) args.forkEvent = p.forkEvent;
+      if (p.title !== undefined) args.title = p.title;
+      const res = await invoke<{ session?: { id?: string } }>('fork_session', args);
+      return { key: res?.session?.id ?? '' };
+    },
   },
   'sessions.compact': {
     command: 'compact_session',
-    transform: (p) => ({ id: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
   },
   'sessions.export': {
     command: 'export_session',
-    transform: (p) => ({ session_id: firstParam(p, 'sessionId', 'session_id', 'id') }),
+    transform: (p) => ({ sessionId: firstParam(p, 'sessionId', 'session_id', 'id') }),
   },
   'sessions.import': {
     command: 'import_session',
@@ -895,11 +953,17 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
   },
 
   // ── config ──────────────────────────────────────────────────────────────
-  'config.get': { command: 'get_config' },
-  'config.effective': { command: 'get_config_effective' },
+  'config.get': {
+    command: 'get_config',
+    run: (_p) => invoke<{ config: unknown }>('get_config', {}).then((r) => r.config),
+  },
+  'config.effective': {
+    command: 'get_config_effective',
+    run: (_p) => invoke<{ config: unknown }>('get_config_effective', {}).then((r) => r.config),
+  },
   'config.set': {
     command: 'set_config',
-    transform: (p) => ({ key: p.key, value: p.value }),
+    transform: (p) => ({ request: { key: p.key, value: p.value } }),
   },
   'config.patch': {
     command: 'patch_config',
@@ -916,40 +980,46 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     }),
   },
   'config.list': { command: 'list_config' },
-  'config.reset': { command: 'reset_config' },
+  'config.reset': {
+    command: 'reset_config',
+    transform: (p) => (p.key !== undefined ? { key: p.key } : {}),
+  },
   'config.value.get': {
     command: 'get_config_value',
     transform: (p) => ({ key: p.key }),
   },
 
   // ── providers / models ──────────────────────────────────────────────────
-  'providers.list': { command: 'list_providers' },
+  'providers.list': {
+    command: 'list_providers',
+    run: (_p) => invoke<{ providers: unknown[] }>('list_providers', {}).then((r) => r.providers),
+  },
   'providers.status': {
     command: 'get_provider_status',
-    transform: (p) => ({ id: firstParam(p, 'id', 'providerId', 'provider_id') }),
+    transform: (p) => ({ providerId: firstParam(p, 'id', 'providerId', 'provider_id') }),
   },
   'models.routing.get': {
     command: 'list_models',
-    transform: (p) => ({ providerId: p.providerId ?? p.provider_id }),
+    run: (_p) => invoke<{ models: unknown[] }>('list_models', {}).then((r) => r.models),
   },
   'models.list': {
     command: 'list_models',
-    transform: (p) => ({ providerId: p.providerId ?? p.provider_id }),
+    run: (_p) => invoke<{ models: unknown[] }>('list_models', {}).then((r) => r.models),
   },
 
   // ── skills ──────────────────────────────────────────────────────────────
   'skills.list': { command: 'list_skills' },
 
   // ── system / desktop ────────────────────────────────────────────────────
-  'system.health': { command: 'check_health' },
-  doctor: { command: 'check_health' },
+  'system.health': { command: 'health_check' },
+  doctor: { command: 'health_check' },
   'locale.get': { command: 'get_locale' },
-  'locale.set': { command: 'set_locale', transform: (p) => ({ locale: p.locale }) },
+  'locale.set': { command: 'set_locale', transform: (p) => ({ input: { locale: p.locale } }) },
   'updates.check': { command: 'check_updates' },
   'updates.install': { command: 'install_update' },
   'system.openExternal': {
     command: 'open_external',
-    transform: (p) => ({ url: firstParam(p, 'url', 'target') }),
+    transform: (p) => ({ target: firstParam(p, 'url', 'target') }),
   },
   'system.pickDirectory': {
     command: 'pick_directory',
@@ -984,21 +1054,202 @@ function isInternalEvent(event: string): boolean {
 }
 
 /**
- * Events that arrive inside the three streaming channels, discriminated by the
- * payload's `event` field. Everything else is treated as a top-level Tauri
- * channel name and subscribed directly.
+ * Events that arrive inside the per-session `agent:stream:{sessionId}` channel,
+ * discriminated by the payload's `type` tag. Everything else is treated as a
+ * top-level Tauri channel name and subscribed directly.
  */
 function isStreamingDiscriminator(event: string): boolean {
   return event.startsWith('session.event.') || event === 'session.epoch_changed';
 }
 
-/** Top-level Tauri lifecycle channels (beyond the three streaming channels). */
+/** Top-level RPC lifecycle event names the wildcard `*` subscription attaches. */
 const TAURI_TOP_LEVEL_EVENTS: readonly string[] = [
   'sessions.changed',
   'task.queued',
   'task.running',
   'cron.run.finished',
 ];
+
+/**
+ * Maps an RPC event name onto the actual Tauri channel the Rust runtime emits.
+ * Entries that differ from the RPC name (the Rust side emits
+ * `sessions:list-changed`, not `sessions.changed`) are listed here; everything
+ * else subscribes to the same-named channel.
+ */
+const TAURI_EVENT_CHANNEL: Record<string, string> = {
+  'sessions.changed': 'sessions:list-changed',
+};
+
+/**
+ * Map a `MessageStreamEvent` (the `agent:stream:{sessionId}` payload) onto the
+ * granular `session.event.*` RPC names the chat composables subscribe to.
+ * `stream_event` payloads are further discriminated by their inner `event` tag.
+ */
+function mapMessageStreamEvent(
+  payload: MessageStreamEvent,
+): Array<{ name: string; data: unknown }> {
+  if (!payload || typeof payload.type !== 'string') return [];
+  switch (payload.type) {
+    case 'turn_start':
+      return [{
+        name: 'session.event.state_change',
+        data: {
+          event: 'session.event.state_change',
+          status: 'running',
+          turn_id: payload.data.turn_id,
+          session_id: payload.data.session_id,
+          timestamp: payload.data.timestamp,
+        },
+      }];
+    case 'generation_start':
+      return [{
+        name: 'session.event.state_change',
+        data: {
+          event: 'session.event.state_change',
+          status: 'generating',
+          model: payload.data.model,
+          provider: payload.data.provider,
+        },
+      }];
+    case 'stream_event': {
+      const inner = payload.data;
+      if (!inner || typeof inner.event !== 'string') return [];
+      switch (inner.event) {
+        case 'content_block_delta': {
+          const delta = inner.data.delta;
+          if (delta?.type === 'text_delta') {
+            return [{
+              name: 'session.event.text_delta',
+              data: { event: 'session.event.text_delta', text: delta.text },
+            }];
+          }
+          if (delta?.type === 'reasoning_delta') {
+            return [{
+              name: 'session.event.thinking',
+              data: { event: 'session.event.thinking', reasoning: delta.reasoning },
+            }];
+          }
+          if (delta?.type === 'input_json_delta') {
+            return [{
+              name: 'session.event.tool_use_delta',
+              data: {
+                event: 'session.event.tool_use_delta',
+                json_fragment: delta.partial_json,
+                jsonFragment: delta.partial_json,
+              },
+            }];
+          }
+          return [];
+        }
+        case 'content_block_start': {
+          const block = inner.data.block;
+          if (block?.type === 'tool_use') {
+            return [{
+              name: 'session.event.tool_use_start',
+              data: {
+                event: 'session.event.tool_use_start',
+                id: block.id,
+                tool_use_id: block.id,
+                toolUseId: block.id,
+                name: block.name,
+                input: block.input,
+              },
+            }];
+          }
+          return [];
+        }
+        case 'error':
+          return [{
+            name: 'session.event.warning',
+            data: {
+              event: 'session.event.warning',
+              message: inner.data.message,
+              code: inner.data.code ?? 'STREAM_ERROR',
+            },
+          }];
+        case 'message_delta':
+        case 'content_block_stop':
+        case 'message_stop':
+        case 'ping':
+        default:
+          return [];
+      }
+    }
+    case 'tool_call_start':
+      return [{
+        name: 'session.event.tool_use_start',
+        data: {
+          event: 'session.event.tool_use_start',
+          id: payload.data.tool_call_id,
+          tool_use_id: payload.data.tool_call_id,
+          toolUseId: payload.data.tool_call_id,
+          name: payload.data.name,
+          input: payload.data.input,
+        },
+      }];
+    case 'tool_call_complete':
+      return [{
+        name: 'session.event.tool_result',
+        data: {
+          event: 'session.event.tool_result',
+          id: payload.data.tool_call_id,
+          tool_use_id: payload.data.tool_call_id,
+          toolUseId: payload.data.tool_call_id,
+          name: payload.data.name,
+          content: payload.data.content,
+          is_error: payload.data.is_error,
+          isError: payload.data.is_error,
+        },
+      }];
+    case 'turn_complete':
+      return [{
+        name: 'session.event.state_change',
+        data: {
+          event: 'session.event.state_change',
+          status: 'completed',
+          turn_id: payload.data.turn_id,
+          session_id: payload.data.session_id,
+          messages: payload.data.messages,
+          usage: payload.data.usage,
+          duration_ms: payload.data.duration_ms,
+        },
+      }];
+    case 'turn_error':
+      return [
+        {
+          name: 'session.event.warning',
+          data: {
+            event: 'session.event.warning',
+            message: payload.data.message,
+            code: payload.data.code ?? 'TURN_ERROR',
+          },
+        },
+        {
+          name: 'session.event.state_change',
+          data: {
+            event: 'session.event.state_change',
+            status: 'failed',
+            turn_id: payload.data.turn_id,
+            session_id: payload.data.session_id,
+            message: payload.data.message,
+            code: payload.data.code,
+          },
+        },
+      ];
+    case 'compaction':
+      return [{
+        name: 'session.event.compaction',
+        data: {
+          event: 'session.event.compaction',
+          before_count: payload.data.before_count,
+          after_count: payload.data.after_count,
+          success: payload.data.success,
+        },
+      }];
+    default:
+      return [];
+  }
+}
 
 /** Translate a Tauri command failure into an RpcClientError-compatible shape. */
 function normalizeTauriError(method: string, err: unknown): Error {
@@ -1078,11 +1329,13 @@ function applyCallOptions(
  * `call()` resolves the dotted RPC method name through
  * {@link TAURI_METHOD_REGISTRY} and runs the matching `invoke()` (or a custom
  * executor). `on()` maps RPC event subscriptions onto Tauri event listeners:
- * the granular `session.event.*` names are routed through the three streaming
- * channels (`turn-event` / `stream-event` / `tool-event`) and discriminated by
- * the payload's `event` field; every other name is subscribed directly on the
- * same-named Tauri channel. `_state` / `_hello` / `_gap` are synthesized
- * in-process so the Pinia store's connection bookkeeping works unchanged.
+ * the granular `session.event.*` names are delivered via the per-session
+ * `agent:stream:{sessionId}` channel, which `chat.send` attaches BEFORE
+ * invoking `send_message` and routes by the payload's `type` tag; every other
+ * name is subscribed directly on the same-named Tauri channel (via
+ * {@link TAURI_EVENT_CHANNEL} when the RPC name differs from the channel).
+ * `_state` / `_hello` / `_gap` are synthesized in-process so the Pinia store's
+ * connection bookkeeping works unchanged.
  *
  * Construct this only when `isTauri()` is true.
  */
@@ -1090,11 +1343,15 @@ export class TauriRpcClient implements RpcClientLike {
   private _listeners = new Map<string, Set<RpcEventHandler>>();
   private _state: ConnectionState = 'disconnected';
   private _policy: Record<string, unknown> = {};
-  private _streamsStarted = false;
   private _directUnlisteners = new Map<string, UnlistenFn>();
   /**
+   * One `agent:stream:{sessionId}` listener per session. Attached lazily by
+   * `chat.send` so streaming events are captured before the turn starts.
+   */
+  private _sessionStreams = new Map<string, UnlistenFn>();
+  /**
    * Reference count per direct Tauri listener. A single top-level channel (e.g.
-   * `sessions.changed`) can be held by both a specific `on(name)` subscription
+   * `sessions:list-changed`) can be held by both a specific `on(name)` subscription
    * and the `*` wildcard, so the underlying listener must only be torn down
    * when the last holder releases it.
    */
@@ -1137,6 +1394,16 @@ export class TauriRpcClient implements RpcClientLike {
         { method },
       );
     }
+    // For chat.send, attach the per-session `agent:stream:{sessionId}` listener
+    // BEFORE invoking send_message so the turn_start event is not missed. The
+    // chat composables register their `session.event.*` handlers via `on()`
+    // before the send, so the listener has a dispatch target.
+    if (method === 'chat.send') {
+      const sessionId = firstParam(params, 'sessionKey', 'session_key', 'sessionId', 'session_id');
+      if (typeof sessionId === 'string' && sessionId) {
+        this._ensureSessionStream(sessionId);
+      }
+    }
     const args = binding.transform ? binding.transform(params) : { ...params };
     const promise = Promise.resolve()
       .then(() => (binding.run ? binding.run(params) : invoke(binding.command, args)))
@@ -1152,10 +1419,11 @@ export class TauriRpcClient implements RpcClientLike {
 
     if (!isInternalEvent(event)) {
       if (event === '*') {
-        this._ensureStreams();
         for (const name of TAURI_TOP_LEVEL_EVENTS) this._ensureDirectListener(name);
       } else if (isStreamingDiscriminator(event)) {
-        this._ensureStreams();
+        // Streaming payloads arrive on the per-session `agent:stream:{sessionId}`
+        // channel, which `chat.send` attaches before invoking `send_message`.
+        // No global listener is needed here.
       } else {
         this._ensureDirectListener(event);
       }
@@ -1234,25 +1502,35 @@ export class TauriRpcClient implements RpcClientLike {
     });
   }
 
-  /** Ensure the three streaming channels are subscribed (once). */
-  private _ensureStreams(): void {
-    if (this._streamsStarted) return;
-    this._streamsStarted = true;
-    listen<TurnEventPayload>('turn-event', (payload) => this._dispatchStreamPayload(payload));
-    listen<StreamEventPayload>('stream-event', (payload) => this._dispatchStreamPayload(payload));
-    listen<ToolEventPayload>('tool-event', (payload) => this._dispatchStreamPayload(payload));
+  /**
+   * Attach (once per session) a listener on `agent:stream:{sessionId}` and
+   * route each `MessageStreamEvent` to the registered `session.event.*`
+   * handlers via {@link mapMessageStreamEvent}.
+   */
+  private _ensureSessionStream(sessionId: string): void {
+    if (this._sessionStreams.has(sessionId)) return;
+    const unlisten = listen<MessageStreamEvent>(agentStreamChannel(sessionId), (payload) => {
+      for (const { name, data } of mapMessageStreamEvent(payload)) {
+        this._dispatch(name, data);
+        this._dispatch('*', name, data, {});
+      }
+    });
+    this._sessionStreams.set(sessionId, unlisten);
   }
 
   /**
-   * Acquire a top-level Tauri channel listener by its exact name. The listener
-   * is created on the first acquisition and shared; callers must pair every
-   * acquisition with {@link _releaseDirectListener}.
+   * Acquire a top-level Tauri channel listener. The RPC event name is mapped to
+   * the actual Tauri channel via {@link TAURI_EVENT_CHANNEL} (e.g.
+   * `sessions.changed` → `sessions:list-changed`). The listener is created on
+   * the first acquisition and shared; callers must pair every acquisition with
+   * {@link _releaseDirectListener}.
    */
   private _ensureDirectListener(event: string): void {
     const refs = (this._directRefs.get(event) ?? 0) + 1;
     this._directRefs.set(event, refs);
     if (this._directUnlisteners.has(event)) return;
-    const unlisten = listen(event, (payload: unknown) => {
+    const channel = TAURI_EVENT_CHANNEL[event] ?? event;
+    const unlisten = listen(channel, (payload: unknown) => {
       this._dispatch(event, payload);
       this._dispatch('*', event, payload, {});
     });
@@ -1272,16 +1550,6 @@ export class TauriRpcClient implements RpcClientLike {
       return;
     }
     this._directRefs.set(event, refs);
-  }
-
-  /** Route a streaming payload to handlers by its `event` discriminator. */
-  private _dispatchStreamPayload(
-    payload: TauriEventEnvelope & { event?: string },
-  ): void {
-    const name = payload?.event;
-    if (!name) return;
-    this._dispatch(name, payload);
-    this._dispatch('*', name, payload, {});
   }
 
   /** Dispatch to every handler registered for `event`, then return. */
