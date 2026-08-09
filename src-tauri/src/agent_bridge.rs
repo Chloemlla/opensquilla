@@ -1394,33 +1394,49 @@ pub async fn get_all_provider_statuses(
 // Config patch / reset / effective commands
 // ---------------------------------------------------------------------------
 
-/// Get the effective configuration (structured config + gateway overlay).
+/// Get the effective configuration (same single source as [`get_config`]).
 #[tauri::command]
 pub async fn get_config_effective(state: State<'_, AppState>) -> TauriResult<ConfigGetResponse> {
     let config = state.config().await;
-    let mut json = serde_json::to_value(config.deref()).map_err(TauriError::from)?;
-    if let Some(obj) = json.as_object_mut() {
-        for (k, v) in state.config_store.overrides() {
-            obj.insert(k, v);
-        }
-    }
+    let json = serde_json::to_value(config.deref()).map_err(TauriError::from)?;
     Ok(ConfigGetResponse { config: json })
 }
 
 /// Apply a batch of key/value patches to the configuration.
+///
+/// Patches are applied to the single source-of-truth `Config` held in
+/// `AppState`, then persisted to disk via `Config::save`, so a successful patch
+/// survives a restart.
 #[tauri::command]
 pub async fn patch_config(
     state: State<'_, AppState>,
     patches: Vec<ConfigPatch>,
     safe: Option<bool>,
 ) -> TauriResult<ConfigSetResponse> {
-    let mut values = serde_json::Map::new();
-    for patch in &patches {
-        values.insert(patch.key.clone(), patch.value.clone());
+    if patches.is_empty() {
+        return Ok(ConfigSetResponse {
+            key: String::new(),
+            value: serde_json::json!({ "applied": 0 }),
+            status: "patched".to_string(),
+        });
     }
 
+    // For `safe` patches, validate the patched state against a staged copy
+    // before mutating the live config so a rejected patch is a no-op.
     if safe.unwrap_or(false) {
-        let issues = state.config_store.validate();
+        let mut staged = (*state.config().await).clone();
+        for patch in &patches {
+            staged
+                .set_value(&patch.key, &patch.value)
+                .map_err(|e| {
+                    TauriError::bad_request(format!(
+                        "Failed to apply patch '{}': {e}",
+                        patch.key
+                    ))
+                })?;
+        }
+        let store = opensquilla_gateway::ConfigStore::from_config(staged);
+        let issues = store.validate();
         if !issues.is_empty() {
             return Err(TauriError::bad_request(format!(
                 "Patched configuration is invalid: {}",
@@ -1429,14 +1445,38 @@ pub async fn patch_config(
         }
     }
 
-    let applied = state.config_store.patch(&values);
+    // Apply to the single source of truth, then persist to disk. A save failure
+    // is surfaced to the caller rather than silently dropped.
+    {
+        let mut config = state.config_mut().await;
+        for patch in &patches {
+            config
+                .set_value(&patch.key, &patch.value)
+                .map_err(|e| {
+                    TauriError::bad_request(format!(
+                        "Failed to apply patch '{}': {e}",
+                        patch.key
+                    ))
+                })?;
+        }
+    }
+    {
+        let config = state.config().await;
+        config.save().map_err(|e| {
+            TauriError::internal(format!("Failed to persist config: {e}"))
+        })?;
+    }
+
     let first_key = patches.first().map(|p| p.key.clone()).unwrap_or_default();
 
     // Keep channel system messages in sync with the UI language preference.
-    if let Some(locale) = values
-        .get("control_ui.default_locale")
-        .and_then(|v| v.as_str())
-    {
+    if let Some(locale) = patches.iter().find_map(|p| {
+        if p.key == "control_ui.default_locale" {
+            p.value.as_str()
+        } else {
+            None
+        }
+    }) {
         if let Some(gateway) = state.get_gateway().await {
             gateway.set_channel_locale(locale);
         }
@@ -1444,7 +1484,7 @@ pub async fn patch_config(
 
     Ok(ConfigSetResponse {
         key: first_key,
-        value: serde_json::json!({ "applied": applied }),
+        value: serde_json::json!({ "applied": patches.len() }),
         status: "patched".to_string(),
     })
 }

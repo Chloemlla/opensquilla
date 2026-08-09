@@ -67,6 +67,9 @@ impl AppState {
         config: Config,
         session_storage: SessionStorage,
     ) -> Self {
+        // Seed the gateway ConfigStore from the same config so its validation /
+        // routing views reflect the real configuration rather than an empty default.
+        let config_store = opensquilla_gateway::ConfigStore::from_config(config.clone());
         Self {
             runtime,
             gateway: Arc::new(RwLock::new(None)),
@@ -74,7 +77,7 @@ impl AppState {
             session_manager: Arc::new(Mutex::new(SessionManager::new(session_storage))),
             session_store: Arc::new(opensquilla_gateway::SessionStore::new()),
             chat_store: Arc::new(opensquilla_gateway::ChatStore::new()),
-            config_store: Arc::new(opensquilla_gateway::ConfigStore::new()),
+            config_store: Arc::new(config_store),
             workbench: Arc::new(Mutex::new(WorkbenchManager::new())),
             gateway_url: Arc::new(RwLock::new(None)),
         }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Top-level configuration for the OpenSquilla gateway.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -200,6 +201,39 @@ impl Config {
         self.apply_value_map(&value_map)
     }
 
+    /// Set a flat dotted-path key to a raw JSON value, preserving the value's
+    /// type. Unlike [`set`](Self::set), which coerces every value to a string,
+    /// this writes the JSON value as-is so booleans/numbers/objects survive the
+    /// round-trip through the typed struct.
+    pub fn set_value(
+        &mut self,
+        key: &str,
+        value: &serde_json::Value,
+    ) -> crate::error::Result<()> {
+        let mut value_map = self.to_value_map();
+        let keys: Vec<&str> = key.split('.').collect();
+
+        let mut current = &mut value_map;
+        for (i, part) in keys.iter().enumerate() {
+            if i == keys.len() - 1 {
+                current.insert((*part).to_string(), value.clone());
+            } else {
+                current = current
+                    .entry((*part).to_string())
+                    .or_insert_with(|| serde_json::Value::Object(Default::default()))
+                    .as_object_mut()
+                    .ok_or_else(|| {
+                        crate::error::Error::Config(format!(
+                            "Cannot set key '{}': intermediate '{}' is not an object",
+                            key, part
+                        ))
+                    })?;
+            }
+        }
+
+        self.apply_value_map(&value_map)
+    }
+
     /// Remove a flat dotted-path key from the configuration.
     pub fn remove(&mut self, key: &str) {
         let mut value_map = self.to_value_map();
@@ -222,19 +256,79 @@ impl Config {
     }
 
     /// Save the configuration to the discovered path as TOML.
+    ///
+    /// When no config file exists yet (fresh install), a default path is chosen
+    /// so a successful save still lands on disk and can be read back later.
     pub fn save(&self) -> crate::error::Result<()> {
-        let path = Self::discover_path()?;
+        let path = match Self::discover_path() {
+            Ok(p) => p,
+            Err(_) => Self::default_save_path()?,
+        };
         self.save_to(&path)
     }
 
+    /// Choose a write path for a fresh install with no existing config file:
+    /// the platform config directory, else the home dotfile.
+    fn default_save_path() -> crate::error::Result<PathBuf> {
+        if let Some(config_dir) = dirs::config_dir() {
+            return Ok(config_dir.join("opensquilla").join("opensquilla.toml"));
+        }
+        if let Some(home) = dirs::home_dir() {
+            return Ok(home.join(".opensquilla").join("opensquilla.toml"));
+        }
+        Err(crate::error::Error::Config(
+            "Cannot determine a configuration path for saving.".to_string(),
+        ))
+    }
+
     /// Save the configuration to a specific path as TOML.
+    ///
+    /// The write is atomic: serialize to a uniquely-named temporary file in the
+    /// same directory, then rename over the target, so a crash or error
+    /// mid-write cannot leave a truncated config file.
     pub fn save_to(&self, path: &PathBuf) -> crate::error::Result<()> {
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                crate::error::Error::Config(format!(
+                    "Failed to create config directory {}: {}",
+                    parent.display(),
+                    e
+                ))
+            })?;
+        }
         let contents = toml::to_string(self).map_err(|e| {
             crate::error::Error::Config(format!("Failed to serialize config: {}", e))
         })?;
-        std::fs::write(path, contents).map_err(|e| {
-            crate::error::Error::Config(format!("Failed to write config {}: {}", path.display(), e))
-        })?;
+
+        static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let tmp = path.with_extension(format!("tmp.{}.{}", std::process::id(), seq));
+
+        if let Err(e) = std::fs::write(&tmp, &contents) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(crate::error::Error::Config(format!(
+                "Failed to write config {}: {}",
+                tmp.display(),
+                e
+            )));
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+        }
+
+        // `fs::rename` atomically replaces an existing destination on both Unix
+        // and Windows (MoveFileEx with MOVEFILE_REPLACE_EXISTING).
+        if let Err(e) = std::fs::rename(&tmp, path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(crate::error::Error::Config(format!(
+                "Failed to write config {}: {}",
+                path.display(),
+                e
+            )));
+        }
         Ok(())
     }
 
