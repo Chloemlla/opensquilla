@@ -12,7 +12,10 @@
 //! With the `onnx` feature disabled construction succeeds but every embed
 //! returns `SquillaInferenceError::FeatureDisabled`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(feature = "onnx")]
+use std::path::Path;
+#[cfg(feature = "onnx")]
 use std::sync::Arc;
 
 /// Errors produced by the BGE embedding engine.
@@ -48,6 +51,8 @@ pub struct SquillaInference {
 /// BGE ONNX inference engine when the `onnx` feature is disabled.
 #[cfg(not(feature = "onnx"))]
 pub struct SquillaInference {
+    /// Recorded for construction parity; unused until the `onnx` feature lands.
+    #[allow(dead_code)]
     model_dir: PathBuf,
 }
 

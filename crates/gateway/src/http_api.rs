@@ -433,7 +433,7 @@ async fn api_desktop_shutdown(
 
 /// POST /api/elevated-mode — minimal elevated approval mode setter.
 async fn api_elevated_mode(
-    State(st): State<HttpApiState>,
+    State(_st): State<HttpApiState>,
     Json(body): Json<Value>,
 ) -> HandlerResult {
     let session_key = body

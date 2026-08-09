@@ -23,6 +23,7 @@ use opensquilla_core::types::{ContentBlock, Message, MessageRole, ToolCall, Tool
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+#[cfg(feature = "plugins")]
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, Semaphore};

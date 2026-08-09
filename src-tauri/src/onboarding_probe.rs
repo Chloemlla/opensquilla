@@ -149,7 +149,6 @@ struct ResolvedDeployment {
     model: String,
     base_url: String,
     api_key: String,
-    api_key_env: String,
     proxy: String,
 }
 
@@ -306,7 +305,6 @@ fn resolve_deployment(
         model,
         base_url,
         api_key: resolved_key,
-        api_key_env,
         proxy,
     }
 }
