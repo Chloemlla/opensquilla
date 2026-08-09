@@ -296,10 +296,8 @@ fn resolve_deployment(
     }
     if resolved_key.is_empty() && api_key_env.is_empty() {
         let default_env = provider_env_key(provider);
-        if !default_env.is_empty() {
-            if let Ok(v) = std::env::var(&default_env) {
-                resolved_key = v;
-            }
+        if let Ok(v) = std::env::var(default_env) {
+            resolved_key = v;
         }
     }
 
@@ -443,7 +441,7 @@ fn model_to_wire(m: &ModelCapabilities) -> serde_json::Value {
         });
     json!({
         "id": &m.model,
-        "name": m.label.clone().unwrap_or_else(|| m.model.clone()),
+        "name": m.label.clone().unwrap_or(m.model.clone()),
         "contextWindow": m.context_window,
         "maxOutputTokens": m.max_output_tokens,
         "capabilities": &m.tags,
