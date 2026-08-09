@@ -105,6 +105,7 @@ fn main() {
                 scheduler: None,
                 observability: None,
                 control_ui: None,
+                ..Default::default()
             }
         }
     };
