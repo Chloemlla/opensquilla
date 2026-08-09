@@ -28,6 +28,7 @@ use opensquilla_desktop_lib::agent_bridge;
 use opensquilla_desktop_lib::gateway;
 use opensquilla_desktop_lib::onboarding;
 use opensquilla_desktop_lib::onboarding_channel;
+use opensquilla_desktop_lib::onboarding_probe;
 use opensquilla_desktop_lib::onboarding_provider;
 use opensquilla_desktop_lib::onboarding_sections;
 use opensquilla_desktop_lib::state::AppState;
