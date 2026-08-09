@@ -27,6 +27,9 @@ use opensquilla_core::config::Config;
 use opensquilla_desktop_lib::agent_bridge;
 use opensquilla_desktop_lib::gateway;
 use opensquilla_desktop_lib::onboarding;
+use opensquilla_desktop_lib::onboarding_channel;
+use opensquilla_desktop_lib::onboarding_provider;
+use opensquilla_desktop_lib::onboarding_sections;
 use opensquilla_desktop_lib::state::AppState;
 use opensquilla_desktop_lib::workbench;
 use opensquilla_desktop_lib::{
@@ -185,6 +188,26 @@ fn main() {
             // Onboarding commands
             onboarding::onboarding_catalog,
             onboarding::onboarding_status,
+            onboarding_provider::onboarding_provider_configure,
+            onboarding_provider::onboarding_provider_credential_reveal,
+            onboarding_provider::onboarding_provider_credential_clear,
+            onboarding_provider::onboarding_llm_profile_upsert,
+            onboarding_provider::onboarding_llm_profile_credential_clear,
+            onboarding_provider::onboarding_llm_profile_remove,
+            onboarding_provider::onboarding_llm_profile_activate,
+            onboarding_provider::onboarding_llm_profile_active_remove,
+            onboarding_provider::onboarding_capability_reset,
+            onboarding_sections::onboarding_router_configure,
+            onboarding_sections::onboarding_ensemble_configure,
+            onboarding_sections::onboarding_search_configure,
+            onboarding_sections::onboarding_image_generation_configure,
+            onboarding_sections::onboarding_memory_embedding_configure,
+            onboarding_sections::onboarding_audio_configure,
+            onboarding_channel::onboarding_channel_upsert,
+            onboarding_channel::onboarding_channel_probe,
+            onboarding_channel::onboarding_channel_remove,
+            onboarding_channel::onboarding_channel_enable,
+            onboarding_channel::onboarding_channel_disable,
             // Workbench commands
             workbench::create_workbench_surface,
             workbench::destroy_workbench_surface,

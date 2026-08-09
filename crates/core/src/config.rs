@@ -1262,6 +1262,10 @@ pub struct SquillaRouterConfig {
     /// Vision follow-up gate unknown policy.
     #[serde(default)]
     pub vision_followup_gate_unknown_policy: String,
+    /// Router tier ladder, keyed by tier name. Opaque to the Rust runtime:
+    /// persisted verbatim so the WebUI router panel round-trips its rows.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tiers: HashMap<String, serde_json::Value>,
 }
 
 impl Default for SquillaRouterConfig {
@@ -1300,6 +1304,7 @@ impl Default for SquillaRouterConfig {
             vision_followup_gate_max_output_tokens: 512,
             vision_followup_gate_fallback_recent_turns: 2,
             vision_followup_gate_unknown_policy: "image_if_recent".to_string(),
+            tiers: HashMap::new(),
         }
     }
 }

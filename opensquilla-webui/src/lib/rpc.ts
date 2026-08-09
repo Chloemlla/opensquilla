@@ -1036,9 +1036,93 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     run: (_p) => invoke<{ models: unknown[] }>('list_models', {}).then((r) => r.models),
   },
 
-  // ── onboarding (read-only rescue: catalog + status) ─────────────────────
+  // ── onboarding (S3 read-only rescue + S4 write methods) ──────────────────
   'onboarding.catalog': { command: 'onboarding_catalog' },
   'onboarding.status': { command: 'onboarding_status' },
+  // S4 — provider configuration (single `request` struct arg)
+  'onboarding.provider.configure': {
+    command: 'onboarding_provider_configure',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.provider.credential.reveal': {
+    command: 'onboarding_provider_credential_reveal',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.provider.credential.clear': {
+    command: 'onboarding_provider_credential_clear',
+    transform: (p) => ({ request: p }),
+  },
+  // S4 — LLM profiles
+  'onboarding.llmProfile.upsert': {
+    command: 'onboarding_llm_profile_upsert',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.credential.clear': {
+    command: 'onboarding_llm_profile_credential_clear',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.remove': {
+    command: 'onboarding_llm_profile_remove',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.activate': {
+    command: 'onboarding_llm_profile_activate',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.active.remove': {
+    command: 'onboarding_llm_profile_active_remove',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.capability.reset': {
+    command: 'onboarding_capability_reset',
+    transform: (p) => ({ request: p }),
+  },
+  // S4 — feature section config (flat params, Tauri auto-maps camelCase args)
+  'onboarding.router.configure': {
+    command: 'onboarding_router_configure',
+    transform: (p) => p,
+  },
+  'onboarding.ensemble.configure': {
+    command: 'onboarding_ensemble_configure',
+    transform: (p) => p,
+  },
+  'onboarding.search.configure': {
+    command: 'onboarding_search_configure',
+    transform: (p) => p,
+  },
+  'onboarding.imageGeneration.configure': {
+    command: 'onboarding_image_generation_configure',
+    transform: (p) => p,
+  },
+  'onboarding.memory_embedding.configure': {
+    command: 'onboarding_memory_embedding_configure',
+    transform: (p) => p,
+  },
+  'onboarding.audio.configure': {
+    command: 'onboarding_audio_configure',
+    transform: (p) => p,
+  },
+  // S4 — channels editor (single `request` struct arg)
+  'onboarding.channel.probe': {
+    command: 'onboarding_channel_probe',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.channel.upsert': {
+    command: 'onboarding_channel_upsert',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.channel.remove': {
+    command: 'onboarding_channel_remove',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.channel.enable': {
+    command: 'onboarding_channel_enable',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.channel.disable': {
+    command: 'onboarding_channel_disable',
+    transform: (p) => ({ request: p }),
+  },
 
   // ── skills ──────────────────────────────────────────────────────────────
   'skills.list': { command: 'list_skills' },
