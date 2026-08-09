@@ -120,18 +120,7 @@
       "dialog": true
     },
     "shell": {
-      "scope": [
-        {
-          "name": "opensquilla-gateway",
-          "command": "osq",
-          "args": ["gateway", "status"]
-        },
-        {
-          "name": "open-external",
-          "command": "open",
-          "args": [{ "validator": ".*" }]
-        }
-      ]
+      "open": true
     }
   }
 }
