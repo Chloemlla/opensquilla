@@ -122,5 +122,6 @@ export async function getProviderStatus(
  * `get_all_provider_statuses() -> Result<JsonValue, TauriError>`.
  */
 export async function getAllProviderStatuses(): Promise<ProviderStatus[]> {
-  return invoke<ProviderStatus[]>('get_all_provider_statuses', {})
+  const result = await invoke<{ providers: ProviderStatus[] }>('get_all_provider_statuses', {})
+  return result.providers
 }

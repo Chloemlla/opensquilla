@@ -914,8 +914,35 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
   },
   'sessions.preview': {
+    // The inspect drawer calls with `{ keys: [key] }` and expects
+    // `{ previews: [{ key, title, lastMessage, updatedAt }] }`. Rust
+    // get_session returns `{ session: SessionInfo }` (camelCase), so map it.
     command: 'get_session',
-    transform: (p) => ({ sessionId: firstParam(p, 'id', 'key', 'sessionKey', 'session_key') }),
+    run: async (p) => {
+      const keys = Array.isArray(p.keys) ? p.keys : p.key != null ? [p.key] : [];
+      const key = String(keys[0] ?? '');
+      if (!key) return { previews: [] };
+      try {
+        const res = await invoke<{
+          session?: { id?: string; title?: string; updatedAt?: string };
+        }>('get_session', { sessionId: key });
+        const s = res?.session;
+        return s?.id
+          ? {
+              previews: [
+                {
+                  key: s.id,
+                  title: s.title ?? '',
+                  lastMessage: '',
+                  updatedAt: s.updatedAt ? Date.parse(s.updatedAt) || null : null,
+                },
+              ],
+            }
+          : { previews: [] };
+      } catch {
+        return { previews: [] };
+      }
+    },
   },
   'sessions.delete': {
     command: 'delete_session',
@@ -996,13 +1023,14 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     run: (_p) => invoke<{ providers: unknown[] }>('list_providers', {}).then((r) => r.providers),
   },
   'providers.status': {
-    command: 'get_provider_status',
-    transform: (p) => ({ providerId: firstParam(p, 'id', 'providerId', 'provider_id') }),
+    // OverviewView reads `data.providers` as an array. Rust
+    // get_all_provider_statuses returns `{ providers, defaultProvider, count }`.
+    command: 'get_all_provider_statuses',
+    run: (_p) => invoke<{ providers: unknown[] }>('get_all_provider_statuses', {}),
   },
-  'models.routing.get': {
-    command: 'list_models',
-    run: (_p) => invoke<{ models: unknown[] }>('list_models', {}).then((r) => r.models),
-  },
+  // models.routing.get is intentionally unbridged: the Rust runtime has no
+  // routing-snapshot command, so callers degrade to the config projection
+  // (METHOD_NOT_FOUND is caught in useChatFeatureToggles).
   'models.list': {
     command: 'list_models',
     run: (_p) => invoke<{ models: unknown[] }>('list_models', {}).then((r) => r.models),
