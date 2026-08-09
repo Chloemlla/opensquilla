@@ -30,6 +30,7 @@ pub mod gateway;
 pub mod ipc;
 pub mod lifecycle;
 pub mod locale;
+pub mod onboarding;
 pub mod runtime;
 pub mod state;
 pub mod storage;

@@ -26,6 +26,7 @@
 use opensquilla_core::config::Config;
 use opensquilla_desktop_lib::agent_bridge;
 use opensquilla_desktop_lib::gateway;
+use opensquilla_desktop_lib::onboarding;
 use opensquilla_desktop_lib::state::AppState;
 use opensquilla_desktop_lib::workbench;
 use opensquilla_desktop_lib::{
@@ -181,6 +182,9 @@ fn main() {
             agent_bridge::reset_config,
             agent_bridge::get_config_value,
             agent_bridge::list_config,
+            // Onboarding commands
+            onboarding::onboarding_catalog,
+            onboarding::onboarding_status,
             // Workbench commands
             workbench::create_workbench_surface,
             workbench::destroy_workbench_surface,

@@ -1036,6 +1036,10 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     run: (_p) => invoke<{ models: unknown[] }>('list_models', {}).then((r) => r.models),
   },
 
+  // ── onboarding (read-only rescue: catalog + status) ─────────────────────
+  'onboarding.catalog': { command: 'onboarding_catalog' },
+  'onboarding.status': { command: 'onboarding_status' },
+
   // ── skills ──────────────────────────────────────────────────────────────
   'skills.list': { command: 'list_skills' },
 
