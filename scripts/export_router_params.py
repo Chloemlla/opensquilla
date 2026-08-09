@@ -233,6 +233,26 @@ def export_lgbm(path, out_path, num_class=4):
     )
 
 
+def update_inference_manifest(root, params):
+    """Merge the exported dims into `inference_manifest.json` -- the file the
+    Rust `Manifest` reads for `temperature`/`per_class_alpha`. Those two values
+    come from training and are preserved when the file already exists (the
+    documented defaults are used only if it is absent). `artifact_manifest.json`
+    is deliberately left untouched: it is a checksum/provenance manifest owned
+    by `update_router_artifact_manifest.py`, not a Rust runtime contract."""
+    manifest_path = root / "inference_manifest.json"
+    manifest = {}
+    if manifest_path.exists():
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    manifest.setdefault("temperature", 0.8092449307441711)
+    manifest.setdefault("per_class_alpha", [0.5, 0.05, 0.5, 0.85])
+    manifest["feature_dim"] = 390
+    manifest["mlp_input_dim"] = 1536
+    manifest["params"] = params
+    write_json(manifest, manifest_path)
+
+
 def main():
     root = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_ROOT
     root = root.resolve()
@@ -263,14 +283,7 @@ def main():
     else:
         print(f"warning: {aux_path} not found; omitting lgbm_aux from manifest", file=sys.stderr)
 
-    write_json(
-        {
-            "feature_dim": 390,
-            "mlp_input_dim": 1536,
-            "params": params,
-        },
-        root / "artifact_manifest.json",
-    )
+    update_inference_manifest(root, params)
 
 
 if __name__ == "__main__":

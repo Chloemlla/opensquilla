@@ -140,7 +140,10 @@ strict_format / long_context，全部由 `router.runtime.yaml` 的 `flag_rules`
 ### 4.1 转换脚本（一次性，Python）
 
 `scripts/export_router_params.py`：读 .pkl/.joblib，输出 `params/` 下的
-JSON/二进制，并更新 `artifact_manifest.json`。需导出的参数：
+JSON/二进制，并合并更新 `inference_manifest.json`（Rust `Manifest` 读取的
+`temperature`/`per_class_alpha`；`artifact_manifest.json` 是校验和/provenance
+清单，由 `update_router_artifact_manifest.py` 维护，导出脚本不覆盖）。需导出
+的参数：
 
 | 源资产 | 导出内容 | 备注 |
 |---|---|---|

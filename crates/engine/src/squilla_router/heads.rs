@@ -89,7 +89,10 @@ impl GbdtScorer {
                 // compares against an f64 threshold. Match that rounding so
                 // threshold comparisons see the same values.
                 let feature = (features[f] as f32) as f64;
-                let go_left = feature < tree.split_threshold[node];
+                // LightGBM `NumericalDecision` uses `fval <= threshold` to go
+                // left, so a feature exactly equal to the threshold must take
+                // the left child.
+                let go_left = feature <= tree.split_threshold[node];
                 node = if go_left {
                     tree.left_child[node] as usize
                 } else {
@@ -347,6 +350,22 @@ mod tests {
         // Left branch (all-zero leaves) yields a uniform distribution.
         let p = scorer.predict_proba(&[0.2, 0.0, 0.0, 0.0]);
         assert!((p[0] - 0.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn predict_proba_threshold_equality_goes_left() {
+        // LightGBM's `NumericalDecision` is `fval <= threshold` -> left, so a
+        // feature exactly equal to the split threshold must take the left child
+        // (here an all-zero leaf -> uniform distribution).
+        let scorer = GbdtScorer {
+            forest: forest_with_class_scores([0.0, 0.0, 10.0, 0.0]),
+        };
+        let p = scorer.predict_proba(&[0.5, 0.0, 0.0, 0.0]);
+        assert!((p[2] - 0.25).abs() < 1e-9);
+        // One ULP above 0.5 (the next f32) routes right -> class 2 dominates.
+        let above = f32::from_bits(0.5f32.to_bits() + 1) as f64;
+        let p = scorer.predict_proba(&[above, 0.0, 0.0, 0.0]);
+        assert!(p[2] > 0.99);
     }
 
     #[test]
