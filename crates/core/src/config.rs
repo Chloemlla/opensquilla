@@ -269,7 +269,7 @@ impl Config {
 
     /// Choose a write path for a fresh install with no existing config file:
     /// the platform config directory, else the home dotfile.
-    fn default_save_path() -> crate::error::Result<PathBuf> {
+    pub fn default_save_path() -> crate::error::Result<PathBuf> {
         if let Some(config_dir) = dirs::config_dir() {
             return Ok(config_dir.join("opensquilla").join("opensquilla.toml"));
         }

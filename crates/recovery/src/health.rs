@@ -67,6 +67,37 @@ pub struct HealthCheck {
     start_time: DateTime<Utc>,
 }
 
+/// Whether the configuration names a default provider. `llm` is the primary
+/// provider after the S1 config expansion (`provider.default` was never a real
+/// key in the Rust Config); a non-empty providers list also counts so
+/// pre-S1 configs stay healthy.
+fn has_default_provider(config: &Config) -> bool {
+    config
+        .llm
+        .as_ref()
+        .is_some_and(|l| !l.provider.trim().is_empty())
+        || !config.providers.is_empty()
+}
+
+/// Whether the configuration names a default model.
+fn has_default_model(config: &Config) -> bool {
+    config
+        .llm
+        .as_ref()
+        .is_some_and(|l| !l.model.trim().is_empty())
+        || config
+            .models
+            .as_ref()
+            .and_then(|m| m.default_model.as_deref())
+            .is_some_and(|m| !m.trim().is_empty())
+        || config.providers.iter().any(|p| {
+            !p.models.is_empty()
+                || p.default_model
+                    .as_deref()
+                    .is_some_and(|m| !m.trim().is_empty())
+        })
+}
+
 impl HealthCheck {
     /// Create a new health check manager.
     pub fn new(config: &Config) -> Self {
@@ -172,14 +203,8 @@ impl HealthCheck {
                 .unwrap_or_else(|_| "not found".to_string()),
         );
 
-        let has_provider = self
-            .config
-            .get("provider.default")
-            .is_some_and(|v| !v.is_empty());
-        let has_model = self
-            .config
-            .get("model.default")
-            .is_some_and(|v| !v.is_empty());
+        let has_provider = has_default_provider(&self.config);
+        let has_model = has_default_model(&self.config);
 
         details.insert("has_provider".to_string(), has_provider.to_string());
         details.insert("has_model".to_string(), has_model.to_string());
@@ -215,10 +240,17 @@ impl HealthCheck {
 
         let mut details = HashMap::new();
 
-        // Check config directory
+        // Check config directory. Fall back to the fresh-install save path so a
+        // pre-setup install still probes where the config would be written
+        // instead of reporting not-writable because no file exists yet.
         let config_dir = Config::discover_path()
             .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .or_else(|| {
+                Config::default_save_path()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            });
 
         let config_writable = match &config_dir {
             Some(dir) => {
@@ -382,14 +414,8 @@ impl HealthVerifier {
 
         match subsystem {
             "config" => {
-                let has_provider = self
-                    .config
-                    .get("provider.default")
-                    .is_some_and(|v| !v.is_empty());
-                let has_model = self
-                    .config
-                    .get("model.default")
-                    .is_some_and(|v| !v.is_empty());
+                let has_provider = has_default_provider(&self.config);
+                let has_model = has_default_model(&self.config);
                 let ok = has_provider && has_model;
                 SubsystemHealth {
                     subsystem: "config".to_string(),
@@ -454,7 +480,7 @@ impl HealthVerifier {
 #[cfg(test)]
 mod health_verifier_tests {
     use super::*;
-    use opensquilla_core::config::Config;
+    use opensquilla_core::config::{Config, LlmConfig, ProviderConfig};
 
     #[tokio::test]
     async fn test_verify_recovery_records() {
@@ -463,6 +489,54 @@ mod health_verifier_tests {
         assert_eq!(verification.recovery_id, "recovery-1");
         assert_eq!(verification.checks.len(), 3);
         assert_eq!(verifier.verification_count().await, 1);
+    }
+
+    #[test]
+    fn default_provider_detected_from_llm() {
+        let mut config = Config::default();
+        config.llm = Some(LlmConfig {
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-5".to_string(),
+            ..Default::default()
+        });
+        assert!(has_default_provider(&config));
+        assert!(has_default_model(&config));
+    }
+
+    #[test]
+    fn default_provider_absent_when_unconfigured() {
+        assert!(!has_default_provider(&Config::default()));
+        assert!(!has_default_model(&Config::default()));
+    }
+
+    #[test]
+    fn providers_list_counts_as_configured() {
+        let mut config = Config::default();
+        config.providers.push(ProviderConfig {
+            name: "openai".to_string(),
+            provider_type: "openai".to_string(),
+            api_key: None,
+            base_url: None,
+            models: vec!["gpt-4o".to_string()],
+            default_model: Some("gpt-4o".to_string()),
+            max_retries: 3,
+            timeout_secs: 60,
+        });
+        assert!(has_default_provider(&config));
+        assert!(has_default_model(&config));
+    }
+
+    #[tokio::test]
+    async fn config_component_healthy_with_llm() {
+        let mut config = Config::default();
+        config.llm = Some(LlmConfig {
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-5".to_string(),
+            ..Default::default()
+        });
+        let health = HealthCheck::new(&config);
+        let component = health.check_config().await;
+        assert_eq!(component.status, HealthStatus::Healthy);
     }
 
     #[tokio::test]
