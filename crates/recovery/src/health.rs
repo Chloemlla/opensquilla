@@ -71,7 +71,7 @@ pub struct HealthCheck {
 /// provider after the S1 config expansion (`provider.default` was never a real
 /// key in the Rust Config); a non-empty providers list also counts so
 /// pre-S1 configs stay healthy.
-fn has_default_provider(config: &Config) -> bool {
+pub(crate) fn has_default_provider(config: &Config) -> bool {
     config
         .llm
         .as_ref()
@@ -80,7 +80,7 @@ fn has_default_provider(config: &Config) -> bool {
 }
 
 /// Whether the configuration names a default model.
-fn has_default_model(config: &Config) -> bool {
+pub(crate) fn has_default_model(config: &Config) -> bool {
     config
         .llm
         .as_ref()

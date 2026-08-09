@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use opensquilla_core::config::Config;
+use opensquilla_core::config::{ChannelConfig, Config, ModelConfig, ProviderConfig};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
@@ -209,30 +209,72 @@ impl SetupFlow {
 
     /// Set the API key for the selected provider.
     pub fn set_api_key(&mut self, key: &str) {
-        if let Some(ref provider) = self.selected_provider {
-            self.config
-                .set(&format!("provider.{}.api_key", provider.name), key)
-                .ok();
-            info!("API key set for provider {}", provider.name);
+        let Some(provider) = self.selected_provider.clone() else {
+            return;
+        };
+        if let Some(existing) = self
+            .config
+            .providers
+            .iter_mut()
+            .find(|p| p.name == provider.name)
+        {
+            existing.api_key = Some(key.to_string());
+        } else {
+            self.config.providers.push(ProviderConfig {
+                name: provider.name.clone(),
+                provider_type: provider.name.clone(),
+                api_key: Some(key.to_string()),
+                base_url: Some(provider.base_url.clone()),
+                models: provider.models.iter().map(|m| m.id.clone()).collect(),
+                default_model: provider
+                    .models
+                    .iter()
+                    .find(|m| m.recommended)
+                    .or(provider.models.first())
+                    .map(|m| m.id.clone()),
+                max_retries: 3,
+                timeout_secs: 60,
+            });
         }
+        info!("API key set for provider {}", provider.name);
     }
 
     /// Check if the API key is set.
     pub fn has_api_key(&self) -> bool {
-        if let Some(ref provider) = self.selected_provider {
-            !self
-                .config
-                .get(&format!("provider.{}.api_key", provider.name))
-                .unwrap_or_default()
-                .is_empty()
-        } else {
-            false
-        }
+        let Some(provider) = &self.selected_provider else {
+            return false;
+        };
+        self.config
+            .providers
+            .iter()
+            .find(|p| p.name == provider.name)
+            .and_then(|p| p.api_key.as_deref())
+            .is_some_and(|k| !k.trim().is_empty())
     }
 
     /// Set the default model.
     pub fn set_default_model(&mut self, model: &str) {
-        self.config.set("model.default", model).ok();
+        let model = model.to_string();
+        if let Some(name) = self.selected_provider.as_ref().map(|p| p.name.clone()) {
+            if let Some(provider) = self
+                .config
+                .providers
+                .iter_mut()
+                .find(|p| p.name == name)
+            {
+                if !provider.models.contains(&model) {
+                    provider.models.push(model.clone());
+                }
+                provider.default_model = Some(model.clone());
+            }
+        }
+        self.config
+            .models
+            .get_or_insert_with(|| ModelConfig {
+                default_model: None,
+                routing_rules: Vec::new(),
+            })
+            .default_model = Some(model);
         info!("Default model set to {model}");
     }
 
@@ -255,14 +297,28 @@ impl SetupFlow {
             ));
         }
 
-        // Save channel configurations
+        // Save channel configurations.
         for (name, setup) in &self.channel_configs {
-            let config_key = format!("channel.{}.enabled", name);
-            self.config.set(&config_key, "true").ok();
-
-            for (key, value) in &setup.settings {
-                let channel_key = format!("channel.{name}.{key}");
-                self.config.set(&channel_key, value).ok();
+            match self
+                .config
+                .channels
+                .iter_mut()
+                .find(|c| c.name == *name)
+            {
+                Some(existing) => {
+                    existing.enabled = true;
+                    for (key, value) in &setup.settings {
+                        existing.config.insert(key.clone(), value.clone());
+                    }
+                }
+                None => {
+                    self.config.channels.push(ChannelConfig {
+                        name: name.clone(),
+                        channel_type: setup.channel_type.clone(),
+                        enabled: true,
+                        config: setup.settings.clone(),
+                    });
+                }
             }
         }
 

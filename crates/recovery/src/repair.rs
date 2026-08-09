@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use opensquilla_core::config::Config;
+use opensquilla_core::config::{Config, LlmConfig, ProviderConfig};
 use serde::{Deserialize, Serialize};
 use tracing::info;
+
+use crate::health::has_default_model;
 
 /// Types of configuration issues that can be repaired.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,32 +57,26 @@ impl ConfigRepair {
     /// Scan the configuration for issues.
     pub fn scan(&self) -> Vec<ConfigIssueReport> {
         let mut issues = Vec::new();
-        let entries = self.config.list();
 
-        // Check for missing API keys
-        let provider_keys: Vec<String> = entries
-            .keys()
-            .filter(|k| k.starts_with("provider.") && k.ends_with(".api_key"))
-            .cloned()
-            .collect();
-
-        for key in &provider_keys {
-            if entries.get(key).is_none_or(|v| v.is_empty()) {
-                let provider_name = key
-                    .trim_start_matches("provider.")
-                    .trim_end_matches(".api_key");
+        // Check for missing API keys.
+        for provider in &self.config.providers {
+            if provider
+                .api_key
+                .as_deref()
+                .is_none_or(|k| k.trim().is_empty())
+            {
                 issues.push(ConfigIssueReport {
                     issue_type: ConfigIssue::MissingApiKey,
-                    key: key.clone(),
-                    description: format!("API key missing for provider '{provider_name}'"),
+                    key: format!("providers.{}.api_key", provider.name),
+                    description: format!("API key missing for provider '{}'", provider.name),
                     severity: IssueSeverity::Error,
                     can_auto_fix: false,
                 });
             }
         }
 
-        // Check for default model
-        if !entries.contains_key("model.default") {
+        // Check for default model.
+        if !has_default_model(&self.config) {
             issues.push(ConfigIssueReport {
                 issue_type: ConfigIssue::MissingKey,
                 key: "model.default".to_string(),
@@ -90,31 +86,15 @@ impl ConfigRepair {
             });
         }
 
-        // Check for default provider
-        if !entries.contains_key("provider.default") {
+        // Check for default provider (no primary `llm` provider designated).
+        if llm_provider_missing(&self.config) {
             issues.push(ConfigIssueReport {
                 issue_type: ConfigIssue::MissingKey,
                 key: "provider.default".to_string(),
                 description: "Default provider not configured".to_string(),
                 severity: IssueSeverity::Warning,
-                can_auto_fix: true,
+                can_auto_fix: first_configured_provider(&self.config).is_some(),
             });
-        }
-
-        // Check for deprecated keys
-        let deprecated_keys = ["api_key", "openai_api_key", "anthropic_api_key"];
-        for key in &deprecated_keys {
-            if entries.contains_key(*key) {
-                issues.push(ConfigIssueReport {
-                    issue_type: ConfigIssue::DeprecatedKey,
-                    key: key.to_string(),
-                    description: format!(
-                        "Deprecated config key '{key}' - use provider-specific keys"
-                    ),
-                    severity: IssueSeverity::Warning,
-                    can_auto_fix: true,
-                });
-            }
         }
 
         issues
@@ -133,23 +113,23 @@ impl ConfigRepair {
             match issue.issue_type {
                 ConfigIssue::MissingKey => {
                     if issue.key == "model.default" {
-                        self.config.set("model.default", "gpt-4o").ok();
+                        self.config
+                            .llm
+                            .get_or_insert_with(LlmConfig::default)
+                            .model = "gpt-4o".to_string();
                         fixed.push(issue.clone());
                         info!("Auto-fixed: set model.default to gpt-4o");
                     } else if issue.key == "provider.default" {
-                        // Try to find the first configured provider
+                        // Try to find the first configured provider.
                         if let Some(provider) = self.find_first_configured_provider() {
-                            self.config.set("provider.default", &provider).ok();
+                            self.config
+                                .llm
+                                .get_or_insert_with(LlmConfig::default)
+                                .provider = provider.clone();
                             fixed.push(issue.clone());
                             info!("Auto-fixed: set provider.default to {provider}");
                         }
                     }
-                }
-                ConfigIssue::DeprecatedKey => {
-                    // Remove deprecated key
-                    self.config.remove(&issue.key);
-                    fixed.push(issue.clone());
-                    info!("Auto-fixed: removed deprecated key {}", issue.key);
                 }
                 _ => {}
             }
@@ -164,20 +144,11 @@ impl ConfigRepair {
 
     /// Find the first configured provider.
     fn find_first_configured_provider(&self) -> Option<String> {
-        let entries = self.config.list();
-        for key in entries.keys() {
-            if key.starts_with("provider.")
-                && key.ends_with(".api_key")
-                && entries.get(key).is_some_and(|v| !v.is_empty())
-            {
-                return Some(
-                    key.trim_start_matches("provider.")
-                        .trim_end_matches(".api_key")
-                        .to_string(),
-                );
-            }
-        }
-        None
+        self.config
+            .providers
+            .iter()
+            .find(|p| p.api_key.as_deref().is_some_and(|k| !k.trim().is_empty()))
+            .map(|p| p.name.clone())
     }
 
     /// Backup the current configuration.
@@ -236,29 +207,18 @@ impl ConfigRepair {
     ///
     /// Fixes applied:
     ///
-    /// 1. deprecated top-level provider keys are removed,
-    /// 2. a missing `provider.default` is set from the first configured provider,
-    /// 3. a missing `model.default` is set to a sensible fallback.
-    pub async fn repair_config(&self, config: &mut Config) -> Vec<ConfigIssueReport> {
+    /// 1. a missing default provider is set from the first configured provider,
+    /// 2. a missing default model is set to a sensible fallback.
+    pub async fn repair_config(config: &mut Config) -> Vec<ConfigIssueReport> {
         let mut issues = Vec::new();
 
-        for key in ["api_key", "openai_api_key", "anthropic_api_key"] {
-            if config.list().contains_key(key) {
-                config.remove(key);
-                issues.push(self.issue(
-                    ConfigIssue::DeprecatedKey,
-                    key,
-                    "Deprecated config key removed",
-                    true,
-                ));
-            }
-        }
-
-        let provider_default = config.get("provider.default").unwrap_or_default();
-        if provider_default.trim().is_empty() {
+        if llm_provider_missing(config) {
             if let Some(provider) = first_configured_provider(config) {
-                config.set("provider.default", &provider).ok();
-                issues.push(self.issue(
+                config
+                    .llm
+                    .get_or_insert_with(LlmConfig::default)
+                    .provider = provider.clone();
+                issues.push(make_issue(
                     ConfigIssue::MissingKey,
                     "provider.default",
                     &format!("Set provider.default to {provider}"),
@@ -267,9 +227,12 @@ impl ConfigRepair {
             }
         }
 
-        if config.get("model.default").is_none_or(|v| v.is_empty()) {
-            config.set("model.default", "gpt-4o").ok();
-            issues.push(self.issue(
+        if !has_default_model(config) {
+            config
+                .llm
+                .get_or_insert_with(LlmConfig::default)
+                .model = "gpt-4o".to_string();
+            issues.push(make_issue(
                 ConfigIssue::MissingKey,
                 "model.default",
                 "Set model.default to gpt-4o",
@@ -281,54 +244,40 @@ impl ConfigRepair {
     }
 
     /// Repair a single provider's configuration: ensure the `api_key` and
-    /// `model` keys exist, then persist.
+    /// `default_model` fields exist, then persist.
     pub async fn repair_provider_config(&mut self, provider: &str) -> Vec<ConfigIssueReport> {
         let mut issues = Vec::new();
-        let base = format!("provider.{provider}");
 
-        let key = format!("{base}.api_key");
-        if self.config.get(&key).is_none_or(|v| v.is_empty()) {
-            self.config.set(&key, "").ok();
-            issues.push(self.issue(
-                ConfigIssue::MissingApiKey,
-                &key,
-                &format!("API key missing for provider '{provider}'"),
-                false,
-            ));
-        }
+        if let Some(provider_config) = self
+            .config
+            .providers
+            .iter_mut()
+            .find(|p| p.name == provider)
+        {
+            if provider_config
+                .api_key
+                .as_deref()
+                .is_none_or(|k| k.trim().is_empty())
+            {
+                provider_config.api_key = Some(String::new());
+                issues.push(make_issue(
+                    ConfigIssue::MissingApiKey,
+                    &format!("providers.{provider}.api_key"),
+                    &format!("API key missing for provider '{provider}'"),
+                    false,
+                ));
+            }
 
-        let model_key = format!("{base}.model");
-        if self.config.get(&model_key).is_none_or(|v| v.is_empty()) {
-            self.config.set(&model_key, "").ok();
-            issues.push(self.issue(
-                ConfigIssue::MissingKey,
-                &model_key,
-                &format!("Model not configured for provider '{provider}'"),
-                true,
-            ));
-        }
-
-        if !issues.is_empty() {
-            self.config.save().ok();
-        }
-        issues
-    }
-
-    /// Repair a single channel's configuration: ensure the channel's base keys
-    /// (`enabled`, `type`) exist, then persist.
-    pub async fn repair_channel_config(&mut self, channel: &str) -> Vec<ConfigIssueReport> {
-        let mut issues = Vec::new();
-        let base = format!("channel.{channel}");
-
-        for suffix in ["enabled", "type"] {
-            let key = format!("{base}.{suffix}");
-            if !self.config.list().contains_key(&key) {
-                let value = if suffix == "enabled" { "false" } else { "" };
-                self.config.set(&key, value).ok();
-                issues.push(self.issue(
+            if provider_config
+                .default_model
+                .as_deref()
+                .is_none_or(|m| m.trim().is_empty())
+            {
+                provider_config.default_model = provider_config.models.first().cloned();
+                issues.push(make_issue(
                     ConfigIssue::MissingKey,
-                    &key,
-                    &format!("Added missing channel key '{key}'"),
+                    &format!("providers.{provider}.default_model"),
+                    &format!("Model not configured for provider '{provider}'"),
                     true,
                 ));
             }
@@ -340,55 +289,44 @@ impl ConfigRepair {
         issues
     }
 
-    /// Migrate configuration from legacy formats (env-style and top-level
-    /// provider keys) into the modern `provider.<name>.<key>` shape.
+    /// Repair a single channel's configuration. A typed `ChannelConfig` always
+    /// carries `enabled` and `channel_type`, so there is nothing left to add;
+    /// the method exists to keep the repair surface uniform.
+    pub async fn repair_channel_config(_channel: &str) -> Vec<ConfigIssueReport> {
+        Vec::new()
+    }
+
+    /// Migrate legacy env-style provider keys into typed provider entries.
+    /// Top-level legacy config keys cannot survive a typed `Config` load, so
+    /// the process environment is the only remaining source of those values.
     pub async fn auto_migrate_config(&mut self) -> Vec<ConfigIssueReport> {
         let mut issues = Vec::new();
 
-        let legacy_top_level: Vec<(String, String, String)> = [
-            ("openai_api_key", "provider.openai.api_key"),
-            ("anthropic_api_key", "provider.anthropic.api_key"),
-        ]
-        .iter()
-        .filter_map(|(legacy, modern)| {
-            self.config
-                .get(legacy)
-                .filter(|v| !v.is_empty())
-                .map(|v| (legacy.to_string(), modern.to_string(), v))
-        })
-        .collect();
-
-        for (legacy, modern, value) in legacy_top_level {
-            self.config.set(&modern, &value).ok();
-            self.config.remove(&legacy);
-            issues.push(self.issue(
+        let legacy_env: [(&str, &str, &str); 2] = [
+            ("OPENAI_API_KEY", "openai", "openai"),
+            ("ANTHROPIC_API_KEY", "anthropic", "anthropic"),
+        ];
+        for (env, name, provider_type) in legacy_env {
+            let Ok(key) = std::env::var(env) else {
+                continue;
+            };
+            if key.trim().is_empty() || self.config.providers.iter().any(|p| p.name == name) {
+                continue;
+            }
+            self.config.providers.push(ProviderConfig {
+                name: name.to_string(),
+                provider_type: provider_type.to_string(),
+                api_key: Some(key),
+                base_url: None,
+                models: Vec::new(),
+                default_model: None,
+                max_retries: 3,
+                timeout_secs: 60,
+            });
+            issues.push(make_issue(
                 ConfigIssue::DeprecatedKey,
-                &legacy,
-                &format!("Migrated {legacy} to {modern}"),
-                true,
-            ));
-        }
-
-        let env_keys: Vec<(String, String, String)> = [
-            ("OPENAI_API_KEY", "provider.openai.api_key"),
-            ("ANTHROPIC_API_KEY", "provider.anthropic.api_key"),
-        ]
-        .iter()
-        .filter_map(|(env, modern)| {
-            self.config
-                .get(env)
-                .filter(|v| !v.is_empty())
-                .map(|v| (env.to_string(), modern.to_string(), v))
-        })
-        .collect();
-
-        for (env, modern, value) in env_keys {
-            self.config.set(&modern, &value).ok();
-            self.config.remove(&env);
-            issues.push(self.issue(
-                ConfigIssue::DeprecatedKey,
-                &env,
-                &format!("Migrated {env} to {modern}"),
+                env,
+                &format!("Migrated {env} into a configured provider"),
                 true,
             ));
         }
@@ -398,37 +336,42 @@ impl ConfigRepair {
         }
         issues
     }
+}
 
-    /// Build a lightweight [`ConfigIssueReport`] for a fix that was applied.
-    fn issue(
-        &self,
-        issue_type: ConfigIssue,
-        key: &str,
-        description: &str,
-        can_auto_fix: bool,
-    ) -> ConfigIssueReport {
-        ConfigIssueReport {
-            issue_type,
-            key: key.to_string(),
-            description: description.to_string(),
-            severity: IssueSeverity::Warning,
-            can_auto_fix,
-        }
-    }
+/// Whether no primary `llm` provider is designated.
+fn llm_provider_missing(config: &Config) -> bool {
+    config
+        .llm
+        .as_ref()
+        .is_none_or(|l| l.provider.trim().is_empty())
 }
 
 /// Find the first provider with a non-empty `api_key`.
 fn first_configured_provider(config: &Config) -> Option<String> {
-    for (key, value) in config.list() {
-        if key.starts_with("provider.") && key.ends_with(".api_key") && !value.is_empty() {
-            return Some(
-                key.trim_start_matches("provider.")
-                    .trim_end_matches(".api_key")
-                    .to_string(),
-            );
-        }
+    config
+        .providers
+        .iter()
+        .find(|p| p.api_key.as_deref().is_some_and(|k| !k.trim().is_empty()))
+        .map(|p| p.name.clone())
+}
+
+/// Build a lightweight [`ConfigIssueReport`] for a fix that was applied.
+///
+/// A free function (not a `&self` method) so it can be called while
+/// `self.config.providers` is still mutably borrowed.
+fn make_issue(
+    issue_type: ConfigIssue,
+    key: &str,
+    description: &str,
+    can_auto_fix: bool,
+) -> ConfigIssueReport {
+    ConfigIssueReport {
+        issue_type,
+        key: key.to_string(),
+        description: description.to_string(),
+        severity: IssueSeverity::Warning,
+        can_auto_fix,
     }
-    None
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -447,11 +390,35 @@ pub enum ConfigRepairError {
 mod tests {
     use super::*;
 
+    fn provider(name: &str, api_key: Option<&str>, models: &[&str]) -> ProviderConfig {
+        ProviderConfig {
+            name: name.to_string(),
+            provider_type: name.to_string(),
+            api_key: api_key.map(|s| s.to_string()),
+            base_url: None,
+            models: models.iter().map(|m| m.to_string()).collect(),
+            default_model: models.first().map(|m| m.to_string()),
+            max_retries: 3,
+            timeout_secs: 60,
+        }
+    }
+
+    fn repair_with(config: Config) -> ConfigRepair {
+        ConfigRepair {
+            config,
+            config_path: PathBuf::from("opensquilla.toml"),
+        }
+    }
+
     #[test]
     fn test_first_configured_provider() {
         let mut config = Config::default();
-        config.set("provider.openai.api_key", "sk-test").unwrap();
-        config.set("provider.anthropic.api_key", "").unwrap();
+        config
+            .providers
+            .push(provider("openai", Some("sk-test"), &["gpt-4o"]));
+        config
+            .providers
+            .push(provider("anthropic", None, &["claude-sonnet-4"]));
         assert_eq!(
             first_configured_provider(&config).as_deref(),
             Some("openai")
@@ -464,37 +431,61 @@ mod tests {
         assert_eq!(first_configured_provider(&config), None);
     }
 
-    #[tokio::test]
-    async fn test_repair_config_fixes_missing_defaults() {
-        // Constructing a ConfigRepair requires a discoverable config file; in a
-        // bare test environment it fails and the test passes vacuously.
-        let Ok(repair) = ConfigRepair::new(&Config::default()) else {
-            return;
-        };
-        let mut config = Config::default();
-        config.set("provider.openai.api_key", "sk-test").unwrap();
-        config.set("api_key", "legacy").unwrap();
-
-        let issues = repair.repair_config(&mut config).await;
-        assert!(!issues.is_empty());
-        assert!(config.get("provider.default").is_some());
-        assert!(config.get("model.default").is_some());
-        assert!(config.get("api_key").is_none());
-        assert!(issues.iter().any(|i| i.key == "api_key"));
+    #[test]
+    fn test_scan_reports_missing_defaults() {
+        let repair = repair_with(Config::default());
+        let issues = repair.scan();
+        assert!(issues.iter().any(|i| i.issue_type == ConfigIssue::MissingKey));
+        assert!(issues.iter().any(|i| i.key == "provider.default"));
+        assert!(issues.iter().any(|i| i.key == "model.default"));
     }
 
     #[tokio::test]
-    async fn test_auto_migrate_config_moves_legacy_keys() {
-        let Ok(mut repair) = ConfigRepair::new(&Config::default()) else {
-            return;
-        };
-        repair.config.set("openai_api_key", "sk-legacy").ok();
-        let issues = repair.auto_migrate_config().await;
-        assert!(issues.iter().any(|i| i.key == "openai_api_key"));
+    async fn test_repair_config_fixes_missing_defaults() {
+        let mut config = Config::default();
+        // A configured provider with an API key but no models: the primary
+        // `llm` provider is missing and repairable.
+        config
+            .providers
+            .push(provider("openai", Some("sk-test"), &[]));
+
+        let issues = ConfigRepair::repair_config(&mut config).await;
+        assert!(!issues.is_empty());
         assert_eq!(
-            repair.config.get("provider.openai.api_key").as_deref(),
-            Some("sk-legacy")
+            config.llm.as_ref().map(|l| l.provider.as_str()),
+            Some("openai")
         );
-        assert!(repair.config.get("openai_api_key").is_none());
+        assert!(config
+            .llm
+            .as_ref()
+            .is_some_and(|l| !l.model.trim().is_empty()));
+        assert!(issues.iter().any(|i| i.key == "provider.default"));
+    }
+
+    #[tokio::test]
+    async fn test_auto_migrate_config_reads_env_keys() {
+        let mut repair = repair_with(Config::default());
+        // `auto_migrate_config` persists via `Config::save()`, which resolves
+        // through `discover_path()`. Point it at a temp file that already
+        // exists (discover_path only honors an existing path) so the write
+        // never lands on a real user config.
+        let temp_config = std::env::temp_dir().join("opensquilla-test-config.toml");
+        std::fs::write(&temp_config, "").expect("create temp config");
+        // SAFETY: edition 2024 marks set_var unsafe; this is a single-threaded
+        // unit test that restores the environment before returning.
+        unsafe { std::env::set_var("OPENSQUILLA_CONFIG", &temp_config) };
+        unsafe { std::env::set_var("OPENAI_API_KEY", "sk-env") };
+        let issues = repair.auto_migrate_config().await;
+        unsafe {
+            std::env::remove_var("OPENSQUILLA_CONFIG");
+            std::env::remove_var("OPENAI_API_KEY");
+        }
+        let _ = std::fs::remove_file(&temp_config);
+        assert!(issues.iter().any(|i| i.key == "OPENAI_API_KEY"));
+        assert!(repair
+            .config
+            .providers
+            .iter()
+            .any(|p| p.name == "openai" && p.api_key.as_deref() == Some("sk-env")));
     }
 }

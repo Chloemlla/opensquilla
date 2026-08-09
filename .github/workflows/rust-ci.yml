@@ -80,7 +80,26 @@ jobs:
       - name: Run cargo check
         run: cargo check --all-targets --all-features
 
-  # Job 4: Audit dependencies for security vulnerabilities
+  # Job 4: Run the test suite. Until this job existed, tests were only compiled
+  # (via --all-targets in clippy/check/build) and never executed, so test-only
+  # regressions passed CI.
+  test:
+    name: Cargo test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Run tests
+        run: cargo test --all-features --workspace
+
+  # Job 5: Audit dependencies for security vulnerabilities
   audit:
     name: Security audit
     runs-on: ubuntu-latest
@@ -95,7 +114,7 @@ jobs:
         # `--config` flag was removed, so it is omitted here.
         run: cargo audit
 
-  # Job 5: Check for unused dependencies
+  # Job 6: Check for unused dependencies
   udeps:
     name: Unused dependencies
     runs-on: ubuntu-latest
@@ -114,7 +133,7 @@ jobs:
       - name: Check unused deps
         run: cargo +nightly udeps --all-targets --all-features
 
-  # Job 6: Check API documentation compiles
+  # Job 7: Check API documentation compiles
   doc:
     name: Documentation
     runs-on: ubuntu-latest
@@ -133,7 +152,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --all-features --no-deps
 
-  # Job 7: Verify MSRV (minimum supported Rust version)
+  # Job 8: Verify MSRV (minimum supported Rust version)
   msrv:
     name: MSRV verification
     runs-on: ubuntu-latest
@@ -149,7 +168,7 @@ jobs:
         # rust-version = "1.85" from [workspace.package].
         run: cargo msrv verify --path crates/core
 
-  # Job 8: Check for outdated dependencies
+  # Job 9: Check for outdated dependencies
   outdated:
     name: Outdated dependencies
     runs-on: ubuntu-latest
@@ -161,7 +180,7 @@ jobs:
       - name: Check outdated
         run: 'cargo outdated --exit-code 1 || echo "WARNING: outdated dependencies found (non-blocking)"'
 
-  # Job 9: Build all crates to verify compilation (with Tauri deps)
+  # Job 10: Build all crates to verify compilation (with Tauri deps)
   build:
     name: Build all crates
     runs-on: ubuntu-latest
@@ -178,7 +197,7 @@ jobs:
       - name: Build all targets
         run: cargo build --all-targets --all-features
 
-  # Job 10: Cross-platform check (Windows)
+  # Job 11: Cross-platform check (Windows)
   check-windows:
     name: Check (Windows)
     runs-on: windows-latest
@@ -190,7 +209,7 @@ jobs:
       - name: Run cargo check
         run: cargo check --all-targets --all-features
 
-  # Job 11: Cross-platform check (macOS)
+  # Job 12: Cross-platform check (macOS)
   check-macos:
     name: Check (macOS)
     runs-on: macos-latest
@@ -202,15 +221,18 @@ jobs:
       - name: Run cargo check
         run: cargo check --all-targets --all-features
 
-  # Job 12: Result aggregator
+  # Job 13: Result aggregator
   result:
     name: Rust CI result
     needs:
       - fmt
       - clippy
       - check
+      - test
       - audit
+      - udeps
       - doc
+      - msrv
       - build
       - check-windows
       - check-macos
@@ -227,8 +249,11 @@ jobs:
             "${{ needs.fmt.result }}" \
             "${{ needs.clippy.result }}" \
             "${{ needs.check.result }}" \
+            "${{ needs.test.result }}" \
             "${{ needs.audit.result }}" \
+            "${{ needs.udeps.result }}" \
             "${{ needs.doc.result }}" \
+            "${{ needs.msrv.result }}" \
             "${{ needs.build.result }}" \
             "${{ needs.check-windows.result }}" \
             "${{ needs.check-macos.result }}"; do
