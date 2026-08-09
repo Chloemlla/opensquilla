@@ -203,6 +203,7 @@ impl TurnGenerator for ProviderTurnGenerator {
                             PStreamEvent::Done {
                                 usage,
                                 stop_reason: sr,
+                                ..
                             } => {
                                 final_usage = usage;
                                 stop_reason = sr;

@@ -860,22 +860,25 @@ pub fn register_extra_rpc(registry: &mut RpcRegistry, svc: ExtraRpcServices) {
 
     // exec.approval.resolve — approve/reject a pending approval.
     registry.register(rpc_handler("exec.approval.resolve", {
-        move |params| async move {
-            let id = params
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| AppError::bad_request("Missing 'id' parameter"))?;
-            let approved = params.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
-            if approved {
-                approvals.queue().approve(id).await.map_err(AppError::bad_request)?;
-            } else {
-                let reason = params
-                    .get("choice")
+        move |params| {
+            let approvals = approvals.clone();
+            async move {
+                let id = params
+                    .get("id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("rejected by operator");
-                approvals.queue().reject(id, reason, "operator").await.map_err(AppError::bad_request)?;
+                    .ok_or_else(|| AppError::bad_request("Missing 'id' parameter"))?;
+                let approved = params.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                if approved {
+                    approvals.queue().approve(id).await.map_err(AppError::bad_request)?;
+                } else {
+                    let reason = params
+                        .get("choice")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("rejected by operator");
+                    approvals.queue().reject(id, reason, "operator").await.map_err(AppError::bad_request)?;
+                }
+                Ok(json!({ "ok": true, "id": id, "approved": approved }))
             }
-            Ok(json!({ "ok": true, "id": id, "approved": approved }))
         }
     }));
 

@@ -3044,6 +3044,9 @@ pub fn parse_openai_sse_event(
         return Some(Ok(StreamEvent::Done {
             usage: Some(usage),
             stop_reason: None,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         }));
     }
 
