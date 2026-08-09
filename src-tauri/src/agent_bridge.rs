@@ -1362,9 +1362,9 @@ pub async fn get_provider_status(
 ) -> TauriResult<serde_json::Value> {
     let config = state.config().await;
     let provider = match provider_id {
-        Some(id) => config.find_provider(&id).ok_or_else(|| {
-            TauriError::not_found(format!("Provider '{id}' not found in config"))
-        })?,
+        Some(id) => config
+            .find_provider(&id)
+            .ok_or_else(|| TauriError::not_found(format!("Provider '{id}' not found in config")))?,
         None => config
             .providers
             .first()
@@ -1379,11 +1379,8 @@ pub async fn get_all_provider_statuses(
     state: State<'_, AppState>,
 ) -> TauriResult<serde_json::Value> {
     let config = state.config().await;
-    let statuses: Vec<serde_json::Value> = config
-        .providers
-        .iter()
-        .map(provider_status_json)
-        .collect();
+    let statuses: Vec<serde_json::Value> =
+        config.providers.iter().map(provider_status_json).collect();
     let default_provider = config.providers.first().map(|p| p.name.clone());
     Ok(serde_json::json!({
         "providers": statuses,
