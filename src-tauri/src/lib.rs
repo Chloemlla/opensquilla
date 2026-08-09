@@ -32,6 +32,7 @@ pub mod lifecycle;
 pub mod locale;
 pub mod onboarding;
 pub mod onboarding_channel;
+pub mod onboarding_probe;
 pub mod onboarding_provider;
 pub mod onboarding_sections;
 pub mod runtime;

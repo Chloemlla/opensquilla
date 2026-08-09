@@ -1123,6 +1123,35 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     command: 'onboarding_channel_disable',
     transform: (p) => ({ request: p }),
   },
+  // S5 — provider/profile probe + model discovery (single `request` struct arg)
+  'onboarding.provider.probe': {
+    command: 'onboarding_provider_probe',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.probe': {
+    command: 'onboarding_llm_profile_probe',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.draft.probe': {
+    command: 'onboarding_llm_profile_draft_probe',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.models.discover': {
+    command: 'onboarding_models_discover',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.models.discover': {
+    command: 'onboarding_llm_profile_models_discover',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.llmProfile.draft.models.discover': {
+    command: 'onboarding_llm_profile_draft_models_discover',
+    transform: (p) => ({ request: p }),
+  },
+  'onboarding.imageGeneration.models.discover': {
+    command: 'onboarding_image_generation_models_discover',
+    transform: (p) => ({ request: p }),
+  },
 
   // ── skills ──────────────────────────────────────────────────────────────
   'skills.list': { command: 'list_skills' },

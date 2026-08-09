@@ -208,6 +208,13 @@ fn main() {
             onboarding_channel::onboarding_channel_remove,
             onboarding_channel::onboarding_channel_enable,
             onboarding_channel::onboarding_channel_disable,
+            onboarding_probe::onboarding_provider_probe,
+            onboarding_probe::onboarding_llm_profile_probe,
+            onboarding_probe::onboarding_llm_profile_draft_probe,
+            onboarding_probe::onboarding_models_discover,
+            onboarding_probe::onboarding_llm_profile_models_discover,
+            onboarding_probe::onboarding_llm_profile_draft_models_discover,
+            onboarding_probe::onboarding_image_generation_models_discover,
             // Workbench commands
             workbench::create_workbench_surface,
             workbench::destroy_workbench_surface,

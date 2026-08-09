@@ -25,7 +25,7 @@ use tauri::State;
 use tracing::warn;
 
 /// Round-tripped secret mask echoed back to a write surface.
-const REDACTED: &str = "***";
+pub(crate) const REDACTED: &str = "***";
 
 /// `DEFAULT_SEARCH_MAX_RESULTS` from the Python search config.
 const DEFAULT_SEARCH_MAX_RESULTS: u32 = 10;
@@ -139,21 +139,21 @@ fn env_var_set(name: &str) -> bool {
 }
 
 /// True when a secret value is a round-tripped redaction mask (all asterisks).
-fn is_redacted_secret_sentinel(value: &str) -> bool {
+pub(crate) fn is_redacted_secret_sentinel(value: &str) -> bool {
     let text = value.trim();
     !text.is_empty() && text.chars().all(|c| c == '*')
 }
 
-fn provider_spec(provider_id: &str) -> Option<ProviderSpec> {
+pub(crate) fn provider_spec(provider_id: &str) -> Option<ProviderSpec> {
     ProviderSpecTable::get(provider_id)
 }
 
-fn requires_api_key(spec: &ProviderSpec) -> bool {
+pub(crate) fn requires_api_key(spec: &ProviderSpec) -> bool {
     spec.auth != AuthScheme::None
 }
 
 /// Provider-id -> registry environment-variable name (Python `registry.py`).
-fn provider_env_key(provider_id: &str) -> String {
+pub(crate) fn provider_env_key(provider_id: &str) -> String {
     match provider_id {
         "openrouter" => "OPENROUTER_API_KEY",
         "openai" | "openai_responses" => "OPENAI_API_KEY",
@@ -205,7 +205,7 @@ fn profile_storage_keys<'a>(profiles: &'a HashMap<String, LlmProfile>, provider:
 }
 
 /// Look up a profile by case-insensitive provider id.
-fn profile_lookup<'a>(config: &'a Config, provider: &str) -> Option<&'a LlmProfile> {
+pub(crate) fn profile_lookup<'a>(config: &'a Config, provider: &str) -> Option<&'a LlmProfile> {
     let profiles = config.llm_profiles.as_ref()?;
     let key = profile_storage_keys(profiles, provider).into_iter().next()?;
     profiles.get(key)
