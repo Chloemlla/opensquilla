@@ -555,6 +555,9 @@ pub fn parse_anthropic_response(data: &Value) -> ProviderResponse {
         usage: anthropic_usage(&data["usage"]),
         model: data["model"].as_str().unwrap_or("").to_string(),
         stop_reason: data["stop_reason"].as_str().map(String::from),
+        billed_cost: None,
+        cost_source: None,
+        ensemble_trace: None,
     }
 }
 
@@ -840,6 +843,9 @@ fn parse_anthropic_sse_event(data: &str) -> Option<ProviderResult<StreamEvent>> 
         return Some(Ok(StreamEvent::Done {
             usage: None,
             stop_reason: None,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         }));
     }
 
@@ -914,6 +920,9 @@ fn parse_anthropic_sse_event(data: &str) -> Option<ProviderResult<StreamEvent>> 
             Some(Ok(StreamEvent::Done {
                 usage: Some(usage),
                 stop_reason,
+                billed_cost: None,
+                cost_source: None,
+                ensemble_trace: None,
             }))
         }
         "message_stop" => None,
@@ -1117,6 +1126,9 @@ impl AnthropicStream {
                 out.push(Ok(StreamEvent::Done {
                     usage: Some(usage),
                     stop_reason: stop,
+                    billed_cost: None,
+                    cost_source: None,
+                    ensemble_trace: None,
                 }));
             }
             "error" => {
@@ -1178,6 +1190,9 @@ impl Stream for AnthropicStream {
                         events.push(Ok(StreamEvent::Done {
                             usage: Some(usage),
                             stop_reason: stop,
+                            billed_cost: None,
+                            cost_source: None,
+                            ensemble_trace: None,
                         }));
                     } else {
                         this.done = true;
@@ -1593,7 +1608,7 @@ mod tests {
         let event = parse_anthropic_sse_event(data);
         assert!(event.is_some());
         match event.unwrap() {
-            Ok(StreamEvent::Done { usage, stop_reason }) => {
+            Ok(StreamEvent::Done { usage, stop_reason, .. }) => {
                 assert_eq!(stop_reason, Some("end_turn".into()));
                 let u = usage.unwrap();
                 assert_eq!(u.input_tokens, 10);
@@ -1659,7 +1674,7 @@ mod tests {
             .unwrap();
         assert_eq!(events.len(), 1);
         match &events[0] {
-            Ok(StreamEvent::Done { usage, stop_reason }) => {
+            Ok(StreamEvent::Done { usage, stop_reason, .. }) => {
                 let u = usage.as_ref().unwrap();
                 assert_eq!(u.input_tokens, 15);
                 assert_eq!(u.output_tokens, 20);

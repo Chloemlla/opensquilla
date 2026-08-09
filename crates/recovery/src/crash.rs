@@ -528,6 +528,7 @@ mod tests {
             skills: None,
             scheduler: None,
             observability: None,
+            control_ui: None,
         }
     }
 

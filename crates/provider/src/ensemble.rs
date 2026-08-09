@@ -675,6 +675,14 @@ impl EnsembleOutput {
                 self.model.clone()
             },
             stop_reason: self.stop_reason.clone(),
+            billed_cost: Some(self.cost.billed_cost),
+            cost_source: Some("ensemble".to_string()),
+            ensemble_trace: Some(serde_json::json!({
+                "successful_proposers": self.proposals.iter().filter(|p| p.ok).count(),
+                "total_candidates": self.proposals.len(),
+                "fallback_used": self.fallback_used,
+                "aggregator_used": self.aggregator_used,
+            })),
         }
     }
 }
@@ -2401,6 +2409,9 @@ impl Provider for EnsembleProvider {
                     usage: Usage::default(),
                     model: config.model.clone(),
                     stop_reason: Some("stop".into()),
+                    billed_cost: None,
+                    cost_source: None,
+                    ensemble_trace: None,
                 })
             }
 
@@ -2808,6 +2819,9 @@ fn provider_response_to_stream(
             .send(Ok(StreamEvent::Done {
                 usage: Some(usage),
                 stop_reason,
+                billed_cost: None,
+                cost_source: None,
+                ensemble_trace: None,
             }))
             .await;
     });
@@ -2836,6 +2850,9 @@ mod tests {
             usage: test_usage(),
             model: model.to_string(),
             stop_reason: Some("stop".into()),
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         }
     }
 

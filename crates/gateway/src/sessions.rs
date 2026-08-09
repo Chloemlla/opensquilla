@@ -28,6 +28,7 @@ use crate::session_lifecycle::{
     LifecycleRecord, LifecycleTransition, SessionLifecycleManager, SessionState,
 };
 use crate::session_search::{IndexedMessage, SessionSearchIndex, SessionSearchResult};
+use opensquilla_session::manager::{ForkConfig, SessionManager};
 
 /// A single recorded turn in a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,10 @@ pub struct SessionStore {
     attachments: AttachmentStore,
     archiver: Option<SessionArchiver>,
     search_index: SessionSearchIndex,
+    /// Optional bridge to the real [`SessionManager`]. When present, fork /
+    /// compact / truncate / reset handlers operate on durable storage instead
+    /// of the in-memory mock. Absent by default to preserve existing behaviour.
+    manager: Option<Arc<SessionManager>>,
 }
 
 impl Default for SessionStore {
@@ -150,7 +155,20 @@ impl SessionStore {
             attachments: AttachmentStore::new(),
             archiver: None,
             search_index: SessionSearchIndex::new(),
+            manager: None,
         }
+    }
+
+    /// Bridge a real [`SessionManager`] so fork / compact / truncate / reset
+    /// handlers operate on durable session storage.
+    pub fn with_session_manager(mut self, manager: SessionManager) -> Self {
+        self.manager = Some(Arc::new(manager));
+        self
+    }
+
+    /// Return the underlying real session manager, if one was bridged.
+    pub fn manager(&self) -> Option<Arc<SessionManager>> {
+        self.manager.clone()
     }
 
     /// Attach a disk archiver rooted at `dir`. Subsequent archive calls write
@@ -733,6 +751,101 @@ impl SessionStore {
             },
         )
     }
+
+    // -----------------------------------------------------------------------
+    // Real-session bridge (fork / compact / truncate / reset)
+    // -----------------------------------------------------------------------
+
+    /// Fork a session through the real manager when bridged. Returns
+    /// `(child_key, parent_key)`.
+    pub fn fork_session(
+        &self,
+        source_key: &str,
+        title: Option<String>,
+        before_message_id: Option<String>,
+    ) -> Result<(String, String), AppError> {
+        let manager = self
+            .manager
+            .as_ref()
+            .ok_or_else(|| unavailable("SessionManager is not wired into this gateway"))?;
+        let source_id = Uuid::parse_str(source_key)
+            .map_err(|_| AppError::bad_request(format!("Invalid session key '{source_key}'")))?;
+        let mut config = ForkConfig {
+            name: title,
+            ..Default::default()
+        };
+        if let Some(before) = before_message_id {
+            // Forking "before" a specific message copies the transcript and
+            // records the fork point in the event metadata.
+            config.copy_transcript = true;
+            config.fork_event = format!("before:{before}");
+        }
+        let child = manager.fork(&source_id, config).map_err(session_err)?;
+        Ok((child.id.to_string(), source_id.to_string()))
+    }
+
+    /// Compact a session through the real manager when bridged. Falls back to
+    /// the in-memory compaction trigger when no manager is wired.
+    pub fn compact_session(&self, session_id: &str) -> Result<serde_json::Value, AppError> {
+        match self.manager.as_ref() {
+            Some(manager) => {
+                let id = Uuid::parse_str(session_id).map_err(|_| {
+                    AppError::bad_request(format!("Invalid session key '{session_id}'"))
+                })?;
+                let report = manager.compact(&id).map_err(session_err)?;
+                serde_json::to_value(report).map_err(|e| AppError::internal(e.to_string()))
+            }
+            None => {
+                let record = self.trigger_compaction(session_id, None);
+                serde_json::to_value(record).map_err(|e| AppError::internal(e.to_string()))
+            }
+        }
+    }
+
+    /// Truncate a session's transcript to `keep` most-recent entries through
+    /// the real manager when bridged. Returns the number of entries removed.
+    pub fn truncate_session_transcript(
+        &self,
+        session_id: &str,
+        keep: u64,
+    ) -> Result<usize, AppError> {
+        let manager = self
+            .manager
+            .as_ref()
+            .ok_or_else(|| unavailable("SessionManager is not wired into this gateway"))?;
+        let id = Uuid::parse_str(session_id)
+            .map_err(|_| AppError::bad_request(format!("Invalid session key '{session_id}'")))?;
+        manager
+            .truncate_transcript(&id, keep)
+            .map_err(session_err)
+    }
+
+    /// Clear a session's entire transcript through the real manager when
+    /// bridged. Returns the number of entries removed.
+    pub fn reset_session_transcript(&self, session_id: &str) -> Result<usize, AppError> {
+        let manager = self
+            .manager
+            .as_ref()
+            .ok_or_else(|| unavailable("SessionManager is not wired into this gateway"))?;
+        let id = Uuid::parse_str(session_id)
+            .map_err(|_| AppError::bad_request(format!("Invalid session key '{session_id}'")))?;
+        manager.clear_transcript(&id).map_err(session_err)
+    }
+}
+
+/// Error helper for bridge calls that aren't wired.
+fn unavailable(message: &str) -> AppError {
+    AppError::new("RPC_UNAVAILABLE", message).with_status(501)
+}
+
+/// Map a session-crate [`opensquilla_core::error::CoreError`] to an [`AppError`].
+fn session_err(e: opensquilla_core::error::CoreError) -> AppError {
+    use opensquilla_core::error::CoreError;
+    match e {
+        CoreError::NotFound(msg) => AppError::not_found(msg),
+        CoreError::InvalidInput(msg) => AppError::bad_request(msg),
+        other => AppError::internal(format!("Session manager error: {other}")),
+    }
 }
 
 /// Stable string name for an export format.
@@ -1202,6 +1315,241 @@ pub fn register_session_handlers(registry: &mut RpcRegistry, store: SessionStore
             }
         }
     }));
+
+    // sessions.fork — fork a session (optionally up to a given message)
+    registry.register(rpc_handler("sessions.fork", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let key = params
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::bad_request("Missing 'key' parameter"))?;
+                let title = params
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let before_message_id = params
+                    .get("beforeMessageId")
+                    .or_else(|| params.get("before_message_id"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let (child_key, parent_key) =
+                    store.fork_session(key, title, before_message_id)?;
+                Ok(serde_json::json!({
+                    "key": child_key,
+                    "parentKey": parent_key,
+                }))
+            }
+        }
+    }));
+
+    // sessions.abort — cancel the current running/queued turn for a session
+    registry.register(rpc_handler("sessions.abort", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_any_session_id(&params)?;
+                let turns = store.list_turns(&session_id.to_string());
+                let target = turns.iter().find(|t| {
+                    t.status != "completed" && t.status != "cancelled" && t.status != "failed"
+                });
+                match target {
+                    Some(t) => {
+                        let record = store.cancel_turn(&session_id.to_string(), t.turn_id)?;
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "session_key": session_id,
+                            "aborted": t.turn_id.to_string(),
+                            "turn": record,
+                        }))
+                    }
+                    None => Ok(serde_json::json!({
+                        "ok": false,
+                        "session_key": session_id,
+                        "aborted": null,
+                        "message": "No active turn to abort",
+                    })),
+                }
+            }
+        }
+    }));
+
+    // sessions.patch — partial update of admin fields (title/model/metadata)
+    registry.register(rpc_handler("sessions.patch", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let key = params
+                    .get("key")
+                    .or_else(|| params.get("id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::bad_request("Missing 'key' parameter"))?;
+                let id = SessionId::from_string(key)
+                    .ok_or_else(|| AppError::bad_request(format!("Invalid session key '{key}'")))?;
+                let empty = serde_json::Map::new();
+                let fields = params
+                    .get("fields")
+                    .and_then(|v| v.as_object())
+                    .unwrap_or(&empty);
+                let title = fields
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let model = fields
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let metadata: Option<HashMap<String, serde_json::Value>> = fields
+                    .get("metadata")
+                    .and_then(|v| v.as_object())
+                    .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                match store.update(&id, title, model, metadata) {
+                    Some(entry) => Ok(serde_json::json!({
+                        "ok": true,
+                        "session": entry,
+                    })),
+                    None => Err(AppError::not_found(format!("Session {key} not found"))),
+                }
+            }
+        }
+    }));
+
+    // sessions.reset — clear a session's transcript entirely
+    registry.register(rpc_handler("sessions.reset", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_any_session_id(&params)?;
+                let removed = store.reset_session_transcript(&session_id.to_string())?;
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "session_id": session_id,
+                    "removed": removed,
+                }))
+            }
+        }
+    }));
+
+    // sessions.compact — compact a session transcript
+    registry.register(rpc_handler("sessions.compact", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_any_session_id(&params)?;
+                let result = store.compact_session(&session_id.to_string())?;
+                Ok(result)
+            }
+        }
+    }));
+
+    // sessions.truncate — keep only the most-recent N transcript entries
+    registry.register(rpc_handler("sessions.truncate", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_any_session_id(&params)?;
+                let keep = params
+                    .get("keep")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| AppError::bad_request("Missing 'keep' parameter"))?;
+                let removed = store
+                    .truncate_session_transcript(&session_id.to_string(), keep)?;
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "session_id": session_id,
+                    "removed": removed,
+                }))
+            }
+        }
+    }));
+
+    // sessions.messages.hydrate — full transcript for a session
+    registry.register(rpc_handler("sessions.messages.hydrate", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_any_session_id(&params)?;
+                let messages = store.messages(&session_id.to_string());
+                Ok(serde_json::json!({
+                    "messages": messages,
+                    "count": messages.len(),
+                }))
+            }
+        }
+    }));
+
+    // sessions.messages.snapshot — paged transcript for a session
+    registry.register(rpc_handler("sessions.messages.snapshot", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_any_session_id(&params)?;
+                let limit = params
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(50) as usize;
+                let offset = params
+                    .get("offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let page = store.messages_page(&session_id.to_string(), limit, offset);
+                Ok(serde_json::json!({
+                    "messages": page,
+                    "count": page.len(),
+                }))
+            }
+        }
+    }));
+
+    // sessions.subscribe — long-poll the session event stream via the broadcaster
+    registry.register(rpc_handler("sessions.subscribe", {
+        let store = store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let timeout_ms = params
+                    .get("timeout_ms")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(200);
+                let mut rx = store.broadcaster().subscribe();
+                let wait = tokio::time::timeout(
+                    std::time::Duration::from_millis(timeout_ms),
+                    rx.recv(),
+                );
+                match wait.await {
+                    Ok(Ok(event)) => Ok(serde_json::json!({
+                        "subscribed": true,
+                        "event": event,
+                    })),
+                    Ok(Err(e)) => Err(AppError::internal(format!("Subscribe error: {e}"))),
+                    Err(_) => Ok(serde_json::json!({
+                        "subscribed": true,
+                        "timeout": true,
+                    })),
+                }
+            }
+        }
+    }));
+
+    // sessions.steer — not implemented (no steering capability in the engine)
+    registry.register(rpc_handler("sessions.steer", {
+        move |_params| async move {
+            Err(AppError::new(
+                "RPC_UNAVAILABLE",
+                "sessions.steer requires a steering engine that is not available",
+            )
+            .with_status(501))
+        }
+    }));
 }
 
 /// Default directory used for RPC attachment uploads.
@@ -1504,5 +1852,141 @@ mod tests {
             .await
             .unwrap()
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_session_abort_cancels_active_turn() {
+        let store = SessionStore::new();
+        let mut registry = RpcRegistry::new();
+        register_session_handlers(&mut registry, store.clone());
+
+        let sid = SessionId::new();
+        let key = sid.to_string();
+        store.start_turn(&key, Some("hello"), None);
+        store.mark_turn_running(&key, store.list_turns(&key)[0].turn_id).unwrap();
+
+        let r = registry
+            .dispatch("sessions.abort", serde_json::json!({"session_id": key}))
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["ok"], true);
+        assert_eq!(resp["turn"]["status"], "cancelled");
+
+        // With no active turn, abort reports ok=false.
+        let r = registry
+            .dispatch("sessions.abort", serde_json::json!({"session_id": sid.to_string()}))
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["ok"], false);
+    }
+
+    #[tokio::test]
+    async fn test_session_patch_updates_fields() {
+        let store = SessionStore::new();
+        let mut registry = RpcRegistry::new();
+        register_session_handlers(&mut registry, store.clone());
+
+        let resp = registry_create(&store).await;
+        let key = resp["id"].as_str().unwrap().to_string();
+
+        let r = registry
+            .dispatch(
+                "sessions.patch",
+                serde_json::json!({
+                    "key": key,
+                    "fields": {"title": "renamed", "metadata": {"k": "v"}},
+                }),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["ok"], true);
+        assert_eq!(resp["session"]["title"], "renamed");
+        assert_eq!(resp["session"]["metadata"]["k"], "v");
+    }
+
+    #[tokio::test]
+    async fn test_session_messages_hydrate_and_snapshot() {
+        let store = SessionStore::new();
+        let mut registry = RpcRegistry::new();
+        register_session_handlers(&mut registry, store.clone());
+
+        let sid = SessionId::new();
+        let key = sid.to_string();
+        for i in 0..5 {
+            store.add_message(&key, Message::user(format!("m{i}")));
+        }
+
+        let r = registry
+            .dispatch(
+                "sessions.messages.hydrate",
+                serde_json::json!({"session_id": key}),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["count"], 5);
+
+        let r = registry
+            .dispatch(
+                "sessions.messages.snapshot",
+                serde_json::json!({"session_id": key, "limit": 2, "offset": 1}),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["count"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_session_subscribe_long_polls_event() {
+        let store = SessionStore::new();
+        let mut registry = RpcRegistry::new();
+        register_session_handlers(&mut registry, store.clone());
+
+        // Publish an event concurrently; the subscribe handler should observe it.
+        let broadcaster = store.broadcaster();
+        let publish = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            broadcaster.publish_simple(SessionEventKind::Updated, "s1");
+        });
+
+        let r = registry
+            .dispatch(
+                "sessions.subscribe",
+                serde_json::json!({"timeout_ms": 500}),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["subscribed"], true);
+        assert_eq!(resp["event"]["kind"], "updated");
+        publish.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_session_fork_requires_bridged_manager() {
+        let store = SessionStore::new();
+        let mut registry = RpcRegistry::new();
+        register_session_handlers(&mut registry, store.clone());
+
+        // Without a bridged SessionManager, fork reports RPC_UNAVAILABLE.
+        let r = registry
+            .dispatch(
+                "sessions.fork",
+                serde_json::json!({"key": SessionId::new().to_string()}),
+            )
+            .await;
+        let resp = r.unwrap().unwrap_err();
+        assert_eq!(resp.code, "RPC_UNAVAILABLE");
+    }
+
+    #[tokio::test]
+    async fn test_session_steer_unavailable() {
+        let store = SessionStore::new();
+        let mut registry = RpcRegistry::new();
+        register_session_handlers(&mut registry, store);
+
+        let r = registry
+            .dispatch("sessions.steer", serde_json::Value::Null)
+            .await;
+        let resp = r.unwrap().unwrap_err();
+        assert_eq!(resp.code, "RPC_UNAVAILABLE");
     }
 }

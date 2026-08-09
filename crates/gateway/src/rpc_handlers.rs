@@ -14,6 +14,8 @@ use crate::cron::SchedulerHandle;
 use crate::rpc::RpcRegistry;
 use crate::sessions::SessionStore;
 use crate::system::SystemService;
+use crate::websocket::SubscriptionManager;
+use std::sync::Arc;
 
 /// Register handlers for the four highest-value RPC domains (sessions,
 /// chat, cron, system) plus config, onto a single registry.
@@ -55,9 +57,6 @@ use crate::system::SystemService;
 /// - `cron.status` — alias for `cron.get` (Python line 569)
 /// - `cron.add` — alias for `cron.create` (Python line 580)
 /// - `cron.remove` — alias for `cron.delete` (Python line 965)
-/// - `cron.run` — trigger immediate job execution (Python line 974)
-/// - `cron.runs` — alias for `cron.executions` (Python line 983)
-/// - `cron.subscribe` / `cron.unsubscribe` — WebSocket topic subscription
 ///
 /// These aliases cannot be registered here because the `SchedulerHandle`
 /// field `engine` is private to the `cron` module. Adding them requires
@@ -71,20 +70,30 @@ use crate::system::SystemService;
 /// - `system-presence`, `system-event` — raise `RpcUnavailableError`
 /// - `set-heartbeats` — heartbeat config mutation (requires
 ///   `GatewayConfig` integration)
-/// - `doctor.memory.status` — deep memory health check (requires
-///   `MemoryHandle` integration)
 ///
 /// **sessions** (Python: rpc_sessions.py):
-/// - `sessions.fork`, `sessions.send`, `sessions.steer`, `sessions.abort`,
-///   `sessions.patch`, `sessions.reset`, `sessions.compact`,
-///   `sessions.truncate`, `sessions.subscribe`, `sessions.unsubscribe`,
-///   `sessions.messages.*`, `sessions.preview`, `sessions.resolve`,
-///   `sessions.bootstrap`, `sessions.contextCompact` — these require
-///   engine/provider integration not yet available in the Rust gateway.
+/// - `sessions.preview`, `sessions.resolve`, `sessions.bootstrap`,
+///   `sessions.contextCompact` — require engine/provider integration not yet
+///   available in the Rust gateway.
 ///
-/// **chat** (Python: rpc_chat.py):
-/// - `chat.abort`, `chat.clarify_submit`, `chat.inject` — require
-///   engine/turn-ingress integration beyond the current `ChatStore`.
+/// ### Wired (Python methods now registered in Rust)
+///
+/// The following previously-gapped methods are now implemented:
+///
+/// **cron**: `cron.run` (immediate dispatch), `cron.runs` (alias for
+/// `cron.executions`), `cron.subscribe` (WebSocket topic subscription).
+///
+/// **sessions**: `sessions.fork`, `sessions.abort`, `sessions.patch`,
+/// `sessions.reset`, `sessions.compact`, `sessions.truncate`,
+/// `sessions.subscribe`, `sessions.messages.hydrate`,
+/// `sessions.messages.snapshot`. `sessions.steer` is registered but returns
+/// `RpcUnavailable` (no steering engine).
+///
+/// **chat**: `chat.abort`, `chat.inject`. `chat.clarify_submit` is registered
+/// but returns `RpcUnavailable` (no clarification engine).
+///
+/// **doctor**: `doctor.memory.status` — deep memory health check composed from
+/// the `MemoryHandle` store.
 pub fn register_domain_handlers(
     registry: &mut RpcRegistry,
     session_store: SessionStore,
@@ -92,10 +101,11 @@ pub fn register_domain_handlers(
     config_store: ConfigStore,
     scheduler_handle: SchedulerHandle,
     system_service: SystemService,
+    subscription_manager: Arc<SubscriptionManager>,
 ) {
     crate::sessions::register_session_handlers(registry, session_store);
     crate::chat::register_chat_handlers(registry, chat_store);
     crate::config::register_config_handlers(registry, config_store);
-    crate::cron::register_cron_handlers(registry, scheduler_handle);
+    crate::cron::register_cron_handlers(registry, scheduler_handle, subscription_manager);
     crate::system::register_system_handlers(registry, system_service);
 }

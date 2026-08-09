@@ -659,6 +659,7 @@ impl ProviderStage {
                 opensquilla_provider::types::StreamEvent::Done {
                     usage: final_usage,
                     stop_reason: reason,
+                    ..
                 } => {
                     if let Some(u) = final_usage {
                         usage = u;

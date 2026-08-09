@@ -1,3 +1,6 @@
+pub mod admission;
+pub mod approval;
+pub mod command_registry;
 pub mod delivery;
 pub mod dingtalk;
 pub mod discord;
@@ -7,12 +10,20 @@ pub mod matrix;
 pub mod msteams;
 pub mod qq;
 pub mod slack;
+pub mod stream_policy;
+pub mod system_messages;
 pub mod telegram;
 pub mod terminal;
 pub mod types;
 pub mod webhook;
 pub mod websocket;
 pub mod wecom;
+
+pub use admission::{AdmissionReason, ChannelAdmissionDecision, decide_channel_admission};
+pub use approval::{ApprovalDecision, parse_approval_action, render_approval_prompt_text};
+pub use command_registry::{CommandRegistry, build_default};
+pub use stream_policy::{ChannelStreamMode, ChannelStreamPolicy, resolve_channel_stream_policy};
+pub use system_messages::{MessageKey, Messages, channel_message_locale, render_channel_message};
 
 pub use delivery::{DeliveryStatus, DeliveryStore, OutboxEntry, OutboxWorker, retry_delay};
 pub use discord::{

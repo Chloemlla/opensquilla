@@ -437,6 +437,9 @@ fn parse_room_message(room_id: &str, event: &Value) -> Option<IncomingMessage> {
         attachments,
         timestamp,
         raw: event.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 

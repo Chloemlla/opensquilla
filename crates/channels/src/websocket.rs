@@ -407,6 +407,9 @@ pub fn parse_client_frame(
         attachments: Vec::new(),
         timestamp: Utc::now(),
         raw: serde_json::json!({ "frame": text }),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 

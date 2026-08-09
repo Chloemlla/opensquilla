@@ -16,6 +16,7 @@ use tracing::info;
 pub async fn list_channels() -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
 
     if config.channels.is_empty() {
         println!("No channels configured.");
@@ -47,6 +48,7 @@ pub async fn list_channels() -> Result<()> {
 pub async fn show_channel_status(name: Option<String>) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
     let channel_name = name.unwrap_or_else(|| {
         config
             .channels
@@ -79,6 +81,7 @@ pub async fn show_channel_status(name: Option<String>) -> Result<()> {
 pub async fn test_channel(name: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
     let cfg = config
         .find_channel(&name)
         .ok_or_else(|| anyhow::anyhow!("Channel '{name}' is not configured"))?;
@@ -102,6 +105,7 @@ pub async fn test_channel(name: String) -> Result<()> {
 pub async fn connect_channel(kind: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
     let cfg = config
         .find_channel(&kind)
         .ok_or_else(|| anyhow::anyhow!("Channel '{kind}' is not configured"))?;
@@ -126,6 +130,7 @@ pub async fn disconnect_channel(id: String) -> Result<()> {
 pub async fn send_message(name: String, message: String) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
     let cfg = config
         .find_channel(&name)
         .ok_or_else(|| anyhow::anyhow!("Channel '{name}' is not configured"))?;
@@ -149,6 +154,7 @@ pub async fn send_message(name: String, message: String) -> Result<()> {
 pub async fn start_all_channels() -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
     let mut started = 0u32;
     let mut failed = 0u32;
 
@@ -186,6 +192,7 @@ pub async fn start_all_channels() -> Result<()> {
 pub async fn stop_all_channels() -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
     let manager = ChannelManager::new();
+    manager.set_default_locale(config.default_locale());
     let mut stopped = 0u32;
 
     for cfg in &config.channels {

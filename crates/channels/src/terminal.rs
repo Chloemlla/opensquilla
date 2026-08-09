@@ -450,6 +450,9 @@ fn make_incoming(channel_id: &str, user_name: &str, text: String) -> IncomingMes
         attachments: Vec::new(),
         timestamp: chrono::Utc::now(),
         raw: serde_json::Value::Null,
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     }
 }
 

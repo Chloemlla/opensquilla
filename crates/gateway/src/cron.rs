@@ -13,7 +13,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::rpc::{RpcRegistry, rpc_handler};
+use crate::rpc::{RpcRegistry, rpc_handler, rpc_handler_with_ctx};
+use crate::websocket::SubscriptionManager;
 
 /// A shared scheduler handle. Wraps an [`SchedulerEngine`] behind a Mutex so
 /// that concurrent RPC calls serialize on the ops facade.
@@ -112,7 +113,11 @@ fn ops_err(e: opensquilla_scheduler::ops::OpsError) -> AppError {
 }
 
 /// Register cron RPC handlers on the given registry.
-pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandle) {
+pub fn register_cron_handlers(
+    registry: &mut RpcRegistry,
+    handle: SchedulerHandle,
+    subscription_manager: Arc<SubscriptionManager>,
+) {
     let handle = Arc::new(handle);
 
     // cron.create — create a new scheduled job
@@ -383,6 +388,64 @@ pub fn register_cron_handlers(registry: &mut RpcRegistry, handle: SchedulerHandl
             }
         }
     }));
+
+    // cron.run — trigger a job immediately by dispatching its handler
+    registry.register(rpc_handler("cron.run", {
+        let handle = handle.clone();
+        move |params| {
+            let handle = handle.clone();
+            async move {
+                let id = parse_job_id(&params)?;
+                let engine = handle.engine.lock().await;
+                let execution = engine.ops().run_job_now(id).await.map_err(ops_err)?;
+                serde_json::to_value(execution).map_err(|e| AppError::internal(e.to_string()))
+            }
+        }
+    }));
+
+    // cron.runs — alias for cron.executions
+    registry.register(rpc_handler("cron.runs", {
+        let handle = handle.clone();
+        move |params| {
+            let handle = handle.clone();
+            async move {
+                let id = parse_job_id(&params)?;
+                let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50);
+                let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+                let engine = handle.engine.lock().await;
+                let execs: Vec<JobExecution> = engine
+                    .ops()
+                    .get_executions(id, limit, offset)
+                    .await
+                    .map_err(ops_err)?;
+                Ok(serde_json::json!({
+                    "executions": execs,
+                    "count": execs.len(),
+                }))
+            }
+        }
+    }));
+
+    // cron.subscribe — subscribe a WebSocket connection to a scheduler topic
+    registry.register(rpc_handler_with_ctx("cron.subscribe", {
+        let subs = subscription_manager.clone();
+        move |params, ctx| {
+            let subs = subs.clone();
+            let conn_id = ctx.conn_id.clone();
+            async move {
+                let topic = params
+                    .get("topic")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("cron.executions");
+                subs.subscribe_topic(&conn_id, topic);
+                Ok(serde_json::json!({
+                    "subscribed": true,
+                    "topic": topic,
+                    "conn_id": conn_id,
+                }))
+            }
+        }
+    }));
 }
 
 fn parse_job_id(params: &serde_json::Value) -> Result<Uuid, AppError> {
@@ -401,7 +464,7 @@ mod tests {
     async fn test_cron_create_get_list() {
         let handle = SchedulerHandle::in_memory().unwrap();
         let mut registry = RpcRegistry::new();
-        register_cron_handlers(&mut registry, handle);
+        register_cron_handlers(&mut registry, handle, Arc::new(SubscriptionManager::new()));
 
         let params = serde_json::json!({
             "name": "heartbeat-job",
@@ -436,7 +499,7 @@ mod tests {
     async fn test_cron_pause_resume() {
         let handle = SchedulerHandle::in_memory().unwrap();
         let mut registry = RpcRegistry::new();
-        register_cron_handlers(&mut registry, handle);
+        register_cron_handlers(&mut registry, handle, Arc::new(SubscriptionManager::new()));
 
         let params = serde_json::json!({
             "name": "j",
@@ -465,7 +528,7 @@ mod tests {
     async fn test_cron_create_unknown_handler() {
         let handle = SchedulerHandle::in_memory().unwrap();
         let mut registry = RpcRegistry::new();
-        register_cron_handlers(&mut registry, handle);
+        register_cron_handlers(&mut registry, handle, Arc::new(SubscriptionManager::new()));
 
         let params = serde_json::json!({
             "name": "bad",

@@ -15,6 +15,15 @@ pub struct IncomingMessage {
     pub attachments: Vec<MessageAttachment>,
     pub timestamp: DateTime<Utc>,
     pub raw: serde_json::Value,
+    /// Provider-normalized metadata (conversation_kind, is_group, interaction_type, …).
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    /// Whether the transport authenticated the sender's provenance.
+    #[serde(default)]
+    pub provenance_authenticated: bool,
+    /// Whether the event is explicitly addressed to the bot (adapter hook).
+    #[serde(default)]
+    pub sender_is_group_mentioned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

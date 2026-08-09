@@ -80,6 +80,7 @@ pub mod cron;
 pub mod diagnostics;
 pub mod doctor;
 pub mod dream_bridge;
+pub mod http_api;
 pub mod logs;
 pub mod mcp_bridge;
 pub mod memory;
@@ -173,6 +174,7 @@ pub use workspaces::WorkspaceStore;
 pub use artifact_preview::{PreviewCache, PreviewData, PreviewKind, PreviewLease};
 pub use attachments::{AttachmentMeta, AttachmentStore, AttachmentType, AttachmentUpload};
 pub use audio_transcription::{TranscriptionApi, TranscriptionRecord, TranscriptionService};
+pub use http_api::{HttpApiState, register_extra_rpc, register_http_api};
 pub use boot::{BootSequence, BootSequenceBuilder, BootServices, BootStage};
 pub use control_ui::ControlUi;
 pub use model_routing::{

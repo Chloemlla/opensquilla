@@ -1,13 +1,14 @@
 use clap::Parser;
 use opensquilla_cli::commands::{
-    AgentAction, ChannelAction, Command, ConfigAction, GatewayAction, InitAction, MemoryAction,
-    ModelAction, OnboardAction, ProviderAction, SandboxAction, SchedulerAction, SessionAction,
-    SkillAction, StatusAction,
+    AgentAction, BundleAction, ChannelAction, CodeTaskAction, Command, ConfigAction,
+    DistAction, GatewayAction, InitAction, MemoryAction, ModelAction, OnboardAction,
+    ProviderAction, SandboxAction, SchedulerAction, SessionAction, SkillAction, StatusAction,
+    UninstallAction,
 };
 use opensquilla_cli::{
-    agent, channels, chat, config, cost, diagnostics, doctor, ensemble, gateway, init, mcp_server,
-    memory, migrate, models, onboard, providers, recovery, router, sandbox, scheduler, search,
-    sessions, skills, status, tools, tui,
+    agent, bundle, channels, chat, code_task, config, cost, diagnostics, dist, doctor, ensemble,
+    gateway, init, mcp_server, memory, migrate, models, onboard, providers, recovery, router,
+    sandbox, scheduler, search, sessions, skills, status, tools, tui, uninstall,
 };
 use opensquilla_core::config::Config;
 use tracing::info;
@@ -160,6 +161,7 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             SessionAction::Pause { id } => sessions::pause_session(id).await?,
             SessionAction::Resume { id } => sessions::resume_session(id).await?,
             SessionAction::Compact { id } => sessions::compact_session_cmd(id).await?,
+            SessionAction::Reset { key } => sessions::reset_session_cmd(key).await?,
             SessionAction::Search { query, limit } => {
                 sessions::search_sessions(query, limit).await?
             }
@@ -196,6 +198,9 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
                 memory::add_memory(content, kind, importance, tag).await?;
             }
             MemoryAction::Export { output, kind } => memory::export_memory(output, kind).await?,
+            MemoryAction::FlushSession { key, output } => {
+                memory::flush_session(key, output).await?
+            }
         },
         Command::Skills { action } => match action {
             SkillAction::List => skills::list_skills().await?,
@@ -307,6 +312,10 @@ async fn dispatch(command: Command, config: &Config) -> anyhow::Result<()> {
             info!("Dispatching TUI command");
             tui::run_tui().await?;
         }
+        Command::CodeTask { action } => code_task::run_code_task(action).await?,
+        Command::Bundle { action } => bundle::run_bundle(action).await?,
+        Command::Dist { action } => dist::run_dist(action).await?,
+        Command::Uninstall { action } => uninstall::run_uninstall(action).await?,
     }
     Ok(())
 }

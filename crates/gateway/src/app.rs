@@ -9,12 +9,20 @@ use axum::{Extension, Router, routing::get};
 use opensquilla_core::config::GatewayConfig;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+use crate::approvals::ApprovalsService;
+use crate::artifact_preview::PreviewCache;
+use crate::attachments::AttachmentStore;
+use crate::audio_transcription::TranscriptionService;
 use crate::auth::{AuthConfig, AuthMode};
+use crate::channels::ChannelsService;
 use crate::chat::{ChatStore, register_chat_handlers};
 use crate::config::{ConfigStore, register_config_handlers};
+use crate::cron::SchedulerHandle;
+use crate::http_api::{ExtraRpcServices, HttpApiState, register_extra_rpc};
 use crate::middleware::{
     RateLimiter, SlidingWindowRateLimiter, catch_panic_middleware, cors_layer,
     request_logging_middleware, security_headers_middleware, sliding_window_rate_limit_middleware,
@@ -22,6 +30,9 @@ use crate::middleware::{
 };
 use crate::rpc::{RpcHandler, RpcRegistry};
 use crate::sessions::{SessionStore, register_session_handlers};
+use crate::system::SystemService;
+use crate::uploads::UploadManager;
+use crate::usage::UsageStore;
 use crate::websocket::{ConnectionRegistry, SubscriptionManager, ws_handler};
 
 /// The OpenSquilla gateway server.
@@ -48,6 +59,24 @@ pub struct Gateway {
     pub connection_registry: Arc<ConnectionRegistry>,
     /// Subscription manager for WebSocket event fan-out.
     pub subscription_manager: Arc<SubscriptionManager>,
+    /// Channels service (shared with REST + extra RPC).
+    pub channels_service: ChannelsService,
+    /// Usage ledger (shared with REST + extra RPC).
+    pub usage_store: UsageStore,
+    /// Approval queue (shared with REST + extra RPC).
+    pub approvals_service: ApprovalsService,
+    /// System service (shared with REST + extra RPC).
+    pub system_service: SystemService,
+    /// File upload manager.
+    pub upload_manager: UploadManager,
+    /// Attachment store.
+    pub attachment_store: AttachmentStore,
+    /// Artifact preview cache.
+    pub preview_cache: PreviewCache,
+    /// Audio transcription service.
+    pub transcription_service: TranscriptionService,
+    /// Graceful-shutdown flag set by the REST desktop/system endpoints.
+    pub shutdown: Arc<AtomicBool>,
 }
 
 impl Gateway {
@@ -58,22 +87,59 @@ impl Gateway {
 
     /// Create a new gateway with the given configuration.
     ///
-    /// Registers the default set of RPC handlers (sessions, chat, config).
+    /// Registers the default set of RPC handlers (sessions, chat, config,
+    /// cron, system, channels, usage, approvals) plus the extra REST RPC
+    /// methods, and wires the shared services used by the HTTP layer.
     pub fn new(config: GatewayConfig) -> Self {
         let mut rpc_registry = RpcRegistry::new();
         let session_store = SessionStore::new();
         let chat_store = ChatStore::new();
         let config_store = ConfigStore::new();
+        let channels_service = ChannelsService::new();
+        let usage_store = UsageStore::new();
+        let approvals_service = ApprovalsService::new();
+        let system_service = SystemService::new();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let subscription_manager = Arc::new(SubscriptionManager::new());
 
         // Register default handlers
         register_session_handlers(&mut rpc_registry, session_store.clone());
         register_chat_handlers(&mut rpc_registry, chat_store.clone());
         register_config_handlers(&mut rpc_registry, config_store.clone());
+        crate::cron::register_cron_handlers(
+            &mut rpc_registry,
+            SchedulerHandle::in_memory().expect("failed to open in-memory scheduler store"),
+            subscription_manager.clone(),
+        );
+        crate::system::register_system_handlers(&mut rpc_registry, system_service.clone());
+        crate::channels::register_channels_handlers(&mut rpc_registry, channels_service.clone());
+        crate::usage::register_usage_handlers(&mut rpc_registry, usage_store.clone());
+        crate::approvals::register_approvals_handlers(&mut rpc_registry, approvals_service.clone());
+
+        // Extra REST RPC methods (channels.status/logout/pairings, usage.status/cost,
+        // exec.approvals.*, system.shutdown).
+        register_extra_rpc(
+            &mut rpc_registry,
+            ExtraRpcServices {
+                channels: channels_service.clone(),
+                usage: usage_store.clone(),
+                approvals: approvals_service.clone(),
+                system: system_service.clone(),
+                shutdown: shutdown.clone(),
+            },
+        );
 
         let rate_limiter = RateLimiter::new(
             config.max_connections as u64 * 10,
             config.request_timeout_secs,
         );
+
+        // File-store services. The upload manager scribes to a temp
+        // directory by default; callers that need persistence can replace it.
+        let media_dir = std::env::temp_dir().join("opensquilla-uploads");
+        std::fs::create_dir_all(&media_dir).ok();
+        let upload_manager = UploadManager::new(&media_dir)
+            .unwrap_or_else(|e| panic!("cannot init upload manager: {e}"));
 
         Self {
             config,
@@ -84,8 +150,23 @@ impl Gateway {
             rate_limiter,
             auth_config: Arc::new(AuthConfig::default()),
             connection_registry: Arc::new(ConnectionRegistry::new()),
-            subscription_manager: Arc::new(SubscriptionManager::new()),
+            subscription_manager,
+            channels_service,
+            usage_store,
+            approvals_service,
+            system_service,
+            upload_manager,
+            attachment_store: AttachmentStore::new(),
+            preview_cache: PreviewCache::new(),
+            transcription_service: TranscriptionService::new(),
+            shutdown,
         }
+    }
+
+    /// Apply the `control_ui.default_locale` preference to channel system
+    /// messages emitted by the channels service.
+    pub fn set_channel_locale(&self, locale: &str) {
+        self.channels_service.manager().set_default_locale(locale);
     }
 
     /// Register an additional RPC handler on this gateway.
@@ -140,9 +221,25 @@ impl Gateway {
         );
         let origin_origins = cors_origins.clone();
 
+        // Shared state for the HTTP REST routes.
+        let http_state = HttpApiState {
+            rpc_registry: rpc_registry.clone(),
+            upload_manager: self.upload_manager,
+            attachment_store: self.attachment_store,
+            preview_cache: self.preview_cache,
+            transcription_service: self.transcription_service,
+            channels: self.channels_service,
+            usage: self.usage_store,
+            approvals: self.approvals_service,
+            system: self.system_service,
+            shutdown: self.shutdown,
+        };
+
         Router::new()
             .route("/health", get(Self::health_check))
             .route("/ws", get(ws_handler))
+            .merge(crate::http_api::register_http_api())
+            .with_state(http_state)
             .layer(Extension(rpc_registry))
             .layer(Extension(auth_config))
             .layer(Extension(subscription_manager))

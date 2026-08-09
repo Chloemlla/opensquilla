@@ -40,6 +40,15 @@ pub enum RecoveryAction {
     },
     /// Clear all crash snapshots.
     Clear,
+    /// Replay a recorded turn from the decision log (read-only).
+    Replay {
+        /// Session key.
+        #[arg(short, long)]
+        session: String,
+        /// Turn ID.
+        #[arg(short, long)]
+        turn: String,
+    },
 }
 
 /// Run a recovery subcommand.
@@ -51,6 +60,7 @@ pub async fn run_recovery(action: RecoveryAction) -> Result<()> {
         RecoveryAction::RecoverAll => recovery_recover_all().await,
         RecoveryAction::Delete { id } => recovery_delete(id).await,
         RecoveryAction::Clear => recovery_clear().await,
+        RecoveryAction::Replay { session, turn } => replay_turn(session, turn).await,
     }
 }
 
@@ -199,6 +209,54 @@ pub async fn recovery_clear() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to clear snapshots: {e}"))?;
     println!("{} Cleared all crash snapshots", table::ok());
     Ok(())
+}
+
+/// Replay a recorded turn from the Rust observability decision-log store.
+///
+/// Read-only: prints the decision-log row for `(session, turn)`. This is the
+/// decision-log replay surface (distinct from the engine's internal turn
+/// re-execution, which is out of scope for the CLI).
+pub async fn replay_turn(session: String, turn: String) -> Result<()> {
+    let path = observability_db_path();
+    let store = opensquilla_observability::logs::LogStore::new(&path)
+        .map_err(|e| anyhow::anyhow!("Failed to open observability store at {}: {e}", path.display()))?;
+
+    let decisions = store
+        .decisions_by_session(&session)
+        .map_err(|e| anyhow::anyhow!("Failed to read decision log: {e}"))?;
+    let entry = decisions.into_iter().find(|d| d.turn_id == turn);
+
+    match entry {
+        Some(d) => {
+            println!("Turn {} (session {}/{}):", d.turn_id, d.session_key, d.session_id.unwrap_or_default());
+            println!("  Model:         {} / Provider: {}", d.model, d.provider);
+            println!("  Tokens:        in={} out={}", d.tokens_input, d.tokens_output);
+            println!("  Latency:       {} ms", d.latency_ms);
+            println!("  Tool choice:   {}", d.tool_choice);
+            println!("  Hashes:        prompt={} system={} tools={}", d.prompt_hash, d.system_prompt_hash, d.tool_list_hash);
+            if let Some(intent) = &d.session_intent {
+                println!("  Intent:        {intent}");
+            }
+            if let Some(summary) = &d.intent_summary {
+                println!("  Summary:       {summary}");
+            }
+            if let Some(trace) = &d.trace_id {
+                println!("  Trace:         {trace}");
+            }
+            Ok(())
+        }
+        None => {
+            anyhow::bail!("No decision-log entry found for session={session} turn={turn}");
+        }
+    }
+}
+
+/// Resolve the observability decision-log database path.
+fn observability_db_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("OPENSQUILLA_OBS_DB") {
+        return std::path::PathBuf::from(p);
+    }
+    crate::util::data_dir().join("observability.db")
 }
 
 /// Validate a session's integrity and report issues.

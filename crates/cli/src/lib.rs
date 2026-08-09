@@ -31,12 +31,15 @@
 extern crate self as opensquilla_cli;
 
 pub mod agent;
+pub mod bundle;
 pub mod channels;
 pub mod chat;
+pub mod code_task;
 pub mod commands;
 pub mod config;
 pub mod cost;
 pub mod diagnostics;
+pub mod dist;
 pub mod doctor;
 pub mod ensemble;
 pub mod gateway;
@@ -59,6 +62,7 @@ pub mod status;
 pub mod table;
 pub mod tools;
 pub mod tui;
+pub mod uninstall;
 pub mod util;
 
 pub use chat::run_chat;

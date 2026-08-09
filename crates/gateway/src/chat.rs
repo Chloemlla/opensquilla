@@ -284,6 +284,25 @@ impl ChatStore {
         turns
     }
 
+    /// Cancel the active (pending/queued/running) turn for a session by
+    /// marking it failed with an abort reason. Returns the aborted `turn_id`,
+    /// or `None` if no cancellable turn was found.
+    pub fn abort_active_turn(&self, session_id: &str) -> Option<Uuid> {
+        let mut turns = self.turns.lock();
+        let list = turns.get_mut(session_id)?;
+        let target = list.iter_mut().find(|t| {
+            matches!(
+                t.status,
+                crate::turn_ingress::TurnStatus::Pending
+                    | crate::turn_ingress::TurnStatus::Queued
+                    | crate::turn_ingress::TurnStatus::Running
+            )
+        })?;
+        target.status = crate::turn_ingress::TurnStatus::Failed;
+        target.error = Some("aborted by user".to_string());
+        Some(target.turn_id)
+    }
+
     // -----------------------------------------------------------------------
     // Search
     // -----------------------------------------------------------------------
@@ -681,6 +700,71 @@ pub fn register_chat_handlers(registry: &mut RpcRegistry, chat_store: ChatStore)
             }
         }
     }));
+
+    // chat.abort — cancel the active turn for a session
+    registry.register(rpc_handler("chat.abort", {
+        let store = chat_store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_id = parse_session_id(&params)?;
+                match store.abort_active_turn(&session_id.to_string()) {
+                    Some(turn_id) => Ok(serde_json::json!({
+                        "ok": true,
+                        "session_key": session_id,
+                        "aborted": turn_id.to_string(),
+                    })),
+                    None => Ok(serde_json::json!({
+                        "ok": false,
+                        "session_key": session_id,
+                        "aborted": null,
+                        "message": "No active turn to abort",
+                    })),
+                }
+            }
+        }
+    }));
+
+    // chat.inject — inject a message directly into a session's history
+    registry.register(rpc_handler("chat.inject", {
+        let store = chat_store.clone();
+        move |params| {
+            let store = store.clone();
+            async move {
+                let session_key = params
+                    .get("sessionKey")
+                    .or_else(|| params.get("session_id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::bad_request("Missing 'sessionKey' parameter"))?;
+                let role = params
+                    .get("role")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::bad_request("Missing 'role' parameter"))?;
+                let content = params
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::bad_request("Missing 'content' parameter"))?;
+                let msg = ChatMessageResponse::new(session_key, role, content);
+                store.add_message(session_key, msg.clone());
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "session_key": session_key,
+                    "message": msg,
+                }))
+            }
+        }
+    }));
+
+    // chat.clarify_submit — not implemented (engine has no clarification flow)
+    registry.register(rpc_handler("chat.clarify_submit", {
+        move |_params| async move {
+            Err(AppError::new(
+                "RPC_UNAVAILABLE",
+                "chat.clarify_submit requires a clarification engine that is not available",
+            )
+            .with_status(501))
+        }
+    }));
 }
 
 #[cfg(test)]
@@ -929,5 +1013,73 @@ mod tests {
             .await;
         let resp = r.unwrap().unwrap();
         assert_eq!(resp["timeout"], true);
+    }
+
+    #[tokio::test]
+    async fn test_chat_abort_cancels_active_turn() {
+        let store = ChatStore::new();
+        let mut registry = RpcRegistry::new();
+        register_chat_handlers(&mut registry, store.clone());
+
+        let session_id = SessionId::new().to_string();
+        store
+            .enqueue_turn(&session_id, "hello", vec![], None)
+            .await
+            .unwrap();
+
+        let r = registry
+            .dispatch(
+                "chat.abort",
+                serde_json::json!({"session_id": session_id}),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["ok"], true);
+        assert!(resp["aborted"].as_str().is_some());
+
+        // No active turn left → ok=false.
+        let r = registry
+            .dispatch(
+                "chat.abort",
+                serde_json::json!({"session_id": session_id}),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["ok"], false);
+    }
+
+    #[tokio::test]
+    async fn test_chat_inject_adds_message() {
+        let store = ChatStore::new();
+        let mut registry = RpcRegistry::new();
+        register_chat_handlers(&mut registry, store.clone());
+
+        let r = registry
+            .dispatch(
+                "chat.inject",
+                serde_json::json!({
+                    "sessionKey": "s1",
+                    "role": "assistant",
+                    "content": "injected",
+                }),
+            )
+            .await;
+        let resp = r.unwrap().unwrap();
+        assert_eq!(resp["ok"], true);
+        assert_eq!(resp["message"]["role"], "assistant");
+        assert_eq!(store.history_len("s1"), 1);
+    }
+
+    #[tokio::test]
+    async fn test_chat_clarify_submit_unavailable() {
+        let store = ChatStore::new();
+        let mut registry = RpcRegistry::new();
+        register_chat_handlers(&mut registry, store);
+
+        let r = registry
+            .dispatch("chat.clarify_submit", serde_json::Value::Null)
+            .await;
+        let resp = r.unwrap().unwrap_err();
+        assert_eq!(resp.code, "RPC_UNAVAILABLE");
     }
 }

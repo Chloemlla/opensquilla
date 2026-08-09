@@ -614,6 +614,9 @@ fn parse_channel_message(d: &Value, channel_type: ChannelType) -> Option<Incomin
         attachments: Vec::new(),
         timestamp,
         raw: d.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 
@@ -668,6 +671,9 @@ fn parse_group_message(d: &Value, channel_type: ChannelType) -> Option<IncomingM
         attachments: Vec::new(),
         timestamp,
         raw: d.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 
@@ -712,6 +718,9 @@ fn parse_c2c_message(d: &Value, channel_type: ChannelType) -> Option<IncomingMes
         attachments: Vec::new(),
         timestamp,
         raw: d.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 

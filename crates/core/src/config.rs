@@ -26,6 +26,9 @@ pub struct Config {
     /// Observability and telemetry configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observability: Option<ObservabilityConfig>,
+    /// Operator-facing control UI preferences (e.g. channel message locale).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_ui: Option<ControlUiConfig>,
 }
 
 impl Config {
@@ -449,4 +452,30 @@ pub struct ObservabilityConfig {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+/// Operator-facing control UI preferences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ControlUiConfig {
+    /// The gateway-wide default locale for channel system messages.
+    pub default_locale: String,
+}
+
+impl Default for ControlUiConfig {
+    fn default() -> Self {
+        Self {
+            default_locale: "en".to_string(),
+        }
+    }
+}
+
+impl Config {
+    /// The resolved `control_ui.default_locale`, defaulting to `"en"`.
+    pub fn default_locale(&self) -> &str {
+        self.control_ui
+            .as_ref()
+            .map(|c| c.default_locale.as_str())
+            .unwrap_or("en")
+    }
 }

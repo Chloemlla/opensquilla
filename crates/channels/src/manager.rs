@@ -158,12 +158,18 @@ pub struct ChannelManager {
     outbox: Arc<std::sync::Mutex<Option<Arc<DeliveryStore>>>>,
     outbox_worker: Arc<std::sync::Mutex<Option<Arc<OutboxWorker>>>>,
     tool_channels: DashSet<String>,
+    /// Gateway-wide locale for channel system messages (defaults to "en").
+    ///
+    /// Desktop-first: wired from `control_ui.default_locale` when available.
+    default_locale: Arc<std::sync::Mutex<String>>,
 }
 
 impl ChannelManager {
     /// Create an empty channel manager.
     pub fn new() -> Self {
-        Self::default()
+        let manager = Self::default();
+        manager.set_default_locale("en");
+        manager
     }
 
     /// Build a manager from a list of channel configs, initializing and
@@ -580,8 +586,22 @@ impl ChannelManager {
         }
     }
 
-    /// Handle an incoming message by dispatching to the registered handler.
+    /// Handle an incoming message by dispatching to the registered handler,
+    /// after applying the admission gate.
     pub fn handle_incoming(&self, message: IncomingMessage) -> Result<(), String> {
+        let channel_name = message.channel_id.clone();
+        let admission = crate::admission::decide_channel_admission(
+            &channel_name,
+            &message,
+            &std::collections::HashMap::new(),
+        );
+        if !admission.admit {
+            warn!(
+                "Admission denied for incoming message on channel {}: {:?}",
+                message.channel_id, admission.reason
+            );
+            return Ok(());
+        }
         if let Some(handler) = self.message_handlers.get(&message.channel_id) {
             handler(message)
         } else {
@@ -590,6 +610,23 @@ impl ChannelManager {
                 message.channel_id
             );
             Ok(())
+        }
+    }
+
+    /// The resolved gateway locale for channel system messages.
+    pub fn default_locale(&self) -> String {
+        self.default_locale
+            .lock()
+            .map(|l| l.clone())
+            .unwrap_or_else(|_| "en".to_string())
+    }
+
+    /// Set the gateway locale for channel system messages.
+    ///
+    /// Desktop-first: callers should wire `control_ui.default_locale` here.
+    pub fn set_default_locale(&self, locale: &str) {
+        if let Ok(mut l) = self.default_locale.lock() {
+            *l = locale.to_string();
         }
     }
 
@@ -778,6 +815,9 @@ mod tests {
             attachments: Vec::new(),
             timestamp: chrono::Utc::now(),
             raw: json!({}),
+            metadata: json!({}),
+            provenance_authenticated: false,
+            sender_is_group_mentioned: false,
         };
         manager.handle_incoming(msg).unwrap();
         assert!(called.load(std::sync::atomic::Ordering::SeqCst));

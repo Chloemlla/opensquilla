@@ -213,22 +213,21 @@ pub async fn ensemble_bench(
     repeat: u32,
     json: bool,
 ) -> Result<()> {
-    // TODO: port the Python `opensquilla.eval.run_dry_run_benchmark` and
-    // `run_config_benchmark` harness to Rust. The Rust `opensquilla-eval`
-    // crate exposes a generic `BenchmarkRunner` that requires a
-    // `BenchmarkEngine` implementation; wiring the ensemble as a benchmark
-    // engine is out of scope for this port.
-    let _ = prompts;
-    info!(
-        dry_run,
-        repeat, "ensemble bench requested (not yet implemented)"
-    );
+    if dry_run {
+        return ensemble_bench_dry_run(prompts, repeat, json).await;
+    }
+
+    // TODO: port the Python `opensquilla.eval.run_config_benchmark` harness to
+    // Rust. The Rust `opensquilla-eval` crate exposes a generic
+    // `BenchmarkRunner` that requires a `BenchmarkEngine` implementation;
+    // wiring the ensemble as a benchmark engine is out of scope for this port.
+    info!(repeat, "ensemble live bench requested (not yet implemented)");
 
     let report = serde_json::json!({
         "status": "not_implemented",
-        "dry_run": dry_run,
+        "dry_run": false,
         "repeat": repeat,
-        "message": "Ensemble benchmark harness is not yet ported to Rust.",
+        "message": "Live ensemble benchmark harness is not yet ported to Rust.",
     });
 
     if json {
@@ -237,11 +236,75 @@ pub async fn ensemble_bench(
     }
 
     println!(
-        "{} Ensemble benchmark is not yet implemented in Rust.",
+        "{} Ensemble live benchmark is not yet implemented in Rust.",
         table::warn()
     );
-    println!("  The Python `ensemble bench` command relies on `run_dry_run_benchmark`");
-    println!("  and `run_config_benchmark`, which have not been ported.");
+    println!("  Use `--dry-run` for the offline synthetic benchmark, which is ported.");
+    Ok(())
+}
+
+/// Run the offline, deterministic ensemble benchmark against scripted synthetic
+/// providers (no network, no credentials). Mirrors the Python
+/// `opensquilla.eval.scenarios.run_dry_run_benchmark`.
+pub async fn ensemble_bench_dry_run(
+    prompts: Option<String>,
+    repeat: u32,
+    json: bool,
+) -> Result<()> {
+    let prompts = match prompts {
+        Some(raw) => serde_json::from_str::<Vec<opensquilla_eval::SyntheticPrompt>>(&raw)
+            .context("Failed to parse --prompts as a JSON array of {id, text, system?}")?,
+        None => opensquilla_eval::default_synthetic_prompts(),
+    };
+
+    let report =
+        opensquilla_eval::run_dry_run_benchmark(prompts, repeat, true).await;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
+    println!("{} Ensemble dry-run benchmark (offline, synthetic)", table::ok());
+    println!("{:-<72}", "");
+    println!(
+        "{:<12} {:>6} {:>9} {:>6} {:>8} {:>12}",
+        "Arm", "Runs", "Success", "Fail", "Rate", "Mean ms"
+    );
+    println!("{:-<72}", "");
+    for arm in [&report.ensemble, &report.baseline] {
+        println!(
+            "{:<12} {:>6} {:>9} {:>6} {:>7.1}% {:>12.1}",
+            arm.label,
+            arm.runs,
+            arm.successes,
+            arm.failures,
+            arm.success_rate * 100.0,
+            arm.mean_latency_ms,
+        );
+    }
+    println!("{:-<72}", "");
+    println!(
+        "  latency delta     : {:+.1} ms",
+        report.deltas.latency_delta_ms
+    );
+    println!(
+        "  success rate delta: {:.1}%",
+        report.deltas.success_rate_delta * 100.0
+    );
+    println!(
+        "  billed cost delta : {:+.6} USD",
+        report.deltas.billed_cost_delta_usd
+    );
+    if let (Some(mean_succ), Some(mean_total)) = (
+        report.ensemble.mean_successful_proposers,
+        report.ensemble.mean_total_candidates,
+    ) {
+        println!(
+            "  ensemble proposers: {:.1} successful / {:.1} candidates",
+            mean_succ, mean_total
+        );
+    }
     Ok(())
 }
 

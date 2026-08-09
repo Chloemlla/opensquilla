@@ -774,6 +774,9 @@ pub fn parse_slack_payload(payload: &Value) -> Result<IncomingMessage, WebhookEr
         attachments,
         timestamp,
         raw: payload.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 
@@ -846,6 +849,9 @@ pub fn parse_telegram_payload(payload: &Value) -> Result<IncomingMessage, Webhoo
         attachments: Vec::new(),
         timestamp,
         raw: payload.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 
@@ -903,6 +909,9 @@ pub fn parse_wecom_payload(payload: &Value) -> Result<IncomingMessage, WebhookEr
         attachments: Vec::new(),
         timestamp,
         raw: payload.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 
@@ -928,6 +937,9 @@ pub fn parse_incoming_message(
         attachments: Vec::new(),
         timestamp: Utc::now(),
         raw,
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     }
 }
 

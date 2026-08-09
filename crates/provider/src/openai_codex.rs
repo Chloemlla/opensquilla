@@ -1009,6 +1009,7 @@ impl Provider for OpenAICodexProvider {
                 StreamEvent::Done {
                     usage: u,
                     stop_reason: s,
+                    ..
                 } => {
                     if let Some(u) = u {
                         usage = u;
@@ -1046,6 +1047,9 @@ impl Provider for OpenAICodexProvider {
             usage,
             model: config.model.clone(),
             stop_reason,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         })
     }
 
@@ -1254,7 +1258,7 @@ mod tests {
         let data = r#"{"type":"response.completed","response":{"status":"completed","model":"codex-latest","usage":{"input_tokens":5,"output_tokens":9}}}"#;
         let event = parse_responses_sse_event(data);
         match event.unwrap() {
-            Ok(StreamEvent::Done { usage, stop_reason }) => {
+            Ok(StreamEvent::Done { usage, stop_reason, .. }) => {
                 let usage = usage.unwrap();
                 assert_eq!(usage.input_tokens, 5);
                 assert_eq!(usage.output_tokens, 9);

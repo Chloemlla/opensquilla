@@ -125,8 +125,13 @@ pub async fn start_gateway_inner(
     }));
 
     // Store the gateway and URL in state.
-    state.set_gateway(Some(gateway_arc)).await;
+    state.set_gateway(Some(gateway_arc.clone())).await;
     state.set_gateway_url(Some(gateway_url.clone())).await;
+
+    // Wire the `control_ui.default_locale` preference into channel system
+    // messages so channels follow the UI language.
+    let channel_locale = state.config().await.default_locale().to_string();
+    gateway_arc.set_channel_locale(&channel_locale);
 
     // Now build the actual router that will be served. We need to create
     // another Gateway for the router since router() consumes it.
@@ -142,6 +147,7 @@ pub async fn start_gateway_inner(
             "http://tauri.localhost".to_string(),
         ],
     });
+    serve_gateway.set_channel_locale(&channel_locale);
     let router = serve_gateway.router();
 
     // Spawn the serve task. We use axum::serve with the already-bound listener.

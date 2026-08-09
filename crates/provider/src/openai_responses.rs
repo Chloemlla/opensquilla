@@ -1303,6 +1303,9 @@ impl OpenAIResponsesProvider {
             usage,
             model: model.to_string(),
             stop_reason,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         }
     }
 
@@ -1655,6 +1658,9 @@ fn parse_responses_sse_value(value: &serde_json::Value) -> Option<ProviderResult
             Some(Ok(StreamEvent::Done {
                 usage: Some(usage.to_usage()),
                 stop_reason,
+                billed_cost: None,
+                cost_source: None,
+                ensemble_trace: None,
             }))
         }
         "response.failed" | "response.incomplete" | "response.cancelled" | "error" => {
@@ -2291,7 +2297,7 @@ mod tests {
         let data = r#"{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":20}}}"#;
         let event = parse_responses_sse_event(data);
         match event.unwrap() {
-            Ok(StreamEvent::Done { usage, stop_reason }) => {
+            Ok(StreamEvent::Done { usage, stop_reason, .. }) => {
                 let usage = usage.unwrap();
                 assert_eq!(usage.input_tokens, 10);
                 assert_eq!(usage.output_tokens, 20);

@@ -783,6 +783,64 @@ impl SessionManager {
         self.storage.delete_transcript_entry(entry_id)
     }
 
+    /// Truncate a session's transcript to keep only the most recent `keep`
+    /// entries. Older entries are removed from storage and the session's
+    /// `message_count` is synchronized with the retained transcript. Returns
+    /// the number of entries removed.
+    pub fn truncate_transcript(&self, session_id: &Uuid, keep: u64) -> CoreResult<usize> {
+        let entries = self.storage.list_by_session(session_id)?;
+        let total = entries.len() as u64;
+        if total <= keep {
+            return Ok(0);
+        }
+        let to_delete = (total - keep) as usize;
+        for entry in entries.iter().take(to_delete) {
+            self.storage.delete_transcript_entry(&entry.id)?;
+        }
+        let session = self.require_session(session_id)?;
+        let remaining = self.storage.list_by_session(session_id)?.len() as u64;
+        let mut updated = session;
+        updated.message_count = remaining;
+        updated.updated_at = Utc::now();
+        self.storage.update_session(&updated)?;
+        self.active_sessions.insert(updated.id, updated.clone());
+        info!(
+            "Truncated session {} transcript to {} entries (removed {})",
+            session_id, remaining, to_delete
+        );
+        Ok(to_delete)
+    }
+
+    /// Clear a session's entire transcript and its related attachments within
+    /// a single logical operation. The session's `message_count` is reset to
+    /// zero. Returns the number of transcript entries removed.
+    pub fn clear_transcript(&self, session_id: &Uuid) -> CoreResult<usize> {
+        let entries = self.storage.list_by_session(session_id)?;
+        for entry in &entries {
+            self.storage.delete_transcript_entry(&entry.id)?;
+        }
+        // Remove session attachments associated with the transcript.
+        let attachments = self.storage.list_session_attachments(session_id)?;
+        for attachment in &attachments {
+            self.storage.delete_session_attachment(&attachment.id)?;
+        }
+        if !entries.is_empty() {
+            let session = self.require_session(session_id)?;
+            let mut updated = session;
+            updated.message_count = 0;
+            updated.updated_at = Utc::now();
+            self.storage.update_session(&updated)?;
+            self.active_sessions.insert(updated.id, updated.clone());
+        }
+        info!(
+            "Cleared session {} transcript (removed {}, attachments {})",
+            session_id,
+            entries.len(),
+            attachments.len()
+        );
+        Ok(entries.len())
+    }
+
     // --- Listing ---
 
     /// List sessions matching a filter. Applies in-memory filtering on top of
@@ -2275,5 +2333,57 @@ mod tests {
         let removed = m.delete_session_deep(&s.id).unwrap();
         assert!(removed >= 2);
         assert!(m.get(&s.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn truncate_keeps_most_recent_entries() {
+        let m = manager();
+        let s = create(&m, "truncate");
+        for i in 0..5 {
+            m.add_message(&s.id, "user".into(), format!("msg {}", i), 10)
+                .unwrap();
+        }
+        assert_eq!(m.full_transcript(&s.id).unwrap().len(), 5);
+
+        let removed = m.truncate_transcript(&s.id, 2).unwrap();
+        assert_eq!(removed, 3);
+
+        let remaining = m.full_transcript(&s.id).unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert_eq!(remaining[0].content, "msg 3");
+        assert_eq!(remaining[1].content, "msg 4");
+        // message_count is synchronized with the retained transcript.
+        assert_eq!(m.get(&s.id).unwrap().unwrap().message_count, 2);
+
+        // Truncating below the current size removes nothing further.
+        assert_eq!(m.truncate_transcript(&s.id, 2).unwrap(), 0);
+    }
+
+    #[test]
+    fn clear_removes_transcript_and_attachments() {
+        let m = manager();
+        let s = create(&m, "clear");
+        for i in 0..3 {
+            m.add_message(&s.id, "user".into(), format!("msg {}", i), 10)
+                .unwrap();
+        }
+        m.attach(
+            &s.id,
+            "f.txt",
+            "text/plain",
+            5,
+            "uri://f",
+            serde_json::Value::Null,
+        )
+        .unwrap();
+
+        let removed = m.clear_transcript(&s.id).unwrap();
+        assert_eq!(removed, 3);
+        assert!(m.full_transcript(&s.id).unwrap().is_empty());
+        assert_eq!(
+            m.storage().list_session_attachments(&s.id).unwrap().len(),
+            0
+        );
+        assert_eq!(m.get(&s.id).unwrap().unwrap().message_count, 0);
     }
 }

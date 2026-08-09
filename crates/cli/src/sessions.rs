@@ -375,6 +375,16 @@ pub async fn compact_session_cmd(id: String) -> Result<()> {
     Ok(())
 }
 
+/// Reset (clear) a session's transcript via the gateway `sessions.reset` RPC.
+pub async fn reset_session_cmd(key: String) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let result = util::gateway_rpc(&config, "sessions.reset", serde_json::json!({ "session_id": key }))
+        .await?;
+    let removed = result.get("removed").and_then(|v| v.as_u64()).unwrap_or(0);
+    println!("Reset session {key}: removed {removed} transcript entries.");
+    Ok(())
+}
+
 /// Search sessions by name or content.
 pub async fn search_sessions(query: String, limit: u64) -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;

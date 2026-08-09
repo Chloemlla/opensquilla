@@ -649,6 +649,9 @@ fn parse_message_event(
             "msgtype": msg_type,
             "message": message,
         }),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 

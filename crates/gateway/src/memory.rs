@@ -266,6 +266,58 @@ pub fn register_memory_handlers(registry: &mut RpcRegistry, handle: MemoryHandle
             }
         }
     }));
+
+    // doctor.memory.status — deep memory health check for an agent's corpus.
+    //
+    // Composed from the same store query as `memory.check` so `rpc_doctor`
+    // can surface memory health in the unified health dashboard.
+    registry.register(rpc_handler("doctor.memory.status", {
+        let handle = handle.clone();
+        move |params| {
+            let handle = handle.clone();
+            async move {
+                let agent_id = parse_agent_id(&params)?;
+                let check = build_memory_check(&handle, &agent_id)?;
+                serde_json::to_value(check)
+                    .map_err(|e| AppError::internal(e.to_string()))
+            }
+        }
+    }));
+}
+
+/// Compose a memory health check for an agent from the store.
+fn build_memory_check(
+    handle: &MemoryHandle,
+    agent_id: &Uuid,
+) -> Result<MemoryCheckResponse, AppError> {
+    let total = handle
+        .store()
+        .list_memories(agent_id, None, u64::MAX, 0)
+        .map_err(store_err)?
+        .len() as u64;
+
+    let embeddings = handle
+        .store()
+        .get_all_embeddings(agent_id)
+        .map_err(store_err)?;
+    let with_embeddings = embeddings.len() as u64;
+
+    // Orphaned embeddings point to memories that no longer exist.
+    let mut orphans = 0u64;
+    for (mid, _) in &embeddings {
+        if handle.store().get_memory(mid).map_err(store_err)?.is_none() {
+            orphans += 1;
+        }
+    }
+
+    let healthy = orphans == 0;
+    Ok(MemoryCheckResponse {
+        agent_id: agent_id.to_string(),
+        total_memories: total,
+        with_embeddings,
+        orphans,
+        healthy,
+    })
 }
 
 fn parse_agent_id(params: &serde_json::Value) -> Result<Uuid, AppError> {
@@ -312,6 +364,31 @@ mod tests {
         // Check reports a healthy corpus.
         let params = serde_json::json!({"agent_id": agent.to_string()});
         let result = registry.dispatch("memory.check", params).await;
+        let resp = result.unwrap().unwrap();
+        assert_eq!(resp["total_memories"], 1);
+        assert_eq!(resp["healthy"], true);
+    }
+
+    #[tokio::test]
+    async fn test_doctor_memory_status() {
+        let handle = MemoryHandle::in_memory().unwrap();
+        let mut registry = RpcRegistry::new();
+        register_memory_handlers(&mut registry, handle);
+
+        let agent = Uuid::new_v4();
+        let params = serde_json::json!({
+            "agent_id": agent.to_string(),
+            "content": "doctor memory status probe",
+            "memory_type": "probe",
+            "importance": 0.5,
+        });
+        let result = registry.dispatch("memory.import", params).await;
+        assert!(result.unwrap().is_ok());
+
+        let params = serde_json::json!({"agent_id": agent.to_string()});
+        let result = registry
+            .dispatch("doctor.memory.status", params)
+            .await;
         let resp = result.unwrap().unwrap();
         assert_eq!(resp["total_memories"], 1);
         assert_eq!(resp["healthy"], true);

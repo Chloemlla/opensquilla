@@ -1431,6 +1431,16 @@ pub async fn patch_config(
     let applied = state.config_store.patch(&values);
     let first_key = patches.first().map(|p| p.key.clone()).unwrap_or_default();
 
+    // Keep channel system messages in sync with the UI language preference.
+    if let Some(locale) = values
+        .get("control_ui.default_locale")
+        .and_then(|v| v.as_str())
+    {
+        if let Some(gateway) = state.get_gateway().await {
+            gateway.set_channel_locale(locale);
+        }
+    }
+
     Ok(ConfigSetResponse {
         key: first_key,
         value: serde_json::json!({ "applied": applied }),

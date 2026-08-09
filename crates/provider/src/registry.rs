@@ -1391,6 +1391,9 @@ mod tests {
                 usage: Usage::default(),
                 model: "mock".into(),
                 stop_reason: None,
+                billed_cost: None,
+                cost_source: None,
+                ensemble_trace: None,
             })
         }
         async fn stream_chat(

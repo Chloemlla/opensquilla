@@ -280,8 +280,83 @@ pub async fn add_memory(
     Ok(())
 }
 
-/// Export memory entries to a JSON file.
-pub async fn export_memory(output: String, kind: Option<String>) -> Result<()> {
+/// Flush a session transcript into durable memory.
+///
+/// Minimal local flush: reads the session's transcript and writes each message
+/// as a searchable durable memory entry (source `"flush"`). A full
+/// `SessionFlushService` (LLM summarization, segmentation, cost accounting) is
+/// a gateway-side concern not yet wired into the CLI; this keeps the command
+/// present and runnable for automation workflows.
+pub async fn flush_session(key: String, output: Option<String>) -> Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    let manager = util::build_session_manager(&config)?;
+    let uid = Uuid::parse_str(&key)
+        .map_err(|_| anyhow::anyhow!("Invalid session id: {key}"))?;
+    let session = manager
+        .get_session(&uid)
+        .map_err(|e| anyhow::anyhow!("Failed to load session: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Session '{key}' not found"))?;
+
+    let transcript = manager
+        .get_transcript(&session.id, 10000, 0)
+        .map_err(|e| anyhow::anyhow!("Failed to load transcript: {e}"))?;
+
+    let store = open_store()?;
+    let agent_id = util::default_agent_id();
+    let mut flushed = 0u64;
+    let mut chars = 0usize;
+    for entry in &transcript {
+        let content = format!("[{}] {}", entry.role, entry.content);
+        let memory_id = MemoryId::new();
+        let mem = MemoryEntry::new(
+            memory_id,
+            agent_id,
+            content.clone(),
+            "flush".to_string(),
+            "episodic".to_string(),
+            0.5,
+            serde_json::Value::Null,
+        )
+        .with_tags(vec![format!("session:{}", session.id), key.clone()]);
+        store
+            .update_memory(&mem)
+            .map_err(|e| anyhow::anyhow!("Failed to flush message: {e}"))?;
+        flushed += 1;
+        chars += content.len();
+    }
+
+    let receipt = serde_json::json!({
+        "ok": true,
+        "mode": "raw",
+        "agent_id": agent_id.to_string(),
+        "session_key": key,
+        "flushed_count": flushed,
+        "flushed_chars": chars,
+        "flushed_paths": [],
+    });
+
+    if let Some(path) = output {
+        let payload = serde_json::json!({
+            "ok": true,
+            "key": key,
+            "agent_id": agent_id.to_string(),
+            "flush_receipt": receipt,
+            "flushed_count": flushed,
+        });
+        let json = util::to_pretty_json(&payload)?;
+        if let Some(dir) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(dir).ok();
+        }
+        std::fs::write(&path, json).with_context(|| format!("Failed to write {path}"))?;
+    }
+
+    println!("Session flushed: {key}");
+    println!("  Agent:             {}", agent_id);
+    println!("  Messages flushed:  {flushed}");
+    println!("  Chars:             {chars}");
+    println!("  Flush mode:        raw (non-searchable fallback)");
+    Ok(())
+}
     let store = open_store()?;
     let agent_id = util::default_agent_id();
     let entries = store

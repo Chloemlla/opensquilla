@@ -955,6 +955,9 @@ fn parse_message_create(d: &Value) -> Option<IncomingMessage> {
         attachments,
         timestamp,
         raw: d.clone(),
+        metadata: serde_json::Value::Null,
+        provenance_authenticated: false,
+        sender_is_group_mentioned: false,
     })
 }
 

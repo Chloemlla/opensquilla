@@ -2438,6 +2438,9 @@ impl Provider for OpenAiCompatProvider {
                 resp.model
             },
             stop_reason: resp.finish_reason,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         })
     }
 
@@ -2919,6 +2922,9 @@ pub fn parse_openai_sse_event(
         return Some(Ok(StreamEvent::Done {
             usage: None,
             stop_reason: None,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         }));
     }
 
@@ -2952,6 +2958,9 @@ pub fn parse_openai_sse_event(
                 return Some(Ok(StreamEvent::Done {
                     usage: Some(usage),
                     stop_reason: None,
+                    billed_cost: None,
+                    cost_source: None,
+                    ensemble_trace: None,
                 }));
             }
             return None;
@@ -3024,6 +3033,9 @@ pub fn parse_openai_sse_event(
             return Some(Ok(StreamEvent::Done {
                 usage: final_usage,
                 stop_reason: Some(reason.to_string()),
+                billed_cost: None,
+                cost_source: None,
+                ensemble_trace: None,
             }));
         }
     }
@@ -3865,7 +3877,7 @@ mod tests {
         let event = parse_openai_sse_event("[DONE]", &CompatPolicy::default_openai());
         assert!(event.is_some());
         match event.unwrap() {
-            Ok(StreamEvent::Done { usage, stop_reason }) => {
+            Ok(StreamEvent::Done { usage, stop_reason, .. }) => {
                 assert!(usage.is_none());
                 assert!(stop_reason.is_none());
             }

@@ -1,8 +1,11 @@
 use clap::{Parser, Subcommand};
 
 pub use crate::agent::AgentAction;
+pub use crate::bundle::BundleAction;
+pub use crate::code_task::CodeTaskAction;
 pub use crate::cost::CostAction;
 pub use crate::diagnostics::DiagnosticsAction;
+pub use crate::dist::DistAction;
 pub use crate::ensemble::EnsembleAction;
 pub use crate::init::InitAction;
 pub use crate::mcp_server::McpServerAction;
@@ -13,6 +16,7 @@ pub use crate::router::RouterAction;
 pub use crate::search::SearchAction;
 pub use crate::status::StatusAction;
 pub use crate::tools::ToolAction;
+pub use crate::uninstall::UninstallAction;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -223,6 +227,30 @@ pub enum Command {
 
     /// Launch terminal UI
     Tui,
+
+    /// Solve real-repository coding tasks with an agent
+    CodeTask {
+        #[command(subcommand)]
+        action: CodeTaskAction,
+    },
+
+    /// Collect a diagnostics bundle
+    Bundle {
+        #[command(subcommand)]
+        action: BundleAction,
+    },
+
+    /// Emit workspace-state.json
+    Dist {
+        #[command(subcommand)]
+        action: DistAction,
+    },
+
+    /// Uninstall OpenSquilla (default: keep user data)
+    Uninstall {
+        #[command(subcommand)]
+        action: UninstallAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -317,6 +345,8 @@ pub enum SessionAction {
     Resume { id: String },
     /// Compact a session's context window
     Compact { id: String },
+    /// Reset (clear) a session's transcript
+    Reset { key: String },
     /// Search sessions by name or content
     Search {
         query: String,
@@ -388,6 +418,15 @@ pub enum MemoryAction {
         output: String,
         #[arg(long)]
         kind: Option<String>,
+    },
+    /// Flush a session transcript into durable memory
+    FlushSession {
+        /// Session key to flush
+        #[arg(long)]
+        key: String,
+        /// Write a flush receipt JSON to this path
+        #[arg(short, long)]
+        output: Option<String>,
     },
 }
 

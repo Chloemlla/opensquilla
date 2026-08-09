@@ -25,6 +25,9 @@ opensquilla-mcp = { path = "../mcp" }
 opensquilla-observability = { path = "../observability" }
 opensquilla-onboarding = { path = "../onboarding" }
 opensquilla-recovery = { path = "../recovery" }
+opensquilla-eval = { path = "../eval" }
+opensquilla-contrib = { path = "../contrib" }
+opensquilla-uninstall = { path = "../uninstall" }
 tokio = { workspace = true, features = ["full"] }
 clap = { workspace = true, features = ["derive"] }
 ratatui = { workspace = true }

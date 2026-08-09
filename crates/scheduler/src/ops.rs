@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::handlers::HandlerRegistry;
 use crate::parser::{compute_next_run, validate_schedule_expression};
 use crate::persistence::JobStore;
-use crate::types::{CronJob, JobStatus, ScheduleKind, SchedulerStats};
+use crate::types::{CronJob, JobExecution, JobStatus, ScheduleKind, SchedulerStats};
 
 /// CRUD operations for managing scheduled jobs.
 pub struct JobOps {
@@ -199,6 +199,57 @@ impl JobOps {
         Ok(())
     }
 
+    /// Run a job immediately by dispatching its registered handler, recording
+    /// the resulting execution and advancing the schedule.
+    ///
+    /// Unlike [`JobOps::mark_job_run`] (which only advances `next_run`), this
+    /// actually executes the handler inline (awaiting it) and returns the
+    /// recorded [`JobExecution`]. Useful for `cron.run`-style ad-hoc triggers.
+    pub async fn run_job_now(&self, job_id: Uuid) -> Result<JobExecution, OpsError> {
+        let job = {
+            let store = self.store.lock().await;
+            store.get_job(&job_id)?.ok_or(OpsError::JobNotFound(job_id))?
+        };
+        let handler = self
+            .handlers
+            .get(&job.handler)
+            .ok_or_else(|| OpsError::HandlerNotFound(job.handler.clone()))?;
+
+        let mut execution = JobExecution::new(job.id, 0);
+        let start = std::time::Instant::now();
+        let result = handler.execute(&job).await;
+        execution.duration_ms = Some(start.elapsed().as_millis() as u64);
+        if result.success {
+            execution.complete(result.result.unwrap_or_default());
+            info!("Job '{}' ran immediately and succeeded (id: {})", job.name, job.id);
+        } else {
+            execution.fail(
+                result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string()),
+            );
+            info!("Job '{}' ran immediately and failed (id: {})", job.name, job.id);
+        }
+
+        let store = self.store.lock().await;
+        store.insert_execution(&execution)?;
+        let next_run = match &job.kind {
+            ScheduleKind::Cron(expr) => crate::parser::CronParser::new(expr)
+                .ok()
+                .and_then(|p| p.next_after(chrono::Utc::now())),
+            ScheduleKind::At(_) => {
+                store.update_job_status(&job_id, JobStatus::Completed)?;
+                None
+            }
+            ScheduleKind::Every(secs) => {
+                Some(chrono::Utc::now() + chrono::Duration::seconds(*secs as i64))
+            }
+        };
+        store.mark_job_run(&job_id, next_run)?;
+        Ok(execution)
+    }
+
     pub async fn get_executions(
         &self,
         job_id: Uuid,
@@ -276,5 +327,42 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(OpsError::HandlerNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_run_job_now_dispatching_handler() {
+        let store = JobStore::in_memory().unwrap();
+        let store = Arc::new(Mutex::new(store));
+        let mut handlers = HandlerRegistry::new();
+        handlers.register(Box::new(crate::handlers::HeartbeatHandler::new()));
+        let handlers = Arc::new(handlers);
+        let ops = JobOps::new(store.clone(), handlers);
+
+        let job = ops
+            .create_job(
+                "run_now".into(),
+                ScheduleKind::Every(3600),
+                "heartbeat".into(),
+                serde_json::Value::Null,
+                std::collections::HashMap::new(),
+                None,
+                None,
+                3,
+                10,
+            )
+            .await
+            .unwrap();
+
+        let execution = ops.run_job_now(job.id).await.unwrap();
+        assert_eq!(execution.job_id, job.id);
+        assert!(execution.success);
+        assert!(execution.duration_ms.is_some());
+
+        // The execution is recorded and the job schedule is advanced.
+        let execs = ops.get_executions(job.id, 10, 0).await.unwrap();
+        assert_eq!(execs.len(), 1);
+        let updated = ops.get_job(job.id).await.unwrap();
+        assert!(updated.last_run_at.is_some());
+        assert!(updated.next_run_at.is_some());
     }
 }

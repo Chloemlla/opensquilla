@@ -646,6 +646,9 @@ impl Provider for OllamaProvider {
             usage,
             model,
             stop_reason: done_reason,
+            billed_cost: None,
+            cost_source: None,
+            ensemble_trace: None,
         })
     }
 
@@ -791,6 +794,9 @@ impl OllamaStream {
             out.push(Ok(StreamEvent::Done {
                 usage: Some(usage),
                 stop_reason: done_reason,
+                billed_cost: None,
+                cost_source: None,
+                ensemble_trace: None,
             }));
         }
 
@@ -1026,7 +1032,7 @@ mod tests {
             .unwrap();
         assert_eq!(evs.len(), 1);
         match &evs[0] {
-            Ok(StreamEvent::Done { usage, stop_reason }) => {
+            Ok(StreamEvent::Done { usage, stop_reason, .. }) => {
                 let u = usage.as_ref().unwrap();
                 assert_eq!(u.input_tokens, 10);
                 assert_eq!(u.output_tokens, 20);

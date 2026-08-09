@@ -117,6 +117,15 @@ pub struct ProviderResponse {
     pub model: String,
     /// The reason the generation stopped.
     pub stop_reason: Option<String>,
+    /// Provider-reported billed cost for the call (USD), when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billed_cost: Option<f64>,
+    /// Source of the `billed_cost` value (e.g. "synthetic", "provider").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_source: Option<String>,
+    /// Ensemble trace metadata (proposer/aggregator counts, mode, fallback).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ensemble_trace: Option<serde_json::Value>,
 }
 
 /// Events emitted during a streaming response.
@@ -152,6 +161,15 @@ pub enum StreamEvent {
         usage: Option<Usage>,
         /// The reason generation stopped.
         stop_reason: Option<String>,
+        /// Provider-reported billed cost for the call (USD), when available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        billed_cost: Option<f64>,
+        /// Source of the `billed_cost` value (e.g. "synthetic", "provider").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cost_source: Option<String>,
+        /// Ensemble trace metadata (proposer/aggregator counts, mode, fallback).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ensemble_trace: Option<serde_json::Value>,
     },
     /// An error occurred during streaming.
     #[serde(rename = "error")]
