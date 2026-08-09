@@ -274,7 +274,7 @@ impl SetupFlow {
                 default_model: None,
                 routing_rules: Vec::new(),
             })
-            .default_model = Some(model);
+            .default_model = Some(model.clone());
         info!("Default model set to {model}");
     }
 
