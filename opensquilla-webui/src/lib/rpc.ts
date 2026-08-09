@@ -1123,6 +1123,7 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
     command: 'onboarding_channel_disable',
     transform: (p) => ({ request: p }),
   },
+  'channels.status': { command: 'channels_status' },
   // S5 — provider/profile probe + model discovery (single `request` struct arg)
   'onboarding.provider.probe': {
     command: 'onboarding_provider_probe',

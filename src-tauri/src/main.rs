@@ -211,6 +211,7 @@ fn main() {
             onboarding_channel::onboarding_channel_remove,
             onboarding_channel::onboarding_channel_enable,
             onboarding_channel::onboarding_channel_disable,
+            onboarding_channel::channels_status,
             onboarding_probe::onboarding_provider_probe,
             onboarding_probe::onboarding_llm_profile_probe,
             onboarding_probe::onboarding_llm_profile_draft_probe,

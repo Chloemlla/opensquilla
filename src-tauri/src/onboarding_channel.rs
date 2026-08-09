@@ -16,7 +16,7 @@ use crate::error::{TauriError, TauriResult};
 use crate::state::AppState;
 use opensquilla_core::config::{ChannelConfig, Config};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use tauri::State;
 
@@ -617,6 +617,61 @@ async fn set_channel_enabled(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Status (channels.status)
+// ---------------------------------------------------------------------------
+
+/// Whether a stored channel has credential material. Uses the same per-type
+/// secret-field list as upsert validation; unknown types fail closed to any
+/// non-empty config value (mirrors probe's config-presence stance).
+fn is_configured(channel: &ChannelConfig) -> bool {
+    let secrets = secret_fields_for(&channel.channel_type);
+    if secrets.is_empty() {
+        channel.config.values().any(|s| !s.trim().is_empty())
+    } else {
+        secrets
+            .iter()
+            .any(|field| channel.config.get(*field).is_some_and(|s| !s.trim().is_empty()))
+    }
+}
+
+/// A `channels.status` row, Python-compatible: the Overview KPI chip reads
+/// `status`/`configured`/`pendingPairings`. Connection state is derived from
+/// config presence (fail-closed, no live reconciler), matching probe.
+fn channel_status_row(channel: &ChannelConfig) -> Value {
+    let configured = is_configured(channel);
+    let status = if configured && channel.enabled {
+        "connected"
+    } else {
+        "stopped"
+    };
+    let mut diagnostics: Map<String, Value> = Map::new();
+    diagnostics.insert("network_probe".to_string(), json!("not_run"));
+    json!({
+        "name": channel.name,
+        "type": channel.channel_type,
+        "enabled": channel.enabled,
+        "configured": configured,
+        "status": status,
+        "connected": status == "connected",
+        "pendingPairings": 0,
+        "diagnostics": Value::Object(diagnostics),
+    })
+}
+
+/// `channels.status` — list channel records with a status view, derived from
+/// config (no network calls). Returns the Python-compatible `{ channels, count }`
+/// shape the Overview health panel consumes.
+#[tauri::command]
+pub async fn channels_status(state: State<'_, AppState>) -> TauriResult<Value> {
+    let config = state.config().await;
+    let channels: Vec<Value> = config.channels.iter().map(channel_status_row).collect();
+    Ok(json!({
+        "channels": channels,
+        "count": channels.len(),
+    }))
+}
+
 fn config_path() -> Option<String> {
     Config::discover_path()
         .ok()
@@ -645,6 +700,43 @@ mod tests {
         let mut c = channel("ops", "slack", true);
         c.config.insert("token".to_string(), token.to_string());
         c
+    }
+
+    #[test]
+    fn status_row_maps_configured_enabled_to_connected() {
+        let row = channel_status_row(&stored_with("xoxb-1"));
+        assert_eq!(row["status"].as_str(), Some("connected"));
+        assert_eq!(row["connected"].as_bool(), Some(true));
+        assert_eq!(row["configured"].as_bool(), Some(true));
+        assert_eq!(row["name"].as_str(), Some("ops"));
+        assert_eq!(row["type"].as_str(), Some("slack"));
+        assert_eq!(row["pendingPairings"].as_u64(), Some(0));
+    }
+
+    #[test]
+    fn status_row_maps_missing_credentials_to_stopped() {
+        let row = channel_status_row(&channel("ops", "slack", true));
+        assert_eq!(row["status"].as_str(), Some("stopped"));
+        assert_eq!(row["connected"].as_bool(), Some(false));
+        assert_eq!(row["configured"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn status_row_maps_disabled_to_stopped() {
+        let mut c = stored_with("xoxb-1");
+        c.enabled = false;
+        let row = channel_status_row(&c);
+        assert_eq!(row["status"].as_str(), Some("stopped"));
+        assert_eq!(row["configured"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn status_row_unknown_type_configures_from_any_non_empty_value() {
+        let mut c = channel("web", "webhook", true);
+        c.config.insert("url".to_string(), "https://x".to_string());
+        assert!(is_configured(&c));
+        let row = channel_status_row(&c);
+        assert_eq!(row["status"].as_str(), Some("connected"));
     }
 
     #[test]
