@@ -311,3 +311,246 @@ CLI 侧同构:`onboarding/setup_engine.py:61` 的 `setup_catalog_payload()`,支�
 - 本次调研为**纯只读**:只用了 Read/Glob/Grep,未运行任何 cargo/npm/python(遵循"禁止本地构建安装依赖静态命令检查")。
 - 承重事实已由主代理复核:`register_onboarding_handlers` 仅存在于 onboarding.rs 内部(未在 app.rs 调用)、`patch_config`(agent_bridge.rs:1411)→`config_store.patch`(config.rs:113-121)无落盘、rpc.ts 无任何 onboarding.* 条目。
 - 实施阶段的验证只能靠静态复核 + gh CLI 触发远程 CI(本仓库契约断裂 CI 抓不到,需人工/审计按 §5 矩阵四维对齐:方法名/参数形状/返回形状/事件通道)。
+
+---
+
+# Part 2 — 同类缺口审计:前端调用但 Rust 未绑定/未实现的方法面
+
+> 状态:调研完成(2026-08-09,3 个并行只读子代理:Python 参照面 / Rust 网关面 / 前端调用面,主代理复核)
+> 范围:全应用,不只 onboarding。与 onboarding 同属"前端 rpc.call 一个方法,但 Rust 侧没有或没接通"这一大类。
+
+## P1. 结构性根因:两层绑定缺口
+
+一个方法面要"通",需要**两层都通**,当前只有约 30% 的方法面两层都通:
+
+| 层 | 载体 | 现状 |
+|---|---|---|
+| L1 网关 RPC(WS/dev 模式) | `Gateway::new`(`crates/gateway/src/app.rs:106-131`)把 `register_*_handlers` 挂到 `RpcRegistry` | 只注册 9 组 handler;`crates/gateway/src/` 下有 **20 个** `register_*_handlers`,其中 **11 个从未被调用**(死代码) |
+| L2 Tauri 命令(桌面模式) | `src-tauri/src/main.rs:143-210` 的 `invoke_handler` + 前端 `TAURI_METHOD_REGISTRY`(`opensquilla-webui/src/lib/rpc.ts:864-1069`) | `invoke_handler` 注册 41 个命令,只覆盖网关面约 30%;`TAURI_METHOD_REGISTRY` 52 条,0 条 onboarding,且大量已注册网关方法无绑定 |
+
+**结论**:即便 Rust 网关已实现且注册(如 `channels.*`、`cron.*`、`usage.*`、`sessions.subscribe/reset`),只要 L2 没绑定,前端在 Tauri 桌面模式下依旧 `METHOD_NOT_FOUND`。修复不能只"在 Rust 里实现",必须一路打通到 L2(或让前端统一走网关 RPC)。
+
+## P2. Rust 网关 handler 现状
+
+`Gateway::new` 实际注册的 9 组(app.rs:106-131):
+
+```
+sessions.* / chat.* / config.* / cron.* / system.* / channels.* / usage.* / approvals.*
++ register_extra_rpc(crates/gateway/src/http_api.rs:689-886)
+  → channels.status / channels.logout / channels.pairings / channels.pairing.approve /
+    channels.pairing.revoke / usage.status / usage.cost / exec.approvals.get|set /
+    exec.approval.resolve / system.shutdown
+```
+
+**已实现但从未注册的 11 个 handler 模块(死代码,与 onboarding.rs 同型)**:`agents.rs`、`workspaces.rs`、`sandbox.rs`、`skills.rs`、`proposals.rs`、`migration.rs`、`routing.rs`、`meta_runs.rs`、`models.rs`、`doctor`、`memory`——均有完整实现,但 `Gateway::new` 一个都没调用。
+
+## P3. 缺口分类
+
+### 类 A — Rust 网关已注册,只差 L2(Tauri 命令 + 前端注册表)绑定(7 组)
+
+| 命名空间 | 网关已注册方法 | 关键位置 | 备注 |
+|---|---|---|---|
+| `channels.*` | create/get/list/update/delete/send/register_handle/list_handles/status/logout/pairings/pairing.approve/pairing.revoke | `channels.rs:98-350` + `http_api.rs:689` | `pairing.revoke` Python 版还同步 admin 移除,Rust 只 `enabled=false` |
+| `cron.*` | create/get/list/update/delete/pause/resume/disable/stats/executions/due/run/runs/subscribe | `cron.rs:124-440` | 已正确接线 scheduler crate(少数例外) |
+| `usage.*` | record/summary/list/by_model/by_session/clear/status/cost | `usage.rs:159` + `http_api.rs:789` | 无 `usage.query` 名,`summary`+`list` 可覆盖 |
+| `sessions.subscribe/reset` | subscribe(:1513)/reset(:1421) | `sessions.rs` | subscribe 是 long-poll 实现;steer v1 返回 501 |
+| `config.routing.*` | list/set_rule/override/release/decisions/route | `config.rs:539-681` | 前端要的是 `models.routing.*`,命名不同 |
+| `chat.*` | 15 个 | `chat.rs:411` | 前端 `chat.*` 已绑,部分冗余 |
+| `approvals.*` | 7 个 | `approvals.rs:105` | — |
+
+**修复成本最低**:只在 L2 加命令 + 注册表条目,不改网关逻辑。
+
+### 类 B — Rust 已实现但从未注册(死代码,8 组),需"接线 + L2 绑定"
+
+| 命名空间 | 实现文件 | 方法数 | 前端在用 |
+|---|---|---|---|
+| `agents.*` | `agents.rs:83-280` | 6 | agents.create/update/delete(AgentsView.vue) |
+| `workspaces.*` | `workspaces.rs:81-300` | 8 | list/open/update/remove/pin/history.delete |
+| `sandbox.*` | `sandbox.rs:87-290` | 8 | 与 Python **方法面正交**,见 §P5 |
+| `skills.*` | `skills.rs:117-320` | 9 | skills.get(Tauri 只有 list_skills) |
+| `proposals`(exec.proposals.*) | `proposals.rs:117-280` | 6 | 前端 plans.* **不是** proposals,见 §P5 |
+| `migration.*` | `migration.rs:96-210` | 4 | migration.sources.*,命名不同 |
+| `routing.*`(routing.hold 等) | `routing.rs:95-280` | 6 | 前端要 models.routing.*,命名不同 |
+| `meta_runs.*` | `meta_runs.rs:141-350` | 7 | meta.runs.confirm_preflight/replay |
+
+### 类 C — Rust 完全没有,需从 Python 移植
+
+- `plans.*` 全部(5 个方法,在 `rpc_sessions.py:7189-7696`,是内嵌命名空间)
+- `sandbox` 用户面全部:setup.status/setup.ensure/resume/explain/run_mode.*/run_context.*/mount.*/domain.*/bundle.*/path.*/workspace.set
+- `channels.admin.set`(rpc_channels.py:775)、`channels.restart`(:530)、`channels.probe`(:440)
+- `sessions.unsubscribe`、`sessions.messages.subscribe/unsubscribe`、`sessions.steer.v2`(:4182)
+- `models.routing.get/set`(:258/:268)
+- `usage.query`(:727,时间窗口聚合)
+- `workspaces.pin`(:158)、`workspaces.history.delete`(:210)
+- `skills.status/reload/install/update/uninstall/deps.install/bins`
+
+### 类 D — 命名差异(别名未注册,近乎零成本)
+
+| 前端/ Python 调用 | 现有 Rust 等价 | 说明 |
+|---|---|---|
+| `cron.status` | `cron.get` | Python 别名 |
+| `cron.add` | `cron.create` | Python 别名 |
+| `cron.remove` | `cron.delete` | Python 别名(前端 cron.remove 会打 L2 缺绑定) |
+| `cron.runs` | `cron.executions` | Python 别名 |
+| `workspaces.remove` | `workspaces.delete` | 语义等价 |
+| `migration.sources.list` | `migration.discover` | 命名空间不同 |
+| `migration.sources.preview` | `migration.preview` | 命名空间不同 |
+| `models.routing.set` | `config.routing.set_rule` | 跨命名空间,需适配层 |
+| `usage.query` | `usage.summary`+`usage.list`+`usage.by_model`+`usage.by_session` | 需聚合层 |
+
+## P4. 前端调用面与降级地图(约 40+ 方法面 / 50+ 调用点 / 13 个功能域)
+
+降级路径三型:①`supportsMethod` 守卫(未支持则静默隐藏/跳过)→ 守卫位置;②`try/catch` 吞掉(降级本地缓存/空数据)→ catch 行为;③硬失败(toast/功能不可用)。
+
+| 方法面 | 降级类型 | 影响功能 | 关键位置 |
+|---|---|---|---|
+| `agents.create/update/delete` | ③ toast | Agents 增删改全失效 | AgentsView.vue:396,433,466 |
+| `channels.pairings` | ③ toast | 配对列表无法加载 | useChannelMembers.ts:180 |
+| `channels.pairing.approve/revoke` | ③ toast | 审批/撤销无响应 | :209,:309 + ChannelsView.vue:992 |
+| `channels.admin.set` | ③ toast | 管理员设置无响应 | useChannelMembers.ts:252,287 |
+| `channels.restart` / `channels.probe` | ③ toast | 重启/探测无响应 | ChannelsView.vue:1717,1687 |
+| `onboarding.channel.enable/disable` | ③ toast | 启用/禁用开关无响应 | ChannelsView.vue:1730 |
+| `cron.list` | ③ useRequest | Cron 列表空白 | useCronJobs.ts:26 |
+| `cron.run` / `cron.runs` | ③ toast | 手动触发/历史空白 | :147 / useCronRuns.ts:13 |
+| `cron.create/update/remove` | ③ toast/未捕获 | 增删改全失效 | useCronForm.ts:276, useCronJobs.ts:132,167 |
+| `sandbox.setup.status` | ② 静默轮询 | 沙箱状态永远 pending | useSandboxSetupRecovery.ts:78,91-97 |
+| `sandbox.setup.ensure` | ③ error | 设置按钮无效 | :110,113-116 |
+| `sandbox.resume` | ③ toast | Resume 无响应 | ChatView.vue:3038 |
+| `workspaces.list` | ① 守卫空列表 | 工作区列表永不显示 | stores/rpc.ts:110-112 |
+| `workspaces.open/remove/update/pin/history.delete` | ③ throw | 工作区全部操作不可用 | useProjectWorkspaces.ts:98-180 |
+| `skills.get` | ③ error | 详情面板永远报错 | useSkillDetailController.ts:64,88-89 |
+| `plans.setMode/implement/revise/cancelRun` | ① 守卫隐藏 UI + ③ | Plan 模式完全不可见/不可用 | useChatPlans.ts:391-531, ChatView.vue:2478-2480 |
+| `migration.sources.list/preview` | ① 守卫 unsupported | 迁移面板不可用 | DataMigrationPanel.vue:529,588 |
+| `sessions.subscribe/unsubscribe` | ② warn | 会话列表不自动刷新 | useSessionListSubscription.ts:63,117 |
+| `sessions.reset` | ② warn | `/reset` 斜杠命令静默失效 | useChatSlashCommands.ts:385,389 |
+| `sessions.contextCompact` | ③ toast | `/compact` 斜杠命令失效 | :400 |
+| `models.routing.get` | ② catch + config 投影 | 降级只读兼容(**设计允许**) | rpc.ts:1031-1033, useChatFeatureToggles.ts:170,176 |
+| `models.routing.set` | ③ toast + 回滚 | 路由模式切换失效 | useChatFeatureToggles.ts:262 |
+| `usage.query` | ② → `usage.status` 回退 | Usage 页面降级(有缓存链) | useUsageQuery.ts:539-576 |
+| `usage.status` | ② 保留缓存 | 缓存快照保留 | :585-589 |
+| `meta.runs.confirm_preflight` | ③ error | 预审批无响应 | useMetaRuns.ts:186 |
+| `meta.runs.replay` | ③ toast | 重放/重试无响应 | :276 |
+| `onboarding.*`(27 个) | ③ toast + 守卫 | 设置向导全流程不可用 | useSetupCatalog.ts 等(见 Part 1) |
+
+> 前端只有 `models.routing.get` 与 `usage.query` 有完整 fallback 链;其余均为硬失败或守卫隐藏。`cron.status/cron.add` 前端并不调用(前端实测只有 list/run/runs/create/update/remove)。
+
+## P5. 方法级缺口矩阵(合并三面)
+
+> 列:前端方法面 / Python 实现(rpc_*.py:行)/ Rust 网关状态 / L2 Tauri 绑定 / 分类
+
+### agents.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| agents.create | rpc_agents.py:192 | 已实现未注册(agents.rs:83) | 无 | B |
+| agents.update | :230 | 已实现未注册 | 无 | B |
+| agents.delete | :263 | 已实现未注册 | 无 | B |
+
+### channels.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| channels.pairings | rpc_channels.py:550 | 已注册(http_api.rs:722) | 无 | A |
+| channels.pairing.approve | :653 | 已注册(http_api.rs:749) | 无 | A |
+| channels.pairing.revoke | :819 | 已注册(http_api.rs:769,只 enabled=false) | 无 | A |
+| channels.admin.set | :775 | 无 | 无 | C |
+| channels.restart | :530 | 无 | 无 | C |
+| channels.probe | :440 | 无 | 无 | C |
+
+### cron.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| cron.list | rpc_cron.py:556 | 已注册(cron.rs) | 无 | A |
+| cron.create | :580(别名) | 已注册 cron.create | 无 | A(别名 D) |
+| cron.update | :738 | 已注册(cron.rs:233) | 无 | A |
+| cron.remove | :965(别名 cron.delete) | 已注册 cron.delete | 无 | A(别名 D) |
+| cron.run | :974 | 已注册 | 无 | A |
+| cron.runs | :983(别名 executions) | 已注册(cron.rs:407) | 无 | A(别名 D) |
+
+### sandbox.*(Python 与 Rust 方法面**正交**)
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| sandbox.setup.status | rpc_sandbox.py:670 | 无(只有内部策略方法) | 无 | C |
+| sandbox.setup.ensure | :676 | 无 | 无 | C |
+| sandbox.resume | :719 | 无 | 无 | C |
+
+> Python sandbox 是用户配置面(setup/mount/domain/bundle/path/run_mode/run_context/workspace.set);Rust sandbox.rs 是内部策略面(select_level/build_policy/get_policy/list_contexts/remove_context/preview/record_result/get_result)。**没有一个方法名重叠**——Rust 侧的 sandbox 实现无法直接对接前端,需整体移植 Python 用户面。
+
+### workspaces.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| workspaces.list | rpc_workspaces.py:91 | 已实现未注册(workspaces.rs:155) | 无 | B |
+| workspaces.open | :105 | 已实现未注册(:170) | 无 | B |
+| workspaces.update | :136 | 已实现未注册(:219) | 无 | B |
+| workspaces.remove | :177 | 有 delete(workspaces.rs:268)未注册 | 无 | B(命名 D) |
+| workspaces.pin | :158 | 无 | 无 | C |
+| workspaces.history.delete | :210 | 无 | 无 | C |
+
+### skills.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| skills.list | rpc_skills.py:396 | 已实现未注册(skills.rs:167) | **有**(list_skills) | 已通(仅 list) |
+| skills.get | :449 | 已实现未注册(skills.rs:191) | 无 | B |
+| skills.status/reload/install/update/uninstall/deps.install/bins | :366-651 | 无 | 无 | C |
+
+### plans.*(≠ proposals!内嵌在 rpc_sessions.py)
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| plans.capabilities | rpc_sessions.py:7189 | 无 | 无 | C |
+| plans.setMode | :7203 | 无 | 无 | C |
+| plans.implement | :7309 | 无 | 无 | C |
+| plans.revise | :7478 | 无 | 无 | C |
+| plans.cancelRun | :7555 | 无 | 无 | C |
+
+### migration.sources.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| migration.sources.list | rpc_migration.py:415 | 有 discover(migration.rs:98)未注册 | 无 | B(命名 D) |
+| migration.sources.preview | :460 | 有 preview(:109)未注册 | 无 | B(命名 D) |
+
+### sessions.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| sessions.subscribe | rpc_sessions.py:6788 | 已注册(sessions.rs:1513,long-poll) | 无 | A |
+| sessions.unsubscribe | :6796 | 底层有但未注册 | 无 | C |
+| sessions.reset | :5330 | 已注册(sessions.rs:1421) | 无 | A |
+| sessions.contextCompact | (hydrate/snapshot 对应) | hydrate/snapshot 已注册 | 无 | A |
+| sessions.steer.v2 | :4182 | 只有 v1(sessions.rs:1543,返回 501) | 无 | C |
+
+### models.routing.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| models.routing.get | rpc_models.py:258 | 无(故意不桥接,设计允许) | 无 | 已知缺口 |
+| models.routing.set | :268 | 最近似 config.routing.set_rule(已注册 config.rs:564) | 无 | C(需适配) |
+
+### usage.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| usage.status | rpc_usage.py:612 | 已注册(http_api.rs:789,形状不同) | 无 | A |
+| usage.query | :727 | 无(summary/list/by_model/by_session 可聚合) | 无 | C(需聚合层) |
+| usage.cost | :747 | 已注册(http_api.rs:808) | 无 | A |
+
+### meta.*
+| 前端 | Python | Rust | L2 | 类 |
+|---|---|---|---|---|
+| meta.runs.confirm_preflight | rpc_meta_runs.py:234 | 已实现未注册(meta_runs.rs:141) | 无 | B |
+| meta.runs.replay | :283 | 已实现未注册 | 无 | B |
+| meta.runs.list/show/failures/draft/diff/cost/validate/eval_baseline | :174-316 | 已实现未注册 | 无 | B |
+
+## P6. 特殊发现
+
+1. **两层缺口是普适的,不止 onboarding**:`crates/gateway/src/` 下 20 个 `register_*_handlers`,11 个从未被 `Gateway::new` 调用;`src-tauri` 41 个命令只覆盖网关面约 30%。
+2. **sandbox 方法面完全正交**:Python(用户配置面)与 Rust(内部策略面)零重叠,无法桥接只能移植。
+3. **plans.\* ≠ proposals.\***:`plans.*` 内嵌在 `rpc_sessions.py:7189-7696`(会话级计划模式);`exec.proposals.*`(rpc_proposals.py)是另一套 skill 提案系统。Rust 的 `proposals.rs` 死代码对应后者,**不解决 plans***。
+4. **`sessions.subscribe` 语义差异**:Rust 是 long-poll,Python 是 WebSocket 订阅注册——即使绑定,事件推送模型也不同。
+5. **`channels.pairing.revoke` 行为差异**:Python 版同步移除 admin 回调,Rust 只置 `enabled=false`——需按 Python 语义补齐。
+6. **`usage.*` Rust 反而比 Python 多**(record/summary/by_model/by_session 等 Python 没有),前端要的 `usage.query` 是 Python 独有的时间窗口聚合,需新增。
+
+## P7. 修复优先级建议(全应用视角)
+
+按"影响面 × 修复成本"排序:
+
+1. **P0 结构性收口**:把 11 个死代码 handler 模块的 `register_*_handlers` 挂进 `Gateway::new`(与 onboarding 一起做);同时给 `channels.*/cron.*/usage.*/sessions.subscribe/reset` 补 L2 绑定(类 A,成本最低,收益覆盖整个页面)。
+2. **P0 会话列表**:`sessions.subscribe`(影响全站会话列表自动刷新)。
+3. **P1 页面级可用**:`workspaces.list`(project 功能不可见)、`cron.*`(定时任务全不可用)、`plans.*`(Plan 模式全不可见,纯前端守卫已隐藏)、`agents.*`(Agents 增删改)。
+4. **P2 移植类 C**:`sandbox` 用户面(正交,量大)、`channels.admin.set/restart/probe`、`sessions.steer.v2`、`models.routing.set`(可复用 config.routing.set_rule)、`usage.query`(可聚合 usage.summary 等)。
+5. **P3 命名对齐(类 D)**:cron 别名、workspaces.remove→delete、migration.sources.*→discover/preview——可在 L2 适配层直接映射,不动网关。
+6. **方法论**:与 onboarding 同——每个方法面先列"四维契约"(方法名/参数形状/返回形状/事件通道),再按"L1 网关接线 → L2 Tauri+注册表绑定 → 前端适配"三明治打通;静态复核 + gh CLI 触发 CI 验证。
