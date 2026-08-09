@@ -25,6 +25,7 @@
 
 use opensquilla_core::config::Config;
 use opensquilla_desktop_lib::agent_bridge;
+use opensquilla_desktop_lib::doctor;
 use opensquilla_desktop_lib::gateway;
 use opensquilla_desktop_lib::onboarding;
 use opensquilla_desktop_lib::onboarding_channel;
@@ -179,6 +180,7 @@ fn main() {
             agent_bridge::get_all_provider_statuses,
             // Health / Config commands
             agent_bridge::health_check,
+            doctor::doctor_status,
             agent_bridge::get_config,
             agent_bridge::get_config_effective,
             agent_bridge::set_config,

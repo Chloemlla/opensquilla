@@ -1159,6 +1159,10 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
   // ── system / desktop ────────────────────────────────────────────────────
   'system.health': { command: 'health_check' },
   doctor: { command: 'health_check' },
+  'doctor.status': {
+    command: 'doctor_status',
+    transform: (p) => ({ request: p }),
+  },
   'locale.get': { command: 'get_locale' },
   'locale.set': { command: 'set_locale', transform: (p) => ({ input: { locale: p.locale } }) },
   'updates.check': { command: 'check_updates' },

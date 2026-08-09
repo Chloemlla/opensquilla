@@ -25,6 +25,7 @@
 pub mod agent_bridge;
 pub mod commands;
 pub mod deep_link;
+pub mod doctor;
 pub mod error;
 pub mod gateway;
 pub mod ipc;
