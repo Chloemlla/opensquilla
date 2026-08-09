@@ -805,7 +805,7 @@ pub async fn onboarding_memory_embedding_configure(
             if let Some(b) = emb.remote.base_url.as_deref().filter(|b| !b.is_empty()) {
                 remote.insert("base_url".to_string(), serde_json::json!(b));
             }
-            if let Some(k) = emb.remote.api_key.as_deref().filter(|k| !k.is_empty()) {
+            if emb.remote.api_key.as_deref().is_some_and(|k| !k.is_empty()) {
                 remote.insert("api_key".to_string(), serde_json::json!(REDACTED));
             }
             if let Some(e) = emb.remote.api_key_env.as_deref().filter(|e| !e.is_empty()) {

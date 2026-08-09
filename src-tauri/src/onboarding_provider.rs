@@ -476,7 +476,7 @@ pub async fn onboarding_provider_configure(
         )
     };
 
-    let mut capability_changes = None;
+    let capability_changes;
     {
         let mut cfg = state.config_mut().await;
         set_or_remove(&mut cfg, "llm.provider", &provider_id)?;
@@ -758,7 +758,7 @@ pub async fn onboarding_llm_profile_upsert(
         if let Some(profiles) = cfg.llm_profiles.as_mut() {
             let variants: Vec<String> = profiles
                 .keys()
-                .filter(|k| *k != provider && k.eq_ignore_ascii_case(&provider))
+                .filter(|k| **k != *provider && k.eq_ignore_ascii_case(&provider))
                 .cloned()
                 .collect();
             for v in variants {
@@ -941,8 +941,8 @@ pub async fn onboarding_llm_profile_activate(
         return Err(TauriError::bad_request("providerId is required"));
     }
     let spec = provider_spec(&provider);
-    let mut entry_router_binding = "legacy".to_string();
-    let mut capability_changes = None;
+    let entry_router_binding;
+    let capability_changes;
 
     let (previous_provider, effective_model) = {
         let mut cfg = state.config_mut().await;
@@ -1085,8 +1085,7 @@ pub async fn onboarding_llm_profile_active_remove(
         ));
     }
     let spec = provider_spec(&replacement);
-    let mut entry_router_binding = "legacy".to_string();
-    let mut capability_changes = None;
+    let capability_changes;
 
     let (removed_provider, active_provider, effective_model) = {
         let mut cfg = state.config_mut().await;
@@ -1172,12 +1171,6 @@ pub async fn onboarding_llm_profile_active_remove(
 
         let router_action = request.router_action.as_deref().unwrap_or("preserve");
         apply_router_primary_policy(&mut cfg, &replacement, router_action);
-        entry_router_binding = cfg
-            .squilla_router
-            .as_ref()
-            .and_then(|r| r.preset_binding.clone())
-            .filter(|b| b == "follow_primary" || b == "custom")
-            .unwrap_or_else(|| "legacy".to_string());
 
         let intent = request.image_generation_intent.as_deref().unwrap_or("preserve");
         capability_changes = apply_image_generation_intent_minimal(&mut cfg, &replacement, intent);
