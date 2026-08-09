@@ -864,6 +864,7 @@ async function runChatSend(
 export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
   // ── chat ────────────────────────────────────────────────────────────────
   'chat.send': {
+    command: 'send_message',
     // runChatSend attaches the `agent:stream:{sessionId}` listener before
     // invoking `send_message` and wraps the request envelope.
     run: runChatSend,
