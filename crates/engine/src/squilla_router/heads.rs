@@ -21,7 +21,7 @@ use crate::squilla_router::features::RAW_BGE_1536_DIM;
 /// right). Internal nodes carry a `split_feature`/`split_threshold` with
 /// `left_child`/`right_child` node ids and a zeroed `leaf_value`; leaf nodes
 /// have `split_feature`, `left_child`, `right_child` = -1, `split_threshold` =
-/// 0.0, `default_left` = false, and the 4-class value in `leaf_value`.
+/// 0.0, `default_left` = false, and a scalar raw score in `leaf_value`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LgbmTree {
     /// Feature index used at each internal node (-1 marks a leaf).
@@ -35,8 +35,9 @@ pub struct LgbmTree {
     /// Missing-value branch hint. Kept for schema parity: the pipeline always
     /// supplies finite features, so it is never consulted during scoring.
     default_left: Vec<bool>,
-    /// 4-class raw score contribution per node (internal nodes are zeroed).
-    leaf_value: Vec<[f64; 4]>,
+    /// Per-node scalar raw score. Internal nodes are zeroed; a leaf's value is
+    /// added to the class `tree_index % num_class`.
+    leaf_value: Vec<f64>,
 }
 
 /// A LightGBM multiclass forest (4 classes) as exported to JSON.
@@ -44,9 +45,11 @@ pub struct LgbmTree {
 pub struct LgbmForest {
     /// Number of classes (always 4 in the Phase 3 pipeline).
     num_class: usize,
-    /// Number of boosting iterations (= `trees.len()`).
+    /// Total tree count (`trees.len()`); for multiclass this is
+    /// `num_class * num_iterations`.
     num_iterations: usize,
-    /// The component trees, summed during prediction.
+    /// The component trees in round-robin class order; tree `i` contributes to
+    /// class `i % num_class`.
     trees: Vec<LgbmTree>,
 }
 
@@ -68,25 +71,34 @@ impl GbdtScorer {
         Ok(Self { forest })
     }
 
-    /// Sum the leaf scores across all trees and softmax them into 4-class
-    /// probabilities. Walks each tree from node id 0, branching on
-    /// `features[split_feature[node]] < split_threshold[node]` until a leaf.
+    /// Sum each tree's leaf score into its class slot and softmax the four
+    /// class sums into probabilities. Mirrors LightGBM's multiclass
+    /// `predict_proba`: `dump_model` emits one scalar tree per class per
+    /// iteration in round-robin order, so tree `t` contributes to class
+    /// `t % num_class`; the class sums are then softmaxed.
     pub fn predict_proba(&self, features: &[f64]) -> [f64; 4] {
+        let num_class = self.forest.num_class.max(1);
         let mut sums = [0.0f64; 4];
-        for tree in &self.forest.trees {
+        for (t, tree) in self.forest.trees.iter().enumerate() {
             let mut node = 0usize;
             while tree.split_feature[node] != -1 {
                 let f = tree.split_feature[node] as usize;
-                let go_left = features[f] < tree.split_threshold[node];
+                // The Python reference rounds the assembled 390-dim bundle to
+                // float32 before scoring (`features.py::build_feature_bundle`
+                // `.astype(np.float32)`); LightGBM stores features as f32 and
+                // compares against an f64 threshold. Match that rounding so
+                // threshold comparisons see the same values.
+                let feature = (features[f] as f32) as f64;
+                let go_left = feature < tree.split_threshold[node];
                 node = if go_left {
                     tree.left_child[node] as usize
                 } else {
                     tree.right_child[node] as usize
                 };
             }
-            let leaf = tree.leaf_value[node];
-            for (s, &v) in sums.iter_mut().zip(leaf.iter()) {
-                *s += v;
+            let class = t % num_class;
+            if class < 4 {
+                sums[class] += tree.leaf_value[node];
             }
         }
         softmax_4(&sums)
@@ -255,11 +267,7 @@ mod tests {
                 left_child: vec![1, -1, -1],
                 right_child: vec![2, -1, -1],
                 default_left: vec![true, false, false],
-                leaf_value: vec![
-                    [0.0, 0.0, 0.0, 0.0],
-                    [0.9, 0.05, 0.03, 0.02],
-                    [0.05, 0.05, 0.8, 0.1],
-                ],
+                leaf_value: vec![0.0, 0.0, 0.9],
             }],
         }
     }
@@ -274,6 +282,25 @@ mod tests {
         best
     }
 
+    /// A 4-tree forest where tree `c` routes to the right leaf carrying score
+    /// `scores[c]`, making the round-robin class assignment directly observable.
+    fn forest_with_class_scores(scores: [f64; 4]) -> LgbmForest {
+        LgbmForest {
+            num_class: 4,
+            num_iterations: 4,
+            trees: (0..4)
+                .map(|c| LgbmTree {
+                    split_feature: vec![0, -1, -1],
+                    split_threshold: vec![0.5, 0.0, 0.0],
+                    left_child: vec![1, -1, -1],
+                    right_child: vec![2, -1, -1],
+                    default_left: vec![true, false, false],
+                    leaf_value: vec![0.0, 0.0, scores[c]],
+                })
+                .collect(),
+        }
+    }
+
     #[test]
     fn lgbm_forest_serde_round_trip() {
         let forest = sample_forest();
@@ -283,22 +310,43 @@ mod tests {
         assert_eq!(back.num_iterations, 1);
         assert_eq!(back.trees.len(), 1);
         assert_eq!(back.trees[0].split_feature, vec![0, -1, -1]);
-        assert_eq!(back.trees[0].leaf_value[1], [0.9, 0.05, 0.03, 0.02]);
+        assert_eq!(back.trees[0].leaf_value[1], 0.0);
+        assert_eq!(back.trees[0].leaf_value[2], 0.9);
         assert_eq!(back.trees[0].default_left, vec![true, false, false]);
     }
 
     #[test]
     fn predict_proba_walks_tree_and_softmaxes() {
+        // A single tree contributes its leaf score to class `0 % 4 == 0`.
         let scorer = GbdtScorer {
             forest: sample_forest(),
         };
-        // Feature 0 < 0.5 -> left leaf (class 0); >= 0.5 -> right leaf (class 2).
+        // Feature 0 < 0.5 -> left leaf (score 0.0); >= 0.5 -> right leaf (0.9).
         let left = scorer.predict_proba(&[0.2, 0.0, 0.0, 0.0]);
         let right = scorer.predict_proba(&[0.8, 0.0, 0.0, 0.0]);
         assert!((left.iter().sum::<f64>() - 1.0).abs() < 1e-9);
         assert!((right.iter().sum::<f64>() - 1.0).abs() < 1e-9);
         assert_eq!(argmax4(&left), 0);
-        assert_eq!(argmax4(&right), 2);
+        assert_eq!(argmax4(&right), 0); // all-zero scores -> uniform distribution
+    }
+
+    #[test]
+    fn predict_proba_accumulates_round_robin_per_class() {
+        // Tree 2's score lands in class 2, proving `t % num_class` routing.
+        let scorer = GbdtScorer {
+            forest: forest_with_class_scores([0.0, 0.0, 10.0, 0.0]),
+        };
+        let p = scorer.predict_proba(&[0.8, 0.0, 0.0, 0.0]);
+        assert_eq!(argmax4(&p), 2);
+        // Mixed scores across classes: class 0 and class 2 both accumulate.
+        let scorer = GbdtScorer {
+            forest: forest_with_class_scores([0.9, 0.0, 0.05, 0.0]),
+        };
+        let p = scorer.predict_proba(&[0.8, 0.0, 0.0, 0.0]);
+        assert_eq!(argmax4(&p), 0);
+        // Left branch (all-zero leaves) yields a uniform distribution.
+        let p = scorer.predict_proba(&[0.2, 0.0, 0.0, 0.0]);
+        assert!((p[0] - 0.25).abs() < 1e-9);
     }
 
     #[test]

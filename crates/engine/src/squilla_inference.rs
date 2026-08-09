@@ -95,7 +95,28 @@ impl SquillaInference {
             return None;
         }
         match tokenizers::Tokenizer::from_file(&path) {
-            Ok(t) => Some(Arc::new(t)),
+            Ok(mut t) => {
+                // BGE truncates inputs to 510 tokens
+                // (`bge_onnx.py::_DEFAULT_MAX_LENGTH`), so long inputs must not
+                // exceed the model's max position embeddings.
+                let params = tokenizers::TruncationParams {
+                    max_length: 510,
+                    stride: 0,
+                    strategy: tokenizers::TruncationStrategy::LongestFirst,
+                    direction: tokenizers::TruncationDirection::Right,
+                };
+                match t.with_truncation(Some(params)) {
+                    Ok(_) => Some(Arc::new(t)),
+                    Err(e) => {
+                        tracing::warn!(
+                            "failed to configure truncation for {}: {}",
+                            path.display(),
+                            e
+                        );
+                        None
+                    }
+                }
+            }
             Err(e) => {
                 tracing::warn!("failed to load tokenizer from {}: {}", path.display(), e);
                 None

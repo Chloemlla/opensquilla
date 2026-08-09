@@ -162,7 +162,11 @@ def flatten_tree(tree_structure):
     entries live at the SAME index (its pre-order id): internal nodes reserve
     their split slots at the current index, recurse into children (which fill
     the following indices), then back-fill the child ids into the reserved
-    slots. Leaf nodes carry -1 sentinels and the per-class leaf_value."""
+    slots. Leaf nodes carry -1 sentinels and a scalar raw score in leaf_value.
+
+    A multiclass LightGBM dump emits one scalar tree per class per boosting
+    iteration (round-robin: tree index `i` belongs to class `i % num_class`),
+    so leaf_value is a flat per-node scalar array, not a per-class vector."""
     split_feature = []
     split_threshold = []
     left_child = []
@@ -181,9 +185,11 @@ def flatten_tree(tree_structure):
             default_left.append(False)
             lv = node["leaf_value"]
             if isinstance(lv, (list, tuple)):
-                leaf_value.append([float(x) for x in lv])
+                # Some dumps wrap the scalar in a length-1 vector; keep the
+                # scalar so the JSON stays a flat per-node array.
+                leaf_value.append(float(lv[0]))
             else:
-                leaf_value.append([float(lv)])
+                leaf_value.append(float(lv))
             return i
 
         split_feature.append(int(node["split_feature"]))
@@ -193,7 +199,7 @@ def flatten_tree(tree_structure):
         left_child.append(-1)
         right_child.append(-1)
         default_left.append(default_left(node))
-        leaf_value.append([0.0, 0.0, 0.0, 0.0])
+        leaf_value.append(0.0)
         left_child[i] = visit(node["left_child"])
         right_child[i] = visit(node["right_child"])
         return i
@@ -218,7 +224,9 @@ def export_lgbm(path, out_path, num_class=4):
     write_json(
         {
             "num_class": num_class,
-            "num_iterations": len(trees),
+            # `tree_info` holds num_class trees per boosting iteration, so the
+            # real iteration count is the total tree count divided by classes.
+            "num_iterations": len(trees) // num_class,
             "trees": trees,
         },
         out_path,

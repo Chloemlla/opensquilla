@@ -221,8 +221,15 @@ pub fn assemble_channels(
     );
     let hist = extract_hist_features(&request.prev_route_decisions);
     let bge_pca = transforms.bge_pca_channel(bge_vecs);
+    // Python `features.py` falsy-coerces an empty assistant text to None before
+    // extracting the assistant channel (`prev_assistant_text if ... else None`),
+    // so an empty string must not be treated as a real assistant turn.
+    let prev_assistant = request
+        .prev_assistant_text
+        .as_deref()
+        .filter(|s| !s.is_empty());
     let asst_hc = extract_assistant_handcrafted(
-        request.prev_assistant_text.as_deref(),
+        prev_assistant,
         request.prev_assistant_usage.as_ref(),
         &request.current_user_text,
     );

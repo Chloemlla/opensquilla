@@ -26,8 +26,9 @@ pub fn char_wb_ngrams(text: &str, ngram_range: (usize, usize)) -> Vec<String> {
 
 /// Sparse TF-IDF of a text against a fitted vocabulary: for each n-gram in
 /// `char_wb_ngrams` that is in `params.vocabulary`, count tf; sublinear_tf =
-/// 1 + ln(tf); weight = sublinear_tf * idf\[col\]; then L2 row-normalize across
-/// the matched columns. Returns (col_id, weight) pairs for cols with weight != 0.
+/// 1 + ln(tf) when enabled, else raw tf; weight = sublinear_tf * idf\[col\];
+/// then L2 row-normalize across the matched columns. Returns (col_id, weight)
+/// pairs for cols with weight != 0.
 pub fn tfidf_transform(text: &str, params: &TfidfParams) -> Vec<(usize, f64)> {
     let mut counts: HashMap<usize, usize> = HashMap::new();
     for ngram in char_wb_ngrams(text, (params.ngram_range[0], params.ngram_range[1])) {
@@ -38,7 +39,12 @@ pub fn tfidf_transform(text: &str, params: &TfidfParams) -> Vec<(usize, f64)> {
     let mut out: Vec<(usize, f64)> = Vec::new();
     let mut norm_sq = 0.0;
     for (&col, &tf) in &counts {
-        let weight = (1.0 + (tf as f64).ln()) * params.idf[col];
+        let tf_weight = if params.sublinear_tf {
+            1.0 + (tf as f64).ln()
+        } else {
+            tf as f64
+        };
+        let weight = tf_weight * params.idf[col];
         if weight != 0.0 {
             norm_sq += weight * weight;
             out.push((col, weight));
