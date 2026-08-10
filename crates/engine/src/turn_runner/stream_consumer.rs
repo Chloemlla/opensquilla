@@ -320,12 +320,12 @@ impl StreamConsumerStage {
                             tool_by_id.insert(call.id.clone(), b);
                             tool_order.push(call.id.clone());
                         }
-                        if let ContentBlock::Text(t) = block {
+                        if let ContentBlock::Text { text: t } = block {
                             if !t.is_empty() {
                                 state.text_parts.push(t.clone());
                             }
                         }
-                        if let ContentBlock::Reasoning(r) = block {
+                        if let ContentBlock::Reasoning { reasoning: r } = block {
                             if self.config.extract_reasoning && !r.is_empty() {
                                 state.reasoning_parts.push(r.clone());
                             }
@@ -385,7 +385,7 @@ fn extract_reasoning_from_messages(messages: &[Message]) -> Vec<String> {
         .filter(|m| m.role == MessageRole::Assistant)
         .flat_map(|m| m.content.iter())
         .filter_map(|b| match b {
-            ContentBlock::Reasoning(r) if !r.is_empty() => Some(r.clone()),
+            ContentBlock::Reasoning { reasoning: ref r } if !r.is_empty() => Some(r.clone()),
             _ => None,
         })
         .collect()
@@ -519,8 +519,8 @@ mod tests {
         let msg = Message {
             role: MessageRole::Assistant,
             content: vec![
-                ContentBlock::Reasoning("thinking".into()),
-                ContentBlock::Text("answer".into()),
+                ContentBlock::Reasoning { reasoning: "thinking".into() },
+                ContentBlock::Text { text: "answer".into() },
             ],
             name: None,
             tool_call_id: None,
@@ -610,7 +610,7 @@ mod tests {
             messages: vec![Message {
                 role: MessageRole::Assistant,
                 content: vec![
-                    ContentBlock::Text("answer".into()),
+                    ContentBlock::Text { text: "answer".into() },
                     ContentBlock::ToolUse(ToolCall::new("c1", "shell", json!({"cmd": "ls"}))),
                 ],
                 name: None,

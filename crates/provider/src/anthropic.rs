@@ -345,7 +345,7 @@ fn convert_message(msg: &ChatMessage, replay_provider_state: bool) -> Value {
     let mut parts: Vec<Value> = Vec::new();
     for block in &msg.content {
         match block {
-            ContentBlock::Text(t) => parts.push(json!({"type": "text", "text": t})),
+            ContentBlock::Text { text: ref t } => parts.push(json!({"type": "text", "text": t})),
             ContentBlock::ToolUse(tc) => parts.push(json!({
                 "type": "tool_use",
                 "id": tc.id,
@@ -358,7 +358,7 @@ fn convert_message(msg: &ChatMessage, replay_provider_state: bool) -> Value {
                 "content": tr.content,
                 "is_error": tr.is_error,
             })),
-            ContentBlock::Reasoning(r) => {
+            ContentBlock::Reasoning { reasoning: ref r } => {
                 // Thinking/signature replay is only valid for the exact minting
                 // turn; a foreign signature is rejected by the API.
                 if replay_provider_state {
@@ -528,7 +528,7 @@ pub fn parse_anthropic_response(data: &Value) -> ProviderResponse {
                 match block["type"].as_str() {
                     Some("text") => {
                         let text = block["text"].as_str().unwrap_or("").to_string();
-                        message.content.push(ContentBlock::Text(text));
+                        message.content.push(ContentBlock::Text { text });
                     }
                     Some("tool_use") => {
                         let id = block["id"].as_str().unwrap_or("").to_string();
@@ -538,7 +538,7 @@ pub fn parse_anthropic_response(data: &Value) -> ProviderResponse {
                     }
                     Some("thinking") => {
                         let thinking = block["thinking"].as_str().unwrap_or("").to_string();
-                        message.content.push(ContentBlock::Reasoning(thinking));
+                        message.content.push(ContentBlock::Reasoning { reasoning: thinking });
                     }
                     _ => {}
                 }
@@ -1431,7 +1431,7 @@ mod tests {
         let msg = ChatMessage {
             role: Role::Assistant,
             content: vec![
-                ContentBlock::Text("thinking out loud".into()),
+                ContentBlock::Text { text: "thinking out loud".into() },
                 ContentBlock::ToolUse(ToolCall::new(
                     "toolu_1",
                     "get_weather",
@@ -1476,7 +1476,7 @@ mod tests {
     fn test_convert_legacy_tool_text_message() {
         let msg = ChatMessage {
             role: Role::Tool,
-            content: vec![ContentBlock::Text("42".into())],
+            content: vec![ContentBlock::Text { text: "42".into() }],
             name: None,
             tool_call_id: Some("toolu_1".into()),
             tool_calls: None,
@@ -1492,7 +1492,7 @@ mod tests {
     fn test_convert_thinking_respects_replay_flag() {
         let msg = ChatMessage {
             role: Role::Assistant,
-            content: vec![ContentBlock::Reasoning("secret".into())],
+            content: vec![ContentBlock::Reasoning { reasoning: "secret".into() }],
             name: None,
             tool_call_id: None,
             tool_calls: None,
@@ -1528,7 +1528,7 @@ mod tests {
         assert_eq!(resp.content[0].content.len(), 2);
         assert!(matches!(
             resp.content[0].content[0],
-            ContentBlock::Reasoning(_)
+            ContentBlock::Reasoning { .. }
         ));
         assert_eq!(resp.content[0].text_content(), "Hello");
         assert_eq!(resp.usage.input_tokens, 10);

@@ -475,11 +475,10 @@ impl ToolResultStore {
         }
     }
 
-    fn record_dir(&self, handle: &str, session_id: &str) -> PathBuf {
+    fn record_dir(&self, handle: &str, _session_id: &str) -> PathBuf {
         let normalized = validate_handle(handle).expect("validated by caller");
         self.root
             .join(TOOL_RESULT_STORE_SESSION_BUCKET)
-            .join(safe_token(session_id))
             .join(&normalized[3..5])
             .join(normalized)
     }

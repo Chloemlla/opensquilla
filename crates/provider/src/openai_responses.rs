@@ -266,11 +266,11 @@ impl ContentPart {
     /// returns `None` for them. Reasoning blocks are never sent upstream.
     pub fn from_block(block: &ContentBlock, is_assistant: bool) -> Option<Self> {
         match block {
-            ContentBlock::Text(text) => Some(Self::Text {
+            ContentBlock::Text { text } => Some(Self::Text {
                 text: text.clone(),
                 is_assistant,
             }),
-            ContentBlock::Reasoning(_) => None,
+            ContentBlock::Reasoning { .. } => None,
             ContentBlock::ToolUse(_) | ContentBlock::ToolResult(_) => None,
         }
     }
@@ -420,11 +420,11 @@ pub fn build_responses_input_items(messages: &[ChatMessage]) -> Vec<InputItem> {
         let is_assistant = msg.role == MessageRole::Assistant;
         for block in &msg.content {
             match block {
-                ContentBlock::Text(text) => pending.push(ContentPart::Text {
+                ContentBlock::Text { text } => pending.push(ContentPart::Text {
                     text: text.clone(),
                     is_assistant,
                 }),
-                ContentBlock::Reasoning(_) => {}
+                ContentBlock::Reasoning { .. } => {}
                 ContentBlock::ToolUse(tc) => {
                     if !pending.is_empty() {
                         items.push(InputItem::Message {
@@ -1211,12 +1211,12 @@ impl OpenAIResponsesProvider {
                 ResponsesOutputItem::Message { text, refusals, .. } => {
                     for t in text {
                         if !t.is_empty() {
-                            content.push(ContentBlock::Text(t.clone()));
+                            content.push(ContentBlock::Text { text: t.clone() });
                         }
                     }
                     for r in refusals {
                         if !r.is_empty() {
-                            content.push(ContentBlock::Text(r.clone()));
+                            content.push(ContentBlock::Text { text: r.clone() });
                         }
                     }
                 }
@@ -1287,7 +1287,7 @@ impl OpenAIResponsesProvider {
         }
         if !reasoning_text.is_empty() {
             msg.content
-                .insert(0, ContentBlock::Reasoning(reasoning_text));
+                .insert(0, ContentBlock::Reasoning { reasoning: reasoning_text });
         }
 
         let usage_data = &data["usage"];
@@ -1939,8 +1939,8 @@ mod tests {
         let assistant = ChatMessage {
             role: MessageRole::Assistant,
             content: vec![
-                ContentBlock::Reasoning("hidden".into()),
-                ContentBlock::Text("visible".into()),
+                ContentBlock::Reasoning { reasoning: "hidden".into() },
+                ContentBlock::Text { text: "visible".into() },
             ],
             ..ChatMessage::assistant("")
         };
@@ -2195,11 +2195,11 @@ mod tests {
         let resp = p.parse_response(&data, "o3");
         let msg = &resp.content[0];
         match &msg.content[0] {
-            ContentBlock::Reasoning(r) => assert_eq!(r, "thought carefullylet me think"),
+            ContentBlock::Reasoning { reasoning: ref r } => assert_eq!(r, "thought carefullylet me think"),
             other => panic!("expected reasoning block, got {other:?}"),
         }
         match &msg.content[1] {
-            ContentBlock::Text(t) => assert_eq!(t, "answer"),
+            ContentBlock::Text { text: ref t } => assert_eq!(t, "answer"),
             other => panic!("expected text block, got {other:?}"),
         }
     }

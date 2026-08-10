@@ -639,6 +639,7 @@ impl CompactionContinuationDecision {
 /// | `retry_count < max_retries` | `RetryAfterCompaction` | `"prompt_not_reduced"` |
 /// | `raw_session_durable` AND NOT `semantic_flush_ok` | `DegradedContinueAfterCompaction` | `"semantic_flush_degraded_raw_durable"` |
 /// | `finalization_attempted` | `FailedAfterCompaction` | `"finalization_failed_after_retries"` |
+/// | `receipt_safe` AND `semantic_flush_ok` (retries exhausted, prompt unchanged) | `ContinueAfterCompaction` | `"receipt_safe_semantic_flush_ok"` |
 /// | (otherwise) | `PartialAfterCompaction` | `"finalization_required_after_retries"` |
 pub fn decide_compaction_continuation(
     receipt_safe: bool,
@@ -710,6 +711,14 @@ pub fn decide_compaction_continuation(
         return CompactionContinuationDecision {
             action: CompactionContinuationAction::FailedAfterCompaction,
             reason: "finalization_failed_after_retries".to_string(),
+            details,
+        };
+    }
+    // Receipt is safe and semantic flush is ok: proceed normally.
+    if receipt_safe && semantic_flush_ok {
+        return CompactionContinuationDecision {
+            action: CompactionContinuationAction::ContinueAfterCompaction,
+            reason: "receipt_safe_semantic_flush_ok".to_string(),
             details,
         };
     }
@@ -1008,8 +1017,8 @@ mod tests {
 
     #[test]
     fn test_timeout_error_no_timeout() {
-        let err = CompactionTimeoutError::new("flush", None);
-        assert!(err.to_string().contains("flush"));
+        let err = CompactionTimeoutError::new("read", None);
+        assert!(err.to_string().contains("read"));
         assert!(!err.to_string().contains("s"));
     }
 

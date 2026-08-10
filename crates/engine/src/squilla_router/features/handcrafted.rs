@@ -176,10 +176,11 @@ static QUOTED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"["'`](.*?)["'`]"#).expect("static quoted regex"));
 
 /// Ratio of Chinese characters, ASCII alphabetic characters, and
-/// code/punctuation characters in `text`.
+/// other (code/punctuation/space/digit) characters in `text`.
 ///
-/// Each count is divided by the total character count (characters, not bytes)
-/// and all three ratios are `0.0` for empty input. Mirrors
+/// Every character is classified into exactly one category so the three ratios
+/// sum to 1.0. Each count is divided by the total character count (characters,
+/// not bytes) and all three ratios are `0.0` for empty input. Mirrors
 /// `features.py::_char_type_ratios`.
 pub fn char_type_ratios(text: &str) -> (f64, f64, f64) {
     if text.is_empty() {
@@ -191,10 +192,7 @@ pub fn char_type_ratios(text: &str) -> (f64, f64, f64) {
         .filter(|c| ('\u{4e00}'..='\u{9fff}').contains(c))
         .count();
     let en = text.chars().filter(|c| c.is_ascii_alphabetic()).count();
-    let code = text
-        .chars()
-        .filter(|c| "{}[]();=<>|&!@#$%^*~`\\".contains(*c))
-        .count();
+    let code = n - zh - en;
     (
         zh as f64 / n as f64,
         en as f64 / n as f64,
@@ -202,13 +200,28 @@ pub fn char_type_ratios(text: &str) -> (f64, f64, f64) {
     )
 }
 
-/// Count how many of `keywords` appear, case-insensitively, as a substring of
-/// `text`. Mirrors `features.py::_keyword_count`.
+/// Count how many of `keywords` appear, case-insensitively, as a whole word or
+/// substring of `text`. Single-word keywords use word-boundary matching so
+/// "bug" does not match inside "debug"; multi-word keywords (containing a space)
+/// use substring matching. Mirrors `features.py::_keyword_count`.
 pub fn keyword_count(text: &str, keywords: &[&str]) -> u32 {
     let text_lower = text.to_lowercase();
+    let words: Vec<&str> = text_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
     keywords
         .iter()
-        .filter(|kw| text_lower.contains(&kw.to_lowercase()))
+        .filter(|kw| {
+            let kw_lower = kw.to_lowercase();
+            if kw_lower.contains(' ') {
+                // Multi-word keyword: substring match
+                text_lower.contains(&kw_lower)
+            } else {
+                // Single-word keyword: exact word match (word boundary)
+                words.contains(&kw_lower.as_str())
+            }
+        })
         .count() as u32
 }
 

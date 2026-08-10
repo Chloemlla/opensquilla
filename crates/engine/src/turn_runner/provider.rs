@@ -676,10 +676,10 @@ impl ProviderStage {
 
         let mut blocks: Vec<opensquilla_core::types::ContentBlock> = Vec::new();
         if !reasoning.is_empty() {
-            blocks.push(opensquilla_core::types::ContentBlock::Reasoning(reasoning));
+            blocks.push(opensquilla_core::types::ContentBlock::Reasoning { reasoning });
         }
         if !text.is_empty() {
-            blocks.push(opensquilla_core::types::ContentBlock::Text(text));
+            blocks.push(opensquilla_core::types::ContentBlock::Text { text });
         }
         for call in &tool_calls {
             blocks.push(opensquilla_core::types::ContentBlock::ToolUse(call.clone()));

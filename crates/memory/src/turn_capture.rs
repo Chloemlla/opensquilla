@@ -729,7 +729,7 @@ mod tests {
             tool_calls: None,
             tool_result: Some(ToolResult::success("call_1", content)),
         };
-        msg.content.push(ContentBlock::Text(content.to_string()));
+        msg.content.push(ContentBlock::Text { text: content.to_string() });
         msg
     }
 
@@ -737,7 +737,7 @@ mod tests {
         let call = ToolCall::new("call_1", name, serde_json::json!({"arg": 1}));
         Message {
             role: MessageRole::Assistant,
-            content: vec![ContentBlock::Text("running tool".to_string())],
+            content: vec![ContentBlock::Text { text: "running tool".to_string() }],
             name: None,
             tool_call_id: None,
             tool_calls: Some(vec![call]),

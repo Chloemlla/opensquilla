@@ -70,6 +70,10 @@ pub struct TransactionalUpdate {
     before_messages: Vec<Message>,
     /// The agent state before the update.
     before_state: AgentState,
+    /// The messages after the update (same as before_messages if not yet applied).
+    after_messages: Vec<Message>,
+    /// The agent state after the update (same as before_state if not yet applied).
+    after_state: AgentState,
     /// Whether the update has been applied.
     applied: bool,
     /// The usage before the update.
@@ -81,8 +85,10 @@ impl TransactionalUpdate {
     pub fn begin(turn_id: impl Into<String>, messages: Vec<Message>, state: AgentState) -> Self {
         Self {
             turn_id: turn_id.into(),
-            before_messages: messages,
-            before_state: state,
+            before_messages: messages.clone(),
+            before_state: state.clone(),
+            after_messages: messages,
+            after_state: state,
             applied: false,
             before_usage: UsageStats::new(),
         }
@@ -97,8 +103,10 @@ impl TransactionalUpdate {
     ) -> Self {
         Self {
             turn_id: turn_id.into(),
-            before_messages: messages,
-            before_state: state,
+            before_messages: messages.clone(),
+            before_state: state.clone(),
+            after_messages: messages,
+            after_state: state,
             applied: false,
             before_usage: usage,
         }
@@ -136,9 +144,9 @@ impl TransactionalUpdate {
             return Ok(TransactionOutcome {
                 status: TransactionStatus::Applied,
                 before_messages: self.before_messages.clone(),
-                after_messages: self.before_messages.clone(),
+                after_messages: self.after_messages.clone(),
                 before_state: self.before_state.clone(),
-                after_state: self.before_state.clone(),
+                after_state: self.after_state.clone(),
                 turn_id: self.turn_id.clone(),
             });
         }
@@ -146,6 +154,8 @@ impl TransactionalUpdate {
         match mutation(&self.before_messages, &self.before_state) {
             Ok((after_messages, after_state)) => {
                 self.applied = true;
+                self.after_messages = after_messages.clone();
+                self.after_state = after_state.clone();
                 debug!(
                     turn_id = %self.turn_id,
                     before = self.before_messages.len(),
@@ -206,6 +216,8 @@ impl TransactionalUpdate {
             turn_id: self.turn_id.clone(),
         };
         self.applied = false;
+        self.after_messages = self.before_messages.clone();
+        self.after_state = self.before_state.clone();
         outcome
     }
 

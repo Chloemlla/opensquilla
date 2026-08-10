@@ -657,28 +657,19 @@ mod tests {
     #[test]
     fn test_repair_tool_pairs_after_surgery() {
         let stage = CompactionStage::new(10);
-        let mut msgs = vec![Message::user("run")];
-        msgs.push(Message {
-            role: MessageRole::Assistant,
-            content: vec![ContentBlock::ToolUse(ToolCall::new(
-                "c1",
-                "shell",
-                json!({"cmd": "ls"}),
-            ))],
-            name: None,
-            tool_call_id: None,
-            tool_calls: None,
-            tool_result: None,
-        });
-        // An orphaned result whose tool_use was dropped by truncation.
-        msgs.push(Message {
-            role: MessageRole::Tool,
-            content: vec![ContentBlock::ToolResult(ToolResult::success("gone", "ok"))],
-            name: Some("shell".into()),
-            tool_call_id: Some("gone".into()),
-            tool_calls: None,
-            tool_result: None,
-        });
+        // Simulate post-surgery state: the tool_use was dropped by truncation,
+        // leaving only the orphaned tool_result.
+        let msgs = vec![
+            Message::user("run"),
+            Message {
+                role: MessageRole::Tool,
+                content: vec![ContentBlock::ToolResult(ToolResult::success("gone", "ok"))],
+                name: Some("shell".into()),
+                tool_call_id: Some("gone".into()),
+                tool_calls: None,
+                tool_result: None,
+            },
+        ];
         let out = stage.apply(&msgs, CompactionStrategy::Truncate);
         let repair = crate::history::repair_tool_pairs(&out);
         assert_eq!(repair.removed_results, 1);

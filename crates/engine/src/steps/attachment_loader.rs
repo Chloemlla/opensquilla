@@ -212,24 +212,24 @@ impl PipelineStep for AttachmentLoaderStep {
                             )
                         }
                     };
-                    blocks.push(ContentBlock::Text(text));
+                    blocks.push(ContentBlock::Text { text });
                 }
                 Ok(None) => {
                     unavailable += 1;
-                    blocks.push(ContentBlock::Text(format!(
+                    blocks.push(ContentBlock::Text { text: format!(
                         "[attachment unavailable: {}]",
                         att.id
-                    )));
+                    ) });
                 }
                 Err(e) => {
                     // I/O errors on a referenced file are treated as a soft
                     // failure so a single bad file does not break the turn.
                     debug!(attachment = %att.id, error = %e, "attachment load failed");
                     unavailable += 1;
-                    blocks.push(ContentBlock::Text(format!(
+                    blocks.push(ContentBlock::Text { text: format!(
                         "[attachment unavailable: {} — {}]",
                         att.id, e
-                    )));
+                    ) });
                 }
             }
         }
@@ -258,7 +258,7 @@ impl PipelineStep for AttachmentLoaderStep {
         if decorate_last {
             if let Some(last) = ctx.messages.pop() {
                 let prefix = last.text_content();
-                let mut blocks = vec![ContentBlock::Text(prefix)];
+                let mut blocks = vec![ContentBlock::Text { text: prefix }];
                 blocks.append(&mut message.content);
                 message.content = blocks;
             }

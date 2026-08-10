@@ -294,8 +294,8 @@ impl ResponseSurface {
             }
             for block in &msg.content {
                 match block {
-                    ContentBlock::Text(t) => text.push_str(t),
-                    ContentBlock::Reasoning(r) => {
+                    ContentBlock::Text { text: ref t } => text.push_str(t),
+                    ContentBlock::Reasoning { reasoning: ref r } => {
                         if !r.is_empty() {
                             has_reasoning = true;
                         }
@@ -329,7 +329,7 @@ fn has_text_content(messages: &[Message]) -> bool {
         .iter()
         .filter(|m| matches!(m.role, MessageRole::Assistant))
         .flat_map(|m| m.content.iter())
-        .any(|block| matches!(block, ContentBlock::Text(t) if !t.trim().is_empty()))
+        .any(|block| matches!(block, ContentBlock::Text { text: ref t } if !t.trim().is_empty()))
 }
 
 #[cfg(test)]

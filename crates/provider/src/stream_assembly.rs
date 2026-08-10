@@ -405,12 +405,12 @@ impl StreamAssembler {
         if matches!(self.state, AssemblerState::ReceivingContent) {
             let text = std::mem::take(&mut self.content_buffer);
             if !text.is_empty() {
-                blocks.push(ContentBlock::Text(text));
+                blocks.push(ContentBlock::Text { text });
             }
         } else if matches!(self.state, AssemblerState::ReceivingReasoning) {
             let reasoning = std::mem::take(&mut self.reasoning_buffer);
             if !reasoning.is_empty() {
-                blocks.push(ContentBlock::Reasoning(reasoning));
+                blocks.push(ContentBlock::Reasoning { reasoning });
             }
         } else if matches!(self.state, AssemblerState::ReceivingToolCall { .. }) {
             if let Some(block) = self.finalize_active_tool_call() {
@@ -448,7 +448,7 @@ mod tests {
 
     fn text_block(block: &ContentBlock) -> &str {
         match block {
-            ContentBlock::Text(t) => t,
+            ContentBlock::Text { text: ref t } => t,
             other => panic!("expected Text block, got {other:?}"),
         }
     }
@@ -473,7 +473,7 @@ mod tests {
         let blocks = asm.push_delta(&SseDelta::Text("answer".into()));
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Reasoning(r) => assert_eq!(r, "think"),
+            ContentBlock::Reasoning { reasoning: ref r } => assert_eq!(r, "think"),
             other => panic!("expected Reasoning block, got {other:?}"),
         }
         let blocks = asm.finalize();
@@ -535,7 +535,7 @@ mod tests {
         let blocks = asm.finalize();
         assert_eq!(blocks.len(), 1); // the reasoning buffer is flushed
         match &blocks[0] {
-            ContentBlock::Reasoning(r) => assert_eq!(r, "reason"),
+            ContentBlock::Reasoning { reasoning: ref r } => assert_eq!(r, "reason"),
             other => panic!("expected Reasoning block, got {other:?}"),
         }
     }

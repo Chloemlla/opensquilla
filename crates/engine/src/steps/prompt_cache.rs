@@ -222,9 +222,9 @@ mod tests {
         let mut ctx = PipelineContext::new("t1".into(), vec![Message::user("hi")]);
         ctx.add_message(Message {
             role: MessageRole::System,
-            content: vec![opensquilla_core::types::ContentBlock::Text(
+            content: vec![opensquilla_core::types::ContentBlock::Text { text: 
                 "system prompt".into(),
-            )],
+             }],
             name: None,
             tool_call_id: None,
             tool_calls: None,

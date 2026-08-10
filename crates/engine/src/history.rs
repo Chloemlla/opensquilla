@@ -116,8 +116,8 @@ pub fn estimate_tokens(message: &Message, tokens_per_char: f64) -> u64 {
         .content
         .iter()
         .map(|b| match b {
-            ContentBlock::Text(t) => t.len(),
-            ContentBlock::Reasoning(r) => r.len(),
+            ContentBlock::Text { text: ref t } => t.len(),
+            ContentBlock::Reasoning { reasoning: ref r } => r.len(),
             ContentBlock::ToolUse(c) => c.name.len() + c.input.to_string().len(),
             ContentBlock::ToolResult(r) => r.content.len(),
         })
@@ -280,12 +280,22 @@ pub fn reconstruct_from_row(row: &TranscriptRow) -> Result<Message, String> {
     let mut content: Vec<ContentBlock> = Vec::new();
     if let Some(reasoning) = &row.reasoning {
         if !reasoning.is_empty() {
-            content.push(ContentBlock::Reasoning(reasoning.clone()));
+            content.push(ContentBlock::Reasoning { reasoning: reasoning.clone() });
         }
     }
     if let Some(text) = &row.text {
         if !text.is_empty() {
-            content.push(ContentBlock::Text(text.clone()));
+            if role == MessageRole::Tool && row.tool_call_id.is_some() {
+                // Text content for a tool message with tool_call_id is a tool result.
+                let result = ToolResult {
+                    tool_use_id: row.tool_call_id.clone().unwrap(),
+                    content: text.clone(),
+                    is_error: false,
+                };
+                content.push(ContentBlock::ToolResult(result));
+            } else {
+                content.push(ContentBlock::Text { text: text.clone() });
+            }
         }
     }
 
@@ -991,6 +1001,6 @@ mod tests {
         let msg = reconstruct_from_row(&row).unwrap();
         assert_eq!(msg.role, MessageRole::Assistant);
         assert_eq!(msg.text_content(), "hello");
-        assert!(matches!(msg.content[0], ContentBlock::Reasoning(_)));
+        assert!(matches!(msg.content[0], ContentBlock::Reasoning { .. }));
     }
 }

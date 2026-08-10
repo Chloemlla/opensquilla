@@ -1025,7 +1025,7 @@ impl Provider for OpenAICodexProvider {
 
         let mut msg = ChatMessage {
             role: MessageRole::Assistant,
-            content: vec![ContentBlock::Text(text)],
+            content: vec![ContentBlock::Text { text }],
             name: None,
             tool_call_id: None,
             tool_calls: None,

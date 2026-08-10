@@ -263,8 +263,8 @@ pub trait TokenEstimator: Send + Sync + std::fmt::Debug {
         let mut total = 0u64;
         for block in &message.content {
             match block {
-                ContentBlock::Text(t) => total += self.estimate_text(t),
-                ContentBlock::Reasoning(r) => total += self.estimate_text(r),
+                ContentBlock::Text { text: ref t } => total += self.estimate_text(t),
+                ContentBlock::Reasoning { reasoning: ref r } => total += self.estimate_text(r),
                 ContentBlock::ToolUse(c) => {
                     total += self.estimate_text(&c.name);
                     total += self.estimate_text(&c.input.to_string());
@@ -616,7 +616,7 @@ impl SystemPromptAssembler {
     pub fn assemble_message(&self) -> Message {
         Message {
             role: MessageRole::System,
-            content: vec![ContentBlock::Text(self.assemble())],
+            content: vec![ContentBlock::Text { text: self.assemble() }],
             name: None,
             tool_call_id: None,
             tool_calls: None,

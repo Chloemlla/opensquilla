@@ -2407,11 +2407,11 @@ impl Provider for OpenAiCompatProvider {
         let mut blocks = Vec::new();
         if let Some(r) = &resp.reasoning_content {
             if !r.is_empty() {
-                blocks.push(ContentBlock::Reasoning(r.clone()));
+                blocks.push(ContentBlock::Reasoning { reasoning: r.clone() });
             }
         }
         if !resp.content.is_empty() {
-            blocks.push(ContentBlock::Text(resp.content.clone()));
+            blocks.push(ContentBlock::Text { text: resp.content.clone() });
         }
 
         let tool_calls = if resp.tool_calls.is_empty() {
@@ -2661,13 +2661,13 @@ fn message_to_openai(msg: &ChatMessage) -> serde_json::Value {
 fn convert_content_blocks(blocks: &[ContentBlock]) -> serde_json::Value {
     if blocks
         .iter()
-        .all(|b| matches!(b, ContentBlock::Text(_) | ContentBlock::Reasoning(_)))
+        .all(|b| matches!(b, ContentBlock::Text { .. } | ContentBlock::Reasoning { .. }))
     {
         let text = blocks
             .iter()
             .filter_map(|b| match b {
-                ContentBlock::Text(t) => Some(t.as_str()),
-                ContentBlock::Reasoning(t) => Some(t.as_str()),
+                ContentBlock::Text { text: ref t } => Some(t.as_str()),
+                ContentBlock::Reasoning { reasoning: ref t } => Some(t.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -2678,8 +2678,8 @@ fn convert_content_blocks(blocks: &[ContentBlock]) -> serde_json::Value {
     let arr: Vec<serde_json::Value> = blocks
         .iter()
         .filter_map(|b| match b {
-            ContentBlock::Text(t) => Some(serde_json::json!({"type": "text", "text": t})),
-            ContentBlock::Reasoning(t) => Some(serde_json::json!({"type": "text", "text": t})),
+            ContentBlock::Text { text: ref t } => Some(serde_json::json!({"type": "text", "text": t})),
+            ContentBlock::Reasoning { reasoning: ref t } => Some(serde_json::json!({"type": "text", "text": t})),
             // ToolUse / ToolResult blocks belong in tool_calls / role=tool
             // messages, not the content array.
             ContentBlock::ToolUse(_) | ContentBlock::ToolResult(_) => None,
@@ -3590,7 +3590,7 @@ mod tests {
         let mut messages = sample_messages();
         messages.push(ChatMessage {
             role: MessageRole::Assistant,
-            content: vec![ContentBlock::Text("calling".into())],
+            content: vec![ContentBlock::Text { text: "calling".into() }],
             tool_calls: Some(vec![ToolCall::new(
                 "call_1",
                 "get_weather",
@@ -3602,7 +3602,7 @@ mod tests {
         });
         messages.push(ChatMessage {
             role: MessageRole::Tool,
-            content: vec![ContentBlock::Text("72f".into())],
+            content: vec![ContentBlock::Text { text: "72f".into() }],
             tool_call_id: Some("call_1".into()),
             tool_calls: None,
             tool_result: None,
@@ -3626,8 +3626,8 @@ mod tests {
         let messages = vec![ChatMessage {
             role: MessageRole::User,
             content: vec![
-                ContentBlock::Text("look".into()),
-                ContentBlock::Reasoning("think".into()),
+                ContentBlock::Text { text: "look".into() },
+                ContentBlock::Reasoning { reasoning: "think".into() },
             ],
             tool_calls: None,
             tool_call_id: None,
@@ -4309,7 +4309,7 @@ mod tests {
         assert!(!blocks.is_empty());
         assert!(matches!(
             &blocks[0],
-            opensquilla_core::types::ContentBlock::Text(t) if t == "Hello world"
+            opensquilla_core::types::ContentBlock::Text { text: ref t } if t == "Hello world"
         ));
     }
 }

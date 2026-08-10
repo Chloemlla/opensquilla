@@ -406,7 +406,7 @@ impl PipelineStep for SkillsFilterStep {
                     // sees the skills block regardless of injection mode.
                     ctx.add_message(Message {
                         role: MessageRole::System,
-                        content: vec![opensquilla_core::types::ContentBlock::Text(prompt.clone())],
+                        content: vec![opensquilla_core::types::ContentBlock::Text { text: prompt.clone() }],
                         name: None,
                         tool_call_id: None,
                         tool_calls: None,

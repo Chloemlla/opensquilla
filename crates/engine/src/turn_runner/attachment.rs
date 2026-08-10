@@ -307,7 +307,7 @@ impl AttachmentStage {
         let mut outcome = AttachmentLoadOutcome::default();
         // The prompt block travels inside the envelope.
         if !effective_runtime_message.is_empty() {
-            blocks.push(ContentBlock::Text(effective_runtime_message.to_string()));
+            blocks.push(ContentBlock::Text { text: effective_runtime_message.to_string() });
         }
         for att in &attachments {
             let loaded = self.load_attachment(att).await;
@@ -326,15 +326,15 @@ impl AttachmentStage {
                         &loaded,
                         self.config.max_text_chars,
                     );
-                    blocks.push(ContentBlock::Text(text));
+                    blocks.push(ContentBlock::Text { text });
                 }
                 Ok(None) | Err(_) => {
                     outcome.unavailable += 1;
                     outcome.unavailable_ids.push(att.id.clone());
-                    blocks.push(ContentBlock::Text(format!(
+                    blocks.push(ContentBlock::Text { text: format!(
                         "[attachment unavailable: {}]",
                         att.id
-                    )));
+                    ) });
                 }
             }
         }

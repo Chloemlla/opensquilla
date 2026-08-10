@@ -127,7 +127,7 @@ impl ContextAssemblyStep {
             } else {
                 let system_msg = Message {
                     role: MessageRole::System,
-                    content: vec![ContentBlock::Text(prompt.clone())],
+                    content: vec![ContentBlock::Text { text: prompt.clone() }],
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,

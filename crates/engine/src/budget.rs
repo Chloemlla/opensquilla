@@ -974,7 +974,7 @@ mod tests {
     #[test]
     fn test_token_budget_warning() {
         let budget = TokenBudget::new(100_000).with_warning_fraction(0.8);
-        let usage = Usage::new(40_000, 40_001); // total > 80k (80%)
+        let usage = Usage::new(60_002, 19_999); // total = 80_001 > 80k (80%)
         assert!(budget.check(&usage).is_warning());
     }
 

@@ -258,14 +258,14 @@ impl TurnGenerator for ProviderTurnGenerator {
             // Build the response message from accumulated content.
             let mut content = Vec::new();
             if !accumulated_reasoning.is_empty() {
-                content.push(opensquilla_core::types::ContentBlock::Reasoning(
+                content.push(opensquilla_core::types::ContentBlock::Reasoning { reasoning: 
                     accumulated_reasoning,
-                ));
+                 });
             }
             if !accumulated_text.is_empty() {
-                content.push(opensquilla_core::types::ContentBlock::Text(
+                content.push(opensquilla_core::types::ContentBlock::Text { text: 
                     accumulated_text,
-                ));
+                 });
             }
             for call in tool_calls {
                 content.push(opensquilla_core::types::ContentBlock::ToolUse(call));
@@ -1537,7 +1537,7 @@ fn dto_to_message(dto: &MessageDto) -> Result<Message, TauriError> {
     for block in &dto.content {
         match block {
             ContentBlockDto::Text { text } => {
-                content.push(opensquilla_core::types::ContentBlock::Text(text.clone()));
+                content.push(opensquilla_core::types::ContentBlock::Text { text: text.clone() });
             }
             ContentBlockDto::ToolUse { id, name, input } => {
                 content.push(opensquilla_core::types::ContentBlock::ToolUse(
@@ -1557,9 +1557,9 @@ fn dto_to_message(dto: &MessageDto) -> Result<Message, TauriError> {
                 content.push(opensquilla_core::types::ContentBlock::ToolResult(result));
             }
             ContentBlockDto::Reasoning { reasoning } => {
-                content.push(opensquilla_core::types::ContentBlock::Reasoning(
+                content.push(opensquilla_core::types::ContentBlock::Reasoning { reasoning: 
                     reasoning.clone(),
-                ));
+                 });
             }
         }
     }
@@ -1599,9 +1599,9 @@ fn chat_response_to_message(resp: &opensquilla_gateway::chat::ChatMessageRespons
     };
     Message {
         role,
-        content: vec![opensquilla_core::types::ContentBlock::Text(
+        content: vec![opensquilla_core::types::ContentBlock::Text { text: 
             resp.content.clone(),
-        )],
+         }],
         name: None,
         tool_call_id: None,
         tool_calls: None,
@@ -1715,7 +1715,7 @@ mod tests {
         assert_eq!(msg.role, MessageRole::User);
         assert_eq!(msg.content.len(), 1);
         match &msg.content[0] {
-            opensquilla_core::types::ContentBlock::Text(text) => {
+            opensquilla_core::types::ContentBlock::Text { text } => {
                 assert_eq!(text, "Hello");
             }
             _ => panic!("Expected Text block"),

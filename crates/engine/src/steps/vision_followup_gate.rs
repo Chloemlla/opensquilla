@@ -32,17 +32,17 @@ fn image_ref_re() -> &'static Regex {
 fn image_optout_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)\b(?:do\s+not|don't|dont|without|no\s+need\s+to)\b\
-.{0,80}\b(?:use|inspect|look\s+at|view|analy[sz]e|consider)\b\
-.{0,80}\b(?:image|picture|photo|screenshot|screen|diagram)\b\
-|\
-\bignore\b.{0,80}\b(?:image|picture|photo|screenshot|screen|diagram)\b\
-|\
-(?:不要|不用|无需|不需要|别).{0,40}(?:看|使用|参考|分析|检查).{0,40}(?:图|图片|截图|照片)\
-|\
-(?:忽略|无视).{0,40}(?:图|图片|截图|照片)",
-        )
+        Regex::new(concat!(
+            r"(?i)\b(?:do\s+not|don't|dont|without|no\s+need\s+to)\b",
+            r".{0,80}\b(?:use|inspect|look\s+at|view|analy[sz]e|consider)\b",
+            r".{0,80}\b(?:image|picture|photo|screenshot|screen|diagram)\b",
+            "|",
+            r"\bignore\b.{0,80}\b(?:image|picture|photo|screenshot|screen|diagram)\b",
+            "|",
+            r"(?:不要|不用|无需|不需要|别).{0,40}(?:看|使用|参考|分析|检查).{0,40}(?:图|图片|截图|照片)",
+            "|",
+            r"(?:忽略|无视).{0,40}(?:图|图片|截图|照片)",
+        ))
         .expect("valid regex")
     })
 }
@@ -51,13 +51,13 @@ fn image_optout_re() -> &'static Regex {
 fn previous_image_ref_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)\b(?:previous|last|earlier|above|that|the)\b\
-.{0,50}\b(?:image|picture|photo|screenshot|screen|diagram)\b\
-|\
-\b(?:image|picture|photo|screenshot|screen|diagram)\b\
-.{0,50}\b(?:above|before|earlier)\b",
-        )
+        Regex::new(concat!(
+            r"(?i)\b(?:previous|last|earlier|above|that|the)\b",
+            r".{0,50}\b(?:image|picture|photo|screenshot|screen|diagram)\b",
+            "|",
+            r"\b(?:image|picture|photo|screenshot|screen|diagram)\b",
+            r".{0,50}\b(?:above|before|earlier)\b",
+        ))
         .expect("valid regex")
     })
 }

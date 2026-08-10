@@ -1683,7 +1683,7 @@ impl Agent {
             .filter(|m| m.role == MessageRole::Assistant)
             .flat_map(|m| m.content.iter())
             .filter_map(|b| match b {
-                ContentBlock::Reasoning(r) if !r.is_empty() => Some(r.clone()),
+                ContentBlock::Reasoning { reasoning: ref r } if !r.is_empty() => Some(r.clone()),
                 _ => None,
             })
             .collect()
@@ -3629,8 +3629,8 @@ mod tests {
         agent.add_message(Message {
             role: MessageRole::Assistant,
             content: vec![
-                ContentBlock::Reasoning("think step by step".into()),
-                ContentBlock::Text("answer".into()),
+                ContentBlock::Reasoning { reasoning: "think step by step".into() },
+                ContentBlock::Text { text: "answer".into() },
             ],
             name: None,
             tool_call_id: None,
@@ -3647,8 +3647,8 @@ mod tests {
         agent.add_message(Message {
             role: MessageRole::Assistant,
             content: vec![
-                ContentBlock::Reasoning("think".into()),
-                ContentBlock::Text("answer".into()),
+                ContentBlock::Reasoning { reasoning: "think".into() },
+                ContentBlock::Text { text: "answer".into() },
             ],
             name: None,
             tool_call_id: None,

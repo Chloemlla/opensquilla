@@ -181,7 +181,7 @@ fn build_ollama_messages(msg: &ChatMessage, tool_names: &HashMap<String, String>
 
     for block in &msg.content {
         match block {
-            ContentBlock::Text(t) => text_parts.push(t.clone()),
+            ContentBlock::Text { text: ref t } => text_parts.push(t.clone()),
             ContentBlock::ToolUse(tc) => {
                 tool_calls.push(json!({"function": {"name": tc.name, "arguments": tc.input}}));
             }
@@ -195,7 +195,7 @@ fn build_ollama_messages(msg: &ChatMessage, tool_names: &HashMap<String, String>
                 }
                 tool_messages.push(tm);
             }
-            ContentBlock::Reasoning(_) => {
+            ContentBlock::Reasoning { .. } => {
                 // Ollama has no thinking replay channel; drop reasoning blocks.
             }
         }
@@ -610,7 +610,7 @@ impl Provider for OllamaProvider {
         let content = msg["content"].as_str().unwrap_or("").to_string();
         let mut assistant = ChatMessage {
             role: Role::Assistant,
-            content: vec![ContentBlock::Text(content)],
+            content: vec![ContentBlock::Text { text: content }],
             tool_calls: None,
             tool_call_id: None,
             tool_result: None,

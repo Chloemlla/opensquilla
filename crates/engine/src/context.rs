@@ -175,7 +175,7 @@ impl ContextBuilder {
     pub fn build_message(&self) -> Message {
         Message {
             role: MessageRole::System,
-            content: vec![ContentBlock::Text(self.build_prompt())],
+            content: vec![ContentBlock::Text { text: self.build_prompt() }],
             name: None,
             tool_call_id: None,
             tool_calls: None,

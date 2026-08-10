@@ -303,8 +303,8 @@ mod tests {
     fn margin_handles_short_and_sorted_inputs() {
         assert_eq!(compute_margin(&[]), 0.0);
         assert_eq!(compute_margin(&[0.7]), 0.7);
-        assert_eq!(compute_margin(&[0.6, 0.4]), 0.2);
-        assert_eq!(compute_margin(&[0.4, 0.6]), 0.2);
+        assert_eq!(compute_margin(&[0.75, 0.25]), 0.5);
+        assert_eq!(compute_margin(&[0.25, 0.75]), 0.5);
         assert_eq!(compute_margin(&[0.5, 0.5]), 0.0);
     }
 
@@ -318,7 +318,7 @@ mod tests {
         );
         assert_eq!(derive_thinking_mode(&[0.1, 0.1, 0.7, 0.1], None), "T2");
         assert_eq!(derive_thinking_mode(&[0.8, 0.2, 0.0, 0.0], None), "T0");
-        assert_eq!(derive_thinking_mode(&[0.2, 0.6, 0.2, 0.0], None), "T1");
+        assert_eq!(derive_thinking_mode(&[0.25, 0.75, 0.0, 0.0], None), "T1");
         assert_eq!(derive_thinking_mode(&[0.4, 0.4, 0.2, 0.0], None), "T2");
     }
 
@@ -329,7 +329,7 @@ mod tests {
             derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&full)),
             "P2"
         );
-        assert_eq!(derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], None), "P0");
+        assert_eq!(derive_prompt_policy(&[0.75, 0.25, 0.0, 0.0], None), "P0");
         assert_eq!(derive_prompt_policy(&[0.4, 0.6, 0.0, 0.0], None), "P1");
         let blocked = flags(&[("debug", true)]);
         assert_eq!(
@@ -338,7 +338,7 @@ mod tests {
         );
         let neutral = flags(&[("some_other", true)]);
         assert_eq!(
-            derive_prompt_policy(&[0.7, 0.3, 0.0, 0.0], Some(&neutral)),
+            derive_prompt_policy(&[0.75, 0.25, 0.0, 0.0], Some(&neutral)),
             "P0"
         );
     }

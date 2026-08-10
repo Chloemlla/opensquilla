@@ -2507,7 +2507,7 @@ fn extract_reasoning(response: &ProviderResponse) -> Option<String> {
         .iter()
         .flat_map(|m| m.content.iter())
         .filter_map(|block| match block {
-            ContentBlock::Reasoning(r) => Some(r.clone()),
+            ContentBlock::Reasoning { reasoning: ref r } => Some(r.clone()),
             _ => None,
         })
         .collect();

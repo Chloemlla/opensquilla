@@ -27,7 +27,7 @@ pub fn drop_reasoning_from_message(message: &Message) -> Option<Message> {
     let mut clone = message.clone();
     clone
         .content
-        .retain(|block| !matches!(block, ContentBlock::Reasoning(_)));
+        .retain(|block| !matches!(block, ContentBlock::Reasoning { .. }));
     if clone.content.is_empty() {
         None
     } else {
@@ -48,7 +48,7 @@ pub fn drop_reasoning(messages: &[Message]) -> (Vec<Message>, usize) {
             let before = clone.content.len();
             clone
                 .content
-                .retain(|block| !matches!(block, ContentBlock::Reasoning(_)));
+                .retain(|block| !matches!(block, ContentBlock::Reasoning { .. }));
             stripped += before - clone.content.len();
             if clone.content.is_empty() {
                 None
@@ -83,7 +83,7 @@ pub fn extract_reasoning(messages: &[Message]) -> (Vec<Message>, Vec<String>) {
     for msg in messages {
         let mut clone = msg.clone();
         clone.content.retain(|block| match block {
-            ContentBlock::Reasoning(r) => {
+            ContentBlock::Reasoning { reasoning: ref r } => {
                 reasoning.push(r.clone());
                 false
             }
@@ -99,7 +99,7 @@ pub fn count_reasoning_blocks(messages: &[Message]) -> usize {
     messages
         .iter()
         .flat_map(|m| m.content.iter())
-        .filter(|b| matches!(b, ContentBlock::Reasoning(_)))
+        .filter(|b| matches!(b, ContentBlock::Reasoning { .. }))
         .count()
 }
 
@@ -131,8 +131,8 @@ mod tests {
         Message {
             role: MessageRole::Assistant,
             content: vec![
-                ContentBlock::Reasoning("think step by step".to_string()),
-                ContentBlock::Text("final answer".to_string()),
+                ContentBlock::Reasoning { reasoning: "think step by step".to_string() },
+                ContentBlock::Text { text: "final answer".to_string() },
             ],
             name: None,
             tool_call_id: None,

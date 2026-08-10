@@ -187,7 +187,7 @@ impl Message {
     pub fn text(role: MessageRole, text: impl Into<String>) -> Self {
         Self {
             role,
-            content: vec![ContentBlock::Text(text.into())],
+            content: vec![ContentBlock::Text { text: text.into() }],
             name: None,
             tool_call_id: None,
             tool_calls: None,
@@ -215,7 +215,7 @@ impl Message {
         self.content
             .iter()
             .filter_map(|block| match block {
-                ContentBlock::Text(text) => Some(text.as_str()),
+                ContentBlock::Text { text } => Some(text.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -229,7 +229,7 @@ impl Message {
 pub enum ContentBlock {
     /// Plain text content.
     #[serde(rename = "text")]
-    Text(String),
+    Text { text: String },
     /// A tool use request from the model.
     #[serde(rename = "tool_use")]
     ToolUse(ToolCall),
@@ -238,7 +238,7 @@ pub enum ContentBlock {
     ToolResult(ToolResult),
     /// Model reasoning/thinking content (not visible to the user).
     #[serde(rename = "reasoning")]
-    Reasoning(String),
+    Reasoning { reasoning: String },
 }
 
 /// A tool call request issued by the model.

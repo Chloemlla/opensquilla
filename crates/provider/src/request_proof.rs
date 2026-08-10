@@ -57,8 +57,8 @@ pub trait TokenEstimator: Send + Sync {
 
         for block in &msg.content {
             match block {
-                ContentBlock::Text(t) => total += self.estimate_text(t),
-                ContentBlock::Reasoning(t) => total += self.estimate_text(t),
+                ContentBlock::Text { text: ref t } => total += self.estimate_text(t),
+                ContentBlock::Reasoning { reasoning: ref t } => total += self.estimate_text(t),
                 ContentBlock::ToolUse(tc) => {
                     total += self.estimate_text(&tc.name);
                     total += self.estimate_text(&tc.id);
@@ -692,7 +692,7 @@ mod tests {
         let est = HeuristicEstimator::new();
         let msg = Message {
             role: MessageRole::Assistant,
-            content: vec![ContentBlock::Text("use tool".into())],
+            content: vec![ContentBlock::Text { text: "use tool".into() }],
             name: None,
             tool_call_id: None,
             tool_calls: Some(vec![opensquilla_core::types::ToolCall::new(

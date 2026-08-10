@@ -105,7 +105,7 @@ pub enum ContentBlockDto {
 impl From<&ContentBlock> for ContentBlockDto {
     fn from(block: &ContentBlock) -> Self {
         match block {
-            ContentBlock::Text(text) => ContentBlockDto::Text { text: text.clone() },
+            ContentBlock::Text { text } => ContentBlockDto::Text { text: text.clone() },
             ContentBlock::ToolUse(call) => ContentBlockDto::ToolUse {
                 id: call.id.clone(),
                 name: call.name.clone(),
@@ -116,7 +116,7 @@ impl From<&ContentBlock> for ContentBlockDto {
                 content: result.content.clone(),
                 is_error: result.is_error,
             },
-            ContentBlock::Reasoning(reasoning) => ContentBlockDto::Reasoning {
+            ContentBlock::Reasoning { reasoning } => ContentBlockDto::Reasoning {
                 reasoning: reasoning.clone(),
             },
         }

@@ -41,8 +41,8 @@ mod tests {
     fn cue_requires_short_text_and_match() {
         let out = extract_continuation_features(None, "继续");
         assert_eq!(out[0], 1.0);
-        let out = extract_continuation_features(None, "继续讨论这个非常长的主题");
-        assert_eq!(out[0], 0.0); // too long
+        let out = extract_continuation_features(None, "请继续讨论这个非常长的主题并且详细说明具体内容需求");
+        assert_eq!(out[0], 0.0); // too long (> 24 chars)
         let out = extract_continuation_features(None, "unrelated text");
         assert_eq!(out[0], 0.0);
         assert_eq!(out[1], 0.0);

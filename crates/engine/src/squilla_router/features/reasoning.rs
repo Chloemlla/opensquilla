@@ -49,9 +49,9 @@ mod tests {
 
     #[test]
     fn reasoning_cue_and_question_density() {
-        let out = extract_reasoning_features(None, "为什么? why? compare A与B?");
+        let out = extract_reasoning_features(None, "为什么? why? compare A与");
         assert_eq!(out[0], 1.0);
-        // 3 qmarks / 20 chars * 20 = 3, clamped to 1.0
+        // 2 qmarks / 20 chars * 20 = 2, clamped to 1.0
         assert_eq!(out[1], 1.0);
         assert!((out[2] - 20f64.ln_1p() / 10.0).abs() < 1e-9);
     }

@@ -201,7 +201,7 @@ impl PipelineStep for MessageValidator {
             .iter()
             .flat_map(|m| m.content.iter())
             .filter_map(|block| match block {
-                opensquilla_core::types::ContentBlock::Text(t) => Some(t.len()),
+                opensquilla_core::types::ContentBlock::Text { text: ref t } => Some(t.len()),
                 _ => None,
             })
             .sum();

@@ -297,7 +297,7 @@ impl InputStage {
                 let combined = format!("{}\n\n{}", prev.text_content(), last.text_content());
                 out.push(Message {
                     role: MessageRole::User,
-                    content: vec![ContentBlock::Text(combined)],
+                    content: vec![ContentBlock::Text { text: combined }],
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
@@ -329,10 +329,10 @@ impl InputStage {
         let mut replaced_text = false;
         for block in msg.content.clone() {
             match block {
-                ContentBlock::Text(_) => {
+                ContentBlock::Text { .. } => {
                     if !replaced_text {
                         if !clean.is_empty() {
-                            cleaned_blocks.push(ContentBlock::Text(clean.clone()));
+                            cleaned_blocks.push(ContentBlock::Text { text: clean.clone() });
                         }
                         replaced_text = true;
                     }
@@ -342,7 +342,7 @@ impl InputStage {
             }
         }
         if !replaced_text && !clean.is_empty() {
-            cleaned_blocks.push(ContentBlock::Text(clean));
+            cleaned_blocks.push(ContentBlock::Text { text: clean });
         }
         msg.content = cleaned_blocks;
         true
