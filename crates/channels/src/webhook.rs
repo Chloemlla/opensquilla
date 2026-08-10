@@ -668,15 +668,17 @@ pub fn decrypt_wecom_payload(
     let mut buf = encrypted.clone();
     let mut prev = iv;
     for chunk in buf.chunks_mut(16) {
-        let mut block: [u8; 16] = chunk.try_into().unwrap();
-        let mut ga_block = aes::cipher::generic_array::GenericArray::from(block);
+        let ciphertext_block: [u8; 16] = chunk.try_into().unwrap();
+        let mut ga_block = aes::cipher::generic_array::GenericArray::from(ciphertext_block);
         cipher.decrypt_block(&mut ga_block);
-        block = ga_block.into();
+        let mut block: [u8; 16] = ga_block.into();
         for (b, p) in block.iter_mut().zip(prev.iter()) {
             *b ^= *p;
         }
         chunk.copy_from_slice(&block);
-        prev = block;
+        // CBC: the next block XORs against the current *ciphertext*, which we
+        // must save before overwriting `chunk` with the plaintext.
+        prev = ciphertext_block;
     }
     let pad_len = buf[buf.len() - 1] as usize;
     if pad_len == 0 || pad_len > 16 {
@@ -1274,32 +1276,7 @@ mod tests {
     #[test]
     fn test_wecom_aes_roundtrip() {
         let plaintext = r#"{"MsgType":"text","ToUserName":"ww123","FromUserName":"user1","MsgId":"1","Content":"hi","CreateTime":12345}"#;
-        let encrypted = {
-            let full_key = format!("{WECOM_KEY}=");
-            let key_bytes = WECOM_KEY_B64
-                .decode(&full_key)
-                .unwrap();
-            let iv = &key_bytes[0..16];
-            let key = aes::cipher::generic_array::GenericArray::from_slice(&key_bytes);
-            let cipher = aes::Aes256::new(key);
-
-            let mut buf = plaintext.as_bytes().to_vec();
-            let block_size = 16;
-            let pad_len = block_size - (buf.len() % block_size);
-            buf.resize(buf.len() + pad_len, pad_len as u8);
-
-            let mut prev = aes::cipher::generic_array::GenericArray::clone_from_slice(iv);
-            for chunk in buf.chunks_mut(block_size) {
-                let mut block = aes::cipher::generic_array::GenericArray::clone_from_slice(chunk);
-                for (b, p) in block.iter_mut().zip(prev.iter()) {
-                    *b ^= *p;
-                }
-                cipher.encrypt_block(&mut block);
-                chunk.copy_from_slice(&block);
-                prev = block;
-            }
-            base64::engine::general_purpose::STANDARD.encode(&buf)
-        };
+        let encrypted = crate::wecom::encrypt_wecom_payload(WECOM_KEY, plaintext, "ww123").unwrap();
         let decrypted = decrypt_wecom_payload(WECOM_KEY, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
     }
