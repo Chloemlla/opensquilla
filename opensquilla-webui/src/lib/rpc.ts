@@ -1188,6 +1188,17 @@ export const TAURI_METHOD_REGISTRY: Record<string, TauriMethodBinding> = {
   'gateway.status': { command: 'gateway_status' },
   'gateway.restart': { command: 'restart_gateway' },
   'gateway.url': { command: 'get_gateway_url' },
+
+  // ── status ────────────────────────────────────────────────────────────────
+  'status': { command: 'get_status' },
+
+  // ── cron — routed through the generic rpc_dispatch ────────────────────────
+  'cron.list': { command: 'rpc_dispatch', transform: (p) => ({ method: 'cron.list', params: p }) },
+  'cron.run': { command: 'rpc_dispatch', transform: (p) => ({ method: 'cron.run', params: p }) },
+  'cron.update': { command: 'rpc_dispatch', transform: (p) => ({ method: 'cron.update', params: p }) },
+  'cron.remove': { command: 'rpc_dispatch', transform: (p) => ({ method: 'cron.remove', params: p }) },
+  'cron.create': { command: 'rpc_dispatch', transform: (p) => ({ method: 'cron.create', params: p }) },
+  'cron.runs': { command: 'rpc_dispatch', transform: (p) => ({ method: 'cron.runs', params: p }) },
 };
 
 /**

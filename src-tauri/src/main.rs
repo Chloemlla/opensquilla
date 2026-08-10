@@ -157,6 +157,8 @@ fn main() {
             gateway::gateway_status,
             gateway::restart_gateway,
             gateway::get_gateway_url,
+            gateway::rpc_dispatch,
+            gateway::get_status,
             // Agent bridge commands
             agent_bridge::send_message,
             agent_bridge::send_message_sync,

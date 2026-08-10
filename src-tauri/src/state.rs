@@ -11,6 +11,7 @@ use opensquilla_engine::AgentRuntime;
 use opensquilla_gateway::Gateway;
 use opensquilla_session::{SessionManager, SessionStorage};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{Mutex, RwLock};
 
 /// The central application state shared across all Tauri command handlers.
@@ -43,6 +44,8 @@ pub struct AppState {
     pub workbench: Arc<Mutex<WorkbenchManager>>,
     /// The dynamically-assigned gateway URL, set when `start_gateway` succeeds.
     pub gateway_url: Arc<RwLock<Option<String>>>,
+    /// Process start time (wall clock), used by `get_status` to compute uptime.
+    pub started_at: Instant,
 }
 
 impl std::fmt::Debug for AppState {
@@ -80,6 +83,7 @@ impl AppState {
             config_store: Arc::new(config_store),
             workbench: Arc::new(Mutex::new(WorkbenchManager::new())),
             gateway_url: Arc::new(RwLock::new(None)),
+            started_at: Instant::now(),
         }
     }
 

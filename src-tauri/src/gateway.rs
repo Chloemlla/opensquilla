@@ -17,7 +17,9 @@ use crate::error::{TauriError, TauriResult};
 use crate::ipc::GatewayStatusResponse;
 use crate::state::AppState;
 use opensquilla_core::config::GatewayConfig;
+use opensquilla_gateway::{AuthPrincipal, RpcContext};
 use opensquilla_gateway::Gateway;
+use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -282,6 +284,56 @@ pub async fn restart_gateway(
 #[tauri::command]
 pub async fn get_gateway_url(state: State<'_, AppState>) -> TauriResult<Option<String>> {
     Ok(state.gateway_url().await)
+}
+
+/// Generic RPC dispatch — routes a method name + params through the gateway's
+/// RPC registry. The gateway must be running.
+#[tauri::command]
+pub async fn rpc_dispatch(
+    state: State<'_, AppState>,
+    method: String,
+    params: Value,
+) -> TauriResult<Value> {
+    let gateway = state
+        .get_gateway()
+        .await
+        .ok_or_else(|| TauriError::unavailable("Gateway is not running"))?;
+    let ctx = RpcContext::new(
+        "tauri",
+        AuthPrincipal::new("operator", &["admin", "read", "write", "sessions", "config", "channels", "tools", "secrets", "sandbox"], true, false),
+        &method,
+        "",
+    );
+    match gateway
+        .rpc_registry
+        .dispatch_with_ctx(&method, params, &ctx)
+        .await
+    {
+        Some(Ok(payload)) => Ok(payload),
+        Some(Err(e)) => Err(TauriError::from(e)),
+        None => Err(TauriError::not_found(format!(
+            "No RPC handler for '{method}'"
+        ))),
+    }
+}
+
+/// Desktop status — returns `{ uptime_ms, version, provider }` without
+/// requiring the gateway to be running.
+#[tauri::command]
+pub async fn get_status(state: State<'_, AppState>) -> TauriResult<Value> {
+    let elapsed = state.started_at.elapsed();
+    let uptime_ms = elapsed.as_millis() as u64;
+    let config = state.config().await;
+    let provider = config
+        .providers
+        .first()
+        .map(|p| p.name.clone())
+        .unwrap_or_default();
+    Ok(serde_json::json!({
+        "uptime_ms": uptime_ms,
+        "version": env!("CARGO_PKG_VERSION"),
+        "provider": provider,
+    }))
 }
 
 #[cfg(test)]
