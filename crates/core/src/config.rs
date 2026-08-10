@@ -935,7 +935,7 @@ pub struct AudioProvider {
 }
 
 /// Audio configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AudioConfig {
     /// Whether audio is enabled.
     #[serde(default)]
@@ -946,16 +946,6 @@ pub struct AudioConfig {
     /// Per-provider audio configurations.
     #[serde(default)]
     pub providers: HashMap<String, AudioProvider>,
-}
-
-impl Default for AudioConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            tts: AudioTtsConfig::default(),
-            providers: HashMap::new(),
-        }
-    }
 }
 
 /// Local memory embedding settings.
