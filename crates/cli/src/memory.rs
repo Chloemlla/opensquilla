@@ -357,6 +357,9 @@ pub async fn flush_session(key: String, output: Option<String>) -> Result<()> {
     println!("  Flush mode:        raw (non-searchable fallback)");
     Ok(())
 }
+
+/// Export memory entries to a JSON file.
+pub async fn export_memory(output: String, kind: Option<String>) -> Result<()> {
     let store = open_store()?;
     let agent_id = util::default_agent_id();
     let entries = store
