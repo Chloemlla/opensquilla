@@ -181,7 +181,7 @@ fn build_ollama_messages(msg: &ChatMessage, tool_names: &HashMap<String, String>
 
     for block in &msg.content {
         match block {
-            ContentBlock::Text { text: ref t } => text_parts.push(t.clone()),
+            ContentBlock::Text { text: t } => text_parts.push(t.clone()),
             ContentBlock::ToolUse(tc) => {
                 tool_calls.push(json!({"function": {"name": tc.name, "arguments": tc.input}}));
             }

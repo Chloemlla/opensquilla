@@ -285,8 +285,8 @@ impl FinalizerStage {
                 .content
                 .iter()
                 .map(|b| match b {
-                    opensquilla_core::types::ContentBlock::Text { text: ref t } => t.chars().count() as u64 / 4,
-                    opensquilla_core::types::ContentBlock::Reasoning { reasoning: ref r } => {
+                    opensquilla_core::types::ContentBlock::Text { text: t } => t.chars().count() as u64 / 4,
+                    opensquilla_core::types::ContentBlock::Reasoning { reasoning: r } => {
                         r.chars().count() as u64 / 4
                     }
                     opensquilla_core::types::ContentBlock::ToolUse(c) => {

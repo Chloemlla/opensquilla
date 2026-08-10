@@ -1683,7 +1683,7 @@ impl Agent {
             .filter(|m| m.role == MessageRole::Assistant)
             .flat_map(|m| m.content.iter())
             .filter_map(|b| match b {
-                ContentBlock::Reasoning { reasoning: ref r } if !r.is_empty() => Some(r.clone()),
+                ContentBlock::Reasoning { reasoning: r } if !r.is_empty() => Some(r.clone()),
                 _ => None,
             })
             .collect()

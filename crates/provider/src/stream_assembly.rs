@@ -448,7 +448,7 @@ mod tests {
 
     fn text_block(block: &ContentBlock) -> &str {
         match block {
-            ContentBlock::Text { text: ref t } => t,
+            ContentBlock::Text { text: t } => t,
             other => panic!("expected Text block, got {other:?}"),
         }
     }
@@ -473,7 +473,7 @@ mod tests {
         let blocks = asm.push_delta(&SseDelta::Text("answer".into()));
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Reasoning { reasoning: ref r } => assert_eq!(r, "think"),
+            ContentBlock::Reasoning { reasoning: r } => assert_eq!(r, "think"),
             other => panic!("expected Reasoning block, got {other:?}"),
         }
         let blocks = asm.finalize();
@@ -535,7 +535,7 @@ mod tests {
         let blocks = asm.finalize();
         assert_eq!(blocks.len(), 1); // the reasoning buffer is flushed
         match &blocks[0] {
-            ContentBlock::Reasoning { reasoning: ref r } => assert_eq!(r, "reason"),
+            ContentBlock::Reasoning { reasoning: r } => assert_eq!(r, "reason"),
             other => panic!("expected Reasoning block, got {other:?}"),
         }
     }

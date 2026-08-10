@@ -83,7 +83,7 @@ pub fn extract_reasoning(messages: &[Message]) -> (Vec<Message>, Vec<String>) {
     for msg in messages {
         let mut clone = msg.clone();
         clone.content.retain(|block| match block {
-            ContentBlock::Reasoning { reasoning: ref r } => {
+            ContentBlock::Reasoning { reasoning: r } => {
                 reasoning.push(r.clone());
                 false
             }

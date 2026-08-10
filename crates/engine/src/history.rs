@@ -116,8 +116,8 @@ pub fn estimate_tokens(message: &Message, tokens_per_char: f64) -> u64 {
         .content
         .iter()
         .map(|b| match b {
-            ContentBlock::Text { text: ref t } => t.len(),
-            ContentBlock::Reasoning { reasoning: ref r } => r.len(),
+            ContentBlock::Text { text: t } => t.len(),
+            ContentBlock::Reasoning { reasoning: r } => r.len(),
             ContentBlock::ToolUse(c) => c.name.len() + c.input.to_string().len(),
             ContentBlock::ToolResult(r) => r.content.len(),
         })

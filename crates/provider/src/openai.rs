@@ -2666,8 +2666,8 @@ fn convert_content_blocks(blocks: &[ContentBlock]) -> serde_json::Value {
         let text = blocks
             .iter()
             .filter_map(|b| match b {
-                ContentBlock::Text { text: ref t } => Some(t.as_str()),
-                ContentBlock::Reasoning { reasoning: ref t } => Some(t.as_str()),
+                ContentBlock::Text { text: t } => Some(t.as_str()),
+                ContentBlock::Reasoning { reasoning: t } => Some(t.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -2678,8 +2678,8 @@ fn convert_content_blocks(blocks: &[ContentBlock]) -> serde_json::Value {
     let arr: Vec<serde_json::Value> = blocks
         .iter()
         .filter_map(|b| match b {
-            ContentBlock::Text { text: ref t } => Some(serde_json::json!({"type": "text", "text": t})),
-            ContentBlock::Reasoning { reasoning: ref t } => Some(serde_json::json!({"type": "text", "text": t})),
+            ContentBlock::Text { text: t } => Some(serde_json::json!({"type": "text", "text": t})),
+            ContentBlock::Reasoning { reasoning: t } => Some(serde_json::json!({"type": "text", "text": t})),
             // ToolUse / ToolResult blocks belong in tool_calls / role=tool
             // messages, not the content array.
             ContentBlock::ToolUse(_) | ContentBlock::ToolResult(_) => None,
@@ -4309,7 +4309,7 @@ mod tests {
         assert!(!blocks.is_empty());
         assert!(matches!(
             &blocks[0],
-            opensquilla_core::types::ContentBlock::Text { text: ref t } if t == "Hello world"
+            opensquilla_core::types::ContentBlock::Text { text: t } if t == "Hello world"
         ));
     }
 }

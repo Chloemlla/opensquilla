@@ -345,7 +345,7 @@ fn convert_message(msg: &ChatMessage, replay_provider_state: bool) -> Value {
     let mut parts: Vec<Value> = Vec::new();
     for block in &msg.content {
         match block {
-            ContentBlock::Text { text: ref t } => parts.push(json!({"type": "text", "text": t})),
+            ContentBlock::Text { text: t } => parts.push(json!({"type": "text", "text": t})),
             ContentBlock::ToolUse(tc) => parts.push(json!({
                 "type": "tool_use",
                 "id": tc.id,
@@ -358,7 +358,7 @@ fn convert_message(msg: &ChatMessage, replay_provider_state: bool) -> Value {
                 "content": tr.content,
                 "is_error": tr.is_error,
             })),
-            ContentBlock::Reasoning { reasoning: ref r } => {
+            ContentBlock::Reasoning { reasoning: r } => {
                 // Thinking/signature replay is only valid for the exact minting
                 // turn; a foreign signature is rejected by the API.
                 if replay_provider_state {

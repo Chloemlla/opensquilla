@@ -2195,11 +2195,11 @@ mod tests {
         let resp = p.parse_response(&data, "o3");
         let msg = &resp.content[0];
         match &msg.content[0] {
-            ContentBlock::Reasoning { reasoning: ref r } => assert_eq!(r, "thought carefullylet me think"),
+            ContentBlock::Reasoning { reasoning: r } => assert_eq!(r, "thought carefullylet me think"),
             other => panic!("expected reasoning block, got {other:?}"),
         }
         match &msg.content[1] {
-            ContentBlock::Text { text: ref t } => assert_eq!(t, "answer"),
+            ContentBlock::Text { text: t } => assert_eq!(t, "answer"),
             other => panic!("expected text block, got {other:?}"),
         }
     }

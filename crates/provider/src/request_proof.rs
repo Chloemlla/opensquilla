@@ -57,8 +57,8 @@ pub trait TokenEstimator: Send + Sync {
 
         for block in &msg.content {
             match block {
-                ContentBlock::Text { text: ref t } => total += self.estimate_text(t),
-                ContentBlock::Reasoning { reasoning: ref t } => total += self.estimate_text(t),
+                ContentBlock::Text { text: t } => total += self.estimate_text(t),
+                ContentBlock::Reasoning { reasoning: t } => total += self.estimate_text(t),
                 ContentBlock::ToolUse(tc) => {
                     total += self.estimate_text(&tc.name);
                     total += self.estimate_text(&tc.id);
