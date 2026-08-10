@@ -325,7 +325,9 @@ impl BenchmarkRunner {
         &self,
         suite: &BenchmarkSuite,
     ) -> Result<BenchmarkResult, BenchmarkError> {
-        self.run_benchmark(&suite.config, &suite.scenarios).await
+        let mut config = suite.config.clone();
+        config.name = suite.name.clone();
+        self.run_benchmark(&config, &suite.scenarios).await
     }
 
     /// Run a single scenario once against the engine, recording the run.
