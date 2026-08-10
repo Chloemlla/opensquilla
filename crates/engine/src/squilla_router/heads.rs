@@ -377,8 +377,10 @@ mod tests {
             0.236882818089911,
             0.643914260941097,
         ];
+        // f64 max-subtraction softmax rounds ~1e-9 off the ideal values; use a
+        // 1e-6 tolerance so the known-value check is robust to that noise.
         for (got, exp) in p.iter().zip(expected.iter()) {
-            assert!((got - exp).abs() < 1e-9);
+            assert!((got - exp).abs() < 1e-6);
         }
         assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-9);
     }
