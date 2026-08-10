@@ -189,7 +189,12 @@ fn stage_task_file() -> Result<()> {
 
 /// Quote a path for the current shell (best-effort on Windows).
 fn shell_quote(path: &str) -> String {
-    if cfg!(windows) {
+    shell_quote_for(path, cfg!(windows))
+}
+
+/// Quote a path for a shell, given the target platform's quoting style.
+fn shell_quote_for(path: &str, windows: bool) -> String {
+    if windows {
         format!("\"{}\"", path.replace('"', "\\\""))
     } else {
         format!("'{}'", path.replace('\'', "'\\''"))
@@ -257,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_stage_task_file_quotes_windows() {
-        let q = shell_quote(r"C:\tmp\a b.txt");
+        let q = shell_quote_for(r"C:\tmp\a b.txt", true);
         assert!(q.starts_with('"'));
         assert!(q.ends_with('"'));
     }
