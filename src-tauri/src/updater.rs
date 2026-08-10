@@ -1338,8 +1338,9 @@ mod tests {
     #[test]
     fn sha256sums_parsing() {
         let contents = format!(
-            "abcdef0123456789{}  *OpenSquilla-0.5.0-win-x64.exe\n1111  other.exe",
-            "a".repeat(48)
+            "abcdef0123456789{}  *OpenSquilla-0.5.0-win-x64.exe\n{}  other.exe",
+            "a".repeat(48),
+            "1".repeat(64)
         );
         let digest =
             parse_sha256_sums_for_asset(&contents, "OpenSquilla-0.5.0-win-x64.exe").unwrap();

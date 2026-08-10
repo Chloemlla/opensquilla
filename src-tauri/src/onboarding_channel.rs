@@ -868,6 +868,7 @@ mod tests {
             "type": "wecom",
             "name": "ops",
             "connection_mode": "websocket",
+            "bot_id": "bot123",
         }));
         let err = validate_entry(&cfg, &mut e).unwrap_err();
         assert!(err.message.contains("bot_secret"));
