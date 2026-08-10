@@ -110,8 +110,7 @@ impl ConfigRepair {
                 continue;
             }
 
-            match issue.issue_type {
-                ConfigIssue::MissingKey => {
+            if let ConfigIssue::MissingKey = issue.issue_type {
                     if issue.key == "model.default" {
                         self.config
                             .llm
@@ -131,7 +130,6 @@ impl ConfigRepair {
                         }
                     }
                 }
-                _ => {}
             }
         }
 
