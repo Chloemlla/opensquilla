@@ -22,7 +22,7 @@ use crate::util;
 pub enum BundleAction {
     /// Collect a diagnostics bundle.
     Collect {
-        /// Bundle destination file (default: ./opensquilla-bundle-<UTC>.json).
+        /// Bundle destination file (default: `./opensquilla-bundle-<UTC>.json`).
         #[arg(short, long)]
         output: Option<String>,
         /// How many days of sessions to include.

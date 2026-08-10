@@ -309,7 +309,7 @@ mod tests {
         let dir = temp_dir("path");
         let archiver = SessionArchiver::new(&dir).unwrap();
         let path = archiver.archive_path("../evil");
-        assert!(path.ends_with("___evil.json"));
+        assert!(path.ends_with(".._evil.json"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

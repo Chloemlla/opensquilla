@@ -65,7 +65,7 @@ pub fn is_explicit_interaction(msg: &IncomingMessage) -> bool {
         }
     }
     meta.and_then(|m| m.get("approval_action"))
-        .map_or(false, |v| v.is_object())
+        .is_some_and(|v| v.is_object())
 }
 
 /// Whether the sender is a configured channel admin for this exact channel.
@@ -76,7 +76,7 @@ fn sender_is_channel_admin(
 ) -> bool {
     channel_admin_senders
         .get(channel_name)
-        .map_or(false, |senders| senders.iter().any(|s| s == sender_id))
+        .is_some_and(|senders| senders.iter().any(|s| s == sender_id))
 }
 
 /// Evaluate admission for an inbound message.
