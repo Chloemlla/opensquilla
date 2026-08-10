@@ -111,23 +111,22 @@ impl ConfigRepair {
             }
 
             if let ConfigIssue::MissingKey = issue.issue_type {
-                    if issue.key == "model.default" {
+                if issue.key == "model.default" {
+                    self.config
+                        .llm
+                        .get_or_insert_with(LlmConfig::default)
+                        .model = "gpt-4o".to_string();
+                    fixed.push(issue.clone());
+                    info!("Auto-fixed: set model.default to gpt-4o");
+                } else if issue.key == "provider.default" {
+                    // Try to find the first configured provider.
+                    if let Some(provider) = self.find_first_configured_provider() {
                         self.config
                             .llm
                             .get_or_insert_with(LlmConfig::default)
-                            .model = "gpt-4o".to_string();
+                            .provider = provider.clone();
                         fixed.push(issue.clone());
-                        info!("Auto-fixed: set model.default to gpt-4o");
-                    } else if issue.key == "provider.default" {
-                        // Try to find the first configured provider.
-                        if let Some(provider) = self.find_first_configured_provider() {
-                            self.config
-                                .llm
-                                .get_or_insert_with(LlmConfig::default)
-                                .provider = provider.clone();
-                            fixed.push(issue.clone());
-                            info!("Auto-fixed: set provider.default to {provider}");
-                        }
+                        info!("Auto-fixed: set provider.default to {provider}");
                     }
                 }
             }
