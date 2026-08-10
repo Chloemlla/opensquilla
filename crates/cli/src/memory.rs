@@ -5,6 +5,7 @@
 //! a consistency check, and dream-consolidation.
 
 use anyhow::{Context, Result};
+use opensquilla_core::config::Config;
 use opensquilla_core::types::MemoryId;
 use opensquilla_memory::DreamEngine;
 use opensquilla_memory::store::MemoryEntry;

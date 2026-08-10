@@ -218,7 +218,7 @@ pub async fn recovery_clear() -> Result<()> {
 /// re-execution, which is out of scope for the CLI).
 pub async fn replay_turn(session: String, turn: String) -> Result<()> {
     let path = observability_db_path();
-    let store = opensquilla_observability::logs::LogStore::new(&path)
+    let store = opensquilla_observability::logs::LogStore::new(path.to_string_lossy().as_ref())
         .map_err(|e| anyhow::anyhow!("Failed to open observability store at {}: {e}", path.display()))?;
 
     let decisions = store

@@ -91,7 +91,7 @@ async fn session_summary(config: &Config) -> serde_json::Value {
         Some(m) => match m.list_sessions(&util::default_agent_id(), u64::MAX, 0) {
             Ok(list) => {
                 let counts = list.iter().fold(
-                    (0u64, 0u64, 0u64),
+                    (0u64, 0u64, 0.0),
                     |(total, tokens, cost), s| {
                         (total + 1, tokens + s.total_tokens, cost + s.total_cost_usd)
                     },
