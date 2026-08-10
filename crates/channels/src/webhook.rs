@@ -45,7 +45,7 @@ use uuid::Uuid;
 /// rejects. Mirror that so the documented sample key round-trips.
 static WECOM_KEY_B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::GeneralPurpose::new(
-        &base64::engine::general_purpose::STANDARD_ALPHABET,
+        &base64::alphabet::STANDARD,
         base64::engine::general_purpose::GeneralPurposeConfig::new()
             .with_decode_allow_trailing_bits(true),
     );
