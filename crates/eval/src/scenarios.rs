@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::synthetic::SyntheticProvider;
-use opensquilla_provider::types::{ChatConfig, StreamEvent};
+use opensquilla_provider::types::{ChatConfig, Provider, StreamEvent};
 
 /// A test scenario for benchmarking.
 #[derive(Debug, Clone, Serialize, Deserialize)]

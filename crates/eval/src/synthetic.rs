@@ -193,7 +193,7 @@ impl Provider for SyntheticProvider {
             cost_source: Some(self.cost_source.clone()),
             ensemble_trace: self.ensemble_trace.clone(),
         }));
-        Ok(Box::pin(futures::stream::iter(events)))
+        Ok(Box::new(futures::stream::iter(events)))
     }
 }
 
