@@ -80,6 +80,7 @@ pub struct HttpApiState {
 // ---------------------------------------------------------------------------
 
 /// Wraps an [`AppError`] so axum can render it as a JSON error response.
+#[derive(Debug)]
 pub struct HttpError(AppError);
 
 impl From<AppError> for HttpError {

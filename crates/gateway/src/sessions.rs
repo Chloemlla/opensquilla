@@ -1862,7 +1862,7 @@ mod tests {
 
         let sid = SessionId::new();
         let key = sid.to_string();
-        store.start_turn(&key, Some("hello"), None);
+        store.start_turn(&key, Some("hello".to_string()), None);
         store.mark_turn_running(&key, store.list_turns(&key)[0].turn_id).unwrap();
 
         let r = registry
