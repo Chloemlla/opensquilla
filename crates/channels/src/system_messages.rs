@@ -490,7 +490,7 @@ pub fn render_channel_message(
 mod tests {
     use super::*;
 
-    fn values(pairs: &[(&str, &str)]) -> HashMap<&str, String> {
+    fn values<'a>(pairs: &'a [(&'a str, &'a str)]) -> HashMap<&'a str, String> {
         pairs
             .iter()
             .map(|(k, v)| (*k, v.to_string()))
