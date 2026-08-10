@@ -45,7 +45,9 @@ impl CommandRegistry {
         }
         let head = trimmed.split_whitespace().next()?;
         let bare = head[1..].to_lowercase();
-        self.commands.get(&bare).cloned()
+        self.commands
+            .get(&bare)
+            .map(|(method, _)| (bare.clone(), method.clone()))
     }
 }
 

@@ -551,7 +551,10 @@ fn extract_post_text(content: &Value) -> String {
                 };
                 for cell in cells {
                     if let Some(text) = cell.get("text").and_then(|v| v.as_str()) {
-                        parts.push(text.to_string());
+                        let t = text.trim();
+                        if !t.is_empty() {
+                            parts.push(t.to_string());
+                        }
                     }
                 }
             }

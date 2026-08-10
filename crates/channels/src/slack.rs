@@ -1148,10 +1148,17 @@ fn bullet_re() -> &'static Regex {
 /// fences and `_italics_` pass through unchanged because Slack uses the same
 /// syntax for code and italics.
 pub fn to_mrkdwn(text: &str) -> String {
-    // Heading lines become bold + prefix.
+    // Heading lines become bold + prefix and keep a trailing newline;
+    // other lines are kept verbatim (separated by newlines).
     let mut out = String::with_capacity(text.len());
+    let mut first = true;
     for line in text.lines() {
         let trimmed = line.trim_start();
+        if first {
+            first = false;
+        } else {
+            out.push('\n');
+        }
         if let Some(rest) = trimmed.strip_prefix("### ") {
             out.push('*');
             out.push_str(rest);
@@ -1166,7 +1173,6 @@ pub fn to_mrkdwn(text: &str) -> String {
             out.push_str("*\n");
         } else {
             out.push_str(line);
-            out.push('\n');
         }
     }
     let out = bold_re().replace_all(&out, "*$1*");

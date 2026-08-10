@@ -38,6 +38,18 @@ use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;
 
+/// Lenient base64 decoder for WeCom `EncodingAESKey` (43-char key + `=`).
+///
+/// WeChat's reference implementations decode the key allowing non-zero
+/// trailing bits on the final symbol, which the strict `STANDARD` engine
+/// rejects. Mirror that so the documented sample key round-trips.
+static WECOM_KEY_B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::GeneralPurpose::new(
+        &base64::engine::general_purpose::STANDARD_ALPHABET,
+        base64::engine::general_purpose::GeneralPurposeConfig::new()
+            .with_decode_allow_trailing_bits(true),
+    );
+
 /// AES-256-CBC decryptor used by the WeCom adapter.
 /// The HTTP method a webhook route accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -637,7 +649,7 @@ pub fn decrypt_wecom_payload(
     use base64::Engine;
 
     let full_key = format!("{encoding_aes_key}=");
-    let key_bytes = base64::engine::general_purpose::STANDARD
+    let key_bytes = WECOM_KEY_B64
         .decode(&full_key)
         .map_err(|_| WebhookError::InvalidPayload("invalid EncodingAESKey".into()))?;
     if key_bytes.len() != 32 {
@@ -1264,7 +1276,7 @@ mod tests {
         let plaintext = r#"{"MsgType":"text","ToUserName":"ww123","FromUserName":"user1","MsgId":"1","Content":"hi","CreateTime":12345}"#;
         let encrypted = {
             let full_key = format!("{WECOM_KEY}=");
-            let key_bytes = base64::engine::general_purpose::STANDARD
+            let key_bytes = WECOM_KEY_B64
                 .decode(&full_key)
                 .unwrap();
             let iv = &key_bytes[0..16];

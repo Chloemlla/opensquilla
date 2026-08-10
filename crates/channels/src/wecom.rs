@@ -32,6 +32,18 @@ use tracing::info;
 /// Default WeCom API base.
 pub const DEFAULT_API_BASE: &str = "https://qyapi.weixin.qq.com/cgi-bin";
 
+/// Lenient base64 decoder for WeCom `EncodingAESKey` (43-char key + `=`).
+///
+/// WeChat's reference implementations decode the key allowing non-zero
+/// trailing bits on the final symbol, which the strict `STANDARD` engine
+/// rejects. Mirror that so the documented sample key round-trips.
+static WECOM_KEY_B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::GeneralPurpose::new(
+        &base64::engine::general_purpose::STANDARD_ALPHABET,
+        base64::engine::general_purpose::GeneralPurposeConfig::new()
+            .with_decode_allow_trailing_bits(true),
+    );
+
 #[derive(Debug, Clone)]
 struct CachedToken {
     token: String,
@@ -446,7 +458,7 @@ pub fn encrypt_wecom_payload(
     receive_id: &str,
 ) -> Result<String, String> {
     let full_key = format!("{encoding_aes_key}=");
-    let key_bytes = base64::engine::general_purpose::STANDARD
+    let key_bytes = WECOM_KEY_B64
         .decode(&full_key)
         .map_err(|_| "invalid EncodingAESKey".to_string())?;
     if key_bytes.len() != 32 {

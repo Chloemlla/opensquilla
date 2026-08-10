@@ -94,6 +94,9 @@ impl OutboxEntry {
     /// The message text carried in the payload, when the payload is an
     /// [`OutgoingMessage`] (i.e. has a `text` field).
     pub fn text(&self) -> Option<&str> {
+        if let Some(s) = self.payload.as_str() {
+            return Some(s);
+        }
         self.payload.get("text").and_then(|v| v.as_str())
     }
 
@@ -530,7 +533,7 @@ impl DeliveryStore {
     pub async fn get(&self, id: &str) -> Result<Option<OutboxEntry>, String> {
         let db = self.db.lock().await;
         let mut stmt = db
-            .prepare(Self::SELECT_COLS)
+            .prepare(&format!("{} WHERE id = ?1", Self::SELECT_COLS))
             .map_err(|e| format!("Query: {e}"))?;
         let result = stmt
             .query_row(params![id], Self::map_row)
@@ -751,7 +754,7 @@ pub struct OutboxWorker {
     worker_id: String,
     poll_interval: Duration,
     max_batch: usize,
-    running: Arc<Mutex<bool>>,
+    running: Arc<std::sync::Mutex<bool>>,
 }
 
 impl OutboxWorker {
@@ -784,7 +787,7 @@ impl OutboxWorker {
             worker_id: worker_id.into(),
             poll_interval,
             max_batch,
-            running: Arc::new(Mutex::new(false)),
+            running: Arc::new(std::sync::Mutex::new(false)),
         }
     }
 
@@ -809,7 +812,7 @@ impl OutboxWorker {
     /// Start the worker loop in the background.
     pub fn start(&self) {
         {
-            let mut running = self.running.blocking_lock();
+            let mut running = self.running.lock().unwrap();
             if *running {
                 return;
             }
@@ -833,7 +836,7 @@ impl OutboxWorker {
             let mut interval = tokio::time::interval(poll_interval);
             interval.tick().await;
             loop {
-                if !*worker.running.lock().await {
+                if !*worker.running.lock().unwrap() {
                     return;
                 }
                 if let Err(e) = worker.run_once().await {
@@ -846,7 +849,7 @@ impl OutboxWorker {
 
     /// Stop the worker loop.
     pub async fn stop(&self) {
-        *self.running.lock().await = false;
+        *self.running.lock().unwrap() = false;
     }
 }
 
