@@ -336,6 +336,7 @@ pub async fn handle_multipart_upload(
 fn sanitize_filename(name: &str) -> String {
     let name = name.replace(['/', '\\'], "_");
     let name = name.trim_start_matches('.');
+    let name = name.trim_start_matches('_');
     if name.is_empty() {
         "file".to_string()
     } else {

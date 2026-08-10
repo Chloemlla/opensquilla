@@ -55,7 +55,6 @@ impl WizardSession {
             SetupState::ModelSelection,
             SetupState::ChannelSetup,
             SetupState::SandboxConfig,
-            SetupState::Review,
             SetupState::Complete,
         ]
     }

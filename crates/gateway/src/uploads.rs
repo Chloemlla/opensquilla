@@ -139,6 +139,8 @@ impl UploadManager {
                 error: None,
             },
         );
+        std::fs::File::create(&path)
+            .map_err(|e| AppError::internal(format!("Cannot create staged file: {e}")))?;
         Ok((upload_id, path))
     }
 
@@ -355,6 +357,7 @@ pub async fn handle_upload(
 fn sanitize_filename(name: &str) -> String {
     let name = name.replace(['/', '\\'], "_");
     let name = name.trim_start_matches('.');
+    let name = name.trim_start_matches('_');
     if name.is_empty() {
         "file".to_string()
     } else {

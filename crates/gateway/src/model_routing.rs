@@ -242,22 +242,26 @@ impl ModelRouter {
             }
         }
 
-        // 4. Fallback chain.
-        for fallback in &config.fallback_chain {
-            if self.is_available(fallback) {
-                let outcome = RouteOutcome {
-                    session_id: request.session_id.clone(),
-                    requested_model: request.requested_model.clone(),
-                    selected_model: fallback.clone(),
-                    selected_provider: None,
-                    strategy: RoutingStrategy::FallbackChain,
-                    rule_used: None,
-                    fallback_used: true,
-                    reason: format!("Primary unavailable; fell back to '{fallback}'"),
-                    decided_at: Utc::now(),
-                };
-                self.record(&outcome);
-                return outcome;
+        // 4. Fallback chain — only consulted when a model was explicitly
+        //    requested but turned out to be unavailable.  When no model was
+        //    requested at all the router falls straight through to the default.
+        if request.requested_model.is_some() {
+            for fallback in &config.fallback_chain {
+                if self.is_available(fallback) {
+                    let outcome = RouteOutcome {
+                        session_id: request.session_id.clone(),
+                        requested_model: request.requested_model.clone(),
+                        selected_model: fallback.clone(),
+                        selected_provider: None,
+                        strategy: RoutingStrategy::FallbackChain,
+                        rule_used: None,
+                        fallback_used: true,
+                        reason: format!("Primary unavailable; fell back to '{fallback}'"),
+                        decided_at: Utc::now(),
+                    };
+                    self.record(&outcome);
+                    return outcome;
+                }
             }
         }
 

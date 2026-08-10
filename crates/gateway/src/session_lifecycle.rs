@@ -470,11 +470,14 @@ mod tests {
         let created = rx.recv().await.unwrap();
         assert_eq!(created.kind, SessionEventKind::Created);
 
-        mgr.pause("s1").map_err(|e| panic!("{e}")).ok();
         // Pause requires Active, so activate first.
         mgr.activate("s1").unwrap();
         let activated = rx.recv().await.unwrap();
         assert_eq!(activated.kind, SessionEventKind::Updated);
+
+        mgr.pause("s1").unwrap();
+        let paused = rx.recv().await.unwrap();
+        assert_eq!(paused.kind, SessionEventKind::Paused);
     }
 
     #[test]

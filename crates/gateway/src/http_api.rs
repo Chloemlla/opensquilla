@@ -134,9 +134,16 @@ async fn dispatch_json(
 // Dispatch-passthrough handlers
 // ---------------------------------------------------------------------------
 
-/// GET /api/config → `config.get`
-async fn api_config(State(st): State<HttpApiState>) -> HandlerResult {
-    dispatch_json(&st.rpc_registry, "config.get", Value::Null).await
+/// GET /api/config?key= → `config.get`
+async fn api_config(
+    State(st): State<HttpApiState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> HandlerResult {
+    let params = match q.get("key") {
+        Some(key) => serde_json::json!({"key": key}),
+        None => Value::Null,
+    };
+    dispatch_json(&st.rpc_registry, "config.get", params).await
 }
 
 /// GET /api/sessions?limit=&view= → `sessions.list`
@@ -953,7 +960,10 @@ mod tests {
     #[tokio::test]
     async fn test_api_config_returns_ok() {
         let state = test_state("config");
-        let res = api_config(State(state)).await.unwrap();
+        let mut params = std::collections::HashMap::new();
+        params.insert("key".into(), "gateway.host".into());
+        let q = Query(params);
+        let res = api_config(State(state), q).await.unwrap();
         assert_eq!(res.0, StatusCode::OK);
     }
 
