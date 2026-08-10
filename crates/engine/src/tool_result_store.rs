@@ -683,6 +683,7 @@ fn validate_non_empty_io(name: &str, value: &str) -> io::Result<String> {
 /// Sanitize a session token for use as a path component: replace runs of
 /// non-safe characters with `-`, strip leading/trailing dots and dashes,
 /// truncate to 80 chars, falling back to `"session"` when empty.
+#[allow(dead_code)]
 fn safe_token(value: &str) -> String {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"[^A-Za-z0-9._-]+").expect("valid regex"));

@@ -239,7 +239,7 @@ impl TurnIngress {
     /// active. Returns `None` if the receiver was already claimed.
     fn claim_receiver(&self, session_id: &str) -> Option<mpsc::Receiver<InboundTurn>> {
         let mut queues = self.queues.lock();
-        let mut entry = queues.remove(session_id)?;
+        let entry = queues.remove(session_id)?;
         let mut rx_guard = entry.rx.lock();
         let rx = rx_guard.take()?;
         self.active_sessions.lock().insert(session_id.to_string());
